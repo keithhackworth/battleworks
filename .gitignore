@@ -6,3 +6,10 @@
 /*.rbxl.lock
 
 sourcemap.json
+*.rbxl
+*.rbxlx
+*.rbxm
+*.rbxmx
+.env
+.env.*
+*.log
