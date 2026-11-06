@@ -115,3 +115,40 @@ do
 	assert(cancelled and deadOrigin == nil, "death cancels a prepared shot")
 	print("Weapon windup suite passed: release timing, current pose, cooldown and death cancellation")
 end
+
+-- Physical aim follows suspension at release, rather than a cosmetic-only tilt.
+do
+ local Sim = require("TankSimulation")
+ local Windup = require("WeaponWindup")
+ local state = Sim.new(Vector3.zero)
+ state.bounce=0.3; state.bodyPitch=0.1
+ local pivot, aim = Sim.shotPose(state)
+ assert(math.abs(pivot.Y-3.9)<1e-5, "bouncing turret lifts the authoritative shot origin")
+ assert(math.abs(aim.Y-math.sin(0.1))<1e-5 and math.abs(aim.Z+math.cos(0.1))<1e-5, "hull pitch elevates the barrel")
+ state.bodyPitch=0; state.bodyRoll=0.2; state.turretYaw=math.pi/2
+ pivot,aim=Sim.shotPose(state)
+ assert(math.abs(aim.Y+math.sin(0.2))<1e-5, "roll changes elevation when firing sideways")
+ state.yaw=math.pi/2; state.turretYaw=0
+ pivot,aim=Sim.shotPose(state)
+ assert(math.abs(aim.Y-math.sin(0.2))<1e-5, "chassis yaw rotates the roll axis independently of turret yaw")
+ local pending=Windup.begin(state,{fire=true})
+ state.bodyPitch=-0.15; state.bodyRoll=0; state.yaw=0; state.bounce=-0.2
+ local done,release,flight=Windup.step(pending,state,Config.FireWindup)
+ assert(done and math.abs(release.Y-3.4)<1e-5 and flight.Y<0, "release samples changed suspension after windup")
+ local shell=Projectiles.new(release,flight,{shooter,visuals})
+ state.bodyPitch=0.4; state.turretYaw=2
+ assert((shell.direction-flight).Magnitude<1e-5, "subsequent turret motion cannot steer a launched shell")
+ local driving=Sim.new(Vector3.zero)
+ local command={throttle=1,steer=0,aimMode="Rate",turretX=0,turretY=0}
+ local low,high=0,0
+ for _=1,120 do
+  Sim.step(driving,command,1/60)
+  local _,forward=Sim.shotPose(driving)
+  low=math.min(low,forward.Y); high=math.max(high,forward.Y)
+ end
+ assert(low < -0.03 and high > 0.03, "driving suspension visibly disturbs aim in both directions")
+ command.throttle=0
+ for _=1,360 do Sim.step(driving,command,1/60) end
+ assert(math.abs(driving.bounce)<1e-5 and math.abs(driving.bodyPitch)<1e-5 and math.abs(driving.bodyRoll)<1e-5, "stopped suspension settles back to stable aim")
+ print("Suspension firing suite passed: origin, pitch/roll/yaw, release-time pose, straight flight and settling")
+end

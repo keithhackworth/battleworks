@@ -49,8 +49,15 @@ prepareShot.OnClientEvent:Connect(function(id)
 	local renderer = renderers[tostring(id)]
 	if renderer then renderer:fire() end
 end)
-shot.OnClientEvent:Connect(function(_, origin)
-	Renderer.shot(origin)
+shot.OnClientEvent:Connect(function(id, origin, direction)
+	local renderer = renderers[tostring(id)]
+	if renderer and renderer.position then
+		-- Use the rendered barrel tip, including its bounce and recoil, so the
+		-- sparks stay attached to the opening despite snapshot smoothing.
+		direction = renderer.cannon.CFrame.RightVector
+		origin = renderer.cannon.CFrame.Position + direction*3
+	end
+	Renderer.shot(origin, direction)
 end)
 local elapsed, debugElapsed = 0, 0
 RunService:BindToRenderStep("BattleWorksFrame", Enum.RenderPriority.Camera.Value + 1, function(dt)

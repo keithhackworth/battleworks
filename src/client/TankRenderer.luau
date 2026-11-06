@@ -1,5 +1,6 @@
 -- All animation is cosmetic. Anchored parts never participate in combat or physics.
 local Debris = game:GetService("Debris")
+local TweenService = game:GetService("TweenService")
 local BarrelAnimation = require(script.Parent.BarrelAnimation)
 local Renderer = {}
 Renderer.__index = Renderer
@@ -130,13 +131,13 @@ end
 function Renderer:fire()
 	self.recoil = 1
 	self.shotAge = 0
-	self.bounceVelocity -= 0.6
 end
 function Renderer:resetPose(state)
 	self.position = state.position; self.yaw = state.yaw
 	self.turretYaw = state.turretYaw; self.turretPitch = state.turretPitch or 0
 	self.recoil = 0; self.shotAge = nil
-	self.bounce = 0; self.bounceVelocity = 0; self.movement = 0; self.bounceClock = 0
+	self.bodyPitch = state.bodyPitch or 0; self.bodyRoll = state.bodyRoll or 0
+	self.bounce = state.bounce or 0; self.bounceVelocity = 0; self.movement = 0; self.bounceClock = 0
 	self.cannon.Size = Vector3.new(6, BARREL_DIAMETER, BARREL_DIAMETER)
 	self.barrelBulge.Transparency = 1; self.muzzleSwell.Transparency = 1; self.coughBore.Transparency = 1
 end
@@ -156,25 +157,15 @@ function Renderer:update(state, dt)
 	local swelling = BarrelAnimation.sample(self.shotAge)
 	if not swelling.active or state.health <= 0 then self.shotAge = nil; swelling = BarrelAnimation.sample(nil) end
 	self.cannon.Size = Vector3.new(6, BARREL_DIAMETER*swelling.barrelScale, BARREL_DIAMETER*swelling.barrelScale)
-	-- A damped cosmetic spring lets the wide deck bob above the grounded tracks.
-	-- Small substeps keep a long render frame from destabilizing the suspension.
-	local remaining = math.clamp(dt, 0, 0.1)
-	while remaining > 0 do
-		local step = math.min(remaining, 1/120)
-		local moving = if state.health > 0 then math.min(math.abs(state.speed)/24, 1) else 0
-		self.movement += (moving-self.movement)*(1-math.exp(-8*step))
-		self.bounceClock += step*8
-		local target = math.sin(self.bounceClock)*0.38*self.movement
-		self.bounceVelocity += ((target-self.bounce)*150 - self.bounceVelocity*12)*step
-		self.bounce += self.bounceVelocity*step
-		remaining -= step
-	end
-	local wobble = math.sin(self.bounceClock) * math.min(math.abs(state.speed) / 24, 1) * 0.025
+	-- Suspension is server-owned because the tilted barrel now controls shots.
+	self.bounce += ((state.bounce or 0)-self.bounce)*alpha
+	self.bodyPitch = (self.bodyPitch or 0)+((state.bodyPitch or 0)-(self.bodyPitch or 0))*alpha
+	self.bodyRoll = (self.bodyRoll or 0)+((state.bodyRoll or 0)-(self.bodyRoll or 0))*alpha
 	local base = CFrame.new(self.position) * CFrame.Angles(0, self.yaw, 0)
-	local body = base * CFrame.new(0, 2.1+self.bounce, 0) * CFrame.Angles(wobble + self.recoil * 0.04, 0, wobble * 0.5)
+	local body = base * CFrame.new(0, 2.1+self.bounce, 0) * CFrame.Angles(self.bodyPitch, 0, self.bodyRoll)
 	self.left.CFrame = base * CFrame.new(-3.8, 1.4, 0)
 	self.right.CFrame = base * CFrame.new(3.8, 1.4, 0)
-	local turret = CFrame.new(self.position + Vector3.new(0, 3.6+self.bounce, 0)) * CFrame.Angles(0, self.turretYaw, 0)
+	local turret = CFrame.new(self.position + Vector3.new(0, 3.6+self.bounce, 0)) * CFrame.Angles(0, self.yaw, 0) * CFrame.Angles(self.bodyPitch, 0, self.bodyRoll) * CFrame.Angles(0, self.turretYaw-self.yaw, 0)
 	local barrel = turret * CFrame.Angles(self.turretPitch, 0, 0) * CFrame.new(0, 0, self.recoil * 0.8)
 	local anchors = { body = body, base = base, turret = turret, barrel = barrel }
 	for _, item in self.details do item.part.CFrame = anchors[item.anchor] * item.offset end
@@ -212,10 +203,27 @@ function Renderer:update(state, dt)
 	self.coughBore.Transparency = if swelling.active then 1-swelling.flare else 1
 end
 function Renderer:destroy() self.model:Destroy() end
--- Shell flight is rendered by the server; this event only flashes the muzzle.
-function Renderer.shot(origin)
-	local flash = part(workspace, "MuzzleFlash", Vector3.new(1.4, 1.4, 1.4), Color3.fromRGB(255, 218, 99))
-	flash.Shape = Enum.PartType.Ball; flash.Material = Enum.Material.Neon; flash.Position = origin
-	Debris:AddItem(flash, 0.06)
+-- Exaggerated cosmetic burst readable from the normal battlefield camera; no Explosion/force or damage is involved.
+function Renderer.shot(origin, direction)
+	direction = direction or Vector3.new(0, 0, -1)
+	local frame = CFrame.lookAt(origin, origin + direction)
+	local center = origin - direction*0.2
+	local flash = part(workspace, "MuzzleFlash", Vector3.new(3.2, 3.2, 3.2), Color3.fromRGB(255, 240, 150))
+	flash.Shape = Enum.PartType.Ball; flash.Material = Enum.Material.Neon; flash.Position = center; flash.CastShadow = false
+	TweenService:Create(flash, TweenInfo.new(0.24, Enum.EasingStyle.Quad, Enum.EasingDirection.Out, 0, false, 0.05), { Size = Vector3.new(5.5,5.5,5.5), Transparency = 1 }):Play()
+	Debris:AddItem(flash, 0.35)
+	for index = 1, 12 do
+		local angle = (index-1)*math.pi/6
+		local radial = frame.RightVector*math.cos(angle) + frame.UpVector*math.sin(angle)
+		local spark = part(workspace, "MuzzleSpark", Vector3.new(0.55,0.55,2.2),
+			if index%2 == 0 then Color3.fromRGB(255,176,32) else Color3.fromRGB(255,238,137))
+		spark.Material = Enum.Material.Neon; spark.CastShadow = false
+		spark.CFrame = CFrame.lookAt(center+radial*1.1, center+radial*2.1)
+		local endpoint = center + radial*(if index%2 == 0 then 4.2 else 5.5) + direction*0.15
+		TweenService:Create(spark, TweenInfo.new(0.32, Enum.EasingStyle.Quad, Enum.EasingDirection.Out, 0, false, 0.04), {
+			CFrame = CFrame.lookAt(endpoint, endpoint+radial), Size = Vector3.new(0.18,0.18,0.75), Transparency = 1,
+		}):Play()
+		Debris:AddItem(spark, 0.42)
+	end
 end
 return Renderer

@@ -2,17 +2,44 @@
 local Config = require(script.Parent.TankConfig)
 local Simulation = {}
 function Simulation.new(position)
-	return { position = position, yaw = 0, turretYaw = 0, turretPitch = 0, speed = 0, health = Config.Health, cooldown = 0 }
+	return { position = position, yaw = 0, turretYaw = 0, turretPitch = 0, speed = 0, health = Config.Health, cooldown = 0, bounce = 0, bounceVelocity = 0, movement = 0, bounceClock = 0, bodyPitch = 0, bodyRoll = 0 }
 end
 function Simulation.forward(yaw, pitch)
 	pitch = pitch or 0
 	return Vector3.new(-math.sin(yaw) * math.cos(pitch), math.sin(pitch), -math.cos(yaw) * math.cos(pitch))
 end
+-- World-space barrel direction after chassis pitch/roll and independent turret aim.
+function Simulation.shotPose(state)
+	local direction = Simulation.forward(state.turretYaw, state.turretPitch)
+	local c, s = math.cos(state.yaw), math.sin(state.yaw)
+	local x, y, z = c*direction.X-s*direction.Z, direction.Y, s*direction.X+c*direction.Z
+	local cr, sr = math.cos(state.bodyRoll or 0), math.sin(state.bodyRoll or 0)
+	x, y = cr*x-sr*y, sr*x+cr*y
+	local cp, sp = math.cos(state.bodyPitch or 0), math.sin(state.bodyPitch or 0)
+	y, z = cp*y-sp*z, sp*y+cp*z
+	return state.position+Vector3.new(0,3.6+(state.bounce or 0),0), Vector3.new(c*x+s*z,y,-s*x+c*z).Unit
+end
+local function suspension(state, dt)
+	local remaining = math.max(dt,0)
+	while remaining > 0 do
+		local step = math.min(remaining,1/120)
+		local moving = if state.health > 0 then math.min(math.abs(state.speed)/24,1) else 0
+		state.movement = (state.movement or 0)+(moving-(state.movement or 0))*(1-math.exp(-8*step))
+		state.bounceClock = (state.bounceClock or 0)+step*8
+		local target = math.sin(state.bounceClock)*0.38*state.movement
+		state.bounceVelocity = (state.bounceVelocity or 0)+((target-(state.bounce or 0))*150-(state.bounceVelocity or 0)*12)*step
+		state.bounce = (state.bounce or 0)+state.bounceVelocity*step
+		remaining -= step
+	end
+	state.bodyPitch = math.sin(state.bounceClock or 0)*0.05*(state.movement or 0)
+	state.bodyRoll = math.cos((state.bounceClock or 0)*0.8)*0.035*(state.movement or 0)
+end
 function Simulation.step(state, command, dt, mapSize)
 	state.cooldown = math.max(0, state.cooldown - dt)
-	if state.health <= 0 then state.speed = 0; return end
+	if state.health <= 0 then state.speed = 0; suspension(state,dt); return end
 	state.yaw += command.steer * Config.TurnSpeed * dt
 	state.speed = command.throttle * Config.Speed
+	suspension(state,dt)
 	local nextPosition = state.position + Simulation.forward(state.yaw) * state.speed * dt
 	local edgeX = (if mapSize then mapSize.X/2 else Config.ArenaLimit) - Config.Radius
 	local edgeZ = (if mapSize then mapSize.Y/2 else Config.ArenaLimit) - Config.Radius
@@ -36,7 +63,6 @@ end
 function Simulation.tryFire(state, command)
 	if state.health <= 0 or not command.fire or state.cooldown > 0 then return nil end
 	state.cooldown = Config.Cooldown
-	local direction = Simulation.forward(state.turretYaw, state.turretPitch)
-	return state.position + Vector3.new(0, 3.6, 0), direction
+	return Simulation.shotPose(state)
 end
 return Simulation

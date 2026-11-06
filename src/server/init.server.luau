@@ -117,7 +117,7 @@ local function launchShell(id, tank, origin, direction)
 	shell.nose = shellPart(shell.model,"Nose",Vector3.new(1.3,1.3,1.3),Color3.fromRGB(244,158,36),Enum.PartType.Ball)
 	shell.band = shellPart(shell.model,"Band",Vector3.new(0.3,1.4,1.4),Color3.fromRGB(255,215,64),Enum.PartType.Cylinder)
 	poseShell(shell); table.insert(shells,shell)
-	shot:FireAllClients(id,shell.position)
+	shot:FireAllClients(id,shell.position,direction)
 	if arena:GetAttribute("DebugCombat") then
 		print("[BattleWorks shell launch]",id,"muzzle",shell.position,"direction",direction,"speed",Config.ShellSpeed)
 	end
