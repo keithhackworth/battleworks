@@ -1,6 +1,7 @@
 -- All animation is cosmetic. Anchored parts never participate in combat or physics.
 local Debris = game:GetService("Debris")
 local TweenService = game:GetService("TweenService")
+local TerrainEffects = require(script.Parent.TerrainEffects)
 local BarrelAnimation = require(script.Parent.BarrelAnimation)
 local Renderer = {}
 Renderer.__index = Renderer
@@ -136,6 +137,7 @@ function Renderer:resetPose(state)
 	self.position = state.position; self.yaw = state.yaw
 	self.turretYaw = state.turretYaw; self.turretPitch = state.turretPitch or 0
 	self.recoil = 0; self.shotAge = nil
+	self.terrainEffectAge=0; self.lastSurface=nil
 	self.bodyPitch = state.bodyPitch or 0; self.bodyRoll = state.bodyRoll or 0
 	self.bounce = state.bounce or 0; self.bounceVelocity = 0; self.movement = 0; self.bounceClock = 0
 	self.cannon.Size = Vector3.new(6, BARREL_DIAMETER, BARREL_DIAMETER)
@@ -201,6 +203,7 @@ function Renderer:update(state, dt)
 	self.barrelBulge.Transparency = if swelling.active then 1-swelling.opacity else 1
 	self.muzzleSwell.Transparency = if swelling.active then 1-swelling.flare else 1
 	self.coughBore.Transparency = if swelling.active then 1-swelling.flare else 1
+	TerrainEffects.update(self,state,dt)
 end
 function Renderer:destroy() self.model:Destroy() end
 -- Exaggerated cosmetic burst readable from the normal battlefield camera; no Explosion/force or damage is involved.

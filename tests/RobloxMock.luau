@@ -34,6 +34,7 @@ local UDim = { new = function(scale, offset) return { Scale = scale, Offset = of
 local UDim2 = { new = function(xs, xo, ys, yo) return { X = UDim.new(xs, xo), Y = UDim.new(ys, yo) } end }
 UDim2.fromScale = function(x, y) return UDim2.new(x, 0, y, 0) end
 UDim2.fromOffset = function(x, y) return UDim2.new(0, x, 0, y) end
+local TweenInfo = { new = function(...) return {...} end }
 local Color3 = { fromRGB = function(r, g, b) return { r, g, b } end }
 local Instance = {}
 function Instance.new(class)
@@ -77,8 +78,8 @@ playerGui.children = { defaultTouchGui }
 local playerScripts = Instance.new("PlayerScripts"); playerScripts.PlayerModule = "PlayerModule"
 local player = Instance.new("Player"); player.PlayerGui = playerGui; player.PlayerScripts = playerScripts
 local Players = { LocalPlayer = player }
-local Shared = { InputCommand = "InputCommand", TankConfig = "TankConfig", TankSimulation = "TankSimulation" }
-local Client = { Analog = "Analog", TouchInput = "TouchInput", KeyboardMouseInput = "KeyboardMouseInput", GamepadInput = "GamepadInput", BarrelAnimation = "BarrelAnimation", CameraMath = "CameraMath", CameraTestPanel = "CameraTestPanel", BattlefieldCameraConfig = "BattlefieldCameraConfig" }
+local Shared = { Environment = "Environment", InputCommand = "InputCommand", TankConfig = "TankConfig", TankSimulation = "TankSimulation" }
+local Client = { TerrainEffects = "TerrainEffects", Analog = "Analog", TouchInput = "TouchInput", KeyboardMouseInput = "KeyboardMouseInput", GamepadInput = "GamepadInput", BarrelAnimation = "BarrelAnimation", CameraMath = "CameraMath", CameraTestPanel = "CameraTestPanel", BattlefieldCameraConfig = "BattlefieldCameraConfig" }
 local game = { ReplicatedStorage = { Shared = Shared } }
 function game:GetService(name) return ({ UserInputService = UIS, GuiService = GuiService, Players = Players, RunService = { IsStudio = function() return true end } })[name] end
 local task = { spawn = function(callback) callback() end, defer = function(callback) callback() end }

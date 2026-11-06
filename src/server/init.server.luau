@@ -4,7 +4,10 @@ local RunService = game:GetService("RunService")
 local Shared = ReplicatedStorage:WaitForChild("Shared")
 local Config = require(Shared.TankConfig)
 local ArenaLayout = require(Shared.ArenaLayout)
+local Environment = require(Shared.Environment)
+local EnvironmentBuilder = require(script.EnvironmentBuilder)
 local mapSize = Vector2.new(Config.ArenaLimit*2, Config.ArenaLimit*2)
+local environment = Environment.create(mapSize)
 local Command = require(Shared.InputCommand)
 local Simulation = require(Shared.TankSimulation)
 local WeaponWindup = require(Shared.WeaponWindup)
@@ -39,6 +42,8 @@ floor.Transparency = 0
 floor.CanCollide = false -- anchored, scripted tanks need no supporting physics
 floor.CanTouch = false
 floor.CanQuery = true -- downward combat rays should still hit the ground
+floor.Material = Enum.Material.Grass
+EnvironmentBuilder.build(arena,environment)
 local walls = {}
 for _, data in ipairs({ {Vector3.new(0, 3, -118), Vector3.new(240, 6, 4)}, {Vector3.new(0, 3, 118), Vector3.new(240, 6, 4)}, {Vector3.new(-118, 3, 0), Vector3.new(4, 6, 240)}, {Vector3.new(118, 3, 0), Vector3.new(4, 6, 240)} }) do
 	table.insert(walls, part("Boundary", data[2], data[1], Color3.fromRGB(57, 66, 73)))
@@ -155,6 +160,7 @@ if RunService:IsStudio() then
 	redraw.OnServerEvent:Connect(function(player, size)
 		if not tanks[player.UserId] or not ArenaLayout.validSize(size) or os.clock()-lastRedraw < 1 then return end
 		lastRedraw = os.clock(); mapSize = size
+		environment=Environment.create(size); EnvironmentBuilder.build(arena,environment)
 		floor.Size = Vector3.new(size.X+10,1,size.Y+10)
 		walls[1].Size = Vector3.new(size.X+10,6,4); walls[1].Position = Vector3.new(0,3,-size.Y/2-3)
 		walls[2].Size = walls[1].Size; walls[2].Position = Vector3.new(0,3,size.Y/2+3)
@@ -190,7 +196,7 @@ RunService.Heartbeat:Connect(function(dt)
 			end
 			local command = if now - tank.lastInput <= Config.InputTimeout then tank.command else Command.neutral()
 			local previous = tank.state.position
-			Simulation.step(tank.state, command, Config.Step, mapSize)
+			Simulation.step(tank.state, command, Config.Step, mapSize, environment)
 			for p, target in targets do
 				local delta = tank.state.position - p.Position
 				if target.health > 0 and math.abs(delta.X) < p.Size.X / 2 + Config.Radius

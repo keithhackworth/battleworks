@@ -1,5 +1,6 @@
 -- Pure state math: no Instances, input devices, rendering, or physics ownership.
 local Config = require(script.Parent.TankConfig)
+local Environment = require(script.Parent.Environment)
 local Simulation = {}
 function Simulation.new(position)
 	return { position = position, yaw = 0, turretYaw = 0, turretPitch = 0, speed = 0, health = Config.Health, cooldown = 0, bounce = 0, bounceVelocity = 0, movement = 0, bounceClock = 0, bodyPitch = 0, bodyRoll = 0 }
@@ -34,16 +35,27 @@ local function suspension(state, dt)
 	state.bodyPitch = math.sin(state.bounceClock or 0)*0.05*(state.movement or 0)
 	state.bodyRoll = math.cos((state.bounceClock or 0)*0.8)*0.035*(state.movement or 0)
 end
-function Simulation.step(state, command, dt, mapSize)
+function Simulation.step(state, command, dt, mapSize, environment)
 	state.cooldown = math.max(0, state.cooldown - dt)
 	if state.health <= 0 then state.speed = 0; suspension(state,dt); return end
 	state.yaw += command.steer * Config.TurnSpeed * dt
-	state.speed = command.throttle * Config.Speed
+	local speedScale = if environment then select(3,Environment.sample(environment,state.position.X,state.position.Z)) else 1
+	state.speed = command.throttle * Config.Speed * speedScale
 	suspension(state,dt)
 	local nextPosition = state.position + Simulation.forward(state.yaw) * state.speed * dt
 	local edgeX = (if mapSize then mapSize.X/2 else Config.ArenaLimit) - Config.Radius
 	local edgeZ = (if mapSize then mapSize.Y/2 else Config.ArenaLimit) - Config.Radius
-	state.position = Vector3.new(math.clamp(nextPosition.X, -edgeX, edgeX), 0, math.clamp(nextPosition.Z, -edgeZ, edgeZ))
+	local x,z = math.clamp(nextPosition.X,-edgeX,edgeX),math.clamp(nextPosition.Z,-edgeZ,edgeZ)
+	if environment and Environment.blocked(environment,x,z,Config.Radius) then x=state.position.X; z=state.position.Z; state.speed=0 end
+	local height,pitch,roll,kind = 0,0,0,"Grass"
+	if environment then height,pitch,roll,kind = Environment.pose(environment,Vector3.new(x,0,z),state.yaw) end
+	local blend=1-math.exp(-12*dt)
+	state.groundHeight=(state.groundHeight or 0)+(height-(state.groundHeight or 0))*blend
+	state.groundPitch=(state.groundPitch or 0)+(pitch-(state.groundPitch or 0))*blend
+	state.groundRoll=(state.groundRoll or 0)+(roll-(state.groundRoll or 0))*blend
+	state.bodyPitch += state.groundPitch; state.bodyRoll += state.groundRoll
+	state.surface=kind
+	state.position = Vector3.new(x,state.groundHeight,z)
 	if command.aimMode == "Rate" then
 		-- Positive X aims right; positive Y elevates the cannon.
 		state.turretYaw -= command.turretX * Config.TurretSpeed * dt

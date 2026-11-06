@@ -36,6 +36,7 @@ try {
   bundle += '\ndo\n' + await readFile('tests/Combat.spec.luau', 'utf8') + '\nend\n';
   bundle += '\ndo\n' + await readFile('tests/Projectiles.spec.luau', 'utf8') + '\nend\n';
   bundle += '\ndo\n' + await readFile('tests/BarrelAnimation.spec.luau', 'utf8') + '\nend\n';
+  bundle += '\ndo\n' + await readFile('tests/Environment.spec.luau', 'utf8') + '\nend\n';
   await state.loadstring(bundle, 'input-tests', true)();
 } finally {
   state.destroy();

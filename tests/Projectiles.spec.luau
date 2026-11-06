@@ -152,3 +152,16 @@ do
  assert(math.abs(driving.bounce)<1e-5 and math.abs(driving.bodyPitch)<1e-5 and math.abs(driving.bodyRoll)<1e-5, "stopped suspension settles back to stable aim")
  print("Suspension firing suite passed: origin, pitch/roll/yaw, release-time pose, straight flight and settling")
 end
+
+-- New rounded cover must not hit shells in empty bounding-box corners.
+do
+ local p={Shape=Enum.PartType.Ball,Size=Vector3.new(4,2,4),CFrame={PointToObjectSpace=function(_,q) return q end}}
+ assert(not Projectiles.overlaps(p,Vector3.new(1.9,0.9,1.9),0.1), "ellipsoid bounding corners are empty")
+ assert(Projectiles.overlaps(p,Vector3.new(0,1.05,0),0.1), "shell radius touches curved rock")
+ assert(Projectiles.overlaps(p,Vector3.zero,0.1), "rock contains shell center")
+ p.Shape=Enum.PartType.Cylinder; p.Size=Vector3.new(10,2,2)
+ assert(not Projectiles.overlaps(p,Vector3.new(0,0.95,0.95),0.1), "cylinder bounding corners are empty")
+ assert(Projectiles.overlaps(p,Vector3.new(5.1,1.1,0),0.2), "shell touches cylindrical log end rim")
+ assert(not Projectiles.overlaps(p,Vector3.new(5.15,1.15,0),0.2), "shell misses outside log end rim")
+ print("Curved cover overlap suite passed")
+end
