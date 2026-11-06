@@ -1,30 +1,144 @@
 -- All animation is cosmetic. Anchored parts never participate in combat or physics.
 local Debris = game:GetService("Debris")
+local BarrelAnimation = require(script.Parent.BarrelAnimation)
 local Renderer = {}
 Renderer.__index = Renderer
+local BARREL_DIAMETER = 1.6
+local MUZZLE_DIAMETER = 1.8
 local function part(parent, name, size, color)
 	local p = Instance.new("Part")
 	p.Name = name; p.Size = size; p.Color = color; p.Anchored = true
 	p.CanCollide = false; p.CanTouch = false; p.CanQuery = false
-	p.Material = Enum.Material.Metal; p.Parent = parent
+	p.Material = Enum.Material.SmoothPlastic
+	p.TopSurface = Enum.SurfaceType.Smooth; p.BottomSurface = Enum.SurfaceType.Smooth
+	p.Parent = parent
 	return p
 end
 function Renderer.new(id)
-	local self = setmetatable({ recoil = 0, phase = 0 }, Renderer)
+	local self = setmetatable({ recoil = 0, phase = 0, bounce = 0, bounceVelocity = 0, movement = 0, bounceClock = 0 }, Renderer)
 	self.model = Instance.new("Model"); self.model.Name = "Tank_" .. id; self.model.Parent = workspace
-	self.chassis = part(self.model, "Chassis", Vector3.new(6, 2, 8), Color3.fromRGB(93, 122, 76))
-	self.left = part(self.model, "LeftTrack", Vector3.new(1.7, 2.4, 9), Color3.fromRGB(36, 40, 43))
-	self.right = part(self.model, "RightTrack", self.left.Size, self.left.Color)
-	self.turret = part(self.model, "Turret", Vector3.new(4.5, 1.7, 4.5), Color3.fromRGB(115, 145, 87))
-	self.cannon = part(self.model, "Cannon", Vector3.new(0.65, 0.65, 6), Color3.fromRGB(65, 78, 57))
+	local orange = Color3.fromRGB(245, 116, 16)
+	local deck = Color3.fromRGB(255, 147, 26)
+	local yellow = Color3.fromRGB(255, 211, 27)
+	local rubber = Color3.fromRGB(43, 49, 60)
+	local steel = Color3.fromRGB(122, 132, 150)
+	self.details = {}
+	local function detail(name, size, color, anchor, offset, shape)
+		local p = part(self.model, name, size, color)
+		if shape then p.Shape = shape end
+		table.insert(self.details, { part = p, anchor = anchor, offset = offset })
+		return p
+	end
+	-- A solid rounded box: flat faces, twelve round edges and eight corner caps.
+	-- All pieces share one anchor, so they move as a single cosmetic surface.
+	local function rounded(name, size, radius, color, anchor, offset)
+		local core = size - Vector3.one * (2 * radius)
+		local face = detail(name, Vector3.new(core.X, core.Y, size.Z), color, anchor, offset)
+		detail(name .. "FaceY", Vector3.new(size.X, core.Y, core.Z), color, anchor, offset)
+		detail(name .. "FaceZ", Vector3.new(core.X, size.Y, core.Z), color, anchor, offset)
+		for _, u in {-1, 1} do for _, v in {-1, 1} do
+			detail(name .. "EdgeX", Vector3.new(core.X, radius*2, radius*2), color, anchor,
+				offset * CFrame.new(0, u*core.Y/2, v*core.Z/2), Enum.PartType.Cylinder)
+			detail(name .. "EdgeY", Vector3.new(core.Y, radius*2, radius*2), color, anchor,
+				offset * CFrame.new(u*core.X/2, 0, v*core.Z/2) * CFrame.Angles(0, 0, math.pi/2), Enum.PartType.Cylinder)
+			detail(name .. "EdgeZ", Vector3.new(core.Z, radius*2, radius*2), color, anchor,
+				offset * CFrame.new(u*core.X/2, v*core.Y/2, 0) * CFrame.Angles(0, math.pi/2, 0), Enum.PartType.Cylinder)
+			for _, w in {-1, 1} do
+				detail(name .. "Corner", Vector3.one * radius*2, color, anchor,
+					offset * CFrame.new(u*core.X/2, v*core.Y/2, w*core.Z/2), Enum.PartType.Ball)
+			end
+		end end
+		return face
+	end
+	self.chassis = rounded("Chassis", Vector3.new(6.6, 1.5, 7.6), 0.65, orange, "body", CFrame.new())
+	rounded("Deck", Vector3.new(9, 0.6, 7.6), 0.28, deck, "body", CFrame.new(0, 0.75, 0.1))
+	rounded("FrontArmor", Vector3.new(6, 0.6, 2.3), 0.28, orange, "body",
+		CFrame.new(0, 0.55, -4) * CFrame.Angles(math.rad(-32), 0, 0))
+	local front = CFrame.new(0, 0.55, -4) * CFrame.Angles(math.rad(-32), 0, 0)
+	detail("FrontPanel", Vector3.new(2.5, 0.12, 1.1), rubber, "body", front * CFrame.new(0, 0.48, 0))
+	for _, x in {-2.1, 2.1} do for _, z in {-0.65, 0.65} do
+		detail("ArmorBolt", Vector3.new(0.34, 0.2, 0.34), steel, "body", front * CFrame.new(x, 0.4, z), Enum.PartType.Ball)
+	end end
+	-- Reference front plate: raised yellow border around its dark rectangular inset.
+	detail("FrontPanelBorder", Vector3.new(3.3, 0.16, 1.8), yellow, "body", front * CFrame.new(0, 0.36, 0))
+	-- Rear engine grille and fender seams fill the visible deck without cluttering the silhouette.
+	detail("EngineGrille", Vector3.new(3.3, 0.1, 0.95), rubber, "body", CFrame.new(0, 0.91, 3.15))
+	for i = 1, 8 do
+		detail("EngineVent", Vector3.new(0.12, 0.08, 0.78), steel, "body", CFrame.new((i-4.5)*0.37, 1, 3.15))
+	end
+	for _, side in {-1, 1} do
+		detail("FenderSeam", Vector3.new(0.08, 0.04, 5.8), Color3.fromRGB(213, 87, 9), "body", CFrame.new(side*2.95, 1.06, 0.25))
+		for _, z in {-2.7, 2.8} do
+			detail("DeckFastener", Vector3.new(0.22, 0.12, 0.22), steel, "body", CFrame.new(side*2.7, 1.08, z), Enum.PartType.Ball)
+		end
+		detail("RearLamp", Vector3.new(0.6, 0.3, 0.12), Color3.fromRGB(224, 57, 27), "body", CFrame.new(side*2.35, 0.2, 3.94))
+		detail("TowMount", Vector3.new(0.45, 0.4, 0.25), steel, "body", front * CFrame.new(side*1.8, 0.3, 0.9))
+	end
+	-- Short, wide molded-plastic turret; preserve the pivot and lower seating plane.
+	self.turret = rounded("Turret", Vector3.new(6.5, 2.25, 5), 0.85, orange, "turret", CFrame.new(0, 0.375, 0.25))
+	detail("TurretRing", Vector3.new(0.35, 4.1, 4.1), rubber, "turret", CFrame.new(0, -0.75, 0.25) * CFrame.Angles(0, 0, math.pi/2), Enum.PartType.Cylinder)
+	detail("HatchBase", Vector3.new(0.22, 2, 2), Color3.fromRGB(229, 145, 9), "turret", CFrame.new(0.2, 1.57, 0.6) * CFrame.Angles(0, 0, math.pi/2), Enum.PartType.Cylinder)
+	detail("CommanderHatch", Vector3.new(0.35, 1.7, 1.7), yellow, "turret", CFrame.new(0.2, 1.8, 0.6) * CFrame.Angles(0, 0, math.pi/2), Enum.PartType.Cylinder)
+	self.cannon = detail("Cannon", Vector3.new(6, BARREL_DIAMETER, BARREL_DIAMETER), steel, "barrel", CFrame.new(0, 0, -4) * CFrame.Angles(0, math.pi/2, 0), Enum.PartType.Cylinder)
+	detail("Mantlet", Vector3.new(1, 2.1, 2.1), yellow, "barrel", CFrame.new(0, 0, -2) * CFrame.Angles(0, math.pi/2, 0), Enum.PartType.Cylinder)
+	detail("BarrelCollar", Vector3.new(0.75, 1.95, 1.95), steel, "barrel", CFrame.new(0, 0, -2.65) * CFrame.Angles(0, math.pi/2, 0), Enum.PartType.Cylinder)
+	for _, z in {-3.05, -6.85} do
+		detail("BarrelBand", Vector3.new(0.16, MUZZLE_DIAMETER, MUZZLE_DIAMETER), rubber, "barrel", CFrame.new(0, 0, z) * CFrame.Angles(0, math.pi/2, 0), Enum.PartType.Cylinder)
+	end
+	detail("MuzzleBore", Vector3.new(0.025, 1.3, 1.3), Color3.fromRGB(16, 20, 24), "barrel", CFrame.new(0, 0, -7.015) * CFrame.Angles(0, math.pi/2, 0), Enum.PartType.Cylinder)
+	-- Reusable parts swell along the barrel, then open the muzzle in a cartoon cough.
+	self.barrelBulge = part(self.model, "BarrelBulge", Vector3.new(BARREL_DIAMETER, BARREL_DIAMETER, 2), steel)
+	self.barrelBulge.Shape = Enum.PartType.Ball; self.barrelBulge.Transparency = 1
+	self.muzzleSwell = part(self.model, "MuzzleSwell", Vector3.new(0.22, MUZZLE_DIAMETER, MUZZLE_DIAMETER), steel)
+	self.muzzleSwell.Shape = Enum.PartType.Cylinder; self.muzzleSwell.Transparency = 1
+	self.coughBore = part(self.model, "CoughBore", Vector3.new(0.03, 1.3, 1.3), rubber)
+	self.coughBore.Shape = Enum.PartType.Cylinder; self.coughBore.Transparency = 1
+	self.left = part(self.model, "LeftTrack", Vector3.new(1.7, 2.4, 9), rubber)
+	self.right = part(self.model, "RightTrack", self.left.Size, rubber)
+	-- Hide the square track cores behind the rounded, circulating belt geometry.
+	self.left.Size = Vector3.new(1.7, 2.2, 6.6); self.right.Size = self.left.Size
+	for _, side in {-1, 1} do
+		for _, z in {-3.3, 3.3} do
+			detail("TrackEnd", Vector3.new(1.7, 2.4, 2.4), rubber, "base", CFrame.new(side*3.8, 1.4, z), Enum.PartType.Cylinder)
+		end
+		for i = 1, 4 do
+			local z = (i - 2.5)*2.08
+			detail("RoadWheel", Vector3.new(0.18, 1.85, 1.85), steel, "base", CFrame.new(side*4.68, 1.4, z), Enum.PartType.Cylinder)
+			detail("WheelHub", Vector3.new(0.22, 1.05, 1.05), rubber, "base", CFrame.new(side*4.72, 1.4, z), Enum.PartType.Cylinder)
+			detail("Axle", Vector3.new(0.25, 0.4, 0.4), steel, "base", CFrame.new(side*4.75, 1.4, z), Enum.PartType.Cylinder)
+		end
+		for i = 1, 6 do
+			detail("DeckRib", Vector3.new(1.3, 0.22, 0.4), yellow, "body", CFrame.new(side*3.6, 1.16, (i-3.5)*1.05))
+		end
+		detail("FrontLight", Vector3.new(1.3, 0.16, 0.4), yellow, "body", CFrame.new(side*3.5, 1.08, -3.1))
+		detail("CheekMount", Vector3.new(0.3, 1.2, 1.2), yellow, "turret", CFrame.new(side*3.17, -0.05, -1.25), Enum.PartType.Cylinder)
+		detail("CheekInset", Vector3.new(0.34, 0.9, 0.9), rubber, "turret", CFrame.new(side*3.3, -0.05, -1.25), Enum.PartType.Cylinder)
+		detail("CheekButton", Vector3.new(0.36, 0.48, 0.48), yellow, "turret", CFrame.new(side*3.35, -0.05, -1.25), Enum.PartType.Cylinder)
+		for i = 1, 3 do
+			detail("TurretStripe", Vector3.new(0.035, 0.65, 0.28), yellow, "turret", CFrame.new(side*3.265, 0.375, (i-2)*0.48+0.35) * CFrame.Angles(math.rad(-15), 0, 0))
+		end
+	end
 	self.treads = {}
 	for side = -1, 1, 2 do
-		for index = 1, 7 do
-			local p = part(self.model, "TrackShoe", Vector3.new(1.85, 0.15, 0.65), Color3.fromRGB(72, 77, 80))
+		for index = 1, 28 do
+			local p = part(self.model, "TrackShoe", Vector3.new(1.85, 0.18, 0.62), Color3.fromRGB(72, 82, 100))
 			table.insert(self.treads, { part = p, side = side, index = index })
 		end
 	end
 	return self
+end
+function Renderer:fire()
+	self.recoil = 1
+	self.shotAge = 0
+	self.bounceVelocity -= 0.6
+end
+function Renderer:resetPose(state)
+	self.position = state.position; self.yaw = state.yaw
+	self.turretYaw = state.turretYaw; self.turretPitch = state.turretPitch or 0
+	self.recoil = 0; self.shotAge = nil
+	self.bounce = 0; self.bounceVelocity = 0; self.movement = 0; self.bounceClock = 0
+	self.cannon.Size = Vector3.new(6, BARREL_DIAMETER, BARREL_DIAMETER)
+	self.barrelBulge.Transparency = 1; self.muzzleSwell.Transparency = 1; self.coughBore.Transparency = 1
 end
 function Renderer:update(state, dt)
 	local alpha = 1 - math.exp(-18 * dt)
@@ -38,32 +152,69 @@ function Renderer:update(state, dt)
 	self.turretPitch = smoothAngle(self.turretPitch, state.turretPitch or 0)
 	self.phase += dt * math.abs(state.speed) * 0.7
 	self.recoil *= math.exp(-12 * dt)
-	local wobble = math.sin(self.phase * 2) * math.min(math.abs(state.speed) / 24, 1) * 0.025
+	if self.shotAge then self.shotAge += math.max(dt, 0) end
+	local swelling = BarrelAnimation.sample(self.shotAge)
+	if not swelling.active or state.health <= 0 then self.shotAge = nil; swelling = BarrelAnimation.sample(nil) end
+	self.cannon.Size = Vector3.new(6, BARREL_DIAMETER*swelling.barrelScale, BARREL_DIAMETER*swelling.barrelScale)
+	-- A damped cosmetic spring lets the wide deck bob above the grounded tracks.
+	-- Small substeps keep a long render frame from destabilizing the suspension.
+	local remaining = math.clamp(dt, 0, 0.1)
+	while remaining > 0 do
+		local step = math.min(remaining, 1/120)
+		local moving = if state.health > 0 then math.min(math.abs(state.speed)/24, 1) else 0
+		self.movement += (moving-self.movement)*(1-math.exp(-8*step))
+		self.bounceClock += step*8
+		local target = math.sin(self.bounceClock)*0.38*self.movement
+		self.bounceVelocity += ((target-self.bounce)*150 - self.bounceVelocity*12)*step
+		self.bounce += self.bounceVelocity*step
+		remaining -= step
+	end
+	local wobble = math.sin(self.bounceClock) * math.min(math.abs(state.speed) / 24, 1) * 0.025
 	local base = CFrame.new(self.position) * CFrame.Angles(0, self.yaw, 0)
-	local body = base * CFrame.new(0, 2.1, 0) * CFrame.Angles(wobble + self.recoil * 0.04, 0, wobble * 0.5)
-	self.chassis.CFrame = body
+	local body = base * CFrame.new(0, 2.1+self.bounce, 0) * CFrame.Angles(wobble + self.recoil * 0.04, 0, wobble * 0.5)
 	self.left.CFrame = base * CFrame.new(-3.8, 1.4, 0)
 	self.right.CFrame = base * CFrame.new(3.8, 1.4, 0)
-	local turret = CFrame.new(self.position + Vector3.new(0, 3.6, 0)) * CFrame.Angles(0, self.turretYaw, 0)
-	self.turret.CFrame = turret
-	self.cannon.CFrame = turret * CFrame.Angles(self.turretPitch, 0, 0) * CFrame.new(0, 0, -4 + self.recoil * 0.8)
+	local turret = CFrame.new(self.position + Vector3.new(0, 3.6+self.bounce, 0)) * CFrame.Angles(0, self.turretYaw, 0)
+	local barrel = turret * CFrame.Angles(self.turretPitch, 0, 0) * CFrame.new(0, 0, self.recoil * 0.8)
+	local anchors = { body = body, base = base, turret = turret, barrel = barrel }
+	for _, item in self.details do item.part.CFrame = anchors[item.anchor] * item.offset end
+	self.barrelBulge.Size = Vector3.new(swelling.bulge, swelling.bulge, 2.6)
+	self.barrelBulge.CFrame = barrel * CFrame.new(0, 0, swelling.z)
+	local mouth = MUZZLE_DIAMETER + swelling.flare*1.8
+	self.muzzleSwell.Size = Vector3.new(0.3, mouth, mouth)
+	self.muzzleSwell.CFrame = barrel * CFrame.new(0, 0, -6.95) * CFrame.Angles(0, math.pi/2, 0)
+	self.coughBore.Size = Vector3.new(0.035, mouth*0.72, mouth*0.72)
+	self.coughBore.CFrame = barrel * CFrame.new(0, 0, -7.12) * CFrame.Angles(0, math.pi/2, 0)
+	local radius, straight = 1.2, 6.6
+	local arc = math.pi * radius
+	local perimeter = 2 * straight + 2 * arc
 	for _, tread in self.treads do
-		local z = ((tread.index * 1.2 + self.phase * math.sign(state.speed)) % 8.4) - 4.2
-		tread.part.CFrame = base * CFrame.new(tread.side * 3.8, 2.65, z)
+		local t = ((tread.index-1)*perimeter/28 + self.phase*math.sign(state.speed)) % perimeter
+		local y, z, angle
+		if t < straight then
+			y, z, angle = radius, -straight/2+t, 0
+		elseif t < straight+arc then
+			local a = (t-straight)/radius
+			y, z, angle = radius*math.cos(a), straight/2+radius*math.sin(a), a
+		elseif t < 2*straight+arc then
+			y, z, angle = -radius, straight/2-(t-straight-arc), math.pi
+		else
+			local a = (t-2*straight-arc)/radius
+			y, z, angle = -radius*math.cos(a), -straight/2-radius*math.sin(a), math.pi+a
+		end
+		tread.part.CFrame = base * CFrame.new(tread.side*3.8, 1.4+y, z) * CFrame.Angles(angle, 0, 0)
 	end
 	for _, p in self.model:GetChildren() do
 		p.Transparency = if state.health <= 0 then 0.7 else 0
 	end
+	self.barrelBulge.Transparency = if swelling.active then 1-swelling.opacity else 1
+	self.muzzleSwell.Transparency = if swelling.active then 1-swelling.flare else 1
+	self.coughBore.Transparency = if swelling.active then 1-swelling.flare else 1
 end
 function Renderer:destroy() self.model:Destroy() end
-function Renderer.shot(origin, endpoint)
-	local delta = endpoint - origin
-	if delta.Magnitude < 0.01 then return end
-	local tracer = part(workspace, "Tracer", Vector3.new(0.15, 0.15, delta.Magnitude), Color3.fromRGB(255, 218, 99))
-	tracer.Material = Enum.Material.Neon
-	tracer.CFrame = CFrame.lookAt((origin + endpoint) / 2, endpoint)
-	Debris:AddItem(tracer, 0.07)
-	local flash = part(workspace, "MuzzleFlash", Vector3.new(1.4, 1.4, 1.4), tracer.Color)
+-- Shell flight is rendered by the server; this event only flashes the muzzle.
+function Renderer.shot(origin)
+	local flash = part(workspace, "MuzzleFlash", Vector3.new(1.4, 1.4, 1.4), Color3.fromRGB(255, 218, 99))
 	flash.Shape = Enum.PartType.Ball; flash.Material = Enum.Material.Neon; flash.Position = origin
 	Debris:AddItem(flash, 0.06)
 end

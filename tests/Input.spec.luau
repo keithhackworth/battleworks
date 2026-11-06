@@ -150,3 +150,23 @@ local relay = Command.neutral(); relay.throttle = 0.82; relay.steer = -0.14; rel
 touch:showDebug(relay, "Touch")
 check(touch.debug.Text == "INPUT: Touch\nTHROTTLE:  +0.82\nSTEERING:  -0.14\nTURRET X:  +0.35\nTURRET Y:  -0.20\nFIRE:      TRUE", "relay display matches requested format")
 print(string.format("Full input suite passed: %d assertions", count))
+
+-- Rectangular development arenas use real movement bounds, not the old square.
+do
+ local Layout = require("ArenaLayout")
+ local Sim = require("TankSimulation")
+ assert(Layout.validSize(Vector2.new(25,2000)), "redraw accepts slider endpoints")
+ for _, bad in {Vector2.new(0,100),Vector2.new(24,100),Vector2.new(2001,100),Vector2.new(25.5,100),Vector2.new(0/0,100),"25"} do
+  assert(not Layout.validSize(bad), "reject malformed arena dimensions")
+ end
+ for _, size in {Vector2.new(25,25),Vector2.new(40,300),Vector2.new(2000,25)} do
+  for i=1,16 do
+   local p=Layout.spawn(size,i)
+   assert(math.abs(p.X)<=size.X/2-5 and math.abs(p.Z)<=size.Y/2-5, "redraw spawns remain in resized movement bounds")
+  end
+  local state=Sim.new(Vector3.new(10000,0,10000))
+  Sim.step(state,{throttle=0,steer=0,aimMode="Rate",turretX=0,turretY=0},1/60,size)
+  assert(state.position.X<=size.X/2-5 and state.position.Z<=size.Y/2-5, "simulation clamps to rectangular map")
+ end
+ print("Arena layout suite passed: size validation, spawn bounds and rectangular movement")
+end

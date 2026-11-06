@@ -31,7 +31,11 @@ try {
     bundle += `\nloaders[${JSON.stringify(name)}] = function()\nlocal script = { Parent = ${parent} }\n${source}\nend\n`;
   }
   bundle += '\nrequire = function(name)\nif name == "PlayerModule" then return { GetControls = function() return defaultControls end } end\nif cache[name] == nil then cache[name] = assert(loaders[name], "Unknown module " .. tostring(name))() end\nreturn cache[name]\nend\n';
-  bundle += await readFile('tests/Input.spec.luau', 'utf8');
+  bundle += '\ndo\n' + await readFile('tests/Input.spec.luau', 'utf8') + '\nend\n';
+  bundle += '\ndo\n' + await readFile('tests/Camera.spec.luau', 'utf8') + '\nend\n';
+  bundle += '\ndo\n' + await readFile('tests/Combat.spec.luau', 'utf8') + '\nend\n';
+  bundle += '\ndo\n' + await readFile('tests/Projectiles.spec.luau', 'utf8') + '\nend\n';
+  bundle += '\ndo\n' + await readFile('tests/BarrelAnimation.spec.luau', 'utf8') + '\nend\n';
   await state.loadstring(bundle, 'input-tests', true)();
 } finally {
   state.destroy();

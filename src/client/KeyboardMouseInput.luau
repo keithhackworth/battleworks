@@ -1,4 +1,5 @@
 local UserInputService = game:GetService("UserInputService")
+local GuiService = game:GetService("GuiService")
 local Command = require(game.ReplicatedStorage.Shared.InputCommand)
 local Provider = {}
 Provider.__index = Provider
@@ -27,7 +28,9 @@ function Provider:sample(camera)
 	command.throttle = down(Enum.KeyCode.W) - down(Enum.KeyCode.S)
 	command.steer = down(Enum.KeyCode.A) - down(Enum.KeyCode.D)
 	command.fire = self.held[Enum.UserInputType.MouseButton1] == true
-	local mouse = UserInputService:GetMouseLocation()
+	-- Raw mouse location is fullscreen-relative; ScreenPointToRay expects core
+	-- safe coordinates. Convert so the ray stays under the cursor with UI insets.
+	local mouse = UserInputService:GetMouseLocation() + GuiService:GetInsetArea(Enum.ScreenInsets.None).Min
 	local ray = camera:ScreenPointToRay(mouse.X, mouse.Y)
 	if math.abs(ray.Direction.Y) > 0.001 then
 		local distance = (3.6 - ray.Origin.Y) / ray.Direction.Y

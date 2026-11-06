@@ -39,6 +39,8 @@ local Instance = {}
 function Instance.new(class)
 	local object = { ClassName = class, AbsoluteSize = Vector2.new(640, 320), AbsolutePosition = Vector2.zero,
 		InputBegan = signal(), Activated = signal(), ChildAdded = signal(), children = {}, properties = {}, Enabled = true }
+	function object:GetAttribute(key) return (self.attributes or {})[key] end
+	function object:SetAttribute(key, value) self.attributes = self.attributes or {}; self.attributes[key] = value end
 	function object:GetPropertyChangedSignal(key)
 		if not self.properties[key] then self.properties[key] = signal() end
 		return self.properties[key]
@@ -46,6 +48,7 @@ function Instance.new(class)
 	function object:IsA(name) return self.ClassName == name end
 	function object:GetChildren() return self.children end
 	function object:WaitForChild(name) return self[name] end
+	function object:Destroy() self.Parent = nil; self.destroyed = true end
 	return object
 end
 local UIS = { PreferredInput = "KeyboardAndMouse", TouchEnabled = true, focusedTextBox = nil }
@@ -54,6 +57,17 @@ UIS.preferredSignal = signal()
 function UIS:GetPropertyChangedSignal() return self.preferredSignal end
 function UIS:GetFocusedTextBox() return self.focusedTextBox end
 local GuiService = { MenuOpened = signal(), MenuClosed = signal() }
+GuiService.fullRect = { Min = Vector2.zero, Max = Vector2.new(1920, 1080) }
+GuiService.safeRect = GuiService.fullRect
+function GuiService:GetInsetArea(kind)
+	return if kind == "None" then self.fullRect else self.safeRect
+end
+local OverlapParams = { new = function() return {} end }
+local RaycastParams = { new = function() return {} end }
+local CFrame = {
+	new = function(position) return { Position = position } end,
+	lookAt = function(position, target) return { Position = position, LookVector = (target - position).Unit } end,
+}
 local defaultControls = { controlsEnabled = true, disableCount = 0, enableCount = 0 }
 function defaultControls:Disable() self.controlsEnabled = false; self.disableCount += 1 end
 function defaultControls:Enable() self.controlsEnabled = true; self.enableCount += 1 end
@@ -64,8 +78,8 @@ local playerScripts = Instance.new("PlayerScripts"); playerScripts.PlayerModule 
 local player = Instance.new("Player"); player.PlayerGui = playerGui; player.PlayerScripts = playerScripts
 local Players = { LocalPlayer = player }
 local Shared = { InputCommand = "InputCommand", TankConfig = "TankConfig", TankSimulation = "TankSimulation" }
-local Client = { Analog = "Analog", TouchInput = "TouchInput", KeyboardMouseInput = "KeyboardMouseInput", GamepadInput = "GamepadInput" }
+local Client = { Analog = "Analog", TouchInput = "TouchInput", KeyboardMouseInput = "KeyboardMouseInput", GamepadInput = "GamepadInput", BarrelAnimation = "BarrelAnimation", CameraMath = "CameraMath", CameraTestPanel = "CameraTestPanel", BattlefieldCameraConfig = "BattlefieldCameraConfig" }
 local game = { ReplicatedStorage = { Shared = Shared } }
-function game:GetService(name) return ({ UserInputService = UIS, GuiService = GuiService, Players = Players })[name] end
+function game:GetService(name) return ({ UserInputService = UIS, GuiService = GuiService, Players = Players, RunService = { IsStudio = function() return true end } })[name] end
 local task = { spawn = function(callback) callback() end, defer = function(callback) callback() end }
 local function warn(...) print(...) end

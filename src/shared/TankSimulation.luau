@@ -8,14 +8,15 @@ function Simulation.forward(yaw, pitch)
 	pitch = pitch or 0
 	return Vector3.new(-math.sin(yaw) * math.cos(pitch), math.sin(pitch), -math.cos(yaw) * math.cos(pitch))
 end
-function Simulation.step(state, command, dt)
+function Simulation.step(state, command, dt, mapSize)
 	state.cooldown = math.max(0, state.cooldown - dt)
 	if state.health <= 0 then state.speed = 0; return end
 	state.yaw += command.steer * Config.TurnSpeed * dt
 	state.speed = command.throttle * Config.Speed
 	local nextPosition = state.position + Simulation.forward(state.yaw) * state.speed * dt
-	local edge = Config.ArenaLimit - Config.Radius
-	state.position = Vector3.new(math.clamp(nextPosition.X, -edge, edge), 0, math.clamp(nextPosition.Z, -edge, edge))
+	local edgeX = (if mapSize then mapSize.X/2 else Config.ArenaLimit) - Config.Radius
+	local edgeZ = (if mapSize then mapSize.Y/2 else Config.ArenaLimit) - Config.Radius
+	state.position = Vector3.new(math.clamp(nextPosition.X, -edgeX, edgeX), 0, math.clamp(nextPosition.Z, -edgeZ, edgeZ))
 	if command.aimMode == "Rate" then
 		-- Positive X aims right; positive Y elevates the cannon.
 		state.turretYaw -= command.turretX * Config.TurretSpeed * dt
