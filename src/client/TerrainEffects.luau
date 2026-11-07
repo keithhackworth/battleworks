@@ -21,6 +21,7 @@ local function ripple(center)
 	end
 end
 function Effects.update(renderer,state,dt)
+	if (state.lift or 0)>0.3 then return end
 	local wet=state.surface=="Water"
 	local muddy=state.surface=="Mud"
 	local moving=state.health>0 and math.abs(state.speed)>1

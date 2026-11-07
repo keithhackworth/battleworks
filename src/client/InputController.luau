@@ -86,8 +86,12 @@ function Controller:release()
 	for _, provider in self.providers do provider:reset() end
 	self.onRelease(Command.neutral())
 end
+function Controller:setExternalControl(enabled)
+	self.externalControl=enabled==true
+	self:refreshSuspension()
+end
 function Controller:refreshSuspension()
-	local suspended = not self.focused or self.menuOpen or UIS:GetFocusedTextBox() ~= nil
+	local suspended = self.externalControl or not self.focused or self.menuOpen or UIS:GetFocusedTextBox() ~= nil
 	if suspended ~= self.suspended then
 		self.suspended = suspended
 		self:release()

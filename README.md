@@ -1,8 +1,21 @@
-# Battleworks tank prototype
+# BattleWorks: Boomer and Rattler
 
-One controllable tank per player in a flat practice arena. Built from Roblox parts: chassis, two animated tracks, independently rotating turret, and cannon. No external assets or packages required. BW language and interpreter are intentionally deferred.
+One controllable vehicle per player in the terrain practice arena. Choose **Boomer**, the orange tracked cannon tank, or **Rattler**, the green four-wheeled Gatling car inspired by the bottom-left concept in `references/tank-styles.png`. Built from Roblox Parts with shared server-authoritative combat; no external packages are required. BW v0.1 adds a compact in-game editor and bounded server-side programs for the existing tanks.
 
 For detailed implementation notes, known limitations, and future-session context, read [the Codex handoff](CODEX_HANDOFF.md).
+
+
+## Program a tank with BW v0.1
+
+Open **BW Editor** below the tank selector/debug readout. The editor contains the default demonstration program. Choose Boomer or Rattler, press **Run**, and watch the current line/output. **Stop** releases BW control; press movement/fire controls again to resume manually. Editing text also suppresses driving keys through the normal input-focus handling.
+
+BW supports `forward(studs)`, `back(studs)`, `turn_left(degrees)`, `turn_right(degrees)`, `turret_left(degrees)`, `turret_right(degrees)`, directional `to=heading` turns, `fire()` and `fire(seconds)`. Use one command per line; blank lines and `#` comments are allowed. Compass headings are world-relative: North 0°, East 90°, South 180°, West 270°. Left/right absolute turns honor the requested route, including a longer rotation. Rattler drives through chassis turns; Boomer pivots.
+
+The server parses and runs the program through existing controls. Distances use actual net horizontal displacement projected along the command's starting direction; sideways drift and vertical hopping do not count. Turn progress accumulates across revolutions. `fire()` waits for one accepted/released shot; `fire(seconds)` holds the real trigger and respects reload/heat. Inputs release between instructions. Already-prepared shots finish before a fire instruction advances; Stop cancels preparation that has not released yet. Already-launched projectiles continue normally.
+
+Limits: 16 KiB source, 400 lines, 128 instructions, 1,000 studs per move, 1,440° per relative turn, absolute arguments within ±36,000° (normalized), and 10 seconds per timed fire. A program is bounded to 180 simulated seconds, each instruction to at most 90 seconds (weapon waits at most 15), and no-progress movement/rotation fails after 3 seconds. Stuck/timeouts produce source-line errors. Selection, death, respawn, redraw and disconnect stop execution. BW changes inputs, never teleports or cancels physics: Rattler can still coast or finish a recoil hop after Stop. There is no pathfinding; programs blocked by the world report an error.
+
+Only sequential commands exist in v0.1: no variables, loops, conditions, sensors, enemy tracking, custom functions, parallel actions or arbitrary Luau. Source is session-local and is not saved to an account.
 
 ## Build and open in Roblox Studio
 
@@ -20,9 +33,10 @@ For live source updates, install the matching Rojo Studio plugin, run `rojo serv
 ## Controls
 
 - **W / S:** forward / reverse along the chassis direction.
-- **A / D:** rotate chassis left / right, including while stationary.
+- **A / D:** Boomer rotates left/right, including while stationary. Rattler steers its front wheels while moving; steering reverses naturally when backing up.
 - **Mouse:** aim the turret at the cursor's intersection with cannon height; rotation has a server-enforced speed limit.
-- **Left click (hold):** fire repeatedly at the server-enforced 0.65 second cooldown.
+- **Left click (hold):** Boomer fires every 0.65 seconds after its 0.20-second cannon swell. Rattler fires rapidly and lifts under recoil, with a 3-second heat/burst limit and mandatory 2-second overheat cooldown.
+- **Boomer / Rattler buttons:** choose the test vehicle below the Input button. Switching releases held controls; press them again to continue.
 
 The fixed 50°/45° map camera uses a strict central 20% dead zone and a wider default view; small readable maps remain fully framed. The HUD shows health and reload state. Five orange practice targets each take four hits and reset five seconds after destruction when their space is clear. Tanks also take four hits and respawn after three seconds. The arena walls, targets, and other tanks block movement. Controls clear when the window loses focus or a text field gains focus. Server commands expire after 0.35 seconds without a valid update.
 
@@ -447,3 +461,148 @@ Target rows, the center passage and southern spawn approach are reserved when pl
 Verification: 24 source files compile; all existing suites pass, plus **202 environment assertions** for deterministic generation, resized-map containment, target clearance, water/mud forward/reverse speed, normal grass speed, rock elevation/tilt/actual aim, traversable logs, trunk collision, real builder geometry/replacement and water/mud effect emission/throttling/cleanup. Curved-cover tests exercise rock/log overlap boundaries. Both Rojo place formats build and whitespace checks pass.
 
 Roblox Studio was not run. Reopen/reconnect and restart Play. Drive through water/mud in both directions and compare pace, check entry splash/ripples at normal zoom, climb rocks/logs while aiming/firing, drive between trees and shoot at trunks, and redraw square/rectangular/small maps. Inspect target/spawn clearance, visual ground contact, foliage occlusion, multiplayer replication and effect/render cost. The mocks do not establish real engine rendering, spherecasts or performance.
+
+## Boomer and Rattler: two playable test vehicles (2026-11-06)
+
+The orange cannon tank is now named **Boomer**. Its model dimensions, orange/yellow paint, tracks, road wheels, suspension, turret, cannon swelling/recoil, muzzle burst and original weapon tuning are preserved. The second vehicle is **Rattler**, based on the bottom-left green concept in `references/tank-styles.png`. Following the user's clarification, Rattler has **four chunky wheels and no track belts**, a distinct sloped green hood with ivory-framed panels, rounded fenders, a narrow raised turret, side ammo drums and a six-barrel Gatling assembly. The model is a practical primitive-Part interpretation of the artwork, not an imported mesh.
+
+### Driving and selection
+
+Boomer retains its original instant throttle and pivot steering. Rattler uses a separate bicycle steering model: 30-stud/second forward and 18 reverse limits, acceleration, braking, coasting drag, smoothed front steering and signed reverse yaw. It cannot pivot turn at rest. Wheels roll with speed; only the front pair steers. Both reuse the terrain/contact, suspension, aiming contract and world collision paths. Horizontal control remains available during cartoon recoil flight; this is kinematic game movement, not a tire/traction physics simulation.
+
+The two named selector buttons sit below Input on the HUD and support click/touch/gamepad activation. The server owns selection, accepts only the two allowed IDs and limits switches to once per 0.5 seconds. Switching preserves health, pose, air velocity and weapon cooldowns; it cancels pending cannon preparation and releases input. Rattler's heat ledger lives on the player's tank record and survives switching away/back. Already-launched shells retain their original weapon's speed/damage and continue flying. Snapshots carry type and generation; TankRenderers destroys the old model once and creates one replacement. Late shot/preparation events cannot animate an older vehicle generation. Respawn and Redraw Map preserve the chosen type; the explicit development redraw resets the round and heat. This selector is available in the test experience, not a pre-battle garage or saved account preference.
+
+### Rattler weapon, heat and recoil flight
+
+Rattler fires 10 rounds per second, with 6 damage, 85-stud/second speed, 0.22-stud collision radius, the existing 320-stud range and checked seven-stud muzzle advance. It uses the same server swept collision, cover obstruction, target damage and tank damage paths as Boomer; no client damage/hit claims are accepted. Its rotor spins visibly during firing and coasts down afterward. Muzzle flashes, chunky sparks, smoke, ejected brass and layered pitched built-in Roblox sounds give it an exaggerated mechanical chatter. Audio audibility/asset availability and visual feel remain Studio checks.
+
+Firing accumulates heat measured in seconds. At 3 continuous firing seconds or 3 accumulated heat seconds, firing stops and a mandatory 2-second lockout begins. The held trigger cannot fire during the lockout; it may resume automatically only after the full cooldown. Releasing early stops rounds immediately, but heat persists: recovery starts only after 0.4 seconds idle and removes 0.6 firing-seconds per idle second. Rapid tapping cannot reset heat. During the forced cooldown heat drains fully over two seconds, even with the trigger held. Switching tanks ticks the same ledger rather than creating fresh heat state. HUD text shows heat percentage, BRRR while firing and cooldown countdown.
+
+Server-owned recoil flight progressively lifts Rattler, with increasing thrust as heat rises. Vertical speed is bounded (+12/-24 studs per second), lift is capped at 24 studs, and gravity is 18 studs/second squared. Releasing or overheating removes thrust; inertia carries it briefly before it falls. Landing clamps at the sampled terrain height, adds a suspension compression impulse and lets the existing spring rebound. The whole vehicle and hitbox rise, so authoritative release-time shot origin changes with the vehicle. Bounds and conservative obstacle checks still apply; this is not unrestricted flying or Roblox physical network ownership. Switching in the air preserves the fall instead of teleporting to the ground.
+
+### Module map
+
+- `shared/TankDefinitions`: allowlisted vehicle IDs and per-vehicle drive/weapon/flight tuning; Boomer points directly to the original TankConfig.
+- `shared/RattlerDrive`: car acceleration and steering.
+- `shared/RattlerWeapon`: deterministic heat/burst/recovery/lockout state.
+- `shared/RecoilFlight`: bounded ascent, gravity and landing impulse.
+- `shared/TankSelection`: validated selection and state preservation.
+- `client/RattlerVisual`: distinct wheeled model, Gatling rotation, muzzle effects and audio.
+- `client/TankRenderers` and `client/TankSelector`: model lifecycle and simple server-confirmed selection UI.
+
+Boomer's existing weapon windup remains separate. Projectiles and practice-target impact functions accept optional server weapon tuning/damage, preserving their original defaults. Camera angle, dead zone, zoom limits, world, targets and terrain generation are unchanged.
+
+### Verification and remaining runtime checks
+
+All **32 Luau sources compile**. Existing input, camera, target combat, projectile, windup, suspension firing, barrel animation and environment suites pass. Added vehicle tests cover continuous fire/cooldown at 30/60/120 simulation Hz, bounded rising/falling, early release, landing compression/rebound, idle recovery, tap abuse, switch abuse, health/altitude preservation, forward/reverse car steering, no stationary pivot, mud speed, per-weapon projectile damage/speed, repeated model replacement and selector cleanup. Production model tests execute both constructions/animation paths, wheel roll/front steering, rotor motion, Boomer cough, muzzle effects, sounds and timed cleanup using mocks. The production server entrypoint also runs with two mocked players, checking actual Boomer preparation/release, Rattler rapid fire/lockout/lift, airborne switching, invalid selection, ownership and departure cleanup.
+
+A separate pre-change baseline audit compared Boomer's complete Part geometry/colors/anchor transforms/animation visibility over 30 frames and movement, aiming, suspension and firing over 360 simulation steps. It passed over 112,000 assertions, including the renderer/integration checks. Both Rojo place formats build and whitespace checks pass. No commit or push was performed.
+
+Roblox Studio/device play testing was not available. Next, open the rebuilt place and restart Play: compare both models with the reference; drive Boomer and Rattler forward/reverse/around terrain; steer at rest and rolling; aim/fire while bouncing; hold Rattler fire through 3 seconds plus the full 2-second cooldown; release early and observe landing; tap rapidly; switch while hot/airborne; redraw and respawn; and test two clients. Verify audio, visuals at the 135-stud camera distance, UI fit on phones, camera framing during flight, real spatial query behavior and multiplayer rendering/replication cost. Mocked checks do not establish those runtime results.
+
+## Rattler actual-turret recoil drift (2026-11-07)
+
+Each released Rattler round kicks the actual turret slightly in yaw and pitch, affecting subsequent rounds. Shared RattlerAim supplies bounded, server-seeded per-shot displacements and recovery: base yaw/pitch kick strengths are 2.4°/1.4°, growing up to 40% with heat, with maximum offsets of ±6° yaw and ±4° pitch. Offset recovery decays at 4 per second (0.25-second time constant), so sustained fire wanders and idle aim settles. At a displacement limit the next outward kick bounces inward rather than sticking to the clamp. Per-player pseudo-random state lives with the heat ledger; no client chooses kicks or hit directions.
+
+Cursor/stick input continues to control the desired turret aim. TankSimulation.turretAngles adds the actual recoil offset (respecting cannon pitch limits), and shotPose uses that direction plus hull pitch/roll. The renderer consumes the same angles, including on reset/switch. The server launches a straight round from the current actual pose, then applies its kick to the turret for the next round; there is no invisible projectile-only spread or post-launch steering. Existing snapshot smoothing can still create brief visual/network interpolation differences. Boomer's actual aim and weapon behavior are unchanged, as are Rattler drive, flight, heat and cooldown.
+
+Verification: all 33 sources compile; existing suites pass, with 2,362 vehicle assertions and 85 model/server-integration assertions. New tests cover per-round displacement, actual-angle/shot-direction agreement, desired-aim separation, bounded offsets, left/right wandering, recovery, visible muzzle alignment, server replication and production shot variation. Both Rojo place formats build and whitespace checks pass. Studio was not run. Hold the cursor steady and fire in Play to assess turret shake/spread at normal zoom, release and observe recovery, then check touch/gamepad aiming and two-client latency. No commit or push was performed.
+
+## Boomer cannon aim recoil (2026-11-07)
+
+Boomer now also kicks its actual turret after each shell leaves the barrel. Its yaw/pitch kick strengths are 8°/6° (versus Rattler's 2.4°/1.4° before heat scaling), bounded at ±12°/±9°. Its recovery rate of 5 per second removes over 95% of displacement during the existing 0.65-second interval between shell releases. The existing 0.20-second preparation, damage, cannon swelling/retraction and muzzle effects remain unchanged. A shell is launched from the pre-kick actual pose, then the kick displaces the turret; subsequent rounds use its recovering pose rather than cursor direction directly.
+
+The shared aim-recoil module is now named `TurretRecoil` (replacing `RattlerAim`), with per-vehicle tuning in TankDefinitions. Rattler retains its existing heat-scaled kicks and recovery. Both renderers already use TankSimulation.turretAngles, so the visible orientation matches the shared firing-pose calculation. This supersedes earlier statements that Boomer has no turret aim kick.
+
+Verification: all 33 sources compile; all existing suites pass, including new Boomer strength, 95% reload recovery, near-restored firing direction and production shell-release kick checks. Both Rojo formats build and whitespace checks pass. Studio was not run; inspect the larger Boomer turret knock and recovery while holding the cursor steady, and compare it with Rattler's sustained wandering. No commit or push was performed.
+
+## Rattler violent per-round jumps and hard landing (2026-11-07)
+
+Rattler no longer rises under continuous smooth thrust. Each actual released bullet adds an immediate upward velocity impulse (14 studs/second, rising to 17 with heat), plus an alternating 5° pitch/7° roll impulse and a suspension jolt. Body rotation kicks are bounded and decay rapidly, and because they feed shared suspension pose they also disturb actual aim. No impulse is applied just for holding the trigger during a cooldown. Lift remains capped at 24 studs and upward velocity at 28 studs/second; downward velocity is capped at 72.
+
+Gravity is now 90 rather than 18 studs/second squared. A maximum-height drop from rest reaches ground in about 0.73 seconds with a strong impact. Landing safely clamps to sampled ground, adds a much stronger compression impulse (up to 14), and rebounds through the existing suspension spring. A radial dust burst and low thump emphasize the slam. Rattler uses faster vertical/suspension rendering and snaps its vertical pose to ground on a new landing event, rather than smoothing away the impact. Horizontal movement/camera behavior remain unchanged; Boomer's ordinary movement and recoil are unchanged. Switching while recoiling preserves the remaining air momentum and lets the shake decay rather than leaving a tilted replacement model.
+
+Verification: all 33 sources compile; all existing suites pass, including 2,372 vehicle assertions and 98 renderer/server-integration assertions. Added tests prove that trigger state alone causes no lift, individual rounds immediately change velocity and shake, early release falls/lands, the 24-stud drop is fast and hard, landing clamps safely, model pose snaps at impact and dust is emitted only once per landing. Existing 3-second burst/2-second cooldown checks still pass. Both Rojo place formats build and whitespace checks pass. Studio was not run; restart Play to assess violent firing motion and slam at normal zoom. No commit or push was performed.
+
+## Rattler descent-to-level projectiles (2026-11-07)
+
+Rattler's weapon now uses `Trajectory.Kind="DescendThenLevel"` in TankDefinitions. Default descent is **35° below horizontal**, configurable via `Rattler.Weapon.Trajectory.DescentAngle` (try 40°); `LevelingDistance=6` controls the short curved transition. With sufficient altitude, the barrel and rounds point down at the configured angle, travel diagonally in a straight line, then enter a tangent-continuous circular leveling arc ending at horizontal flight. Heading is captured once from actual launch aim/recoil and remains fixed. No enemy lookup, homing, target seeking or post-launch heading adjustment exists.
+
+The shared standard muzzle height is now `TankConfig.MuzzleHeight=3.6`, used by Boomer's actual pivot/rendering as well as Rattler's leveling plane. The server adds the actual arena floor top (`Floor.Position.Y + Floor.Size.Y/2`), rather than using an unexplained absolute world Y. Ground relief still blocks shots normally; this does not track terrain height or guarantee hitting enemies on hills. At/below that plane, a projectile stays horizontal at its current height. At low altitudes above it, the physical seven-stud barrel begins with a shallower portion of the leveling profile so the muzzle cannot be placed below the target plane; full 35° is used once there is room for both barrel and leveling arc.
+
+`shared/ProjectileTrajectory` supplies distance-based launch direction, straight descent, smooth curve and horizontal samples. `ProjectileSimulation` first sweeps the straight barrel for close cover, then enables the free-flight path. It splits sweeps at stage boundaries and into at-most-half-stud segments within the curve, checking obstacles throughout instead of teleporting to the level plane. Speed stays constant along the path; range/lifetime accounting, shell radius, damage, exclusions, initial-overlap checks and impact effects are preserved. The server poses the visible shell from the same actual position/tangent every update. Rattler's articulated Gatling assembly uses the same shared firing-pose calculation, so the model points down with its initial trajectory. The weapon constrains vertical launch pitch; yaw recoil and actual horizontal heading still determine where each round goes. Boomer remains on the original straight-flight path, with its existing recoil, windup and damage unchanged.
+
+Verification: all **34 source files compile**, all existing suites pass, and **1,855 trajectory assertions** cover 35°/40° configuration, low/below-plane launch, shared/shifted floor height, continuous leveling, unit tangent/constant speed, range expiry, descent collisions, clearing low walls and hitting a ground tank after leveling, thin cover in the curve, close barrel obstruction, large-step/frame partition behavior, frozen heading despite enemy movement and unchanged Boomer straight flight. Model tests verify the airborne Gatling visibly points down at 35°. Both Rojo place formats build and whitespace checks pass. Studio was not run. Test Rattler above a wall versus directly into one, hold cursor steady through ascent/descent, inspect barrel clearance and shell turning at normal zoom, and compare Boomer. Network smoothing/visual feel still need real engine verification. No commit or push was performed.
+
+## Rattler jackhammer recoil: low chaotic hops and air inertia (2026-11-07)
+
+This replaces the flying/hovering recoil behavior. `shared/RattlerRecoil` owns Rattler's weapon-powered motion; its tuning is now `TankDefinitions.Rattler.Recoil`, separate from car drive and weapon tuning. `RecoilFlight` remains only a compatibility module returning the new behavior.
+
+The first grounded shot applies a ballistic velocity calculated for a seeded **4–5 stud hop**. Sustained firing uses independently seeded hop peaks of 3.4–5.1 studs, varied minimum kick gaps (0.12–0.24 seconds), and small response delays (0.015–0.05 seconds). While descending, eligible rounds can kick it back up; some deliberately allow a full thud before the next hop. Rising shots do not stack upward velocity. Gravity is 180 studs/second squared, and the absolute local-ground height cap is **6 studs**. A cap is only a safety guard; normal hops use velocity integration and ballistic energy budgets, not animated/teleported heights. No sinusoidal target drives Rattler's body: suspension and rocking respond to irregular recoil/terrain/landing impulses and settle physically.
+
+Every actual round adds a small horizontal impulse opposite its captured world firing heading, regardless of chassis yaw. Airborne world X/Z velocity is preserved, with no player steering, throttle acceleration, braking or air drag; turret input remains active. Driving/traction resumes only at contact. World bounds, trees, targets and other tanks still block movement and stop the blocked momentum. Recoil state carries through midair selection changes rather than enabling an air-control bypass. Landing clamps to the sampled support surface, compresses the suspension, rebounds and emits the existing dust/thump once per impact.
+
+Ground support comes from the existing Environment surface/contact geometry at the actual X/Z position, plus the real arena floor elevation. Rattler no longer smooths that support into a fictitious flat Y=0 base. Its hitbox follows the authoritative simulated position every step. Boomer retains its original movement/suspension path. Projectile trajectories, damage, firing cadence, heat/cooldown, aim recoil and camera settings are unchanged.
+
+Motion randomness is a separate per-player seeded stream advanced only by recoil events. It varies physical intensity/timing/rocking, never consumes the weapon accuracy stream or adds projectile spread. Replaying the same seed and fixed-step inputs reproduces the same motion. Actual movement/pose still affects muzzle origin/heading through the established shared shot-pose code.
+
+Verification: all 35 source files compile and all suites pass, including **5,743 jackhammer assertions** covering first-hop apex, six-stud ceiling, repeated-shot abuse, forward/back/side recoil, airborne steering/braking lockout, turret control, terrain support at nonzero elevation, hard landing/settling, obstacle momentum stops and exact deterministic replay. The representative sustained-fire test recorded 10 irregular hops, with 105 samples in the 3–5 stud band and 16 near-ground samples. Production-server checks now verify hitbox/snapshot position alignment. All previous projectile trajectory tests remain passing. Both Rojo formats build and whitespace checks pass. No commit or push was performed.
+
+Studio was not run. Restart Play and hold Rattler fire while stationary, driving, firing sideways and firing backward; try steering/braking mid-hop, release early and compare heavy landings, cross rocks/logs, fire near obstacles, and test two clients. Check normal-zoom shake/dust visibility, the low hop envelope and grounded handling resumption. Visual feel, real collision queries and network interpolation still require engine validation.
+
+## Rattler exaggerated left/right lurch (2026-11-07)
+
+Every Rattler round now throws the hull/turret to a seeded random **7–10° roll** left or right. This replaces small accumulating roll deltas that could cancel and become hard to see. Two consecutive throws may favor the same side, but the next must go the other way, preserving irregularity without long one-sided runs. Roll recovery is 10 per second so the lurch remains readable between rounds. Physical body pitch/roll updates immediately on the shot tick. Existing pitch jolts, jackhammer height/velocity, horizontal shove, terrain contact, projectiles and Boomer behavior remain unchanged.
+
+All suites pass, including 6,015 recoil assertions for per-round roll strength, both directions, streak limits, immediate physical pose and settling. Both Rojo place formats build and whitespace checks pass. Studio was not run; restart Play to assess the exaggerated struggling-with-an-oversized-gun personality at normal zoom. Nothing committed or pushed.
+
+## Rattler visible full-vehicle rocking correction (2026-11-07)
+
+The old renderer kept all wheels on a level base while only body/turret panels tilted; short server roll impulses also decayed between snapshots and were smoothed again. Rattler now applies a common rocking transform to wheels, hull and turret around its weapon mount. The shot event carries the full seeded physical roll and shot serial immediately after recoil is calculated. The renderer exaggerates that roll 1.8× (roughly 13–18°), holds briefly, then recovers between rounds. Snapshot serials provide fallback without replaying stale jolts. Ground clearance limits exaggeration near contact to avoid visibly burying a grounded tire.
+
+Only presentation/event metadata changed: approved horizontal shove and vertical hop physics, seeds/timing, hitboxes, damage, projectile trajectories and camera remain unchanged. The common visual pivot keeps the muzzle origin fixed, and the barrel still uses the authoritative firing-direction calculation. Boomer's renderer path and shot effects are unchanged.
+
+Verification: all 35 sources compile; all suites pass, including 547 renderer/server checks proving opposite wheel pairs visibly separate by over two studs on a 10° input jolt, hull/turret roll together, opposite shots reverse the visible lurch, stale events cannot reset it, movement position and barrel direction stay unchanged, and visual motion settles. Existing deterministic recoil metrics remain exactly 10 hops / 16 near-ground samples / 105 mid-band samples. Both Rojo formats build and whitespace checks pass. Studio was not run; restart Play to assess the full-vehicle rocking at normal zoom. Nothing committed or pushed.
+
+## Studio movement-speed HUD and recoil boost measurement (2026-11-07)
+
+A Studio-only speed readout appears below the vehicle selector. It displays **XZ SPEED** in studs/second, **PEAK** horizontal speed, normal **DRIVE** speed, signed **VERT** speed, total **3D** speed and a highlighted **BOOST** above the vehicle's normal forward driving limit. This separates actual horizontal travel from jumping: vertical recoil cannot masquerade as a horizontal speed bonus. Peak resets on vehicle switch, respawn or development redraw generation.
+
+`shared/MovementTelemetry` measures resolved position differences each server simulation step, after terrain/target/tank/boundary collision correction. It does not use requested throttle or intended longitudinal speed. Snapshots carry the measurements; `client/SpeedDebugHud` only renders them and changes no simulation settings. The server peak captures short boosts between snapshots.
+
+The deterministic speed test confirms the existing side effect: full-speed Rattler driving forward while firing backward can reach the **36-stud/second recoil cap**, compared with **30** normal forward drive (**+20%**). Forward firing opposes forward motion instead. Airborne control restrictions remain, so line up steering before hopping. Boomer's normal drive reference remains 24 studs/second.
+
+Verification: 37 source files compile and all suites pass. Eleven telemetry/HUD tests cover XZ versus vertical/3D measurement, blocked movement, peak reset, recoil boost, forward-fire comparison, formatting, missing state, cleanup and Studio isolation. Both Rojo place formats build and whitespace checks pass. Studio was not run; restart Play and check the new panel below the selector, including normal speed, backward-firing boost and peak reading. No commit or push was performed.
+
+## BW v0.1 proof of concept (2026-11-07)
+
+The user explicitly lifted the prior BW deferral and supplied a first language specification. BW is now an additional server-authoritative control mechanism, using the existing tank simulation rather than replacing movement, aiming, collision or weapons.
+
+### Modules and execution
+
+- `shared/BWConfig`: limits, tolerances and the exact default demonstration source.
+- `shared/BWParser`: data-only, case-sensitive command validation with source line numbers; decimal numbers, whitespace, blank lines, CRLF and inline `#` comments. Converts to instruction records, never evaluates code.
+- `shared/BWTankAdapter`: compass conversion and bounded normal input generation. World headings increase clockwise from north; internal yaw remains the existing counterclockwise radians. Rattler receives throttle plus steering for chassis turns; Boomer gets pivot input. Distance approach slows/brakes through existing drive response, without changing acceleration or coordinates.
+- `shared/BWRuntime`: one instruction state, starting pose/axis, signed displacement or accumulated angular progress, timer/stuck budgets, trigger acceptance/release tracking and terminal status. It advances in the existing fixed server tick without waits or coroutines.
+- `server/BWController`: owns programs per player tank, source parsing, run/stop/status metadata and input/pending-shot cleanup. BWRun/BWStop remotes use sender ownership, monotonic request IDs and a half-second Run rate limit. A newer Stop prevents an older delayed Run from starting afterward.
+- `client/BWIDE`: multiline monospaced TextBox in a scrolling editor with line gutter, Run/Stop, source-line/current-instruction display and output/errors. Its separate safe-area ScreenGui coexists with the existing tank selector, camera and speed/debug UI. Source is initialized from BWConfig and remains local to this session.
+
+Manual input packets are ignored by the server while BW owns a tank. InputController also suspends/resets manual providers until the server reports BW stopped. Text entry uses the normal focus suspension. Terminal cleanup clears throttle, steering and trigger intent, pending Boomer preparation and stale tick input, requiring fresh manual fire release. Destruction, respawn, selection, redraw and disconnect cancel the program. Current physical momentum and already-released shells are preserved.
+
+Each move projects authoritative position displacement onto its starting forward/back axis, counting recoil along that axis and excluding sideways/vertical motion and wheel spin. Rotations add signed per-tick angular deltas, allowing multiple revolutions and 0/360 crossing; absolute target headings are normalized and converted to the requested directed distance. Turret headings use actual world gun direction, independent of chassis/camera. Tolerances are 0.12 studs and 0.8 degrees.
+
+Weapon counters report accepted activation and released shells without changing existing mechanics. Single fire holds only until one logical activation is accepted, releases immediately and waits for that shot. Timed fire holds for the requested simulated duration, then releases and waits for any committed preparation to finish. Consecutive commands have a neutral tick between them. Overheated Rattler waits through its real cooldown; Boomer retains its 0.20-second windup and 0.65-second interval. Stop cancels an unreleased preparation, but does not delete released shells.
+
+### Bounds and limitations
+
+Limits are 16,384 source bytes, 400 source lines, 128 commands, 1,000 studs per distance, 1,440 degrees per relative rotation, absolute arguments ±36,000 normalized modulo 360, and 10 seconds per timed fire. Runtime allows 180 simulated seconds per program, a bounded per-instruction budget up to 90 seconds (fire waits up to 15), and errors after 3 seconds without meaningful movement/rotation progress. Runtime/syntax errors include the original source line. Execution is quantized to the existing 60 Hz simulation tick; very short positive firing durations last at least one tick.
+
+This PoC has no pathfinding, collision avoidance, storage, language variables, loops, conditions, sensors, tracking, custom functions, parallel instructions or AI code generation. Rattler's inertia and airborne restrictions remain real: neutral intent on Stop or completion does not instantly freeze its physical velocity. Initial momentum, terrain, recoil and obstacles can affect the physical path; unreachable instructions stop with a line-numbered error. The demo is not a promise to hit particular targets.
+
+### Verification
+
+All **43 Luau sources compile** and all existing suites pass. **6,098 BW assertions** cover valid/invalid syntax, comments/blank lines, limits and normalization, relative/absolute/directional/multi-revolution turns, actual projected travel, movement tolerance, sequential execution, single/timed/zero fire, cooldown waits, stuck/program/weapon timeouts, cancellation, death/generation cleanup, IDE submission/errors/status/gutter/lifecycle, provider ownership and tank-specific behavior. Default programs execute through the real movement and weapon modules: open-map Boomer ~7.82 seconds / 5 rounds, Rattler ~15.85 / 21; with the actual terrain profile from the original spawn, ~8.63 and ~18.05 seconds respectively. Different rates/timing are intentional consequences of existing physics.
+
+The production server entrypoint is also exercised with two mocked players. Its integration checks run both default programs with actual target/collision/control loops, verify shot counts, ignore conflicting manual inputs, cancel a preparing Boomer shell, reject stale Run after Stop, preserve per-player ownership, and cancel on selector/redraw/disconnect. The combined model/server suite passes 1,766 assertions. These tests stub engine spatial queries and are not Studio play tests.
+
+Both `.rbxl` and `.rbxlx` Rojo builds and whitespace checks pass. No commit or push was performed. Reopen/reconnect and restart Play, open BW Editor and run the default on each selected vehicle. Still verify native TextBox editing/caret/scrolling, source-line display, focus transitions and Run/Stop with mouse/touch/gamepad; repeat while moving, reloading, overheated, blocked and airborne; confirm selection/death/respawn/redraw return control; and test two clients with latency. Confirm the existing visual camera/controls/terrain/combat remain usable. Future work should refine editor ergonomics and control feedback only after those runtime results, before considering additional language features.

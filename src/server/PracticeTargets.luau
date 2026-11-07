@@ -28,9 +28,9 @@ function Targets.new(part)
 	Targets.sync(part, target, 0)
 	return target
 end
-function Targets.damage(part, target, now)
+function Targets.damage(part, target, now, damage)
 	if target.health <= 0 then return false end
-	target.health = math.max(0, target.health - Targets.Damage)
+	target.health = math.max(0, target.health - (damage or Targets.Damage))
 	target.flashUntil = now + 0.15
 	if target.health == 0 then target.resetAt = now + Targets.RespawnDelay end
 	-- Update queries immediately, before another shot in the same simulation step.
@@ -63,10 +63,10 @@ function Targets.update(part, target, now, tanks)
 	end
 	Targets.sync(part, target, now)
 end
-function Targets.impact(hit, targets, now)
+function Targets.impact(hit, targets, now, damage)
 	local target = if hit then targets[hit.Instance] else nil
 	local before = if target then target.health else nil
-	if target then Targets.damage(hit.Instance, target, now) end
+	if target then Targets.damage(hit.Instance, target, now, damage) end
 	return hit, before, if target then target.health else nil
 end
 return Targets
