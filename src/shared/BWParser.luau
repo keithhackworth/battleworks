@@ -25,16 +25,35 @@ function Parser.parse(source)
 		if not op then return failure(line,"Expected one command, for example forward(10).") end
 		if not moves[op] and not turns[op] and op~="fire" then return failure(line,"Unknown command '"..op.."' (names are case-sensitive).") end
 		argument=trim(argument)
-		local absolute=false
-		local absoluteText=argument:match("^to%s*=%s*(.-)%s*$")
-		if absoluteText then
-			if not turns[op] then return failure(line,"Only chassis/turret turns support to=heading.") end
-			absolute=true; argument=absoluteText
+		local absolute,bestEffort,hasValue,seenBest,sawKeyword=false,true,false,false,false
+		local valueText
+		if argument~="" then
+			for rawArgument in (argument..","):gmatch("([^,]*),") do
+				local token=trim(rawArgument)
+				if token=="" then return failure(line,"Empty argument or trailing comma.") end
+				local key,literal=token:match("^([%a_][%w_]*)%s*=%s*(.-)%s*$")
+				if key then
+					sawKeyword=true
+					if key=="best_effort" then
+						if seenBest then return failure(line,"Duplicate best_effort argument.") end
+						if literal~="true" and literal~="false" then return failure(line,"best_effort must be true or false (lowercase).") end
+						seenBest=true; bestEffort=literal=="true"
+					elseif key=="to" then
+						if not turns[op] then return failure(line,"Only chassis/turret turns support to=heading.") end
+						if hasValue then return failure(line,"Use one angle: either degrees or to=heading.") end
+						absolute=true; hasValue=true; valueText=literal
+					else return failure(line,"Unknown argument '"..key.."'.") end
+				else
+					if sawKeyword then return failure(line,"Put the distance/angle/duration before named arguments.") end
+					if hasValue then return failure(line,"Only one positional argument is allowed.") end
+					hasValue=true; valueText=token
+				end
+			end
 		end
 		local value
-		if argument=="" and op=="fire" and not absolute then value=nil
+		if not hasValue and op=="fire" then value=nil
 		else
-			value=number(argument)
+			value=if valueText then number(valueText) else nil
 			if value==nil then return failure(line,"Expected a finite decimal number"..(if turns[op] then " or to=heading." else ".")) end
 			local limit=if absolute then Limits.MaxAbsoluteAngle elseif moves[op] then Limits.MaxDistance elseif turns[op] then Limits.MaxRelativeAngle else Limits.MaxFireSeconds
 			if (not absolute and value<0) or math.abs(value)>limit then
@@ -42,7 +61,7 @@ function Parser.parse(source)
 			end
 			if absolute then value=value%360 end
 		end
-		table.insert(instructions,{op=op,value=value,absolute=absolute,line=line,text=text:sub(1,200)})
+		table.insert(instructions,{op=op,value=value,absolute=absolute,bestEffort=bestEffort,line=line,text=text:sub(1,200)})
 		if #instructions>Limits.MaxInstructions then return failure(line,"Too many commands (maximum 128).") end
 	end
 	return instructions

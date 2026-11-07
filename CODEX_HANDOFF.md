@@ -782,3 +782,24 @@ All **43 Luau sources compile** and all existing suites pass. **6,098 BW asserti
 The production server entrypoint is also exercised with two mocked players. Its integration checks run both default programs with actual target/collision/control loops, verify shot counts, ignore conflicting manual inputs, cancel a preparing Boomer shell, reject stale Run after Stop, preserve per-player ownership, and cancel on selector/redraw/disconnect. The combined model/server suite passes 1,766 assertions. These tests stub engine spatial queries and are not Studio play tests.
 
 Both `.rbxl` and `.rbxlx` Rojo builds and whitespace checks pass. No commit or push was performed. Reopen/reconnect and restart Play, open BW Editor and run the default on each selected vehicle. Still verify native TextBox editing/caret/scrolling, source-line display, focus transitions and Run/Stop with mouse/touch/gamepad; repeat while moving, reloading, overheated, blocked and airborne; confirm selection/death/respawn/redraw return control; and test two clients with latency. Confirm the existing visual camera/controls/terrain/combat remain usable. Future work should refine editor ergonomics and control feedback only after those runtime results, before considering additional language features.
+
+## BW best_effort option (2026-11-07)
+
+Every command now accepts `best_effort=true` by default. Examples:
+
+```python
+forward(20)                              # try; skip if stuck/timed out
+back(5, best_effort=false)                # stop program if this fails
+turn_right(to=90, best_effort=true)
+turret_left(45, best_effort=false)
+fire(best_effort=true)                    # one logical activation
+fire(2, best_effort=false)                # hold the normal trigger for 2 seconds
+```
+
+The parser supports named `best_effort` alongside numeric arguments or `to=heading`; named arguments may be reordered, but positional values must come first. Boolean literals are lowercase `true`/`false`. Duplicate, unknown, malformed or missing arguments remain syntax errors. Existing source needs no edits and now gets the requested best-effort default.
+
+On instruction stuck/timeout failure, best effort issues a neutral input tick, cancels abandoned prepared fire, increments the skipped count, records a line-numbered warning and advances. BW retains ownership for the following command, including another fire command. `best_effort=false` preserves fail-fast behavior. The IDE keeps the most recent warning visible through subsequent instructions/completion; completion reports the skipped count. Fire success still means weapon activation/release or held-trigger duration, not a guaranteed target hit.
+
+This option does not disable source validation, the 180-second overall budget, Stop, destruction, respawn, selection, redraw or disconnect cancellation. Those remain terminal. Cooldown, heat, accuracy, projectile and movement mechanics are unchanged.
+
+Verification: all 43 sources compile and all existing suites pass. A new 108-assertion suite covers defaults/true/false for all command forms, keyword order and validation, skip continuation, strict failures, every instruction timeout including single/timed fire, pending-shot/input cleanup, continued weapon ownership, global safety and IDE warnings. Both default demonstrations still complete without skipped instructions on both tanks, including the production server tests. Both Rojo formats build and whitespace checks pass. Studio was not run; verify visible warnings and continuation by blocking a movement command, then compare `best_effort=false`. Nothing committed or pushed.

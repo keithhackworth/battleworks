@@ -18,8 +18,21 @@ function Runtime:fail(message)
 end
 function Runtime:finish()
 	self.index+=1; self.current=nil
-	if self.index>#self.instructions then self:stop("Program completed.","completed") end
+	if self.index>#self.instructions then
+		self:stop(if (self.skipped or 0)>0 then string.format("Program completed (%d skipped).",self.skipped) else "Program completed.","completed")
+	end
 	return Command.neutral() -- a release tick between every pair of instructions
+end
+-- Best effort applies only to a failed instruction, never lifecycle/global safety.
+function Runtime:instructionFailed(message)
+	local instruction=self.current.instruction
+	if instruction.bestEffort==false then self:fail(message); return Command.neutral() end
+	self.skipped=(self.skipped or 0)+1
+	self.warning=string.format("Line %d skipped: %s",instruction.line,message)
+	self.releaseSerial=(self.releaseSerial or 0)+1
+	local command=self:finish()
+	if self.status=="running" then self.message="Skipped an instruction; continuing." end
+	return command
 end
 local function begin(instruction,state)
 	local c={instruction=instruction,elapsed=0,held=0,noProgress=0,progress=0,best=0,
@@ -54,7 +67,7 @@ function Runtime:step(state,dt)
 	end
 	local c=self.current
 	c.elapsed+=dt
-	if c.elapsed>c.timeout then self:fail("Instruction timed out."); return Command.neutral() end
+	if c.elapsed>c.timeout then return self:instructionFailed("Instruction timed out.") end
 	if c.kind=="fire" then
 		local accepted=(state.weaponActivationSerial or 0)-c.startActivation
 		local released=(state.weaponShotSerial or 0)-c.startShot
@@ -84,7 +97,7 @@ function Runtime:step(state,dt)
 	local meaningful=if c.kind=="move" then Limits.ProgressDistance else Limits.ProgressAngle
 	if c.progress>c.best+meaningful then c.best=c.progress; c.noProgress=0 else c.noProgress+=dt end
 	if c.noProgress>Limits.StuckSeconds then
-		self:fail("No progress for 3 seconds; tank may be blocked or unable to turn."); return Command.neutral()
+		return self:instructionFailed("No progress for 3 seconds; tank may be blocked or unable to turn.")
 	end
 	self.message=if c.kind=="move" then string.format("Moved %.2f / %.2f studs",c.progress,c.target)
 		else string.format("Turned %.1f / %.1f degrees",math.deg(c.progress),math.deg(c.target))

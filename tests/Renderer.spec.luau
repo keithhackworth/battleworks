@@ -270,7 +270,7 @@ check(math.abs(snapshots["101"].aimRecoilYaw or 0)>0,"server replicates recoil o
    local state=snapshots["101"]
    if state and (state.bwRequestId or 0)>=id and state.bwStatus and state.bwStatus~="running" then break end
   end
-  check(snapshots["101"].bwStatus=="completed","production BW demo completes with "..kind..": "..tostring(snapshots["101"].bwMessage))
+  check(snapshots["101"].bwStatus=="completed" and (snapshots["101"].bwSkipped or 0)==0,"production BW demo completes with "..kind..": "..tostring(snapshots["101"].bwMessage))
   check(#shots-before==(if kind=="Boomer" then 5 else 21),"production BW single/timed fire uses normal "..kind.." weapon")
  end
  demo("Boomer",1); demo("Rattler",2)

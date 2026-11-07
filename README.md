@@ -9,11 +9,13 @@ For detailed implementation notes, known limitations, and future-session context
 
 Open **BW Editor** below the tank selector/debug readout. The editor contains the default demonstration program. Choose Boomer or Rattler, press **Run**, and watch the current line/output. **Stop** releases BW control; press movement/fire controls again to resume manually. Editing text also suppresses driving keys through the normal input-focus handling.
 
+Every command accepts optional `best_effort=true` (the default). For example, `forward(10, best_effort=false)` stops the program if blocked, while `fire(best_effort=true)` skips an activation that cannot complete. Absolute turns support `turn_right(to=90, best_effort=false)`. Only lowercase boolean literals `true` and `false` are accepted.
+
 BW supports `forward(studs)`, `back(studs)`, `turn_left(degrees)`, `turn_right(degrees)`, `turret_left(degrees)`, `turret_right(degrees)`, directional `to=heading` turns, `fire()` and `fire(seconds)`. Use one command per line; blank lines and `#` comments are allowed. Compass headings are world-relative: North 0°, East 90°, South 180°, West 270°. Left/right absolute turns honor the requested route, including a longer rotation. Rattler drives through chassis turns; Boomer pivots.
 
 The server parses and runs the program through existing controls. Distances use actual net horizontal displacement projected along the command's starting direction; sideways drift and vertical hopping do not count. Turn progress accumulates across revolutions. `fire()` waits for one accepted/released shot; `fire(seconds)` holds the real trigger and respects reload/heat. Inputs release between instructions. Already-prepared shots finish before a fire instruction advances; Stop cancels preparation that has not released yet. Already-launched projectiles continue normally.
 
-Limits: 16 KiB source, 400 lines, 128 instructions, 1,000 studs per move, 1,440° per relative turn, absolute arguments within ±36,000° (normalized), and 10 seconds per timed fire. A program is bounded to 180 simulated seconds, each instruction to at most 90 seconds (weapon waits at most 15), and no-progress movement/rotation fails after 3 seconds. Stuck/timeouts produce source-line errors. Selection, death, respawn, redraw and disconnect stop execution. BW changes inputs, never teleports or cancels physics: Rattler can still coast or finish a recoil hop after Stop. There is no pathfinding; programs blocked by the world report an error.
+Limits: 16 KiB source, 400 lines, 128 instructions, 1,000 studs per move, 1,440° per relative turn, absolute arguments within ±36,000° (normalized), and 10 seconds per timed fire. A program is bounded to 180 simulated seconds, each instruction to at most 90 seconds (weapon waits at most 15), and no-progress movement/rotation fails after 3 seconds. By default, instruction failures release inputs, warn with the source line, and continue; `best_effort=false` makes them terminal errors. Syntax errors and global safety/lifecycle stops are never skipped. Selection, death, respawn, redraw and disconnect stop execution. BW changes inputs, never teleports or cancels physics: Rattler can still coast or finish a recoil hop after Stop. There is no pathfinding; blocked instructions report a warning and skip by default, or stop the program with `best_effort=false`.
 
 Only sequential commands exist in v0.1: no variables, loops, conditions, sensors, enemy tracking, custom functions, parallel actions or arbitrary Luau. Source is session-local and is not saved to an account.
 
@@ -606,3 +608,24 @@ All **43 Luau sources compile** and all existing suites pass. **6,098 BW asserti
 The production server entrypoint is also exercised with two mocked players. Its integration checks run both default programs with actual target/collision/control loops, verify shot counts, ignore conflicting manual inputs, cancel a preparing Boomer shell, reject stale Run after Stop, preserve per-player ownership, and cancel on selector/redraw/disconnect. The combined model/server suite passes 1,766 assertions. These tests stub engine spatial queries and are not Studio play tests.
 
 Both `.rbxl` and `.rbxlx` Rojo builds and whitespace checks pass. No commit or push was performed. Reopen/reconnect and restart Play, open BW Editor and run the default on each selected vehicle. Still verify native TextBox editing/caret/scrolling, source-line display, focus transitions and Run/Stop with mouse/touch/gamepad; repeat while moving, reloading, overheated, blocked and airborne; confirm selection/death/respawn/redraw return control; and test two clients with latency. Confirm the existing visual camera/controls/terrain/combat remain usable. Future work should refine editor ergonomics and control feedback only after those runtime results, before considering additional language features.
+
+## BW best_effort option (2026-11-07)
+
+Every command now accepts `best_effort=true` by default. Examples:
+
+```python
+forward(20)                              # try; skip if stuck/timed out
+back(5, best_effort=false)                # stop program if this fails
+turn_right(to=90, best_effort=true)
+turret_left(45, best_effort=false)
+fire(best_effort=true)                    # one logical activation
+fire(2, best_effort=false)                # hold the normal trigger for 2 seconds
+```
+
+The parser supports named `best_effort` alongside numeric arguments or `to=heading`; named arguments may be reordered, but positional values must come first. Boolean literals are lowercase `true`/`false`. Duplicate, unknown, malformed or missing arguments remain syntax errors. Existing source needs no edits and now gets the requested best-effort default.
+
+On instruction stuck/timeout failure, best effort issues a neutral input tick, cancels abandoned prepared fire, increments the skipped count, records a line-numbered warning and advances. BW retains ownership for the following command, including another fire command. `best_effort=false` preserves fail-fast behavior. The IDE keeps the most recent warning visible through subsequent instructions/completion; completion reports the skipped count. Fire success still means weapon activation/release or held-trigger duration, not a guaranteed target hit.
+
+This option does not disable source validation, the 180-second overall budget, Stop, destruction, respawn, selection, redraw or disconnect cancellation. Those remain terminal. Cooldown, heat, accuracy, projectile and movement mechanics are unchanged.
+
+Verification: all 43 sources compile and all existing suites pass. A new 108-assertion suite covers defaults/true/false for all command forms, keyword order and validation, skip continuation, strict failures, every instruction timeout including single/timed fire, pending-shot/input cleanup, continued weapon ownership, global safety and IDE warnings. Both default demonstrations still complete without skipped instructions on both tanks, including the production server tests. Both Rojo formats build and whitespace checks pass. Studio was not run; verify visible warnings and continuation by blocking a movement command, then compare `best_effort=false`. Nothing committed or pushed.

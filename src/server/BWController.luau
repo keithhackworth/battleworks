@@ -16,6 +16,7 @@ function Controller.sync(tank)
 	if not runtime then return end
 	local instruction=runtime.instructions[runtime.index]
 	tank.state.bwRunning=runtime.status=="running"
+	tank.state.bwWarning=runtime.warning or ""; tank.state.bwSkipped=runtime.skipped or 0
 	tank.state.bwStatus=runtime.status; tank.state.bwMessage=runtime.message
 	tank.state.bwIndex=runtime.index; tank.state.bwCount=#runtime.instructions
 	tank.state.bwLine=if instruction then instruction.line else 0
@@ -32,6 +33,7 @@ function Controller.reject(tank,message,line)
 	Controller.stop(tank,"Program rejected."); cleanup(tank)
 	tank.bw=nil; tank.state.bwRunning=false; tank.state.bwStatus="error"
 	tank.state.bwRequestId=tank.lastBWRequest or 0
+	tank.state.bwWarning=""; tank.state.bwSkipped=0
 	tank.state.bwLine=line or 0; tank.state.bwMessage=message
 	tank.state.bwInstruction=""; tank.state.bwIndex=0; tank.state.bwCount=0
 	return false
@@ -51,8 +53,13 @@ function Controller.start(tank,source)
 end
 function Controller.input(tank,dt)
 	if not Controller.running(tank) then return nil end
+	local release=tank.bw.releaseSerial or 0
 	local command=tank.bw:step(tank.state,dt)
-	if tank.bw.status~="running" then cleanup(tank) end
+	if tank.bw.status~="running" then cleanup(tank)
+	elseif (tank.bw.releaseSerial or 0)~=release then
+		cleanup(tank) -- cancel abandoned preparation/held inputs on the skip tick
+		tank.requireFireRelease=false -- BW retains ownership of the next instruction
+	end
 	Controller.sync(tank)
 	return command
 end

@@ -87,6 +87,7 @@ function IDE:update(state)
 	self.current.Text=if self.running then string.format("Line %d • instruction %d/%d",state.bwLine or 0,state.bwIndex or 0,state.bwCount or 0)
 		else "BW v0.1 • "..status
 	self.output.Text=(if self.running then (state.bwInstruction or "").."\n" else "")..(state.bwMessage or "Ready. BW controls the selected tank while running.")
+	if state.bwWarning and state.bwWarning~="" then self.output.Text..="\n"..state.bwWarning end
 	self.output.TextColor3=if status=="error" then Color3.fromRGB(255,157,125) else Color3.fromRGB(238,239,220)
 end
 function IDE:destroy()

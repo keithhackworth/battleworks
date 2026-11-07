@@ -44,6 +44,7 @@ try {
   bundle += '\ndo\n' + await readFile('tests/Recoil.spec.luau', 'utf8') + '\nend\n';
   bundle += '\ndo\n' + await readFile('tests/Speed.spec.luau', 'utf8') + '\nend\n';
   bundle += '\ndo\n' + await readFile('tests/BW.spec.luau', 'utf8') + '\nend\n';
+  bundle += '\ndo\n' + await readFile('tests/BWBestEffort.spec.luau', 'utf8') + '\nend\n';
   await state.loadstring(bundle, 'input-tests', true)();
 } finally {
   state.destroy();

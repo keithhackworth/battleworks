@@ -57,7 +57,7 @@ end
 -- Runtime never latches inputs after stop, timeout, destruction or replacement.
 do
  local s=Sim.new(Vector3.zero)
- local runtime=Runtime.new({instruction("forward(5)")},s)
+ local runtime=Runtime.new({instruction("forward(5, best_effort=false)")},s)
  for _=1,182 do runtime:step(s,1/60) end
  check(runtime.status=="error" and runtime.message:find("Line 1",1,true)~=nil,"blocked tank produces a line-numbered stuck error")
  local output=runtime:step(s,1/60)
@@ -114,7 +114,7 @@ local function run(source,kind,environment,position)
 end
 for _,kind in {"Boomer","Rattler"} do
  local runtime,s,shots,transitions,time=run(Limits.DefaultSource,kind)
- check(runtime.status=="completed","default demonstration completes with "..kind..": "..runtime.message)
+ check(runtime.status=="completed" and (runtime.skipped or 0)==0,"default demonstration completes with "..kind..": "..runtime.message)
  check(#transitions==8,"all demonstration instructions run sequentially")
  check(near(-transitions[1].position.Z,20,0.2),"forward distance is accurate for "..kind)
  check(math.abs((Adapter.heading(transitions[2].yaw)-90+180)%360-180)<1.2,"clockwise chassis turn reaches east for "..kind)
@@ -130,7 +130,7 @@ end
 for _,kind in {"Boomer","Rattler"} do
  local environment=require("Environment").create(Vector2.new(230,230))
  local runtime,_,shots,_,time=run(Limits.DefaultSource,kind,environment,Vector3.new(-45.5,0,35))
- check(runtime.status=="completed","default demo traverses existing terrain with "..kind..": "..runtime.message)
+ check(runtime.status=="completed" and (runtime.skipped or 0)==0,"default demo traverses existing terrain with "..kind..": "..runtime.message)
  print(string.format("BW terrain demo %s: %.2fs, %d shots",kind,time,shots))
 end
 -- IDE default source, server acknowledgments, line errors and cleanup.
@@ -184,7 +184,7 @@ do
  Controller.start(tank,"forward(5)"); tank.state.health=0
  local input=Controller.input(tank,1/60)
  check(not input.fire and input.throttle==0 and not tank.state.bwRunning,"destroyed tank stops and clears program inputs")
- tank.state.health=100; Controller.start(tank,"forward(5)")
+ tank.state.health=100; Controller.start(tank,"forward(5, best_effort=false)")
  for _=1,182 do Controller.input(tank,1/60) end
  check(tank.state.bwStatus=="error" and tank.requireFireRelease and not tank.command.fire,"runtime stuck error returns server ownership safely")
 end
@@ -204,7 +204,7 @@ do
  local runtime,_,shots,_,time=run("fire(3)\nfire()","Rattler")
  check(runtime.status=="completed" and shots==31 and time>=5,"single-fire waits through existing Rattler overheat lockout without bypass")
  local s=Sim.new(Vector3.zero)
- local runtime=Runtime.new({instruction("fire()")},s)
+ local runtime=Runtime.new({instruction("fire(best_effort=false)")},s)
  for _=1,901 do runtime:step(s,1/60) end
  check(runtime.status=="error" and runtime.message:find("timed out",1,true)~=nil,"weapon that never accepts activation fails within bounded time")
 end
