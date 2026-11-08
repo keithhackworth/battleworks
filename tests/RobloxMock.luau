@@ -57,6 +57,12 @@ function Instance.new(class)
 	function object:ReleaseFocus() self.releasedFocus=true end
 	function object:IsA(name) return self.ClassName == name end
 	function object:GetChildren() return self.children end
+	function object:GetFullName() return self.Name or self.ClassName end
+	function object:GetDescendants()
+		local result={}
+		local function visit(parent) for _,child in parent.children do if not child.destroyed then table.insert(result,child); visit(child) end end end
+		visit(self); return result
+	end
 	function object:WaitForChild(name) return self[name] end
 	function object:Destroy() self.Parent = nil; self.destroyed = true end
 	return object
@@ -88,8 +94,8 @@ playerGui.children = { defaultTouchGui }
 local playerScripts = Instance.new("PlayerScripts"); playerScripts.PlayerModule = "PlayerModule"
 local player = Instance.new("Player"); player.PlayerGui = playerGui; player.PlayerScripts = playerScripts
 local Players = { LocalPlayer = player }
-local Shared = { DamageEffectsConfig="DamageEffectsConfig", DamageEffects="DamageEffects", BWConfig="BWConfig", BWParser="BWParser", BWTankAdapter="BWTankAdapter", BWRuntime="BWRuntime", MovementTelemetry = "MovementTelemetry", ProjectileTrajectory = "ProjectileTrajectory", TurretRecoil = "TurretRecoil", RattlerDrive = "RattlerDrive", ArenaLayout = "ArenaLayout", WeaponWindup = "WeaponWindup", RattlerRecoil = "RattlerRecoil", TankDefinitions = "TankDefinitions", RattlerWeapon = "RattlerWeapon", TankSelection = "TankSelection", Environment = "Environment", InputCommand = "InputCommand", TankConfig = "TankConfig", TankSimulation = "TankSimulation" }
-local Client = { SmokeVisual="SmokeVisual", DamageVisual="DamageVisual", BWController="BWController", TankCombatVisual="TankCombatVisual", BWIDE="BWIDE", SpeedDebugHud = "SpeedDebugHud", TankRenderer = "TankRenderer", TankRenderers = "TankRenderers", TankSelector = "TankSelector", RattlerVisual = "RattlerVisual", TerrainEffects = "TerrainEffects", Analog = "Analog", TouchInput = "TouchInput", KeyboardMouseInput = "KeyboardMouseInput", GamepadInput = "GamepadInput", BarrelAnimation = "BarrelAnimation", CameraMath = "CameraMath", CameraTestPanel = "CameraTestPanel", BattlefieldCameraConfig = "BattlefieldCameraConfig" }
+local Shared = { BWEditorText="BWEditorText", BWCommands="BWCommands", BWLexer="BWLexer", BWExpression="BWExpression", ScannerConfig="ScannerConfig", ScannerGeometry="ScannerGeometry", BWValue="BWValue", DamageEffectsConfig="DamageEffectsConfig", DamageEffects="DamageEffects", BWConfig="BWConfig", BWParser="BWParser", BWTankAdapter="BWTankAdapter", BWRuntime="BWRuntime", MovementTelemetry = "MovementTelemetry", ProjectileTrajectory = "ProjectileTrajectory", TurretRecoil = "TurretRecoil", RattlerDrive = "RattlerDrive", ArenaLayout = "ArenaLayout", WeaponWindup = "WeaponWindup", RattlerRecoil = "RattlerRecoil", TankDefinitions = "TankDefinitions", RattlerWeapon = "RattlerWeapon", TankSelection = "TankSelection", Environment = "Environment", InputCommand = "InputCommand", TankConfig = "TankConfig", TankSimulation = "TankSimulation" }
+local Client = { ScannerVisual="ScannerVisual", DirectionalScanner="DirectionalScanner", SmokeVisual="SmokeVisual", DamageVisual="DamageVisual", BWController="BWController", TankCombatVisual="TankCombatVisual", BWIDE="BWIDE", SpeedDebugHud = "SpeedDebugHud", TankRenderer = "TankRenderer", TankRenderers = "TankRenderers", TankSelector = "TankSelector", RattlerVisual = "RattlerVisual", TerrainEffects = "TerrainEffects", Analog = "Analog", TouchInput = "TouchInput", KeyboardMouseInput = "KeyboardMouseInput", GamepadInput = "GamepadInput", BarrelAnimation = "BarrelAnimation", CameraMath = "CameraMath", CameraTestPanel = "CameraTestPanel", BattlefieldCameraConfig = "BattlefieldCameraConfig" }
 local game = { ReplicatedStorage = { Shared = Shared } }
 function game:GetService(name) return ({ UserInputService = UIS, GuiService = GuiService, Players = Players, RunService = { IsStudio = function() return true end } })[name] end
 local task = { spawn = function(callback) callback() end, defer = function(callback) callback() end }

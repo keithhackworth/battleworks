@@ -1,69 +1,155 @@
--- Data-only parser. Never evaluates Luau, expressions, or user-supplied functions.
+-- Real indentation/block AST, compiled to bounded forward-only control flow.
 local Limits=require(script.Parent.BWConfig)
+local Lexer=require(script.Parent.BWLexer)
+local Expression=require(script.Parent.BWExpression)
+local Commands=require(script.Parent.BWCommands)
+local Value=require(script.Parent.BWValue)
 local Parser={}
-local moves={forward=true,back=true}
-local turns={turn_left=true,turn_right=true,turret_left=true,turret_right=true}
-local function trim(s) return s:match("^%s*(.-)%s*$") end
-local function failure(line,message) return nil,{line=line,message=string.format("Line %d: %s",line,message)} end
-local function number(s)
-	if not s:match("^[+-]?%d+%.?%d*$") and not s:match("^[+-]?%.%d+$") then return nil end
-	local value=tonumber(s)
-	return if value and value==value and math.abs(value)<math.huge then value else nil
+local reserved={['if']=true,['elif']=true,['else']=true,['switch']=true,['case']=true,['default']=true,['and']=true,['or']=true,['not']=true,['true']=true,['false']=true,['null']=true,['while']=true,['for']=true,['def']=true,['break']=true,['return']=true}
+local function parse(source)
+	if type(source)~="string" then Commands.error(1,"Source must be text.") end
+	if #source>Limits.MaxSourceBytes then Commands.error(1,"Program exceeds 16,384 bytes.") end
+	local lines,line={},0
+	for raw in ((if source:sub(-1)=="\n" then source else source.."\n")):gmatch("([^\n]*)\n") do
+		line+=1
+		if line>Limits.MaxLines then Commands.error(line,"Too many source lines (maximum 400).") end
+		local tokens=Lexer.line(raw,line)
+		if tokens[1].kind=="eof" then continue end
+		local leading=raw:match("^[ \t]*")
+		if leading:find("\t",1,true) then Commands.error(line,"Indent with four spaces; tabs are not allowed.") end
+		if #leading%Limits.IndentWidth~=0 then Commands.error(line,"Indentation must use multiples of four spaces.") end
+		table.insert(lines,{tokens=tokens,indent=#leading,line=line,text=raw:match("^%s*(.-)%s*$"):sub(1,200)})
+	end
+	local cursor,count=1,0
+	local function expression(row,start,last)
+		local node,pos=Expression.parse(row.tokens,start)
+		if row.tokens[pos].kind~=(last or "eof") or (last and row.tokens[pos+1].kind~="eof") then Commands.error(row.line,"Unexpected token after expression; expected "..(last or "end of line")..".") end
+		return node
+	end
+	local function constant(node) return Expression.constant(node) end
+	local function numericCall(row,call)
+		call.text=row.text
+		local all=true
+		for _,arg in call.args do
+			local known,value=constant(arg.expression)
+			if known then Commands.validate(call.name,arg.key or "value",value,row.line) else all=false end
+		end
+		if all then
+			local instruction=Commands.resolve(call,function(n) local _,value=constant(n); return value end)
+			for _,arg in call.args do
+				local expr=arg.expression
+				if expr.kind~="literal" and not (expr.kind=="unary" and expr.operand.kind=="literal") then instruction.call=call end
+			end
+			return instruction
+		end
+		return {op=call.name,call=call,line=row.line,text=row.text,bestEffort=true}
+	end
+	local block
+	local function suite(row,indent,depth)
+		if not lines[cursor] or lines[cursor].indent~=indent+Limits.IndentWidth then Commands.error(row.line,"Expected an indented block of four spaces.") end
+		return block(indent+Limits.IndentWidth,depth+1)
+	end
+	block=function(indent,depth)
+		if depth>Limits.MaxBlockDepth then Commands.error(lines[cursor].line,"Block nesting exceeds limit.") end
+		local result={}
+		while lines[cursor] and lines[cursor].indent>=indent do
+			local row=lines[cursor]
+			if row.indent~=indent then Commands.error(row.line,"Unexpected indentation.") end
+			count+=1; if count>Limits.MaxInstructions then Commands.error(row.line,"Too many statements (maximum 128).") end
+			local token=row.tokens[1]; local word=token.value
+			cursor+=1
+			local node={line=row.line,text=row.text}
+			if word=="if" then
+				node.kind="if"; node.branches={}
+				local condition=expression(row,2,":"); local known,value=constant(condition)
+				if known then Expression.boolean(value,row.line) end
+				table.insert(node.branches,{condition=condition,body=suite(row,indent,depth),line=row.line,text=row.text})
+				while lines[cursor] and lines[cursor].indent==indent and lines[cursor].tokens[1].value=="elif" do
+					local branch=lines[cursor]; cursor+=1
+					local test=expression(branch,2,":"); local static,v=constant(test); if static then Expression.boolean(v,branch.line) end
+					table.insert(node.branches,{condition=test,body=suite(branch,indent,depth),line=branch.line,text=branch.text})
+				end
+				if lines[cursor] and lines[cursor].indent==indent and lines[cursor].tokens[1].value=="else" then
+					local otherwise=lines[cursor]; cursor+=1
+					if otherwise.tokens[2].kind~=":" or otherwise.tokens[3].kind~="eof" then Commands.error(otherwise.line,"Expected else: with no condition.") end
+					node.otherwise=suite(otherwise,indent,depth)
+				end
+			elseif word=="switch" then
+				node.kind="switch"; node.expression=expression(row,2,":"); constant(node.expression); node.cases={}
+				if not lines[cursor] or lines[cursor].indent~=indent+Limits.IndentWidth then Commands.error(row.line,"Expected indented case/default branches.") end
+				local labels={}
+				while lines[cursor] and lines[cursor].indent==indent+Limits.IndentWidth do
+					local branch=lines[cursor]; cursor+=1
+					if branch.tokens[1].value=="case" then
+						local label=expression(branch,2,":"); local known,value=constant(label)
+						if not known or Value.isArray(value) then Commands.error(branch.line,"Case labels must be constant numbers, strings, booleans or null.") end
+						for _,old in labels do if Value.equal(old,value) then Commands.error(branch.line,"Duplicate case value.") end end
+						table.insert(labels,value)
+						table.insert(node.cases,{value=value,body=suite(branch,indent+Limits.IndentWidth,depth+1),line=branch.line})
+					elseif branch.tokens[1].value=="default" then
+						if node.otherwise then Commands.error(branch.line,"Duplicate default branch.") end
+						if branch.tokens[2].kind~=":" or branch.tokens[3].kind~="eof" then Commands.error(branch.line,"Expected default:.") end
+						node.otherwise=suite(branch,indent+Limits.IndentWidth,depth+1)
+					else Commands.error(branch.line,"A switch block may contain only case/default branches.") end
+				end
+			elseif reserved[word] then Commands.error(row.line,"Unexpected or unsupported statement '"..word.."'.")
+			elseif token.kind=="id" and row.tokens[2].kind=="=" then
+				if Commands.known(word) then Commands.error(row.line,"Cannot assign to built-in function '"..word.."'.") end
+				node.kind="assign"; node.name=word; node.expression=expression(row,3); constant(node.expression)
+			else
+				local call=expression(row,1)
+				if call.kind~="call" then Commands.error(row.line,"Expected an assignment or function-style command.") end
+				if call.name=="print" then node.kind="print"; node.expression=call.args[1].expression; constant(node.expression)
+				else node.kind="action"; node.instruction=numericCall(row,call) end
+			end
+			table.insert(result,node)
+		end
+		return result
+	end
+	local ast=block(0,0)
+	local instructions={}
+	local function emit(op,node,fields)
+		local item=fields or {}; item.op=op; item.line=node.line; item.text=node.text; item.bestEffort=if item.bestEffort==nil then false else item.bestEffort
+		table.insert(instructions,item)
+		if #instructions>Limits.MaxCompiledInstructions then Commands.error(node.line,"Compiled program is too large.") end
+		return item
+	end
+	local compile
+	compile=function(body)
+		for _,node in body do
+			if node.kind=="action" then table.insert(instructions,node.instruction)
+			elseif node.kind=="assign" then emit("$assign",node,{name=node.name,expression=node.expression})
+			elseif node.kind=="print" then emit("$print",node,{expression=node.expression})
+			elseif node.kind=="if" then
+				local exits={}
+				for _,branch in node.branches do
+					local test=emit("$branch",branch,{condition=branch.condition})
+					compile(branch.body); table.insert(exits,emit("$jump",node))
+					test.target=#instructions+1
+				end
+				if node.otherwise then compile(node.otherwise) end
+				for _,exit in exits do exit.target=#instructions+1 end
+			elseif node.kind=="switch" then
+				local switch=emit("$switch",node,{expression=node.expression,choices={}}); local exits={}
+				for _,case in node.cases do
+					table.insert(switch.choices,{value=case.value,target=#instructions+1})
+					compile(case.body); table.insert(exits,emit("$jump",node))
+				end
+				switch.target=#instructions+1
+				if node.otherwise then compile(node.otherwise) end
+				for _,exit in exits do exit.target=#instructions+1 end
+			end
+			if #instructions>Limits.MaxCompiledInstructions then Commands.error(node.line,"Compiled program is too large.") end
+		end
+	end
+	compile(ast)
+	return instructions,ast
 end
 function Parser.parse(source)
-	if type(source)~="string" then return failure(1,"Source must be text.") end
-	if #source>Limits.MaxSourceBytes then return failure(1,"Program exceeds 16,384 bytes.") end
-	local instructions={}
-	local line=0
-	local lines=if source:sub(-1)=="\n" then source else source.."\n"
-	for raw in lines:gmatch("([^\n]*)\n") do
-		line+=1
-		if line>Limits.MaxLines then return failure(line,"Too many source lines (maximum 400).") end
-		local text=trim((raw:gsub("#.*$","")))
-		if text=="" then continue end
-		local op,argument=text:match("^([%a_][%w_]*)%s*%((.-)%)%s*$")
-		if not op then return failure(line,"Expected one command, for example forward(10).") end
-		if not moves[op] and not turns[op] and op~="fire" then return failure(line,"Unknown command '"..op.."' (names are case-sensitive).") end
-		argument=trim(argument)
-		local absolute,bestEffort,hasValue,seenBest,sawKeyword=false,true,false,false,false
-		local valueText
-		if argument~="" then
-			for rawArgument in (argument..","):gmatch("([^,]*),") do
-				local token=trim(rawArgument)
-				if token=="" then return failure(line,"Empty argument or trailing comma.") end
-				local key,literal=token:match("^([%a_][%w_]*)%s*=%s*(.-)%s*$")
-				if key then
-					sawKeyword=true
-					if key=="best_effort" then
-						if seenBest then return failure(line,"Duplicate best_effort argument.") end
-						if literal~="true" and literal~="false" then return failure(line,"best_effort must be true or false (lowercase).") end
-						seenBest=true; bestEffort=literal=="true"
-					elseif key=="to" then
-						if not turns[op] then return failure(line,"Only chassis/turret turns support to=heading.") end
-						if hasValue then return failure(line,"Use one angle: either degrees or to=heading.") end
-						absolute=true; hasValue=true; valueText=literal
-					else return failure(line,"Unknown argument '"..key.."'.") end
-				else
-					if sawKeyword then return failure(line,"Put the distance/angle/duration before named arguments.") end
-					if hasValue then return failure(line,"Only one positional argument is allowed.") end
-					hasValue=true; valueText=token
-				end
-			end
-		end
-		local value
-		if not hasValue and op=="fire" then value=nil
-		else
-			value=if valueText then number(valueText) else nil
-			if value==nil then return failure(line,"Expected a finite decimal number"..(if turns[op] then " or to=heading." else ".")) end
-			local limit=if absolute then Limits.MaxAbsoluteAngle elseif moves[op] then Limits.MaxDistance elseif turns[op] then Limits.MaxRelativeAngle else Limits.MaxFireSeconds
-			if (not absolute and value<0) or math.abs(value)>limit then
-				return failure(line,string.format("Argument must be %s to %g.",if absolute then tostring(-limit) else "0",limit))
-			end
-			if absolute then value=value%360 end
-		end
-		table.insert(instructions,{op=op,value=value,absolute=absolute,bestEffort=bestEffort,line=line,text=text:sub(1,200)})
-		if #instructions>Limits.MaxInstructions then return failure(line,"Too many commands (maximum 128).") end
-	end
-	return instructions
+	local ok,instructions,ast=pcall(parse,source)
+	if ok then return instructions,nil,ast end
+	local err=instructions
+	if type(err)~="table" or not err.bwError then return nil,{line=1,message="Line 1: Invalid BW syntax."} end
+	return nil,{line=err.line or 1,message=string.format("Line %d: %s",err.line or 1,err.message)}
 end
 return Parser

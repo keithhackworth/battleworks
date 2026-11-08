@@ -8,6 +8,7 @@ local selectTank = network:WaitForChild("SelectTank")
 local prepareShot = network:WaitForChild("PrepareShot")
 local bwRun,bwStop=network:WaitForChild("BWRun"),network:WaitForChild("BWStop")
 local resetBattle=network:WaitForChild("ResetBattle")
+local bwOutput=network:WaitForChild("BWOutput")
 local BWIDE = require(script.BWIDE)
 local InputController = require(script.InputController)
 local Renderer = require(script.TankRenderer)
@@ -77,6 +78,9 @@ snapshot.OnClientEvent:Connect(function(nextStates,battles)
 	if battlefieldCamera:observe(states[ownId]) and renderers[ownId] then
 		renderers[ownId]:resetPose(states[ownId])
 	end
+end)
+bwOutput.OnClientEvent:Connect(function(id,generation,requestId,reading)
+	ide:receiveOutput(id,generation,requestId,reading)
 end)
 prepareShot.OnClientEvent:Connect(function(id, tankType, generation)
 	local renderer = renderers[tostring(id)]

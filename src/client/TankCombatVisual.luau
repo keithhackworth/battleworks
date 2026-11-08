@@ -6,14 +6,14 @@ local Smoke=require(script.Parent.SmokeVisual)
 local Visual={}
 function Visual.attach(renderer)
 	local gui=Instance.new("BillboardGui"); gui.Name="TankHealth"
-	gui.Size=UDim2.fromOffset(190,44); gui.StudsOffset=Vector3.new(0,6,0)
+	gui.Size=UDim2.fromOffset(190,44); gui.StudsOffset=Vector3.new(0,10,0)
 	gui.AlwaysOnTop=true; gui.MaxDistance=500; gui.Adornee=renderer.chassis; gui.Parent=renderer.chassis
 	local label=Instance.new("TextLabel"); label.Size=UDim2.new(1,0,0,26)
-	label.BackgroundColor3=Color3.fromRGB(24,31,35); label.BackgroundTransparency=0.15
+	label.BackgroundColor3=Color3.fromRGB(24,31,35); label.BackgroundTransparency=0.65
 	label.TextColor3=Color3.fromRGB(255,249,222); label.Font=Enum.Font.GothamBold; label.TextSize=14; label.Parent=gui
 	local track=Instance.new("Frame"); track.Position=UDim2.fromOffset(0,28); track.Size=UDim2.new(1,0,0,12)
-	track.BorderSizePixel=0; track.BackgroundColor3=Color3.fromRGB(55,35,35); track.Parent=gui
-	local bar=Instance.new("Frame"); bar.Size=UDim2.fromScale(1,1); bar.BorderSizePixel=0; bar.Parent=track
+	track.BorderSizePixel=0; track.BackgroundTransparency=0.65; track.BackgroundColor3=Color3.fromRGB(55,35,35); track.Parent=gui
+	local bar=Instance.new("Frame"); bar.Size=UDim2.fromScale(1,1); bar.BackgroundTransparency=0.25; bar.BorderSizePixel=0; bar.Parent=track
 	renderer.healthLabel=label; renderer.healthBar=bar
 end
 local function isPart(p) return p:IsA("BasePart") or p:IsA("Part") end

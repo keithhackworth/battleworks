@@ -14,6 +14,7 @@ Controller.clearInputs=cleanup
 function Controller.sync(tank)
 	local runtime=tank.bw
 	tank.state.bwRequestId=tank.lastBWRequest or 0
+	tank.state.bwRunRequestId=tank.bwRunRequestId or 0
 	if not runtime then return end
 	local instruction=runtime.instructions[runtime.index]
 	tank.state.bwRunning=runtime.status=="running"
@@ -25,12 +26,13 @@ function Controller.sync(tank)
 end
 function Controller.running(tank) return tank.bw~=nil and tank.bw.status=="running" end
 function Controller.stop(tank,reason)
-	if not Controller.running(tank) then return false end
+	if not Controller.running(tank) then if tank.bw then tank.bw.variables={} end; return false end
 	tank.bw:stop(reason or "Stopped by player.")
 	cleanup(tank); Controller.sync(tank)
 	return true
 end
 function Controller.reject(tank,message,line)
+	tank.bwRunRequestId=tank.lastBWRequest or 0; tank.state.bwRunRequestId=tank.bwRunRequestId
 	Controller.stop(tank,"Program rejected."); cleanup(tank)
 	tank.bw=nil; tank.state.bwRunning=false; tank.state.bwStatus="error"
 	tank.state.bwRequestId=tank.lastBWRequest or 0
@@ -40,6 +42,9 @@ function Controller.reject(tank,message,line)
 	return false
 end
 function Controller.start(tank,source)
+	if tank.state.manualScannerActive then tank.sensorScanTimes=nil end -- hand off immediately to explicit BW
+	tank.state.manualScannerActive=false; tank.state.scanManual=nil; tank.state.scanVisual=nil
+	tank.bwRunRequestId=tank.lastBWRequest or 0; tank.state.bwRunRequestId=tank.bwRunRequestId
 	tank.state.bwRequestId=tank.lastBWRequest or 0
 	Controller.stop(tank,"Replaced by a new program.")
 	cleanup(tank)
@@ -47,7 +52,7 @@ function Controller.start(tank,source)
 	if not instructions or tank.state.health<=0 then
 		return Controller.reject(tank,if err then err.message else "Tank is destroyed; reset the battle.",if err then err.line else 0)
 	end
-	tank.bw=Runtime.new(instructions,tank.state)
+	tank.bw=Runtime.new(instructions,tank.state,tank.bwServices)
 	tank.requireFireRelease=false
 	Controller.sync(tank)
 	return true

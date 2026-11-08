@@ -4,6 +4,7 @@ local TweenService = game:GetService("TweenService")
 local TerrainEffects = require(script.Parent.TerrainEffects)
 local RattlerVisual = require(script.Parent.RattlerVisual)
 local BarrelAnimation = require(script.Parent.BarrelAnimation)
+local ScannerVisual = require(script.Parent.ScannerVisual)
 local DamageVisual = require(script.Parent.DamageVisual)
 local CombatVisual = require(script.Parent.TankCombatVisual)
 local Config = require(game.ReplicatedStorage.Shared.TankConfig)
@@ -150,6 +151,7 @@ function Renderer.new(id, tankType)
 			end
 		end
 	end
+	ScannerVisual.build(self,detail)
 	CombatVisual.attach(self)
 	return self
 end
@@ -273,6 +275,7 @@ function Renderer:update(state, dt)
 	DamageVisual.update(self,state,dt,part)
 	CombatVisual.update(self,state,part,anchors,dt)
 	DamageVisual.poseMarks(self)
+	ScannerVisual.update(self,state,dt)
 	TerrainEffects.update(self,state,dt)
 end
 function Renderer:destroy() self.model:Destroy() end

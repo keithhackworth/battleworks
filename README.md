@@ -1,9 +1,98 @@
 # BattleWorks: Boomer and Rattler
 
-Two persistent tanks per player in a local combat test arena. Choose **Bullet Boomer** (Boomer), the orange tracked cannon tank, or **Rattler**, the green four-wheeled Gatling car inspired by the bottom-left concept in `references/tank-styles.png`. Built from Roblox Parts with shared server-authoritative combat; no external packages are required. BW v0.1 adds a compact in-game editor and bounded server-side programs for the existing tanks.
+Two persistent tanks per player in a local combat test arena. Choose **Bullet Boomer** (Boomer), the orange tracked cannon tank, or **Rattler**, the green four-wheeled Gatling car inspired by the bottom-left concept in `references/tank-styles.png`. Built from Roblox Parts with shared server-authoritative combat; no external packages are required. BW v0.2 provides an in-game editor and bounded server-authoritative programs with variables, expressions and branching.
 
 For detailed implementation notes, known limitations, and future-session context, read [the Codex handoff](CODEX_HANDOFF.md).
 
+
+## BW v0.2 decisions
+
+Programs can store observations, calculate values and choose actions. This runs through the same authoritative movement/weapon runtime as v0.1:
+
+```python
+result = Scanner(45)
+
+if result[0] == "tank" and result[4] == "enemy":
+    distance = result[1]
+    print(result[3])
+    if distance < 30:
+        fire(2)
+    elif distance < 75:
+        fire(1)
+    else:
+        forward(10)
+elif result[0] == "wall":
+    turn_right(90)
+else:
+    forward(20)
+```
+
+Variables are dynamically typed and scoped to one program. Numbers, single/double-quoted strings, lowercase `true`/`false`, `null` and immutable arrays are supported. Arrays (including scanner results) use **zero-based indexing**. Reassignment works, for example `shots = shots + 1`. Undefined variables, invalid indexes/types and division by zero stop execution with a source line. Program variables never appear in public tank snapshots; new runs/reset do not inherit them.
+
+Expressions support parentheses, unary `+`/`-`, `*`/`/`, `+`/`-`, `==`/`!=`/`<`/`<=`/`>`/`>=`, `not`, `and`, then `or` in that precedence order. `not a == b` means `not (a == b)`. Conditions and logical operands must be booleans; no truthiness or implicit numeric/string conversion is applied. Ordering accepts two numbers or two strings. Equality preserves types and compares arrays by contents. Use `and` between comparisons instead of chained comparisons. `and`/`or` short-circuit, so skipped operands/bodies never read variables or scan.
+
+Use **exactly four spaces per indentation level**, colons on block headers, and one statement/expression per line. Blank lines and quote-aware `#` comments are allowed. The editor expands leading tab characters to four-space stops and maintains indentation after Enter, adding a level after a colon. Raw tab-indented programs submitted outside the IDE are rejected. Dedent with spaces for `elif`, `else`, `case` and `default`. Nested `if`/`elif`/`else` and switches are supported:
+
+```python
+result = Scanner(90)
+switch result[0]:
+    case "tank":
+        print("Tank detected")
+    case "wall":
+        print("Wall detected")
+    case null:
+        print("Nothing detected")
+    default:
+        print("Unknown object")
+```
+
+A switch evaluates its expression once, runs the first matching case and never falls through. Default is a fallback. Labels must be constant scalar expressions (such as `case 1 + 1:`); determinable duplicates are validation errors. All source, including skipped branches, is syntax/argument validated before any tank action; validation never invokes Scanner.
+
+Existing commands accept evaluated expressions, including `forward(distance)`, `fire(duration)`, `Scanner(direction)` and `turn_left(to=angle)`. Each asynchronous command resolves its arguments once on entry and retains its physical target until completion; variables/branches do not replace tank physics. Movement/weapon calls cannot be used as values. Scanner is the sole value-returning function; `print(value)` is a standalone output statement. Printed strings are readable text; arrays retain quoted strings and explicit nulls.
+
+The IDE keeps scanner diagnostics and explicit prints in one chronological, private, scrollable history, with source lines/timestamps and completion/error status below. Scanner diagnostics have `Scanner(angle) ->` labels and print records have separate labels, so explicit `print(result)` is recognizable. Run still closes the editor; reopen it to inspect output. Stop preserves history and clears execution variables/inputs. Per-tank histories and independent programs remain supported.
+
+The interpreter accounts for reads/writes, arithmetic/comparisons/logical operations, branches and calls through configurable informational cycle hooks. The existing scanner cost remains 5; no CPU-budget enforcement or artificial cycle delays were added. Individual sensor cooldowns are unchanged. A scan operational failure inside an expression fails the statement safely rather than inventing a value; standalone scan/action failures retain `best_effort`. Expression/type/undefined-variable errors are always terminal.
+
+Safety limits: 16 KiB source, 400 lines, 128 source statements, 512 forward-only compiled instructions, 12 nested block levels, 32 expression levels, 512 tokens per line, 64 items per array, 128 variables, 128 completed scanner observations and 256 output records per program. String literals and displayed records are capped at 2,048 bytes; long formatted output is visibly truncated, without altering stored values. Overall 180-second timeout, per-action/stuck limits, immobilization grace, input cleanup and all movement/weapon argument limits remain. Stop, death, reset and disconnect cancel safely. No loops, custom functions, automatic tracking/targeting or arbitrary Luau exist.
+
+Studio checks remain: native keyboard/paste/Enter/caret indentation, touch/gamepad editor focus, current-line/status visibility while actions are pending, mixed output scrolling, private two-client outputs, Stop/reset/death mid-branch, scanner occlusion/cooldowns and both vehicles' physical behavior.
+
+## Directional scanner
+
+Both tanks support the case-sensitive **`Scanner(angle)`** BW command. In BW it takes one explicit observation; it never turns on passive radar for a program. For example:
+
+```python
+Scanner(45)
+forward(5)
+Scanner(90)
+```
+
+**Manual driver assistance:** the selected living tank runs all eight sensors independently. Each polls every 0.4 simulated seconds and cycles its center/left/right 15° cones, covering the full circle in about 1.2 seconds. Recent warnings are retained for up to 3 seconds across the eight indicators, so a neighboring empty cone does not immediately erase an enemy reading. Automatic scans stop for unselected, destroyed or BW-controlled tanks. They use the same authoritative scanner and shared query limits, but never create BW values, consume BW cycles or fill the IDE log. A new BW Run clears the driver-only readings and immediately hands control to explicit Scanner instructions.
+
+The indicators now have **1.3-stud lenses**, expanding to **1.6 studs** with a bright Neon reaction. Short arms/posts place them farther around and above the hull, outside the turret silhouette. Multiple directions can show recent warnings together during a manual sweep. Stale readings still expire if updates stop.
+
+Reopen the IDE after Run to see **all scan results from that run**, in chronological order with source lines and simulation timestamps. The output pane scrolls vertically and horizontally, follows new results while you are at the bottom, and lets you scroll back without interruption. Stop preserves the log; a new Run or battle reset clears it. Each tank keeps its own history:
+
+```text
+["tank", 58, 39.6, "player3.Rattler#tank-17", "enemy"]
+["wall", 22, 87.4, null, null]
+[null, null, null, null, null]
+```
+
+These are illustrative readings. The five logical fields (indexes 0–4) are type, surface distance, actual surface bearing, unique tank identifier, and affiliation. **Scanner bearings are chassis-relative**, clockwise: forward 0°, right 90°, backward 180°, left 270°. This is separate from BW's world-compass `to=` turns. Finite decimal/scientific angle literals are normalized modulo 360, including negatives. `best_effort` works as on other commands.
+
+The scanner origin is the authoritative collision-body center: tank position + **2.5 world-Y studs**, independent of turret aim, cosmetic rocking and camera. Its initial cone is **15° horizontally**, ±7.5°, and range is **0–150 studs** measured in 3D to a visible surface. Vertical LOS rays can reach the actual body of a ground tank while the scanner is airborne. Oriented collision bounds are clipped against the cone, including partially intersecting bodies whose centers lie outside it. Server raycasts against authoritative arena geometry confirm the first actual surface, so solid walls, rocks/logs/trees, targets and nearer tanks compete in the same nearest-hit search. Ground floor, cosmetic components, smoke, projectiles and the scanner's own body are excluded. Current wrecks are not projectile cover (`CanQuery=false`), so they are excluded too.
+
+All active tanks are enemies in the current local-pair PoC, including the other tank owned by the same player. Detected tanks return **`player_name.tank_name#stable_tank_id`**, such as `player3.Rattler#tank-17`. The suffix is unique within the game and stays stable across control switches and battle resets, distinguishing multiple same-type tanks owned by one player. Unowned tanks use `AI.tank_name#stable_tank_id`. The current tank name defaults to Boomer/Rattler; future instance names can override it without changing the ID. An explicit matching non-nil `teamId` on tank records is supported for future friendly relationships; this adds no team system.
+
+Every successful call retains an immutable structured value and observation (timestamp plus the scanner's own origin/yaw) in the server BW runtime. The five-element array uses a frozen null sentinel internally so empty/trailing fields survive Luau array storage; `BWValue.get(value, index)` uses logical zero-based indexing. It is not just an output string. Variables, zero-based indexing and conditional decisions are supported by BW v0.2; loops, automatic tracking, velocity estimates and predictive aiming are not built in. The timestamp is taken before movement at a completed fixed simulation step, with all tanks' hitboxes synchronized; it is not the IDE display time.
+
+Exact output goes only to the requesting player's IDE through `BWOutput`. Other clients get a short sensor reaction containing the requested direction, hit category/affiliation and **coarse** proximity (near/mid/far), without an identity, exact range, target position or velocity. Eight small decorative lenses react: enemy amber-to-red and increasingly shaky at close range, friendly cyan, wall neutral grey, empty blue pulse. BW reactions fade after 1.2 seconds; manual sweep readings expire after at most 3 seconds. Both are based on completed scans, not client-side knowledge of nearby tanks. Decorations cannot collide, intercept bullets or affect scans. Existing prototype-wide tank snapshots for rendering remain unchanged; this feature does not add fog-of-war replication.
+
+`ScannerConfig` centralizes cone/range, precision, query and visual limits. Each physical sensor has its own 0.1-second cooldown; different sensors can scan at the same timestamp. Nearby requested angles use the same nearest 45° sensor channel, so small angle changes cannot bypass its cooldown. A shared 64-per-second / 16-burst server work budget bounds total query load and at most 192 rays per scan. Overfull scenes or too-fast requests return a line-numbered runtime failure, not a fabricated empty observation; default best-effort warns and continues, while `best_effort=false` stops. Repeated calls through the same sensor need its cooldown to expire; scanning another direction through a different sensor does not. There are no artificial CPU delays. Each invocation accounts for configurable `ScannerCost=5` informational cycles via a future accounting hook; no CPU-budget enforcement exists.
+
+Coverage uses bounded face-derived probes with real physical ray confirmation, rather than exhaustive pixel visibility. Box surfaces use clipped closest-point geometry with a 0.002-stud pruning tolerance; curved/complex cover can have sub-probe slivers that require future refinement. Returned hit measurements retain full precision with no measurement noise. Studio must verify native spatial-query behavior at cone boundaries, rotated/curved cover and airborne LOS, private output with two clients, sensor readability/decay, cancellation/reset and throughput under concurrent programs.
 
 ## Progressive weapon damage
 
@@ -27,19 +116,19 @@ The **fatal projectile's weapon** selects the finish. Cannon: giant explosion, f
 
 Studio still needs to verify smoke actually makes aiming harder at the normal camera distance without covering UI; episode fairness; both vehicles' damage/fatal animations; live/native collision and replicated visibility with two clients; audio quality; and repeated resets during smoke, immobilization and collapse. Automated checks use mocked engine/GUI services and do not establish play balance.
 
-## Program a tank with BW v0.1
+## Basic tank commands (v0.1 compatible)
 
 Open **BW Editor** below the tank selector/debug readout. The editor contains the default demonstration program. Choose Boomer or Rattler, press **Run**; the editor closes and releases text focus so you can play. Reopen it to watch the current line/output. Each tank keeps its own editor source and server execution state. Switching tanks also closes the editor and releases text focus. Switch to the other tank to drive it manually or start its independent program; switching leaves the first program running. **Stop** releases BW control; press movement/fire controls again to resume manually. Editing text also suppresses driving keys through the normal input-focus handling.
 
-Every command accepts optional `best_effort=true` (the default). For example, `forward(10, best_effort=false)` stops the program if blocked, while `fire(best_effort=true)` skips an activation that cannot complete. Absolute turns support `turn_right(to=90, best_effort=false)`. Only lowercase boolean literals `true` and `false` are accepted.
+Every command accepts optional `best_effort=true` (the default). For example, `forward(10, best_effort=false)` stops the program if blocked, while `fire(best_effort=true)` skips an activation that cannot complete. Absolute turns support `turn_right(to=90, best_effort=false)`. `best_effort` also accepts boolean expressions/variables; boolean literals are lowercase `true` and `false`.
 
 BW supports `forward(studs)`, `back(studs)`, `turn_left(degrees)`, `turn_right(degrees)`, `turret_left(degrees)`, `turret_right(degrees)`, directional `to=heading` turns, `fire()` and `fire(seconds)`. Use one command per line; blank lines and `#` comments are allowed. Compass headings are world-relative: North 0°, East 90°, South 180°, West 270°. Left/right absolute turns honor the requested route, including a longer rotation. Rattler drives through chassis turns; Boomer pivots.
 
 The server parses and runs the program through existing controls. Distances use actual net horizontal displacement projected along the command's starting direction; sideways drift and vertical hopping do not count. Turn progress accumulates across revolutions. `fire()` waits for one accepted/released shot; `fire(seconds)` holds the real trigger and respects reload/heat. Inputs release between instructions. Already-prepared shots finish before a fire instruction advances; Stop cancels preparation that has not released yet. Already-launched projectiles continue normally.
 
-Limits: 16 KiB source, 400 lines, 128 instructions, 1,000 studs per move, 1,440° per relative turn, absolute arguments within ±36,000° (normalized), and 10 seconds per timed fire. A program is bounded to 180 simulated seconds, each instruction to at most 90 seconds (weapon waits at most 15), and no-progress movement/rotation fails after 3 seconds. By default, instruction failures release inputs, warn with the source line, and continue; `best_effort=false` makes them terminal errors. Syntax errors and global safety/lifecycle stops are never skipped. Death, battle reset, redraw and disconnect stop execution. Switching control preserves running programs. BW changes inputs, never teleports or cancels physics: Rattler can still coast or finish a recoil hop after Stop. There is no pathfinding; blocked instructions report a warning and skip by default, or stop the program with `best_effort=false`.
+Limits: 16 KiB source, 400 lines, 128 source statements, 1,000 studs per move, 1,440° per relative turn, absolute arguments within ±36,000° (normalized), and 10 seconds per timed fire. A program is bounded to 180 simulated seconds, each instruction to at most 90 seconds (weapon waits at most 15), and no-progress movement/rotation fails after 3 seconds. By default, instruction failures release inputs, warn with the source line, and continue; `best_effort=false` makes them terminal errors. Syntax errors and global safety/lifecycle stops are never skipped. Death, battle reset, redraw and disconnect stop execution. Switching control preserves running programs. BW changes inputs, never teleports or cancels physics: Rattler can still coast or finish a recoil hop after Stop. There is no pathfinding; blocked instructions report a warning and skip by default, or stop the program with `best_effort=false`.
 
-Only sequential commands exist in v0.1: no variables, loops, conditions, sensors, enemy tracking, custom functions, parallel actions or arbitrary Luau. Source is session-local and is not saved to an account.
+Statements still execute sequentially; variables and branches are supported. Loops, passive BW sensors, automatic enemy tracking, custom functions, parallel actions and arbitrary Luau remain out of scope. Source is session-local and is not saved to an account.
 
 ## Build and open in Roblox Studio
 
@@ -63,7 +152,7 @@ For live source updates, install the matching Rojo Studio plugin, run `rojo serv
 - **Boomer / Rattler buttons:** select control/camera focus below the Input button. Both tanks remain in the arena; switching releases manual controls without resetting either tank or stopping BW.
 - **Reset Battle:** restore both tanks to 100 HP, their original inward-facing spawns, fresh weapons/cooldowns and no residual recoil or active projectiles. Stops both programs; editor source is retained.
 
-The fixed 50°/45° map camera uses a strict central 20% dead zone and a wider default view; small readable maps remain fully framed. The HUD shows health and reload state. Five orange practice targets each take four hits and reset five seconds after destruction when their space is clear. Both tanks start at 100 HP and show a health bar plus numeric HP. Boomer deals 25 damage per shell; Rattler deals 6 per round. Opposing tanks can destroy each other, without self-damage or duplicate impact damage. For a fatal cannon hit, a 24-stud fireball, 40-stud shockwave, fiery bursts, rising smoke and a low boom accompany the complete turret/gun launching off the hull. Boomer’s eight road wheels or Rattler’s four tire assemblies scatter, tumble and settle. All vehicle pieces turn grey and remain as a solid wreck; controls/BW stop and the HUD announces the winner (or a double-KO draw). The breakup is cosmetic and cannot deal damage or block projectiles. Press Reset Battle to try again. The arena walls, targets, and other tanks block movement. Controls clear when the window loses focus or a text field gains focus. Server commands expire after 0.35 seconds without a valid update.
+The fixed 50°/45° map camera uses a strict central 20% dead zone and a wider default view; small readable maps remain fully framed. The HUD shows health and reload state. Overhead health headers sit 10 studs above the chassis, with 65% transparent label/track backgrounds to avoid covering the tank. Five orange practice targets each take four hits and reset five seconds after destruction when their space is clear. Both tanks start at 100 HP and show a health bar plus numeric HP. Boomer deals 25 damage per shell; Rattler deals 6 per round. Opposing tanks can destroy each other, without self-damage or duplicate impact damage. For a fatal cannon hit, a 24-stud fireball, 40-stud shockwave, fiery bursts, rising smoke and a low boom accompany the complete turret/gun launching off the hull. Boomer’s eight road wheels or Rattler’s four tire assemblies scatter, tumble and settle. All vehicle pieces turn grey and remain as a solid wreck; controls/BW stop and the HUD announces the winner (or a double-KO draw). The breakup is cosmetic and cannot deal damage or block projectiles. Press Reset Battle to try again. The arena walls, targets, and other tanks block movement. Controls clear when the window loses focus or a text field gains focus. Server commands expire after 0.35 seconds without a valid update.
 
 ## Android, touch, and input settings
 
@@ -108,6 +197,11 @@ These are the local normalized command values sampled for the outbound relay, **
 | `src/client/TouchInput.luau` | Two independent virtual sticks, hold-to-fire, per-InputObject ownership/cancel cleanup, safe-area layout, input relay display. |
 | `src/client/GamepadInput.luau` | Gamepad1 analog sticks and right-trigger adapter. |
 | `src/client/Analog.luau` | Shared radial dead zone, normalized output and circular clamping. |
+| `src/shared/BWLexer.luau`, `BWExpression.luau`, `BWCommands.luau` | Bounded lexical/expression AST, strict evaluation and shared static/runtime command contracts. |
+| `src/shared/BWParser.luau`, `BWRuntime.luau`, `BWEditorText.luau` | Indentation AST/forward-only compilation, program-local variables/branch execution and four-space editor assistance. |
+| `src/shared/ScannerConfig.luau`, `ScannerGeometry.luau`, `BWValue.luau` | Scanner tuning, clipped collision-bound probes and immutable runtime arrays/observations. |
+| `src/server/DirectionalScanner.luau` | Authoritative spatial queries, nearest visible surface, identification and query budgets; invoked only by BW Scanner. |
+| `src/client/ScannerVisual.luau` | Nonphysical sensor decorations driven solely by completed scan reactions. |
 | `src/server/LocalBattle.luau` | Persistent pair ownership, selection, inward-facing spawn/reset poses, HP/destruction/winner lifecycle. Reuses the existing simulation and weapons. |
 | `src/client/TankCombatVisual.luau` | Snapshot-driven overhead HP bar/numbers and a bounded cosmetic destruction burst. |
 | `src/client/InputController.luau` | Auto/explicit mode selection, settings button, focus/menu release, temporary default movement suppression. |
@@ -124,7 +218,7 @@ This prototype supports a flat arena, simple conservative tank/target collision,
 
 ## Verification
 
-The current checks compile 49 Luau sources and cover simultaneous tanks, independent manual/BW control, persistent selection, damage/death/self-damage protection, reset/projectile cleanup, per-tank editor source and health/destruction visuals, attributed progressive injuries, bounded status scheduling and BW immobilization grace. The production server is tested with mocked engine sweeps; native Roblox spatial queries and presentation still require Studio.
+The current checks compile 59 Luau sources and cover simultaneous tanks, independent manual/BW control, persistent selection, damage/death/self-damage protection, reset/projectile cleanup, per-tank editor source and health/destruction visuals, attributed progressive injuries, bounded status scheduling and BW immobilization grace. The production server is tested with mocked engine sweeps; native Roblox spatial queries and presentation still require Studio.
 
 `rojo build -o battleworks.rbxl` and `rojo build -o battleworks.rbxlx` succeed with Rojo 7.7.1. A build validates the Rojo data model; it does not execute Luau. The development check compiles every source file using Luau Web and executes deterministic input/contract/simulation tests with mock Roblox services:
 

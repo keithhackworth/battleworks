@@ -18,7 +18,7 @@ for _,source in commands do
 end
 local reordered=assert(Parser.parse("turret_left(best_effort=false, to=-90)"))[1]
 check(reordered.absolute and reordered.value==270 and not reordered.bestEffort,"named options support either order")
-for _,source in {"fire(best_effort=True)","fire(best_effort=1)","fire(best_effort=foo)","fire(best_effort=true, best_effort=false)","forward(best_effort=true)","forward(best_effort=false, 10)","turn_left(to=90, to=180)","turn_right(90, to=180)","fire(best_effort=true,)","forward(10,unknown=true)","fire(true)"} do
+for _,source in {"fire(best_effort=1)","fire(best_effort=true, best_effort=false)","forward(best_effort=true)","forward(best_effort=false, 10)","turn_left(to=90, to=180)","turn_right(90, to=180)","fire(best_effort=true,)","forward(10,unknown=true)","fire(true)"} do
  local parsed,err=Parser.parse("# header\n"..source)
  check(not parsed and err.line==2,"malformed options remain line-numbered syntax errors")
 end

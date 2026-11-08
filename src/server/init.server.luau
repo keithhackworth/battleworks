@@ -10,6 +10,10 @@ local mapSize = Vector2.new(Config.ArenaLimit*2, Config.ArenaLimit*2)
 local environment = Environment.create(mapSize)
 local Command = require(Shared.InputCommand)
 local BWController = require(script.BWController)
+local ScannerConfig=require(Shared.ScannerConfig)
+local ScannerValues=require(Shared.BWValue)
+local DirectionalScanner=require(script.DirectionalScanner)
+local ManualScanner=require(script.ManualScanner)
 local DamageEffects = require(Shared.DamageEffects)
 local Simulation = require(Shared.TankSimulation)
 local MovementTelemetry = require(Shared.MovementTelemetry)
@@ -35,6 +39,7 @@ local prepareShot = remote("PrepareShot")
 local selectTank = remote("SelectTank")
 local bwRun,bwStop = remote("BWRun"),remote("BWStop")
 local resetBattle = remote("ResetBattle")
+local bwOutput=remote("BWOutput")
 network.Parent = ReplicatedStorage
 local tanks, targets, battles = {}, {}, {}
 local arena = Instance.new("Folder")
@@ -79,6 +84,30 @@ local function buildTargets(size)
 	end
 end
 buildTargets(mapSize)
+local simulationTime=0
+local scanner=DirectionalScanner.new(workspace,function()
+	local geometry,records={},{}
+	-- Only authoritative arena geometry participates. Projectiles, decorations,
+	-- particle volumes and client render models are outside this allowlist.
+	for _,p in arena:GetDescendants() do
+		if (p:IsA("BasePart") or p:IsA("Part")) and p~=floor and p.CanQuery~=false then table.insert(geometry,p) end
+	end
+	for id,tank in tanks do records[tank.hitbox]={state=tank.state,id=id,playerName=tank.playerName,tankName=tank.tankName or tank.kind,teamId=tank.teamId} end
+	return geometry,records
+end)
+local function publishScan(tank,angle,observation,manual)
+	local values=observation.value
+	local distance=if values[2]~=ScannerValues.Null then values[2] else nil
+	tank.scanSerial=(tank.scanSerial or 0)+1
+	-- Public decoration state contains no name, exact range, target ID or hit point.
+	local visual={serial=tank.scanSerial,angle=angle,kind=if values[1]~=ScannerValues.Null then values[1] else "none",
+		affiliation=if values[5]~=ScannerValues.Null then values[5] else nil,
+		proximity=if not distance then 0 elseif distance<=ScannerConfig.NearDistance then 1 elseif distance<=ScannerConfig.MidDistance then 0.55 else 0.2,
+		remaining=if manual then ScannerConfig.ManualVisualDuration else ScannerConfig.VisualDuration}
+	if manual then
+		ManualScanner.record(tank,angle,visual)
+	else tank.state.scanVisual=visual end
+end
 local spawnCount = 0
 local function owned(player,id)
 	if id~=nil and type(id)~="string" then return nil end
@@ -94,9 +123,24 @@ local function addPlayer(player)
 		local hitbox=part("TankHitbox",Vector3.new(8,5,10),Vector3.zero,Color3.new())
 		hitbox.Transparency=1; hitbox.CanCollide=false
 		hitbox:SetAttribute("OwnerId",player.UserId); hitbox:SetAttribute("TankId",id)
-		local tank={owner=player.UserId,kind=kind,seed=(math.abs(player.UserId)+(if kind=="Rattler" then 7919 else 0))%2147483646+1,hitbox=hitbox,lastPacket=0}
+		local tank={owner=player.UserId,playerName=player.Name,kind=kind,seed=(math.abs(player.UserId)+(if kind=="Rattler" then 7919 else 0))%2147483646+1,hitbox=hitbox,lastPacket=0}
 		Battle.resetTank(tank,mapSize,spawnCount,"Battle started.")
 		tanks[id]=tank; battle.tanks[id]=tank
+		tank.bwServices={
+			scan=function(angle)
+				local observation,err=scanner:execute(tank,angle,simulationTime)
+				if observation then publishScan(tank,angle,observation,false) end
+				return observation,err
+			end,
+			onValue=function(observation,line,angle)
+				bwOutput:FireClient(player,id,tank.state.generation,tank.bwRunRequestId or 0,
+					{kind="scan",angle=angle,text=ScannerValues.format(observation.value),timestamp=observation.timestamp,line=line})
+			end,
+			onPrint=function(text,line)
+				bwOutput:FireClient(player,id,tank.state.generation,tank.bwRunRequestId or 0,
+					{kind="print",text=text,timestamp=simulationTime,line=line})
+			end,
+		}
 	end
 end
 Players.PlayerAdded:Connect(addPlayer)
@@ -254,12 +298,27 @@ RunService.Heartbeat:Connect(function(dt)
 		for p, target in targets do PracticeTargets.update(p, target, now, tanks) end
 		for id, tank in tanks do
 			DamageEffects.step(tank.effects,tank.state,Config.Step)
+			local visual=tank.state.scanVisual
+			if visual then visual.remaining=math.max(0,visual.remaining-Config.Step); if visual.remaining==0 then tank.state.scanVisual=nil end end
 			local command = if tank.state.health<=0 then Command.neutral() else BWController.input(tank,Config.Step) or (if now - tank.lastInput <= Config.InputTimeout then tank.command else Command.neutral())
 			tank.tickCommand=command
 			local trigger = command.fire and not tank.requireFireRelease
 			tank.rattlerShot = RattlerWeapon.step(tank.rattler,tank.state.tankType == "Rattler" and tank.state.health > 0,trigger,Config.Step)
 			tank.state.firing = tank.state.tankType == "Rattler" and tank.rattler.firing
 			tank.state.heat = tank.rattler.heat; tank.state.weaponCooldown = tank.rattler.cooldown
+		end
+		-- BW gets first use of the shared query budget. Manual sweeps run only for
+		-- the selected living tank without an active program, never into BW output.
+		for id,tank in tanks do
+			local battle=battles[tank.owner]
+			ManualScanner.step(tank,battle and battle.selected==id and not BWController.running(tank),simulationTime,Config.Step,
+				function(angle) return scanner:execute(tank,angle,simulationTime) end,
+				function(angle,observation) publishScan(tank,angle,observation,true) end)
+		end
+		-- All BW observations precede movement, so every hitbox/state corresponds
+		-- to the same completed simulation timestamp, regardless of table order.
+		for _,tank in tanks do
+			local command=tank.tickCommand
 			tank.state.groundPlaneY=floor.Position.Y+floor.Size.Y/2
 			local previous = tank.state.position
 			Simulation.step(tank.state, command, Config.Step, mapSize, environment)
@@ -314,6 +373,7 @@ RunService.Heartbeat:Connect(function(dt)
 			end
 		end
 
+		simulationTime+=Config.Step
 	end
 	snapshotClock += dt
 	if snapshotClock >= Config.SnapshotInterval then

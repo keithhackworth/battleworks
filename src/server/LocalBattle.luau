@@ -25,6 +25,7 @@ function Battle.resetTank(tank,size,index,reason)
 	tank.spawn=position; tank.spawnYaw=yaw
 	tank.state=Simulation.new(position,tank.kind,tank.seed)
 	tank.effects=Effects.new(tank.state)
+	tank.sensorScanTimes=nil; tank.bwRunRequestId=0; tank.manualSensors=nil
 	tank.state.yaw=yaw; tank.state.turretYaw=yaw; tank.state.generation=generation
 	tank.rattler=Weapon.new(); tank.rattler.aimSeed=tank.seed
 	tank.boomerAim={aimSeed=tank.seed}
@@ -51,7 +52,7 @@ function Battle.damage(battle,victim,source,damage,weaponType,position)
 	Effects.record(victim.effects,victim.state,weaponType or Definitions.get(source.kind).WeaponType,applied,position)
 	if victim.state.health==0 then
 		BW.stop(victim,"Tank destroyed."); BW.clearInputs(victim)
-		victim.hitbox.CanQuery=false
+		victim.hitbox.CanQuery=false; victim.state.scanVisual=nil; victim.state.scanManual=nil; victim.state.manualScannerActive=false
 		battle.winner=if source.state.health>0 then source.kind else "Draw"
 	end
 	return true

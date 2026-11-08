@@ -45,7 +45,9 @@ Instance.new=function(class)
   for _,child in self.children do child:Destroy() end
   self.destroyed=true; self.Parent=nil
  end
- setmetatable(p,{__newindex=function(self,key,value)
+ setmetatable(p,{__index=function(self,key)
+  if key=="CFrame" and rawget(self,"Position") then return CFrame.new(self.Position) end
+ end,__newindex=function(self,key,value)
   rawset(self,key,value)
   if key=="Parent" and value and value.children then table.insert(value.children,self) end
  end})
@@ -266,6 +268,51 @@ do
  damaged:destroy()
  check(holePart.destroyed and deathGroupPart.destroyed,"reset/model cleanup removes scars and collapsed assemblies")
 end
+-- Completed observations alone drive harmless sensor decorations and decay.
+do
+ local Visual=require("ScannerVisual")
+ local renderer=Renderer.new("scanner-visual","Boomer")
+ local state=Sim.new(Vector3.zero); renderer:resetPose(state); renderer:update(state,1/60)
+ check(#renderer.scannerSensors==8 and renderer.scannerSensors[1].Size.X==1.3,"eight enlarged scanner lenses remain visible when idle")
+ for _,p in renderer.scannerSensors do check(not p.CanQuery and not p.CanCollide and not p.CanTouch,"sensor cannot affect bullets, rays or movement") end
+ local event={serial=1,angle=90,kind="tank",affiliation="enemy",proximity=0.2,remaining=1.2}
+ state.scanVisual=event
+ renderer:update(state,1/60)
+ check(renderer.scannerSensors[3].Material==Enum.Material.Neon and renderer.scannerSensors[3].Size.X==1.6 and renderer.scannerSensors[1].Material~=Enum.Material.Neon,"only requested directional sensor reacts to completed scan")
+ local lens=renderer.scannerSensors[3]
+ -- Compare the exact same visual phase with far and close observations.
+ local base=CFrame.new(0,0,0)
+ renderer.sensorClock=0.1; lens.CFrame=base; Visual.update(renderer,state,1/60)
+ local far=lens.CFrame.Position.Magnitude
+ state.scanVisual={serial=2,angle=90,kind="tank",affiliation="enemy",proximity=1,remaining=1.2}
+ renderer.sensorClock=0.1; lens.CFrame=base; Visual.update(renderer,state,1/60)
+ check(lens.CFrame.Position.Magnitude>far*20 and lens.Color[2]<30,"close enemy scan turns sensor red with exaggerated trembling")
+ state.scanVisual={serial=3,angle=90,kind="tank",affiliation="teammate",proximity=1,remaining=1.2}
+ renderer:update(state,1/60)
+ check(lens.Color[2]>200 and lens.Color[3]>200,"friendly scan uses distinct cyan indication")
+ state.scanVisual={serial=4,angle=90,kind="wall",proximity=1,remaining=1.2}; renderer:update(state,1/60)
+ check(lens.Color[1]==165 and lens.Color[2]==169,"wall scan gives subtle neutral indication")
+ state.scanVisual={serial=5,angle=90,kind="none",proximity=0,remaining=1.2}; renderer:update(state,1/60)
+ check(lens.Color[3]==220,"empty completed scan gives blue search pulse")
+ for _=1,100 do renderer:update(state,1/60) end
+ check(lens.Material==Enum.Material.SmoothPlastic and lens.Color[1]==77,"old scan decays even if no new snapshot arrives")
+ state.scanVisual=nil; state.manualScannerActive=true
+ state.scanManual={
+  ["0"]={serial=10,angle=0,kind="tank",affiliation="enemy",proximity=1,remaining=3},
+  ["15"]={serial=11,angle=15,kind="none",proximity=0,remaining=3},
+  ["90"]={serial=12,angle=90,kind="wall",proximity=0.55,remaining=3},
+ }
+ renderer:update(state,1/60)
+ check(renderer.scannerSensors[1].Color[2]<30 and renderer.scannerSensors[3].Material==Enum.Material.Neon,"manual sweep retains simultaneous directional warnings without empty neighbor erasing enemy")
+ for _=1,190 do renderer:update(state,1/60) end
+ check(renderer.scannerSensors[1].Material==Enum.Material.SmoothPlastic,"stale manual snapshots cannot restart expired warning timers")
+ state.manualScannerActive=false; renderer:update(state,1/60)
+ check(next(renderer.sensorReadings)==nil,"entering BW mode clears manual presentation cache")
+ state.scanVisual={serial=6,angle=90,kind="tank",affiliation="enemy",proximity=1,remaining=1.2}; renderer:update(state,1/60)
+ state.health=0; renderer:update(state,1/60)
+ check(lens.Material==Enum.Material.SmoothPlastic and lens.Color[1]==117,"death clears glow and greys out sensor with wreck")
+ renderer:destroy(); check(lens.destroyed,"reset/disconnect removes all scanner decorations")
+end
 -- Boot and exercise the production server entrypoint with two simulated players.
 do
  local savedClock=os.clock
@@ -275,7 +322,7 @@ do
  local first={UserId=101}; local second={UserId=102}
  players.GetPlayers=function() return {first,second} end
  local heartbeat=signal()
- local shots,prepared,snapshots,battleStates={}, {}, {}, {}
+ local shots,prepared,snapshots,battleStates,privateOutputs={}, {}, {}, {}, {}
  local oldFactory=Instance.new
  Instance.new=function(class)
   local p=oldFactory(class)
@@ -284,6 +331,7 @@ do
   end
   if class=="RemoteEvent" then
    p.OnServerEvent=signal()
+   p.FireClient=function(self,recipient,...) table.insert(privateOutputs,{recipient=recipient,args={...}}) end
    p.FireAllClients=function(self,...)
     local args={...}
     if self.Name=="Shot" then table.insert(shots,{time=time,id=args[1],kind=args[4],origin=args[2],direction=args[3],rock=args[6]}) end
@@ -384,13 +432,93 @@ do
  local function stop(id)
   request+=1; bwStop.OnServerEvent:Fire(first,request,id)
  end
+ -- Wire the real BW scanner/private-output path against analytic tank hitboxes.
+ local savedQuery,savedRaycast=workspace.GetPartBoundsInRadius,workspace.Raycast
+ workspace.GetPartBoundsInRadius=function(_,origin,radius,params)
+  if params.FilterType~=Enum.RaycastFilterType.Include then return {} end
+  local result={}
+  for _,p in params.FilterDescendantsInstances do if p.Name=="TankHitbox" and p.CanQuery then table.insert(result,p) end end
+  return result
+ end
+ workspace.Raycast=function(_,origin,direction,params)
+  local best,minimum=nil,1
+  local function dot(a,b) return a.X*b.X+a.Y*b.Y+a.Z*b.Z end
+  for _,p in params.FilterDescendantsInstances do
+   if p.Name~="TankHitbox" or not p.CanQuery then continue end
+   local f=p.CFrame; local axes={f.RightVector,f.UpVector,f.LookVector* -1}; local half=p.Size/2; local sizes={half.X,half.Y,half.Z}
+   local low,high=0,1
+   for i,axis in axes do
+    local a,d=dot(origin-f.Position,axis),dot(direction,axis)
+    if math.abs(d)<1e-10 then if math.abs(a)>sizes[i] then high=-1; break end
+    else
+     local left,right=(-sizes[i]-a)/d,(sizes[i]-a)/d
+     if left>right then left,right=right,left end
+     low=math.max(low,left); high=math.min(high,right)
+    end
+   end
+   if low<=high and low<minimum then best=p; minimum=low end
+  end
+  if best then return {Instance=best,Position=origin+direction*minimum,Distance=direction.Magnitude*minimum} end
+ end
+ fresh()
+ local beforeManualOutputs=#privateOutputs
+ advance(40)
+ local driven=selected(); local parked=if driven==boomerId then rattlerId else boomerId
+ check(snapshots[driven].manualScannerActive and snapshots[driven].scanManual and not snapshots[parked].manualScannerActive,"production auto scanner runs only for selected manual tank")
+ check(#privateOutputs==beforeManualOutputs,"continuous driver scans never flood BW IDE output")
+ run(driven,"forward(100)"); advance(4)
+ check(snapshots[driven].bwRunning and not snapshots[driven].manualScannerActive and snapshots[driven].scanManual==nil,"starting BW stops auto scanning and removes driver-only observations")
+ stop(driven); advance(12)
+ check(snapshots[driven].manualScannerActive and snapshots[driven].scanManual,"manual sweep resumes automatically after Stop")
+ fresh()
+ local outputsBefore=#privateOutputs
+ run(boomerId,"Scanner(0)"); run(rattlerId,"Scanner(0)"); advance(5)
+ check(#privateOutputs==outputsBefore+2,"two independent BW programs each execute one scanner call")
+ for i=outputsBefore+1,#privateOutputs do
+  local output=privateOutputs[i]
+  check(output.recipient==first and output.args[4].text:find('"tank"',1,true),"scanner result delivered only to owner, not broadcast")
+  check(output.args[4].timestamp>=0 and output.args[2]==snapshots[output.args[1]].generation,"private result carries measurement timestamp and generation")
+ end
+ check(snapshots[boomerId].bwStatus=="completed" and snapshots[rattlerId].bwStatus=="completed","standalone scan completes both production runtimes")
+ check(snapshots[boomerId].scanVisual.kind=="tank" and snapshots[boomerId].scanVisual.distance==nil and snapshots[boomerId].scanVisual.player==nil,"public reaction contains no exact range, identity or hidden hit position")
+ check(not snapshots[boomerId].bwMessage:find("101:Rattler",1,true),"public BW status never includes private scan result")
+ advance(80)
+ check(snapshots[boomerId].scanVisual==nil and snapshots[rattlerId].scanVisual==nil,"public sensor state expires without another scan")
+ outputsBefore=#privateOutputs
+ run(boomerId,"forward(100)\nScanner(0)"); advance(2); stop(boomerId); advance(5)
+ check(#privateOutputs==outputsBefore,"Stop cancels upcoming scanner call")
+ fresh()
+ check(snapshots[boomerId].scanVisual==nil and snapshots[rattlerId].scanVisual==nil,"reset clears both scanner reactions")
+ fresh()
+ local beforeDecision=#privateOutputs
+ local program=[=[target = Scanner(0)
+if target[0] == "tank":
+    print(target[3])
+    forward(2)
+else:
+    print("nothing")]=]
+ local firstRun=run(boomerId,program); local secondRun=run(rattlerId,program)
+ for _=1,240 do
+  advance(1)
+  if (snapshots[boomerId].bwRequestId or 0)>=firstRun and (snapshots[rattlerId].bwRequestId or 0)>=secondRun and not snapshots[boomerId].bwRunning and not snapshots[rattlerId].bwRunning then break end
+ end
+ check(snapshots[boomerId].bwStatus=="completed" and snapshots[rattlerId].bwStatus=="completed","production v0.2 decisions and asynchronous movement execute independently on both tanks")
+ local scanCount,printCount=0,0
+ for i=beforeDecision+1,#privateOutputs do
+  local output=privateOutputs[i]
+  check(output.recipient==first,"expression values and prints stay private to program owner")
+  if output.args[4].kind=="scan" then scanCount+=1 else printCount+=1 end
+ end
+ check(scanCount==2 and printCount==2,"production output stream contains one diagnostic plus one explicit print per program")
+ check(snapshots[boomerId].variables==nil and not snapshots[boomerId].bwMessage:find("AI.Rattler",1,true),"program variables and printed identities never enter public snapshots")
+ workspace.GetPartBoundsInRadius=savedQuery; workspace.Raycast=savedRaycast
  for _,id in {boomerId,rattlerId} do
   fresh()
   local before=#shots
-  run(id,require("BWConfig").DefaultSource)
+  local demoRequest=run(id,require("BWConfig").DefaultSource)
   for _=1,6000 do
    advance(1)
-   if snapshots[id].bwStatus and snapshots[id].bwStatus~="running" then break end
+   if (snapshots[id].bwRequestId or 0)>=demoRequest and snapshots[id].bwStatus and snapshots[id].bwStatus~="running" then break end
   end
   check(snapshots[id].bwStatus=="completed","production BW demo completes on "..id..": "..tostring(snapshots[id].bwMessage))
   check(#shots-before>0,"production BW demo fires normal weapon on "..id)

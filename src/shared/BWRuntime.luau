@@ -1,24 +1,29 @@
 -- One nonblocking instruction at a time, driven only by authoritative state/ticks.
+local Expression=require(script.Parent.BWExpression)
+local Commands=require(script.Parent.BWCommands)
+local Value=require(script.Parent.BWValue)
+local ScannerConfig=require(script.Parent.ScannerConfig)
 local DamageConfig=require(script.Parent.DamageEffectsConfig)
 local Limits=require(script.Parent.BWConfig)
 local Adapter=require(script.Parent.BWTankAdapter)
 local Command=require(script.Parent.InputCommand)
 local Runtime={}
 Runtime.__index=Runtime
-function Runtime.new(instructions,state)
-	return setmetatable({instructions=instructions,index=1,status="running",message="Running",elapsed=0,
+function Runtime.new(instructions,state,services)
+	return setmetatable({services=services or {},variables={},cycleCounts={},outputCount=0,results={},cyclesSpent=0,instructions=instructions,index=1,status="running",message="Running",elapsed=0,
 		generation=state.generation or 0,tankType=state.tankType or "Boomer"},Runtime)
 end
 function Runtime:stop(reason,status)
 	self.status=status or "stopped"; self.message=reason or "Stopped"
+	if self.status~="completed" then self.variables={} end
 end
-function Runtime:fail(message)
+function Runtime:fail(message,lineOverride)
 	local instruction=if self.current then self.current.instruction else self.instructions[self.index]
-	local line=if instruction then instruction.line else 1
+	local line=lineOverride or (if instruction then instruction.line else 1)
 	self:stop(string.format("Line %d: %s",line,message),"error")
 end
-function Runtime:finish()
-	self.index+=1; self.current=nil
+function Runtime:finish(target)
+	self.index=target or self.index+1; self.current=nil
 	if self.index>#self.instructions then
 		self:stop(if (self.skipped or 0)>0 then string.format("Program completed (%d skipped).",self.skipped) else "Program completed.","completed")
 	end
@@ -35,6 +40,31 @@ function Runtime:instructionFailed(message)
 	if self.status=="running" then self.message="Skipped an instruction; continuing." end
 	return command
 end
+function Runtime:charge(category,cost)
+	cost=cost or Limits.CycleCosts[category] or 0
+	self.cycleCounts[category]=(self.cycleCounts[category] or 0)+1
+	self.cyclesSpent+=cost
+	if self.services.chargeCycles then self.services.chargeCycles(cost,category) end
+end
+function Runtime:scan(angle,bestEffort,line,inExpression)
+	self:charge("call"); self:charge("scanner",ScannerConfig.ScannerCost)
+	if #self.results>=Limits.MaxScannerCalls then Commands.error(line,"Program exceeded the maximum scanner observations.") end
+	local observation,err
+	if self.services.scan then observation,err=self.services.scan(angle) else err="Scanner is unavailable in this environment." end
+	if not observation then error({bwError=true,scanFailure=true,expression=inExpression,bestEffort=bestEffort,line=line,message=err or "Scanner failed."},0) end
+	self.lastValue=observation.value; self.lastObservation=observation
+	table.insert(self.results,observation); self.outputCount+=1
+	if self.outputCount>Limits.MaxOutputEvents then Commands.error(line,"Program output limit exceeded.") end
+	if self.services.onValue then self.services.onValue(observation,line,angle) end
+	return observation.value
+end
+function Runtime:evaluate(expression)
+	return Expression.evaluate(expression,{
+		variables=self.variables,
+		charge=function(category) self:charge(category) end,
+		scan=function(angle,bestEffort,line) return self:scan(angle,bestEffort,line,true) end,
+	})
+end
 local function begin(instruction,state)
 	local c={instruction=instruction,elapsed=0,held=0,noProgress=0,progress=0,best=0,
 		startPosition=state.position,startHeading=state.yaw,lastPosition=state.position,
@@ -44,6 +74,7 @@ local function begin(instruction,state)
 		c.kind="move"; c.sign=if op=="forward" then 1 else -1
 		c.axis=Vector3.new(-math.sin(state.yaw)*c.sign,0,-math.cos(state.yaw)*c.sign)
 		c.target=instruction.value; c.timeout=math.min(Limits.MaxInstructionSeconds,math.max(10,c.target/18*4+5))
+	elseif op=="Scanner" then c.kind="scan"; c.timeout=1
 	elseif op=="fire" then c.kind="fire"; c.timeout=Limits.MaxFireSeconds+5
 	else
 		c.kind="turn"; c.turret=op:find("turret",1,true)==1
@@ -53,7 +84,7 @@ local function begin(instruction,state)
 	end
 	return c
 end
-function Runtime:step(state,dt)
+function Runtime:_step(state,dt)
 	if self.status~="running" then return Command.neutral() end
 	if state.health<=0 then self:stop("Tank destroyed."); return Command.neutral() end
 	if (state.generation or 0)~=self.generation or (state.tankType or "Boomer")~=self.tankType then
@@ -64,6 +95,41 @@ function Runtime:step(state,dt)
 	if not self.current then
 		local instruction=self.instructions[self.index]
 		if not instruction then self:stop("Program completed.","completed"); return Command.neutral() end
+		self.current={instruction=instruction} -- errors retain the reached source line
+		local op=instruction.op
+		if op=="$jump" then return self:finish(instruction.target) end
+		if op=="$branch" then
+			self:charge("branch")
+			local condition=Expression.boolean(self:evaluate(instruction.condition),instruction.line)
+			return self:finish(if condition then self.index+1 else instruction.target)
+		elseif op=="$switch" then
+			self:charge("branch")
+			local value=self:evaluate(instruction.expression)
+			local target=instruction.target
+			for _,choice in instruction.choices do self:charge("comparison"); if Value.equal(value,choice.value) then target=choice.target; break end end
+			return self:finish(target)
+		elseif op=="$assign" then
+			local value=self:evaluate(instruction.expression)
+			if self.variables[instruction.name]==nil then
+				local count=0; for _ in self.variables do count+=1 end
+				if count>=Limits.MaxVariables then Commands.error(instruction.line,"Too many program variables.") end
+			end
+			self:charge("write"); self.variables[instruction.name]=value
+			self.message="Assigned "..instruction.name
+			return self:finish()
+		elseif op=="$print" then
+			self:charge("call")
+			local value=self:evaluate(instruction.expression)
+			self.outputCount+=1; if self.outputCount>Limits.MaxOutputEvents then Commands.error(instruction.line,"Program output limit exceeded.") end
+			if self.services.onPrint then self.services.onPrint(Value.display(value),instruction.line) end
+			self.message="Printed value."
+			return self:finish()
+		end
+		if instruction.call then
+			instruction=Commands.resolve(instruction.call,function(expr) return self:evaluate(expr) end)
+			self.current.instruction=instruction
+		end
+		if instruction.op~="Scanner" then self:charge("call") end
 		self.current=begin(instruction,state)
 	end
 	local c=self.current
@@ -72,6 +138,10 @@ function Runtime:step(state,dt)
 	c.pauseUsed=(c.pauseUsed or 0)+paused
 	c.elapsed+=dt-paused
 	if c.elapsed>c.timeout then return self:instructionFailed("Instruction timed out.") end
+	if c.kind=="scan" then
+		self:scan(c.instruction.value,c.instruction.bestEffort,c.instruction.line)
+		return self:finish()
+	end
 	if c.kind=="fire" then
 		local accepted=(state.weaponActivationSerial or 0)-c.startActivation
 		local released=(state.weaponShotSerial or 0)-c.startShot
@@ -108,5 +178,15 @@ function Runtime:step(state,dt)
 	if immobilized then self.message="Temporarily immobilized; retaining movement target."; return Command.neutral() end
 	if c.kind=="move" then return Adapter.move(state,c.sign,remaining,dt) end
 	return Adapter.turn(state,c.sign,remaining,c.turret,dt)
+end
+function Runtime:step(state,dt)
+	local ok,command=pcall(self._step,self,state,dt)
+	if ok then return command end
+	local err=command
+	if type(err)=="table" and err.bwError then
+		if err.scanFailure and not err.expression and err.bestEffort and self.current and self.current.instruction.bestEffort~=false then return self:instructionFailed(err.message) end
+		self:fail(err.message,err.line)
+	else self:fail("Interpreter service failed safely.") end
+	return Command.neutral()
 end
 return Runtime
