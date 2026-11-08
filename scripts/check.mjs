@@ -29,7 +29,7 @@ try {
   for (const [file, source] of sources) {
     const name = file.split('/').pop().replace('.luau', '');
     const parent = file.includes('/shared/') ? 'Shared' : 'Client';
-    bundle += `\nloaders[${JSON.stringify(name)}] = function()\nlocal script = { Parent = ${parent}, BWController = "BWController", EnvironmentBuilder = "EnvironmentBuilder", PracticeTargets = "PracticeTargets", ProjectileSimulation = "ProjectileSimulation" }\n${source}\nend\n`;
+    bundle += `\nloaders[${JSON.stringify(name)}] = function()\nlocal script = { Parent = ${parent}, BWController = "BWController", LocalBattle = "LocalBattle", EnvironmentBuilder = "EnvironmentBuilder", PracticeTargets = "PracticeTargets", ProjectileSimulation = "ProjectileSimulation" }\n${source}\nend\n`;
   }
   bundle += '\nrequire = function(name)\nif name == "PlayerModule" then return { GetControls = function() return defaultControls end } end\nif cache[name] == nil then cache[name] = assert(loaders[name], "Unknown module " .. tostring(name))() end\nreturn cache[name]\nend\n';
   bundle += '\ndo\n' + await readFile('tests/Input.spec.luau', 'utf8') + '\nend\n';
@@ -45,6 +45,8 @@ try {
   bundle += '\ndo\n' + await readFile('tests/Speed.spec.luau', 'utf8') + '\nend\n';
   bundle += '\ndo\n' + await readFile('tests/BW.spec.luau', 'utf8') + '\nend\n';
   bundle += '\ndo\n' + await readFile('tests/BWBestEffort.spec.luau', 'utf8') + '\nend\n';
+  bundle += '\ndo\n' + await readFile('tests/Battle.spec.luau', 'utf8') + '\nend\n';
+  bundle += '\ndo\n' + await readFile('tests/DamageEffects.spec.luau', 'utf8') + '\nend\n';
   await state.loadstring(bundle, 'input-tests', true)();
 } finally {
   state.destroy();

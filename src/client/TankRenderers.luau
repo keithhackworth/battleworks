@@ -1,4 +1,4 @@
--- One renderer per owner; replace only when type/generation changes.
+-- One renderer per persistent tank ID; selection never replaces a model.
 local Registry = {}
 function Registry.sync(renderers, states, create)
 	for id, renderer in renderers do

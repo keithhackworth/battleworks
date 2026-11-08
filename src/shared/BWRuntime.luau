@@ -1,4 +1,5 @@
 -- One nonblocking instruction at a time, driven only by authoritative state/ticks.
+local DamageConfig=require(script.Parent.DamageEffectsConfig)
 local Limits=require(script.Parent.BWConfig)
 local Adapter=require(script.Parent.BWTankAdapter)
 local Command=require(script.Parent.InputCommand)
@@ -66,7 +67,10 @@ function Runtime:step(state,dt)
 		self.current=begin(instruction,state)
 	end
 	local c=self.current
-	c.elapsed+=dt
+	local immobilized=state.immobilized and (c.kind=="move" or (c.kind=="turn" and not c.turret))
+	local paused=if immobilized then math.min(dt,math.max(0,DamageConfig.MaxBWPausePerInstruction-(c.pauseUsed or 0))) else 0
+	c.pauseUsed=(c.pauseUsed or 0)+paused
+	c.elapsed+=dt-paused
 	if c.elapsed>c.timeout then return self:instructionFailed("Instruction timed out.") end
 	if c.kind=="fire" then
 		local accepted=(state.weaponActivationSerial or 0)-c.startActivation
@@ -95,12 +99,13 @@ function Runtime:step(state,dt)
 	local tolerance=if c.kind=="move" then Limits.DistanceTolerance else Limits.AngleTolerance
 	if remaining<=tolerance then return self:finish() end
 	local meaningful=if c.kind=="move" then Limits.ProgressDistance else Limits.ProgressAngle
-	if c.progress>c.best+meaningful then c.best=c.progress; c.noProgress=0 else c.noProgress+=dt end
+	if c.progress>c.best+meaningful then c.best=c.progress; c.noProgress=0 else c.noProgress+=dt-paused end
 	if c.noProgress>Limits.StuckSeconds then
 		return self:instructionFailed("No progress for 3 seconds; tank may be blocked or unable to turn.")
 	end
 	self.message=if c.kind=="move" then string.format("Moved %.2f / %.2f studs",c.progress,c.target)
 		else string.format("Turned %.1f / %.1f degrees",math.deg(c.progress),math.deg(c.target))
+	if immobilized then self.message="Temporarily immobilized; retaining movement target."; return Command.neutral() end
 	if c.kind=="move" then return Adapter.move(state,c.sign,remaining,dt) end
 	return Adapter.turn(state,c.sign,remaining,c.turret,dt)
 end

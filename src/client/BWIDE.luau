@@ -9,7 +9,7 @@ local function text(parent,class,name)
 	return item
 end
 function IDE.new(playerGui,onRun,onStop)
-	local self=setmetatable({connections={},running=false},IDE)
+	local self=setmetatable({connections={},running=false,sources={},requests={}},IDE)
 	local gui=Instance.new("ScreenGui"); gui.Name="BWEditor"; gui.ResetOnSpawn=false
 	gui.ScreenInsets=Enum.ScreenInsets.CoreUISafeInsets; gui.DisplayOrder=30; gui.Parent=playerGui; self.gui=gui
 	local toggle=text(gui,"TextButton","ToggleBW")
@@ -45,11 +45,11 @@ function IDE.new(playerGui,onRun,onStop)
 	local function connect(event,callback) table.insert(self.connections,event:Connect(callback)) end
 	connect(toggle.Activated,function()
 		frame.Visible=not frame.Visible
-		if not frame.Visible then editor:ReleaseFocus() end
+		if not frame.Visible then self:close() end
 	end)
 	connect(run.Activated,function()
 		if self.running or self.pendingRequest then return end
-		editor:ReleaseFocus()
+		self:close()
 		self.pendingRequest=onRun(editor.Text)
 		output.Text="Submitted for server validation…"
 	end)
@@ -62,6 +62,22 @@ function IDE.new(playerGui,onRun,onStop)
 	connect(scroll:GetPropertyChangedSignal("AbsoluteSize"),function() self:layoutSource() end)
 	self:layoutSource()
 	return self
+end
+function IDE:close()
+	self.editor:ReleaseFocus()
+	self.frame.Visible=false
+end
+-- Editing and pending acknowledgments belong to the selected persistent tank.
+function IDE:bind(id)
+	if self.tankId==id then return end
+	if self.tankId then
+		self.sources[self.tankId]=self.editor.Text
+		self.requests[self.tankId]=self.pendingRequest
+	end
+	self.editor:ReleaseFocus()
+	self.tankId=id; self.editor.Text=self.sources[id] or Config.DefaultSource
+	self.pendingRequest=self.requests[id]; self.running=false
+	self:layoutSource()
 end
 function IDE:layoutSource()
 	local lines,longest,numbers=0,0,{}
@@ -78,7 +94,7 @@ end
 function IDE:update(state)
 	if not state then self.running=false; self.current.Text="BW v0.1 • Waiting for tank"; return end
 	self.running=state.bwRunning==true
-	self.toggle.Text=if self.running then "BW: running • Open" else "BW Editor"
+	self.toggle.Text=(state.tankType or "Tank")..(if self.running then " • BW running" else " • BW Editor")
 	self.editor.TextEditable=not self.running
 	self.run.AutoButtonColor=not self.running and not self.pendingRequest
 	if self.pendingRequest and (state.bwRequestId or 0)<self.pendingRequest then return end

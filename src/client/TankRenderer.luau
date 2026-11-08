@@ -4,6 +4,8 @@ local TweenService = game:GetService("TweenService")
 local TerrainEffects = require(script.Parent.TerrainEffects)
 local RattlerVisual = require(script.Parent.RattlerVisual)
 local BarrelAnimation = require(script.Parent.BarrelAnimation)
+local DamageVisual = require(script.Parent.DamageVisual)
+local CombatVisual = require(script.Parent.TankCombatVisual)
 local Config = require(game.ReplicatedStorage.Shared.TankConfig)
 local Simulation = require(game.ReplicatedStorage.Shared.TankSimulation)
 local Renderer = {}
@@ -56,6 +58,7 @@ function Renderer.new(id, tankType)
 					offset * CFrame.new(u*core.X/2, v*core.Y/2, w*core.Z/2), Enum.PartType.Ball)
 			end
 		end end
+		face:SetAttribute("ArmorSize",size)
 		return face
 	end
 	local colors={body=orange,deck=deck,steel=steel,dark=rubber}
@@ -147,6 +150,7 @@ function Renderer.new(id, tankType)
 			end
 		end
 	end
+	CombatVisual.attach(self)
 	return self
 end
 function Renderer:fire(rock)
@@ -255,7 +259,7 @@ function Renderer:update(state, dt)
 		tread.part.CFrame = base * CFrame.new(tread.side*3.8, 1.4+y, z) * CFrame.Angles(angle, 0, 0)
 	end
 	for _, p in self.model:GetChildren() do
-		p.Transparency = if state.health <= 0 then 0.7 else 0
+		if p:IsA("BasePart") or p:IsA("Part") then p.Transparency = if state.health <= 0 then 0.35 else 0 end
 	end
 	if self.tankType == "Boomer" then
 		self.barrelBulge.Transparency = if swelling.active then 1-swelling.opacity else 1
@@ -266,6 +270,9 @@ function Renderer:update(state, dt)
 		RattlerVisual.landing(state.position,part)
 	end
 	self.landingSerial=state.landingSerial or 0
+	DamageVisual.update(self,state,dt,part)
+	CombatVisual.update(self,state,part,anchors,dt)
+	DamageVisual.poseMarks(self)
 	TerrainEffects.update(self,state,dt)
 end
 function Renderer:destroy() self.model:Destroy() end

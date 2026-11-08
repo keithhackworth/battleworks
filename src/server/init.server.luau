@@ -10,13 +10,14 @@ local mapSize = Vector2.new(Config.ArenaLimit*2, Config.ArenaLimit*2)
 local environment = Environment.create(mapSize)
 local Command = require(Shared.InputCommand)
 local BWController = require(script.BWController)
+local DamageEffects = require(Shared.DamageEffects)
 local Simulation = require(Shared.TankSimulation)
 local MovementTelemetry = require(Shared.MovementTelemetry)
 local TankDefinitions = require(Shared.TankDefinitions)
 local TurretRecoil = require(Shared.TurretRecoil)
 local RattlerRecoil = require(Shared.RattlerRecoil)
 local RattlerWeapon = require(Shared.RattlerWeapon)
-local TankSelection = require(Shared.TankSelection)
+local Battle = require(script.LocalBattle)
 local WeaponWindup = require(Shared.WeaponWindup)
 local PracticeTargets = require(script.PracticeTargets)
 local Projectiles = require(script.ProjectileSimulation)
@@ -33,8 +34,9 @@ local input, snapshot, shot = remote("Input"), remote("Snapshot"), remote("Shot"
 local prepareShot = remote("PrepareShot")
 local selectTank = remote("SelectTank")
 local bwRun,bwStop = remote("BWRun"),remote("BWStop")
+local resetBattle = remote("ResetBattle")
 network.Parent = ReplicatedStorage
-local tanks, targets = {}, {}
+local tanks, targets, battles = {}, {}, {}
 local arena = Instance.new("Folder")
 arena.Name = "Arena"; arena.Parent = workspace
 arena:SetAttribute("DebugCombat", false)
@@ -78,45 +80,56 @@ local function buildTargets(size)
 end
 buildTargets(mapSize)
 local spawnCount = 0
+local function owned(player,id)
+	if id~=nil and type(id)~="string" then return nil end
+	local battle=battles[player.UserId]
+	return battle and battle.tanks[id or battle.selected]
+end
 local function addPlayer(player)
-	if tanks[player.UserId] then return end
-	spawnCount += 1
-	local position = if arena:GetAttribute("Redrawn") then ArenaLayout.spawn(mapSize,spawnCount) else Vector3.new(((spawnCount - 1) % 8 - 3.5) * 13, 0, 35 + math.floor(((spawnCount - 1) % 32) / 8) * 13)
-	local hitbox = part("TankHitbox", Vector3.new(8, 5, 10), position + Vector3.new(0, 2.5, 0), Color3.new())
-	hitbox.Transparency = 1; hitbox.CanCollide = false
-	hitbox:SetAttribute("OwnerId",player.UserId)
-	tanks[player.UserId] = { state = Simulation.new(position,"Boomer",math.abs(player.UserId)%2147483646+1), command = Command.neutral(), lastInput = 0,
-		lastPacket = 0, hitbox = hitbox, spawn = position, respawnAt = 0, rattler = RattlerWeapon.new(), boomerAim = { aimSeed = math.abs(player.UserId)%2147483646+1 } }
-	tanks[player.UserId].rattler.aimSeed = math.abs(player.UserId)%2147483646+1
+	if battles[player.UserId] then return end
+	spawnCount+=1
+	local battle=Battle.new(player.UserId,spawnCount); battles[player.UserId]=battle
+	for _,kind in {"Boomer","Rattler"} do
+		local id=Battle.id(player.UserId,kind)
+		local hitbox=part("TankHitbox",Vector3.new(8,5,10),Vector3.zero,Color3.new())
+		hitbox.Transparency=1; hitbox.CanCollide=false
+		hitbox:SetAttribute("OwnerId",player.UserId); hitbox:SetAttribute("TankId",id)
+		local tank={owner=player.UserId,kind=kind,seed=(math.abs(player.UserId)+(if kind=="Rattler" then 7919 else 0))%2147483646+1,hitbox=hitbox,lastPacket=0}
+		Battle.resetTank(tank,mapSize,spawnCount,"Battle started.")
+		tanks[id]=tank; battle.tanks[id]=tank
+	end
 end
 Players.PlayerAdded:Connect(addPlayer)
 Players.PlayerRemoving:Connect(function(player)
-	local tank = tanks[player.UserId]
-	if tank then BWController.stop(tank,"Player disconnected."); tank.hitbox:Destroy(); tanks[player.UserId] = nil end
+	local battle=battles[player.UserId]
+	if not battle then return end
+	for id,tank in battle.tanks do BWController.stop(tank,"Player disconnected."); tank.hitbox:Destroy(); tanks[id]=nil end
+	battles[player.UserId]=nil
 end)
 for _, player in Players:GetPlayers() do addPlayer(player) end
-input.OnServerEvent:Connect(function(player, value)
-	local tank = tanks[player.UserId]
-	local now = os.clock()
-	if not tank or BWController.running(tank) or now - tank.lastPacket < 1 / 60 then return end
-	tank.lastPacket = now
-	local command = Command.validate(value)
+input.OnServerEvent:Connect(function(player,value,id)
+	local battle=battles[player.UserId]
+	local tank=owned(player,id)
+	local now=os.clock()
+	if not tank or (id and id~=battle.selected) or tank.state.health<=0 or BWController.running(tank) or now-tank.lastPacket<1/60 then return end
+	tank.lastPacket=now
+	local command=Command.validate(value)
 	if command then
-		tank.command = command; tank.lastInput = now
-		if tank.requireFireRelease and not command.fire then tank.requireFireRelease = false end
+		tank.command=command; tank.lastInput=now
+		if tank.requireFireRelease and not command.fire then tank.requireFireRelease=false end
 	end
 end)
-selectTank.OnServerEvent:Connect(function(player, id)
-	local tank = tanks[player.UserId]
-	if tank and TankSelection.switch(tank,id,os.clock()) then BWController.stop(tank,"Tank selection changed.") end
+selectTank.OnServerEvent:Connect(function(player,kind)
+	local battle=battles[player.UserId]
+	if battle then Battle.select(battle,kind) end
 end)
 local function acceptBWRequest(tank,id)
 	if type(id)~="number" or id~=id or id%1~=0 or id<1 or id>1000000000 or id<=(tank.lastBWRequest or 0) then return false end
 	tank.lastBWRequest=id; tank.state.bwRequestId=id
 	return true
 end
-bwRun.OnServerEvent:Connect(function(player,source,requestId)
-	local tank=tanks[player.UserId]
+bwRun.OnServerEvent:Connect(function(player,source,requestId,id)
+	local tank=owned(player,id)
 	local now=os.clock()
 	if not tank or not acceptBWRequest(tank,requestId) then return end
 	if now-(tank.lastBWRun or -math.huge)<0.5 then
@@ -126,14 +139,10 @@ bwRun.OnServerEvent:Connect(function(player,source,requestId)
 	tank.lastBWRun=now
 	BWController.start(tank,source)
 end)
-bwStop.OnServerEvent:Connect(function(player,requestId)
-	local tank=tanks[player.UserId]
+bwStop.OnServerEvent:Connect(function(player,requestId,id)
+	local tank=owned(player,id)
 	if tank and acceptBWRequest(tank,requestId) then BWController.stop(tank,"Stopped by player.") end
 end)
-local function damageTank(tank, now, damage)
-	tank.state.health = math.max(0, tank.state.health - (damage or Config.Damage))
-	if tank.state.health == 0 then tank.respawnAt = now + 3; tank.state.firing = false; BWController.stop(tank,"Tank destroyed.") end
-end
 local shellFolder = Instance.new("Folder")
 shellFolder.Name = "ArtilleryShells"; shellFolder.Parent = workspace
 local shells = {}
@@ -158,6 +167,7 @@ local function launchShell(id, tank, origin, direction, deferEffects)
 	local small = tank.state.tankType == "Rattler"
 	shell.pendingHit = blocked
 	shell.owner = id
+	shell.weaponType=TankDefinitions.get(tank.state.tankType).WeaponType
 	shell.visualScale = if small then 0.4 else 1
 	shell.model = Instance.new("Model"); shell.model.Name = "Shell_" .. id; shell.model.Parent = shellFolder
 	shell.body = shellPart(shell.model,"Body",Vector3.new(1.5,1.3,1.3)*(if small then 0.4 else 1),Color3.fromRGB(77,87,57),Enum.PartType.Cylinder)
@@ -180,7 +190,10 @@ local function updateShells(now)
 		if hit then
 			local _, before, after = PracticeTargets.impact(hit,targets,now,shell.damage)
 			for _, other in tanks do
-				if other.hitbox == hit.Instance and other.state.health > 0 then damageTank(other,now,shell.damage) end
+				if other.hitbox == hit.Instance then
+					local battle=battles[other.owner]
+					Battle.damage(battle,other,tanks[shell.owner],shell.damage,shell.weaponType,hit.Position)
+				end
 			end
 			if arena:GetAttribute("DebugCombat") then
 				print("[BattleWorks shell impact]",shell.owner,hit.Instance:GetFullName(),hit.Position,
@@ -194,6 +207,19 @@ local function updateShells(now)
 		if shell.done then shell.model:Destroy(); table.remove(shells,i) end
 	end
 end
+local function reset(battle,reason)
+	for i=#shells,1,-1 do
+		local shell=shells[i]
+		if battle.tanks[shell.owner] then shell.model:Destroy(); table.remove(shells,i) end
+	end
+	battle.winner=nil
+	for _,tank in battle.tanks do Battle.resetTank(tank,mapSize,battle.index,reason) end
+end
+resetBattle.OnServerEvent:Connect(function(player)
+	local battle=battles[player.UserId]
+	if not battle or os.clock()-(battle.lastReset or -math.huge)<0.5 then return end
+	battle.lastReset=os.clock(); reset(battle,"Battle reset.")
+end)
 -- Development redraw is server-authoritative and never exposed in published play.
 arena:SetAttribute("MapWidth", mapSize.X); arena:SetAttribute("MapDepth", mapSize.Y)
 arena:SetAttribute("MapRevision", 0)
@@ -201,7 +227,7 @@ if RunService:IsStudio() then
 	local redraw = remote("RedrawMap")
 	local lastRedraw = -math.huge
 	redraw.OnServerEvent:Connect(function(player, size)
-		if not tanks[player.UserId] or not ArenaLayout.validSize(size) or os.clock()-lastRedraw < 1 then return end
+		if not battles[player.UserId] or not ArenaLayout.validSize(size) or os.clock()-lastRedraw < 1 then return end
 		lastRedraw = os.clock(); mapSize = size
 		environment=Environment.create(size); EnvironmentBuilder.build(arena,environment)
 		floor.Size = Vector3.new(size.X+10,1,size.Y+10)
@@ -213,18 +239,7 @@ if RunService:IsStudio() then
 		table.clear(shells)
 		for p in targets do p:Destroy() end
 		table.clear(targets); buildTargets(size)
-		local ids = {}; for id in tanks do table.insert(ids,id) end; table.sort(ids)
-		for index, id in ids do
-			local tank = tanks[id]
-			BWController.stop(tank,"Map redrawn.")
-			local kind, generation = tank.state.tankType, tank.state.generation
-			tank.spawn = ArenaLayout.spawn(size,index); tank.state = Simulation.new(tank.spawn,kind,math.abs(id)%2147483646+1)
-			tank.state.generation = generation+1; BWController.sync(tank); tank.rattler = RattlerWeapon.new()
-			tank.rattler.aimSeed = math.abs(id)%2147483646+1
-			tank.boomerAim = {aimSeed=math.abs(id)%2147483646+1}
-			tank.command = Command.neutral(); tank.lastInput = 0; tank.pendingShot = nil; tank.respawnAt = 0
-			tank.hitbox.CFrame = CFrame.new(tank.spawn+Vector3.new(0,2.5,0)); tank.hitbox.CanQuery = true
-		end
+		for _,battle in battles do reset(battle,"Map redrawn.") end
 		arena:SetAttribute("Redrawn", true)
 		arena:SetAttribute("MapWidth", size.X); arena:SetAttribute("MapDepth", size.Y)
 		arena:SetAttribute("MapRevision", arena:GetAttribute("MapRevision")+1)
@@ -238,13 +253,8 @@ RunService.Heartbeat:Connect(function(dt)
 		local now = os.clock()
 		for p, target in targets do PracticeTargets.update(p, target, now, tanks) end
 		for id, tank in tanks do
-			if tank.state.health == 0 and now >= tank.respawnAt then
-				BWController.stop(tank,"Tank respawned.")
-				tank.pendingShot = nil
-				local kind, generation = tank.state.tankType, tank.state.generation
-				tank.state = Simulation.new(tank.spawn,kind,math.abs(id)%2147483646+1); tank.state.generation = generation+1; BWController.sync(tank); tank.command = Command.neutral()
-			end
-			local command = BWController.input(tank,Config.Step) or (if now - tank.lastInput <= Config.InputTimeout then tank.command else Command.neutral())
+			DamageEffects.step(tank.effects,tank.state,Config.Step)
+			local command = if tank.state.health<=0 then Command.neutral() else BWController.input(tank,Config.Step) or (if now - tank.lastInput <= Config.InputTimeout then tank.command else Command.neutral())
 			tank.tickCommand=command
 			local trigger = command.fire and not tank.requireFireRelease
 			tank.rattlerShot = RattlerWeapon.step(tank.rattler,tank.state.tankType == "Rattler" and tank.state.health > 0,trigger,Config.Step)
@@ -310,6 +320,8 @@ RunService.Heartbeat:Connect(function(dt)
 		snapshotClock %= Config.SnapshotInterval
 		local states = {}
 		for id, tank in tanks do states[tostring(id)] = tank.state end
-		snapshot:FireAllClients(states)
+		local battleStates={}
+		for owner,battle in battles do battleStates[tostring(owner)]={selected=battle.selected,winner=battle.winner} end
+		snapshot:FireAllClients(states,battleStates)
 	end
 end)

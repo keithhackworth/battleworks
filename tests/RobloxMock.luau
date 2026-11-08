@@ -36,6 +36,10 @@ local UDim = { new = function(scale, offset) return { Scale = scale, Offset = of
 local UDim2 = { new = function(xs, xo, ys, yo) return { X = UDim.new(xs, xo), Y = UDim.new(ys, yo) } end }
 UDim2.fromScale = function(x, y) return UDim2.new(x, 0, y, 0) end
 UDim2.fromOffset = function(x, y) return UDim2.new(0, x, 0, y) end
+local NumberRange = {new=function(a,b) return {Min=a,Max=b or a} end}
+local NumberSequenceKeypoint={new=function(t,v,e) return {Time=t,Value=v,Envelope=e or 0} end}
+local NumberSequence={new=function(points) return {Keypoints=points} end}
+local ColorSequence={new=function(a,b) return {Start=a,End=b} end}
 local TweenInfo = { new = function(...) return {...} end }
 local Color3 = { new = function(r,g,b) return {r or 0,g or 0,b or 0} end, fromRGB = function(r, g, b) return { r, g, b } end }
 local Instance = {}
@@ -48,6 +52,8 @@ function Instance.new(class)
 		if not self.properties[key] then self.properties[key] = signal() end
 		return self.properties[key]
 	end
+	function object:Emit(count) self.emitted=(self.emitted or 0)+count end
+	function object:Clear() self.clearCalls=(self.clearCalls or 0)+1 end
 	function object:ReleaseFocus() self.releasedFocus=true end
 	function object:IsA(name) return self.ClassName == name end
 	function object:GetChildren() return self.children end
@@ -82,8 +88,8 @@ playerGui.children = { defaultTouchGui }
 local playerScripts = Instance.new("PlayerScripts"); playerScripts.PlayerModule = "PlayerModule"
 local player = Instance.new("Player"); player.PlayerGui = playerGui; player.PlayerScripts = playerScripts
 local Players = { LocalPlayer = player }
-local Shared = { BWConfig="BWConfig", BWParser="BWParser", BWTankAdapter="BWTankAdapter", BWRuntime="BWRuntime", MovementTelemetry = "MovementTelemetry", ProjectileTrajectory = "ProjectileTrajectory", TurretRecoil = "TurretRecoil", RattlerDrive = "RattlerDrive", ArenaLayout = "ArenaLayout", WeaponWindup = "WeaponWindup", RattlerRecoil = "RattlerRecoil", TankDefinitions = "TankDefinitions", RattlerWeapon = "RattlerWeapon", TankSelection = "TankSelection", Environment = "Environment", InputCommand = "InputCommand", TankConfig = "TankConfig", TankSimulation = "TankSimulation" }
-local Client = { BWIDE="BWIDE", SpeedDebugHud = "SpeedDebugHud", TankRenderer = "TankRenderer", TankRenderers = "TankRenderers", TankSelector = "TankSelector", RattlerVisual = "RattlerVisual", TerrainEffects = "TerrainEffects", Analog = "Analog", TouchInput = "TouchInput", KeyboardMouseInput = "KeyboardMouseInput", GamepadInput = "GamepadInput", BarrelAnimation = "BarrelAnimation", CameraMath = "CameraMath", CameraTestPanel = "CameraTestPanel", BattlefieldCameraConfig = "BattlefieldCameraConfig" }
+local Shared = { DamageEffectsConfig="DamageEffectsConfig", DamageEffects="DamageEffects", BWConfig="BWConfig", BWParser="BWParser", BWTankAdapter="BWTankAdapter", BWRuntime="BWRuntime", MovementTelemetry = "MovementTelemetry", ProjectileTrajectory = "ProjectileTrajectory", TurretRecoil = "TurretRecoil", RattlerDrive = "RattlerDrive", ArenaLayout = "ArenaLayout", WeaponWindup = "WeaponWindup", RattlerRecoil = "RattlerRecoil", TankDefinitions = "TankDefinitions", RattlerWeapon = "RattlerWeapon", TankSelection = "TankSelection", Environment = "Environment", InputCommand = "InputCommand", TankConfig = "TankConfig", TankSimulation = "TankSimulation" }
+local Client = { SmokeVisual="SmokeVisual", DamageVisual="DamageVisual", BWController="BWController", TankCombatVisual="TankCombatVisual", BWIDE="BWIDE", SpeedDebugHud = "SpeedDebugHud", TankRenderer = "TankRenderer", TankRenderers = "TankRenderers", TankSelector = "TankSelector", RattlerVisual = "RattlerVisual", TerrainEffects = "TerrainEffects", Analog = "Analog", TouchInput = "TouchInput", KeyboardMouseInput = "KeyboardMouseInput", GamepadInput = "GamepadInput", BarrelAnimation = "BarrelAnimation", CameraMath = "CameraMath", CameraTestPanel = "CameraTestPanel", BattlefieldCameraConfig = "BattlefieldCameraConfig" }
 local game = { ReplicatedStorage = { Shared = Shared } }
 function game:GetService(name) return ({ UserInputService = UIS, GuiService = GuiService, Players = Players, RunService = { IsStudio = function() return true end } })[name] end
 local task = { spawn = function(callback) callback() end, defer = function(callback) callback() end }

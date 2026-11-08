@@ -1,13 +1,35 @@
 # BattleWorks: Boomer and Rattler
 
-One controllable vehicle per player in the terrain practice arena. Choose **Boomer**, the orange tracked cannon tank, or **Rattler**, the green four-wheeled Gatling car inspired by the bottom-left concept in `references/tank-styles.png`. Built from Roblox Parts with shared server-authoritative combat; no external packages are required. BW v0.1 adds a compact in-game editor and bounded server-side programs for the existing tanks.
+Two persistent tanks per player in a local combat test arena. Choose **Bullet Boomer** (Boomer), the orange tracked cannon tank, or **Rattler**, the green four-wheeled Gatling car inspired by the bottom-left concept in `references/tank-styles.png`. Built from Roblox Parts with shared server-authoritative combat; no external packages are required. BW v0.1 adds a compact in-game editor and bounded server-side programs for the existing tanks.
 
 For detailed implementation notes, known limitations, and future-session context, read [the Codex handoff](CODEX_HANDOFF.md).
 
 
+## Progressive weapon damage
+
+Cannon hits create smoke; Gatling rounds leave bullet scars and loosen armor. At **50, 25 and 10 HP**, surviving tanks enter progressively stronger injury bands. Each weapon's share of actual HP damage scales only its own injury: 30 cannon + 40 Gatling damage at 30 HP gives smoke strength 30/70 and rattle strength 40/70, rather than maximum effects from both. Overkill is excluded. Weapon damage, fire rates, acceleration and recoil tuning are unchanged.
+
+For a single-weapon injury, the initial episode durations are:
+
+| Remaining HP | Dense smoke | Immobilization |
+| --- | --- | --- |
+| 50–26 | 1 second | 0.3 seconds |
+| 25–11 | 1.5 seconds | 0.6 seconds |
+| 10–1 | 2 seconds | 1 second |
+
+Mixed injuries multiply those durations by the contributing weapon's damage share. Smoke uses soft textured particles emitted throughout the full turret volume, covering its base, sides and roof. A continuous engine plume rises and trails behind the moving tank, with occasional dense whole-turret puffs that are 20% larger. The clouds expand, drift upward, rotate and fade; it obscures the local aim view while leaving UI, movement, turret rotation and weapons available. Other clients see the same active smoke status. BW has no visual sensors and gets no artificial blindness penalty. Intermittent wisps become darker/denser as cannon injury grows.
+
+Gatling injuries add bounded bullet-hole/scar decals made from thin Parts, loose panel shakes, wheel/tread wobble and irregular comic clattering. During **RATTLED** episodes, the server suppresses throttle and chassis steering through the normal simulation input path. Aim/fire and existing coasting, airborne momentum and weapon recoil remain available. Inputs resume automatically. Hits never refresh an active episode; immobilization has at least 3 seconds of recovery, smoke at least 3.5 seconds. Thresholds, durations/recovery, presentation budgets and BW grace are centralized in `src/shared/DamageEffectsConfig.luau`.
+
+BW retains a blocked move/turn instruction and target while temporarily immobilized. Its instruction/stuck clocks receive up to **8 total seconds** of grace per movement/chassis-turn instruction; real displacement/rotation still counts. Turret/fire commands continue normally. Genuine obstruction still follows `best_effort`, and the 180-second overall safety limit remains active.
+
+The **fatal projectile's weapon** selects the finish. Cannon: giant explosion, flying turret/gun, scattered wheels and track belts. Gatling: violent final rattle, a perforated turret falling off, wheels/tracks collapsing, the hull dropping onto its belly, and one final metallic clink. Both leave grey wrecks with existing scars attached. Perforations are visual; they do not change hitboxes. Reset Battle clears damage attribution, handicaps, schedules, smoke, audio, scars and broken assemblies along with the existing physics/weapons reset.
+
+Studio still needs to verify smoke actually makes aiming harder at the normal camera distance without covering UI; episode fairness; both vehicles' damage/fatal animations; live/native collision and replicated visibility with two clients; audio quality; and repeated resets during smoke, immobilization and collapse. Automated checks use mocked engine/GUI services and do not establish play balance.
+
 ## Program a tank with BW v0.1
 
-Open **BW Editor** below the tank selector/debug readout. The editor contains the default demonstration program. Choose Boomer or Rattler, press **Run**, and watch the current line/output. **Stop** releases BW control; press movement/fire controls again to resume manually. Editing text also suppresses driving keys through the normal input-focus handling.
+Open **BW Editor** below the tank selector/debug readout. The editor contains the default demonstration program. Choose Boomer or Rattler, press **Run**; the editor closes and releases text focus so you can play. Reopen it to watch the current line/output. Each tank keeps its own editor source and server execution state. Switching tanks also closes the editor and releases text focus. Switch to the other tank to drive it manually or start its independent program; switching leaves the first program running. **Stop** releases BW control; press movement/fire controls again to resume manually. Editing text also suppresses driving keys through the normal input-focus handling.
 
 Every command accepts optional `best_effort=true` (the default). For example, `forward(10, best_effort=false)` stops the program if blocked, while `fire(best_effort=true)` skips an activation that cannot complete. Absolute turns support `turn_right(to=90, best_effort=false)`. Only lowercase boolean literals `true` and `false` are accepted.
 
@@ -15,7 +37,7 @@ BW supports `forward(studs)`, `back(studs)`, `turn_left(degrees)`, `turn_right(d
 
 The server parses and runs the program through existing controls. Distances use actual net horizontal displacement projected along the command's starting direction; sideways drift and vertical hopping do not count. Turn progress accumulates across revolutions. `fire()` waits for one accepted/released shot; `fire(seconds)` holds the real trigger and respects reload/heat. Inputs release between instructions. Already-prepared shots finish before a fire instruction advances; Stop cancels preparation that has not released yet. Already-launched projectiles continue normally.
 
-Limits: 16 KiB source, 400 lines, 128 instructions, 1,000 studs per move, 1,440° per relative turn, absolute arguments within ±36,000° (normalized), and 10 seconds per timed fire. A program is bounded to 180 simulated seconds, each instruction to at most 90 seconds (weapon waits at most 15), and no-progress movement/rotation fails after 3 seconds. By default, instruction failures release inputs, warn with the source line, and continue; `best_effort=false` makes them terminal errors. Syntax errors and global safety/lifecycle stops are never skipped. Selection, death, respawn, redraw and disconnect stop execution. BW changes inputs, never teleports or cancels physics: Rattler can still coast or finish a recoil hop after Stop. There is no pathfinding; blocked instructions report a warning and skip by default, or stop the program with `best_effort=false`.
+Limits: 16 KiB source, 400 lines, 128 instructions, 1,000 studs per move, 1,440° per relative turn, absolute arguments within ±36,000° (normalized), and 10 seconds per timed fire. A program is bounded to 180 simulated seconds, each instruction to at most 90 seconds (weapon waits at most 15), and no-progress movement/rotation fails after 3 seconds. By default, instruction failures release inputs, warn with the source line, and continue; `best_effort=false` makes them terminal errors. Syntax errors and global safety/lifecycle stops are never skipped. Death, battle reset, redraw and disconnect stop execution. Switching control preserves running programs. BW changes inputs, never teleports or cancels physics: Rattler can still coast or finish a recoil hop after Stop. There is no pathfinding; blocked instructions report a warning and skip by default, or stop the program with `best_effort=false`.
 
 Only sequential commands exist in v0.1: no variables, loops, conditions, sensors, enemy tracking, custom functions, parallel actions or arbitrary Luau. Source is session-local and is not saved to an account.
 
@@ -38,9 +60,10 @@ For live source updates, install the matching Rojo Studio plugin, run `rojo serv
 - **A / D:** Boomer rotates left/right, including while stationary. Rattler steers its front wheels while moving; steering reverses naturally when backing up.
 - **Mouse:** aim the turret at the cursor's intersection with cannon height; rotation has a server-enforced speed limit.
 - **Left click (hold):** Boomer fires every 0.65 seconds after its 0.20-second cannon swell. Rattler fires rapidly and lifts under recoil, with a 3-second heat/burst limit and mandatory 2-second overheat cooldown.
-- **Boomer / Rattler buttons:** choose the test vehicle below the Input button. Switching releases held controls; press them again to continue.
+- **Boomer / Rattler buttons:** select control/camera focus below the Input button. Both tanks remain in the arena; switching releases manual controls without resetting either tank or stopping BW.
+- **Reset Battle:** restore both tanks to 100 HP, their original inward-facing spawns, fresh weapons/cooldowns and no residual recoil or active projectiles. Stops both programs; editor source is retained.
 
-The fixed 50°/45° map camera uses a strict central 20% dead zone and a wider default view; small readable maps remain fully framed. The HUD shows health and reload state. Five orange practice targets each take four hits and reset five seconds after destruction when their space is clear. Tanks also take four hits and respawn after three seconds. The arena walls, targets, and other tanks block movement. Controls clear when the window loses focus or a text field gains focus. Server commands expire after 0.35 seconds without a valid update.
+The fixed 50°/45° map camera uses a strict central 20% dead zone and a wider default view; small readable maps remain fully framed. The HUD shows health and reload state. Five orange practice targets each take four hits and reset five seconds after destruction when their space is clear. Both tanks start at 100 HP and show a health bar plus numeric HP. Boomer deals 25 damage per shell; Rattler deals 6 per round. Opposing tanks can destroy each other, without self-damage or duplicate impact damage. For a fatal cannon hit, a 24-stud fireball, 40-stud shockwave, fiery bursts, rising smoke and a low boom accompany the complete turret/gun launching off the hull. Boomer’s eight road wheels or Rattler’s four tire assemblies scatter, tumble and settle. All vehicle pieces turn grey and remain as a solid wreck; controls/BW stop and the HUD announces the winner (or a double-KO draw). The breakup is cosmetic and cannot deal damage or block projectiles. Press Reset Battle to try again. The arena walls, targets, and other tanks block movement. Controls clear when the window loses focus or a text field gains focus. Server commands expire after 0.35 seconds without a valid update.
 
 ## Android, touch, and input settings
 
@@ -80,11 +103,13 @@ These are the local normalized command values sampled for the outbound relay, **
 | `src/shared/InputCommand.luau` | Shared intent contract and server validation. World-position aiming for desktop; normalized turret-rate axes for touch/gamepad. Steer is positive left. |
 | `src/shared/TankSimulation.luau` | Instance-free state transitions, movement, turret rotation, cooldown and firing eligibility. Only the server advances gameplay state. |
 | `src/shared/TankConfig.luau` | Simulation and combat tuning. |
-| `src/server/init.server.luau` | Player ownership, fixed 60 Hz simulation, arena collision, input validation/rate limiting, authoritative raycasts/damage, target resets, respawn, 20 Hz state snapshots. |
+| `src/server/init.server.luau` | Player ownership, fixed 60 Hz simulation, arena collision, input validation/rate limiting, authoritative raycasts/damage, target resets, local battle lifecycle, 20 Hz state snapshots. |
 | `src/client/KeyboardMouseInput.luau` | Existing WASD/mouse adapter, gated by selected mode. |
 | `src/client/TouchInput.luau` | Two independent virtual sticks, hold-to-fire, per-InputObject ownership/cancel cleanup, safe-area layout, input relay display. |
 | `src/client/GamepadInput.luau` | Gamepad1 analog sticks and right-trigger adapter. |
 | `src/client/Analog.luau` | Shared radial dead zone, normalized output and circular clamping. |
+| `src/server/LocalBattle.luau` | Persistent pair ownership, selection, inward-facing spawn/reset poses, HP/destruction/winner lifecycle. Reuses the existing simulation and weapons. |
+| `src/client/TankCombatVisual.luau` | Snapshot-driven overhead HP bar/numbers and a bounded cosmetic destruction burst. |
 | `src/client/InputController.luau` | Auto/explicit mode selection, settings button, focus/menu release, temporary default movement suppression. |
 | `src/client/TankRenderer.luau` | Anchored cosmetic geometry, state smoothing, scrolling track shoes, scripted chassis wobble, cannon recoil and muzzle flashes. |
 | `src/client/init.client.luau` | Input transport at 30 Hz, snapshot reception, renderer lifecycle, camera and HUD. |
@@ -98,6 +123,8 @@ Clients submit intent only: they cannot choose tank IDs, positions, health, hit 
 This prototype supports a flat arena, simple conservative tank/target collision, and slow straight-flight projectile combat. It does not implement terrain traversal, projectile ballistics, client movement prediction, or BW execution.
 
 ## Verification
+
+The current checks compile 49 Luau sources and cover simultaneous tanks, independent manual/BW control, persistent selection, damage/death/self-damage protection, reset/projectile cleanup, per-tank editor source and health/destruction visuals, attributed progressive injuries, bounded status scheduling and BW immobilization grace. The production server is tested with mocked engine sweeps; native Roblox spatial queries and presentation still require Studio.
 
 `rojo build -o battleworks.rbxl` and `rojo build -o battleworks.rbxlx` succeed with Rojo 7.7.1. A build validates the Rojo data model; it does not execute Luau. The development check compiles every source file using Luau Web and executes deterministic input/contract/simulation tests with mock Roblox services:
 
@@ -114,8 +141,10 @@ In Studio:
 2. Drive and reverse, turn while stationary, and aim independently of the chassis. Confirm the tank stops at walls and targets.
 3. Hold fire on an orange target: four hits destroy it; it returns after at least five seconds when unoccupied. Confirm reload pacing and visual recoil/wobble.
 4. Release keys, focus a text field, and switch windows; confirm driving/firing stops.
-5. Use Studio's **Server & Clients** test with two players. Confirm independent controls, replicated movement/shots, tank collision, damage and three-second respawn. Stop a client and confirm its tank disappears.
-6. Watch client and server Output for runtime errors throughout these checks.
+5. Switch control while driving/firing and while BW runs. Both models must remain in place with their own HP, heat, cooldown and program progress. Run BW on both; Stop on one must leave the other running.
+6. Shoot the opposing tank: verify 25/6 damage, readable HP bars, one destruction burst, a visible disabled wreck and winner status. Reset during flight/reload/BW and confirm both spawns, HP, weapons and inputs reset; practice targets remain.
+7. Use Studio's **Server & Clients** test with two players. Each player gets a separate local pair and can only command/damage their own pair. Confirm replication, ownership and departure cleanup of both tanks. This is not multiplayer matchmaking.
+8. Watch client and server Output for runtime errors throughout these checks.
 
 Roblox references: [remote events](https://create.roblox.com/docs/scripting/events/remote), [server boundary validation](https://create.roblox.com/docs/scripting/security/client-server-boundary), and [raycasting](https://create.roblox.com/docs/workspace/raycasting).
 
@@ -127,7 +156,7 @@ Roblox references: [remote events](https://create.roblox.com/docs/scripting/even
 4. Slide the FIRE finger off the button and release outside it; firing must stop. Switch apps/lock the screen while holding controls, open/close the Roblox menu, rotate to the other landscape orientation, and resume. Verify no stuck throttle/steering/turret/FIRE; fresh touches must work. Cancellation event delivery needs actual device testing.
 5. While holding controls, cycle all four preferences. Check release, correct resolved mode, Touch-only UI, and default movement-control restoration. Test Auto with Bluetooth keyboard/mouse and controller; verify `PreferredInput` changes select the corresponding adapter. On a touchscreen laptop, mouse/keyboard use must not show the touch overlay just because touch hardware exists.
 6. Re-test desktop WASD, mouse aiming, held left click, chat focus, and focus loss. In Gamepad mode test both sticks/trigger together, disconnect/reconnect, menu navigation and explicit mode selection.
-7. Use a two-client Studio server to check replicated turret pitch, fire pacing, damage/respawn and ownership. Watch client/server Output for errors. Add network latency if available: the relay is local intent and the server remains authoritative, so visual/gameplay response may lag.
+7. Use a two-client Studio server to check replicated turret pitch, fire pacing, damage/reset and ownership. Watch client/server Output for errors. Add network latency if available: the relay is local intent and the server remains authoritative, so visual/gameplay response may lag.
 8. Publish privately through Studio for testing in the Roblox Android app on physical hardware. Rejoin and confirm preference resets to Auto. Publication is not performed by this repository's build/check commands.
 
 API references: [PreferredInput and cross-platform input](https://create.roblox.com/docs/input), [mobile orientation](https://create.roblox.com/docs/input/mobile), [safe-area UI containers](https://create.roblox.com/docs/ui/in-experience-containers).

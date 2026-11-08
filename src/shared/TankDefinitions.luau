@@ -2,11 +2,11 @@
 local Config = require(script.Parent.TankConfig)
 local Definitions = {}
 Definitions.Boomer = table.freeze({
-	Id = "Boomer", DisplayName = "Boomer", Weapon = Config,
+	Id = "Boomer", WeaponType = "Cannon", DisplayName = "Boomer", Weapon = Config,
 	Aim = table.freeze({ YawKick = math.rad(8), PitchKick = math.rad(6), MaxYaw = math.rad(12), MaxPitch = math.rad(9), Recovery = 5 }),
 })
 Definitions.Rattler = table.freeze({
-	Id = "Rattler", DisplayName = "Rattler",
+	Id = "Rattler", WeaponType = "Gatling", DisplayName = "Rattler",
 	Weapon = table.freeze({
 		Cooldown = 0.1, Damage = 6, Range = Config.Range,
 		MuzzleOffset = 7, ShellSpeed = 85, ShellRadius = 0.22,

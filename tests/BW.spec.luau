@@ -143,6 +143,7 @@ do
  ui.toggle.Activated:Fire(); check(ui.frame.Visible,"BW editor toggle opens panel")
  ui.run.Activated:Fire()
  check(source==Limits.DefaultSource and ui.pendingRequest==1 and ui.editor.releasedFocus,"Run sends source text and releases text focus")
+ check(not ui.frame.Visible,"Run closes the IDE so gameplay and tank selection are accessible")
  ui:update({bwRequestId=0,bwRunning=false})
  check(ui.pendingRequest==1 and ui.output.Text:find("Submitted",1,true)~=nil,"old snapshots cannot overwrite pending Run feedback")
  ui:update({bwRequestId=1,bwRunning=true,bwStatus="running",bwLine=4,bwIndex=2,bwCount=8,bwInstruction="turn_right(90)",bwMessage="Turning"})

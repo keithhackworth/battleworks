@@ -1,3 +1,4 @@
+local DamageEffects=require(script.Parent.DamageEffects)
 -- Pure state math: no Instances, input devices, rendering, or physics ownership.
 local Definitions = require(script.Parent.TankDefinitions)
 local Trajectory = require(script.Parent.ProjectileTrajectory)
@@ -52,6 +53,7 @@ local function suspension(state, dt)
 	state.bodyRoll = (if state.tankType=="Rattler" then 0 else math.cos((state.bounceClock or 0)*0.8)*0.035*(state.movement or 0))+(state.flightRoll or 0)
 end
 function Simulation.step(state, command, dt, mapSize, environment)
+	command=DamageEffects.input(state,command)
 	state.cooldown = math.max(0, state.cooldown - dt)
 	TurretRecoil.step(state,dt)
 	if Recoil.active(state) then

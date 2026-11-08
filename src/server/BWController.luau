@@ -10,6 +10,7 @@ local function cleanup(tank)
 	if tank.rattler then tank.rattler.firing=false end
 	tank.requireFireRelease=true
 end
+Controller.clearInputs=cleanup
 function Controller.sync(tank)
 	local runtime=tank.bw
 	tank.state.bwRequestId=tank.lastBWRequest or 0
@@ -44,7 +45,7 @@ function Controller.start(tank,source)
 	cleanup(tank)
 	local instructions,err=Parser.parse(source)
 	if not instructions or tank.state.health<=0 then
-		return Controller.reject(tank,if err then err.message else "Tank is destroyed; wait for respawn.",if err then err.line else 0)
+		return Controller.reject(tank,if err then err.message else "Tank is destroyed; reset the battle.",if err then err.line else 0)
 	end
 	tank.bw=Runtime.new(instructions,tank.state)
 	tank.requireFireRelease=false
