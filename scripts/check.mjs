@@ -48,6 +48,8 @@ try {
     ['BWHandbook'],
     ['BWLoops'],
     ['BWScanLoops'],
+    ['BWConstants'],
+    ['BWSteering'],
   ];
   if (groupIndex === null) {
     state.destroy(); state = null;

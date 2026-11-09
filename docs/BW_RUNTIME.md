@@ -4,6 +4,14 @@ For the standalone programmer handbook, see [BW_LANGUAGE.md](BW_LANGUAGE.md).
 
 BW programs now submit work to independent physical devices. This intentionally changes the old blocking movement-command contract. Existing tank models, recoil, terrain/collision resolution, damage, weapon heat and projectiles still use the existing fixed server simulation. No task-based gameplay scheduling or new movement engine is introduced.
 
+## Compile-time CONST lowering
+
+`BWParser` resolves `CONST name = expression` in textual source order using a per-compilation table. Scope is program-wide, matching the existing shared variable namespace; declarations in branches/threads are unconditional at compile time. Initializers are recursively checked to allow only scalar literals, previous constants and existing operators/groups. The checker rejects runtime identifiers, all calls (no pure built-ins yet), collections and indexing even in unreachable operands. `BWExpression.constant` performs evaluation with existing type/error semantics. Duplicate names, assignment-name conflicts and writes to visible constants fail with source-line diagnostics.
+
+Every reference is replaced with an ordinary literal AST node. The source AST retains a `const` declaration for diagnostics, but the instruction compiler emits nothing for it. No constants enter `BWExecution.variables` or synchronization versions. Both production reservation (`expressionCost`) and actual charging evaluate the same lowered tree: constants need no runtime cost-model exception. Ordinary variables and expressions outside initializers keep normal costs. The IDE's existing Run parser diagnostics handle CONST; the current plain TextBox editor has no syntax-highlighting or standalone cost-profiler infrastructure to extend. The in-game language handbook documents the syntax and zero cost.
+
+See [constant examples and rules](BW_LANGUAGE.md#compile-time-constants). `tests/BWConstants.spec.luau` checks literal-equivalent instruction tables, per-step scheduling/physics/ticks, scalars, compile diagnostics, concurrency and ordinary variable costs. Constant declarations still count toward existing source statement/size limits; they consume no runtime operations.
+
 ## Clock and execution
 
 The server's existing 60 Hz fixed simulation drives BW. CPU cycles occur at 10 Hz, configurable in `src/shared/BWChassis.luau`. Each bus runs one instruction stream, independently budgeted:
@@ -83,7 +91,7 @@ turn = turn_right(90)    # queues behind move
 observation = Scanner(0) # waits for this observation only; drive continues
 ```
 
-Each device has one active command plus the chassis-defined number of pending commands. Submissions never wait for space or overwrite accepted work. `deviceQueueFull` is a nonfatal result. Queue capacity is attached to the device, not the submitting thread. Rejections do not consume command IDs or mutate accepted work.
+Each device has one active command plus the chassis-defined number of pending commands. Finite submissions never wait for space or overwrite accepted work. Explicit continuous-drive replacement and stop cancellation follow the rules below. `deviceQueueFull` is a nonfatal result. Queue capacity is attached to the device, not the submitting thread. Rejections do not consume command IDs or mutate accepted work.
 
 Every callable returns a dictionary with `status` (`"success"` or `"fail"`) and `reason` (always null on success, stable code on failure). Movement/turret/fire success means **accepted**, not physically completed:
 
@@ -294,3 +302,35 @@ The log pane now pages retained output into bounded native TextBoxes (8,192 byte
 The hardware panel shows current source line, running/waiting/finished/failed state, wait reason, charged ticks, device allocations, active command IDs, queue contents and recent terminal failures. Configuration and diagnostic UI is deliberately compact text rather than a new visual garage.
 
 Automated evidence and final results are in [BW_RUNTIME_IMPLEMENTATION_CHECKLIST.md](BW_RUNTIME_IMPLEMENTATION_CHECKLIST.md). Roblox Studio remains necessary for native TextBox/tab/caret/scroll ergonomics, mobile controls, real spatial-query/filtering behavior, two-client privacy/latency, and subjective visual/physics continuity under terrain, recoil, smoke and destruction. No future smart scanner, user functions, for loops, CPU enforcement based on wall time, or automatic tracking is implemented.
+
+## Persistent steering and continuous drivetrain ownership
+
+`BWCommands` accepts `forward()`/`back()` and steer_left/right(degrees), steer_center(), stop(). Each submission costs 1 tick in the existing hardware cost registry. No per-frame CPU costs are added. Expressions, CONST substitution and normal validation/reservation continue to use the existing compiler/runtime. All new calls return standard results and command IDs.
+
+`BWDevices` owns one persistent wheel target in radians, converting physical degrees to normalized existing InputCommand.steer only at the input boundary. Requests 0..180 degrees clamp to the installed Drive.MaxSteer (Rattler 0.55 radians, approximately 31.5 degrees). Boomer returns unsupportedDrivetrain. The existing RattlerDrive smoothing, speed allocation, acceleration/coasting, recoil, collision and airborne behavior are untouched. No direct pose/velocity writes are introduced. Steering targets and commands obey drivetrain availability; zero allocation rejects operation, while stop remains accepted for safe release. Existing damage input filtering still has final authority.
+
+Steering commands complete immediately and bypass queue capacity, without changing active navigation. Their result includes steeringDegrees (+left/-right); this reports a target, not physical wheel completion. High-level navigation turns temporarily override actual wheel control; forward/reverse and idle steering use the saved target. Runtime diagnostics expose that target in the IDE hardware panel.
+
+Continuous movement occupies the drivetrain active-command slot without a finite physical executor or repeated tick charges. It keeps the runtime alive after instruction streams finish, bounded by the unchanged 180-second global safety timeout. Steering can change while this slot runs. A new continuous drive or stop cancels active plus pending drive work; finite movement/turn cancels an active continuous command and starts navigation. Finite-versus-finite work remains FIFO. Cancelled IDs report commandCancelled and remain in bounded history. clear_queue preserves the active command; abort_command releases it and lets queued work start next fixed tick. Ascending thread scheduling determines competing replacements and wheel-target writes. Other devices remain independent.
+
+Rattler finite forward/back commands reuse BWRuntime with followSteering enabled: progress is accumulated from actual displacement projected onto the midpoint heading's signed tangent each fixed tick. This permits full arcs/circles while excluding sideways/vertical drift. Boomer and the legacy serial regression executor retain their original start-axis distance behavior. No wheel-spin distance or position teleport is used. Normal stuck/deadline and damage pause behavior remains.
+
+stop releases throttle without zeroing velocity and preserves the wheel target. Program cancellation/destruction/reset/respawn clears active/queued work and the target; existing BWController restores manual ownership. Program replacement creates a fresh device manager. Physical momentum and projectiles remain real.
+
+This complete demonstration runs on Rattler (Boomer reports unsupported wheel steering while remaining controllable):
+
+```python
+steer_right(20)
+forward()
+clock = get_clock()
+wait_for_clock(clock.time + 3)
+steer_left(20)
+clock = get_clock()
+wait_for_clock(clock.time + 3)
+steer_center()
+clock = get_clock()
+wait_for_clock(clock.time + 1)
+stop()
+```
+
+See the [movement reference](BW_LANGUAGE.md#movement-commands) for continuous circle, tighter radius, sensor-based steering and ownership tables. Automated pure-simulation/controller tests cover these control paths; native Roblox Studio driving, wheel visuals, damage/recoil combinations and touch/manual handoff still require Play testing. Builds alone do not validate that experience.

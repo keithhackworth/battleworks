@@ -5,7 +5,7 @@ local Expression=require(script.Parent.BWExpression)
 local Commands=require(script.Parent.BWCommands)
 local Value=require(script.Parent.BWValue)
 local Parser={}
-local reserved={['with']=true,['thread']=true,['if']=true,['elif']=true,['else']=true,['switch']=true,['case']=true,['default']=true,['and']=true,['or']=true,['not']=true,['true']=true,['false']=true,['null']=true,['while']=true,['for']=true,['def']=true,['break']=true,['return']=true}
+local reserved={CONST=true,['with']=true,['thread']=true,['if']=true,['elif']=true,['else']=true,['switch']=true,['case']=true,['default']=true,['and']=true,['or']=true,['not']=true,['true']=true,['false']=true,['null']=true,['while']=true,['for']=true,['def']=true,['break']=true,['return']=true}
 local function parse(source)
 	if type(source)~="string" then Commands.error(1,"Source must be text.") end
 	if #source>Limits.MaxSourceBytes then Commands.error(1,"Program exceeds 16,384 bytes.") end
@@ -21,10 +21,44 @@ local function parse(source)
 		table.insert(lines,{tokens=tokens,indent=#leading,line=line,text=raw:match("^%s*(.-)%s*$"):sub(1,200)})
 	end
 	local cursor,count=1,0
-	local function expression(row,start,last)
+    -- Like mutable BW names, constants have program-wide scope. Resolve in
+    -- textual declaration order, including inside thread/branch blocks.
+    local constants,mutableNames={},{}
+    local function resolveConstants(n,required)
+        if n.kind=="variable" then
+            local value=constants[n.name]
+            if value~=nil then return {kind="literal",value=value,line=n.line} end
+            if required then Commands.error(n.line,"CONST requires a previously declared constant; '"..n.name.."' is undefined, self-referential or runtime-dependent.") end
+        elseif n.kind=="call" then
+            if required then Commands.error(n.line,"Function calls are not allowed in CONST expressions.") end
+            for _,arg in n.args do
+                arg.expression=resolveConstants(arg.expression,false)
+                local known,value=Expression.constant(arg.expression)
+                if known then Commands.validate(n.name,arg.key or "value",value,n.line) end
+            end
+            Commands.signature(n)
+        elseif n.kind=="binary" then
+            n.left=resolveConstants(n.left,required); n.right=resolveConstants(n.right,required)
+        elseif n.kind=="unary" then n.operand=resolveConstants(n.operand,required)
+        elseif n.kind=="group" then n.expression=resolveConstants(n.expression,required)
+        elseif n.kind=="index" then
+            if required then Commands.error(n.line,"CONST supports scalar expressions only; indexing is not allowed.") end
+            n.array=resolveConstants(n.array,false); n.index=resolveConstants(n.index,false)
+        elseif n.kind=="array" or n.kind=="dictionary" then
+            if required then Commands.error(n.line,"CONST supports scalar values only; arrays and dictionaries are not allowed.") end
+            if n.kind=="array" then for i,item in n.items do n.items[i]=resolveConstants(item,false) end
+            else for _,entry in n.entries do entry.expression=resolveConstants(entry.expression,false) end end
+        end
+        return n
+    end
+    local function writable(name,line)
+        if constants[name]~=nil then Commands.error(line,"Cannot assign to CONST '"..name.."'.") end
+        mutableNames[name]=true
+    end
+	local function expression(row,start,last,required)
 		local node,pos=Expression.parse(row.tokens,start)
 		if row.tokens[pos].kind~=(last or "eof") or (last and row.tokens[pos+1].kind~="eof") then Commands.error(row.line,"Unexpected token after expression; expected "..(last or "end of line")..".") end
-		return node
+		return resolveConstants(node,required)
 	end
 	local function constant(node) return Expression.constant(node) end
 	local function numericCall(row,call)
@@ -59,7 +93,17 @@ local function parse(source)
 			local token=row.tokens[1]; local word=token.value
 			cursor+=1
 			local node={line=row.line,text=row.text}
-			if word=="with" then
+			if word=="CONST" then
+                local name=row.tokens[2]
+                if name.kind~="id" or reserved[name.value] or Commands.known(name.value) or row.tokens[3].kind~="=" then Commands.error(row.line,"Expected CONST name = scalar expression; name must not be reserved.") end
+                if constants[name.value]~=nil or mutableNames[name.value] then Commands.error(row.line,"Duplicate or conflicting CONST name '"..name.value.."'.") end
+                local initializer=expression(row,4,nil,true)
+                local known,value=constant(initializer)
+                if not known or Value.isArray(value) or Value.isDictionary(value) then Commands.error(row.line,"CONST requires a compile-time scalar expression.") end
+                constants[name.value]=value
+                node.kind="const" -- retained for source diagnostics; emits nothing
+                node.name=name.value; node.value=value
+            elseif word=="with" then
                 if indent~=0 then Commands.error(row.line,"Thread entry blocks must be at the top level.") end
                 local t=row.tokens
                 if t[2].value~="thread" or t[3].kind~="(" or t[4].kind~="number" or t[5].kind~=")" or t[6].kind~=":" or t[7].kind~="eof" or t[4].value%1~=0 or t[4].value<1 or t[4].value>16 then Commands.error(row.line,"Expected with thread(1..16):") end
@@ -104,9 +148,13 @@ local function parse(source)
 			elseif token.kind=="id" and (row.tokens[2].kind=="." or row.tokens[2].kind=="[") then
                 local target,pos=Expression.parse(row.tokens,1)
                 if row.tokens[pos].kind~="=" or target.kind~="index" then Commands.error(row.line,"Expected dictionary assignment.") end
+                local root=target; while root.kind=="index" do root=root.array end
+                if root.kind=="variable" then writable(root.name,row.line) end
+                target=resolveConstants(target,false)
                 node.kind="set"; node.target=target; node.expression=expression(row,pos+1); constant(node.expression)
             elseif token.kind=="id" and row.tokens[2].kind=="=" then
 				if Commands.known(word) then Commands.error(row.line,"Cannot assign to built-in function '"..word.."'.") end
+				writable(word,row.line)
 				node.kind="assign"; node.name=word; node.expression=expression(row,3); constant(node.expression)
 			else
 				local call=expression(row,1)

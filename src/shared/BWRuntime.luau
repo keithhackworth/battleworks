@@ -161,8 +161,18 @@ function Runtime:_step(state,dt)
 		return command
 	end
 	if c.kind=="move" then
-		local delta=state.position-c.startPosition
-		c.progress=delta.X*c.axis.X+delta.Z*c.axis.Z
+        if self.services.followSteering then
+            -- Actual signed travel along the changing chassis-forward tangent.
+            -- Excludes lateral drift; unlike a start-axis projection this can
+            -- complete a long arc or full circle without losing progress.
+            local delta=state.position-c.lastPosition
+            local heading=c.startHeading+Adapter.delta(c.startHeading,state.yaw)*0.5
+            c.progress+=(delta.X*(-math.sin(heading))+delta.Z*(-math.cos(heading)))*c.sign
+            c.lastPosition=state.position; c.startHeading=state.yaw
+        else
+            local delta=state.position-c.startPosition
+            c.progress=delta.X*c.axis.X+delta.Z*c.axis.Z
+        end
 	else
 		local angle=Adapter.angle(state,c.turret)
 		c.progress+=Adapter.delta(c.lastAngle,angle)*c.sign

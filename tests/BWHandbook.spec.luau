@@ -16,7 +16,7 @@ for _,command in Handbook.commands() do
  local parsed,err=Parser.parse(command.signature)
  check(parsed~=nil,"documented command signatures parse: "..command.name.." "..tostring(err and err.message))
 end
-for _,registry in {Commands.moves,Commands.turns,Commands.special,{fire=true,Scanner=true,print=true}} do
+for _,registry in {Commands.moves,Commands.turns,Commands.steering,Commands.special,{fire=true,Scanner=true,print=true,stop=true}} do
  for name in registry do check(covered[name],"no missing callable: "..name) end
 end
 local sections=Handbook.sections(); local all={}; local ids={}; local documented={}

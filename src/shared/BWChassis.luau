@@ -8,7 +8,7 @@ C.MaxInstructionCredit=1024
 C.AcquisitionSeconds=0.05
 C.Tiers={Bunny={threads=1,ticks=10,queue=1},Dual={threads=2,ticks=15,queue=2},Quad={threads=4,ticks=20,queue=4},Octa={threads=8,ticks=30,queue=8},Hexadeca={threads=16,ticks=40,queue=16}}
 C.Costs={read=0.1,write=0.2,arithmetic=0.2,comparison=0.2,logical=0.1,access=0.1,branch=1,loop=1,switch=2,print=0,sync=0.2,queue=1,
- forward=1,back=1,turn_left=1,turn_right=1,turret_left=1,turret_right=1,Scanner=1,fire=2,get_clock=0,get_facing_direction=0.1,call=0}
+ steer_left=1,steer_right=1,steer_center=1,stop=1,forward=1,back=1,turn_left=1,turn_right=1,turret_left=1,turret_right=1,Scanner=1,fire=2,get_clock=0,get_facing_direction=0.1,call=0}
 C.TankTiers={Boomer="Bunny",Rattler="Octa"}
 C.Angles={0,45,90,135,180,225,270,315}
 function C.performance(percent) local a=math.clamp(percent/100,0,1); return 1-(1-a)^2 end

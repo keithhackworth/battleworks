@@ -297,6 +297,7 @@ function IDE:renderRuntime()
   local names={}; for name in r.devices do table.insert(names,name) end; table.sort(names)
   for _,name in names do local d=r.devices[name]; local idsInQueue={}; for _,c in d.queue do table.insert(idsInQueue,tostring(c.id)..":"..c.op) end
    table.insert(lines,string.format("%s B%d %g%% active=%s Q[%s]",name,d.bus,d.allocation,if d.active then tostring(d.active.id)..":"..d.active.op else "idle",table.concat(idsInQueue,",")))
+   if d.steeringDegrees~=nil then table.insert(lines,string.format("  wheel target %.1f degrees (+left / -right)",d.steeringDegrees)) end
    if d.lastScan then
     local reading=d.lastScan
     local result=if reading.status=="success" then tostring(reading.count).." objects" else reading.reason or "failed"

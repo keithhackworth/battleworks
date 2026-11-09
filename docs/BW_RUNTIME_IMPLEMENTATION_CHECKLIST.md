@@ -180,3 +180,21 @@ Acceptance: visible separated tanks/walls appear once each in nearest-first orde
 - [x] Add regression checks for paging, explicit counts, actual source/empty scenes and loop entry.
 - [x] Final full suites, both Rojo builds and whitespace checks pass; exact server-to-IDE reproduction covers populated and empty scans, handbook paging suite passes 339 assertions.
 - [ ] Native Studio blank-output cause remains unverified: restart Play (not merely Reset Battle), run exact snippet and report Prints run/received/page plus T1 scan wait/loop counters. Mocked path is verified; no confirmed native diagnosis is claimed.
+
+## Follow-up — compile-time scalar CONST
+- [x] Inspect lexer/parser/AST lowering, expression evaluation, runtime CPU charging/reservation, shared namespace and plain TextBox IDE.
+- [x] Resolve declarations/references to scalars at compile time; emit no declaration instructions or runtime constant storage. Reject mutation, conflicts, unsupported collections/calls and runtime/self/forward dependencies with normal line diagnostics.
+- [x] Verify scalar types, initializer operators, source order, cross-thread use and literal-equivalent per-tick behavior/reservations; 405 dedicated assertions pass, including credit exhaustion/reservation across CPU cycles.
+- [x] Document scope, zero cost, supported expressions and case-sensitive existing command names in language/runtime guides and in-game handbook.
+- [x] Full existing/new regression suites pass; expanded CONST suite passes 405 assertions. Both Rojo builds and git diff --check pass.
+- [ ] Native Studio: enter CONST examples, inspect compile diagnostics, run commands and compare HUD execution ticks. Studio unavailable; deterministic runtime and IDE reference data are covered by automated checks.
+
+## Follow-up — persistent wheel steering and continuous driving
+- [x] Inspect authoritative RattlerDrive/Recoil input pathway, steering limit/smoothing, BW parser/signatures, physical executor, CPU scheduler, queues and controller cleanup.
+- [x] Add steer_left/right(degrees), steer_center(), forward()/back(), stop() to normal signatures/cost registry. Steering clamps to installed maximum; unsupported Boomer steering returns an operational result.
+- [x] Integrate persistent steering and continuous active drivetrain commands into BWDevices; immediate steering, explicit replacement/cancellation rules, finite FIFO, command IDs/status, no repeated operating ticks, deterministic cross-thread ownership.
+- [x] Reuse existing physical controls and smoothing; Rattler finite arcs track actual signed tangent displacement. Preserve legacy finite executor and Boomer pivot behavior. Lifecycle cleanup resets persistent intent; coast/momentum remains physical.
+- [x] Dedicated BWSteering suite passes 57 assertions covering circles, changing curvature without stopping, limits, reverse/finite arcs, transitions, queues/status, concurrent threads, budgets/performance, damage filtering, controller cancellation/replacement/manual handoff, death/generation/timeout and wheel smoothing and uninterrupted scanner-loop driving.
+- [x] Update language/runtime and in-game handbook with all commands/costs/ownership rules and examples; expose wheel target in existing IDE diagnostics.
+- [x] Full regression suites pass, including 57 steering assertions, 391 handbook assertions and 13 runtime documentation programs on both tank simulations. Both Rojo formats and whitespace checks pass.
+- [ ] Studio Play: drive both primary Rattler demos, inspect visible front-wheel smoothing, obstacles/local surfaces, firing/recoil and immobilization while driving, Stop/reset/death/switch/manual/mobile handoff. Native runtime is unavailable; automated simulations/builds do not establish Studio behavior.

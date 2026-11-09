@@ -10,6 +10,7 @@ This handbook describes implemented features. [BW_RUNTIME.md](BW_RUNTIME.md) con
 
 - [Getting started](#getting-started)
 - [Syntax and values](#syntax-and-values)
+- [Compile-time constants](#compile-time-constants)
 - [Coordinates and angles](#coordinates-and-angles)
 - [CPU cycles and instruction ticks](#cpu-cycles-and-instruction-ticks)
 - [Chassis buses and device performance](#chassis-buses-and-device-performance)
@@ -110,6 +111,26 @@ Use `=` to assign and `==` to compare. Arithmetic requires numbers. Ordering req
 
 `and`/`or` short-circuit: skipped expressions do not scan, submit commands or consume expression ticks. Existing `if` and logical operators require actual booleans. `while` has the broader truthiness rules documented below.
 
+## Compile-time constants
+
+`CONST name = expression` declares an immutable scalar at compilation:
+
+```python
+CONST move = 10
+CONST turn = 90
+CONST half_turn = turn / 2
+forward(move)
+back(move)
+turn_left(half_turn)
+forward(move)
+```
+
+The commands above have exactly the same runtime CPU cost and behavior as `forward(10)`, `back(10)`, `turn_left(45)`, `forward(10)`. Declarations emit no runtime instructions or storage. References become literal values before execution and before CPU reservations are calculated. Arithmetic, comparisons and logical work inside an initializer are evaluated once during compilation and cost zero runtime ticks. An expression outside a declaration still pays its normal costs: `forward(move + 1)` computes an addition; declare `CONST next_move = move + 1` to precompute it. Ordinary mutable variables retain their read/write costs.
+
+Allowed values are numbers, strings, booleans and null. Initializers accept existing arithmetic, comparison, logical and unary operators, parentheses and previously declared constants. Existing strict operand typing and boolean logical semantics apply. No function is currently compile-time pure: calls, runtime variables, arrays, dictionaries and indexing are rejected, including in short-circuited initializer branches. Self/forward references and circular definitions are rejected; declarations require an initializer.
+
+Names use existing case-sensitive identifier rules and cannot be keywords or built-in command names. Constants share the program-wide namespace across threads, are visible after declaration in textual source order, and cannot shadow/redeclare constants or mutable assignment names. A declaration inside a thread or conditional is still compile-time and unconditional; prefer declarations at the top of the program. Constants do not leak across compilations. Reassignment, property/index assignment and using a constant as a synchronization variable reference are compile errors. Scalars have no mutable aliases. Commands remain case-sensitive: use `forward`, `back`, `turn_left`, not `Forward`, `Back`, `Rotate_left`.
+
 ## Coordinates and angles
 
 Movement distances are **studs**. Times are **simulation seconds**. Angles are **degrees**.
@@ -143,7 +164,7 @@ CPU throughput is separate from physical time. Issuing `forward(100)` costs one 
 
 | Operation | Ticks |
 | --- | ---: |
-| `forward`, `back` | 1 |
+| `forward`, `back`, `steer_left`, `steer_right`, `steer_center`, `stop` | 1 |
 | Chassis rotation | 1 |
 | Turret rotation | 1 |
 | `Scanner` submission | 1 |
@@ -281,6 +302,7 @@ Supported legacy `best_effort=true/false` arguments do not make asynchronous dev
 | --- | --- |
 | `deviceQueueFull` | Device's pending queue is full. |
 | `deviceUnavailable` | Device is unknown or not installed. |
+| `unsupportedDrivetrain` | Wheel steering requested on a drivetrain such as Boomer. |
 | `deviceDisabled` | Device has 0% operating allocation. |
 | `invalidSensor` | Scanner angle/index is invalid. |
 | `invalidArgument` | Invalid computed operational argument or unknown command ID. |
@@ -300,22 +322,120 @@ Supported legacy `best_effort=true/false` arguments do not make asynchronous dev
 | --- | --- | ---: |
 | `forward(studs)` | Distance | 1 |
 | `back(studs)` | Distance | 1 |
+| `forward()` / `back()` | None; continuous throttle | 1 |
+| `steer_left(degrees)` / `steer_right(degrees)` | Physical wheel angle | 1 |
+| `steer_center()` | None; straight wheels | 1 |
+| `stop()` | None; release drivetrain | 1 |
 | `turn_left(degrees)` / `turn_left(to=heading)` | Relative or absolute rotation | 1 |
 | `turn_right(degrees)` / `turn_right(to=heading)` | Relative or absolute rotation | 1 |
 
-All support optional `best_effort=true` and use the drivetrain pipeline. All return acceptance/failure dictionaries; accepted work includes `commandId`.
+Distance/navigation commands and steer_left/right accept optional `best_effort=true`; `stop()` and `steer_center()` take no arguments. All use the drivetrain device and return acceptance/failure dictionaries; accepted work includes `commandId`. Steering updates bypass its queue. Operational failures remain nonfatal.
 
 ### forward(studs)
 
 **Input:** finite distance from 0 to 1,000 studs.
 
-Drive forward for the requested actual distance along the starting direction. Sideways/vertical drift and wheel spin do not count; real recoil along the commanded axis does. Walls can prevent completion. The command does not teleport or wait for the full drive.
+Drive forward for the requested actual distance. Boomer measures along the starting direction. Rattler follows its persistent wheel target and accumulates signed movement along its changing forward tangent, so full arcs/circles can complete. Sideways/vertical drift and wheel spin do not count; real recoil along the commanded direction does. Walls can prevent completion. The command does not teleport or wait for the full drive.
 
 ### back(studs)
 
 **Input:** finite distance from 0 to 1,000 studs.
 
-Reverse for the requested actual distance, using the inverse of the tank's starting forward direction. Uses normal vehicle physics, including Rattler's reverse behavior. Progress and failure rules match `forward`.
+Reverse for the requested actual distance. Boomer uses the inverse starting forward direction; Rattler follows the changing reverse tangent with persistent steering. Uses normal vehicle physics, including naturally reversed yaw while backing. Progress and failure rules match `forward`.
+
+### forward() / back()
+
+**Input:** no distance (optional `best_effort` remains accepted). **Cost:** 1 tick per submission.
+
+Drive continuously forward/reverse at normal configured performance. The thread continues immediately; other threads/devices/scanners can run. An active continuous command reports `running` and keeps BW in control even after all instruction streams finish. It ends when replaced, stopped, aborted, or cancelled by Stop, reset, destruction, respawn, program replacement/error or the existing 180-second safety timeout. No repeated CPU charge occurs while driving. `forward(0)` is a finite zero-distance operation, distinct from `forward()`.
+
+### steer_left(degrees) / steer_right(degrees)
+
+**Input:** a finite angle 0..180 degrees; requests above the installed physical maximum are clamped. Rattler's current maximum is approximately 31.5°, so `steer_right(35)` requests full available lock. **Cost:** 1 tick per update.
+
+Set an absolute front-wheel target relative to straight ahead. Repeating a command does not add angles. `steer_right(20)` positions wheels; `turn_right(20)` requests 20° of chassis heading change. Steering itself does not move/rotate the chassis. It reaches actual wheels through the existing steering smoothing, car physics and airborne control restrictions. New steering takes effect during continuous or finite driving, without restarting throttle. A high-level turn temporarily controls actual steering; the persistent wheel target resumes afterward.
+
+Success includes `commandId` and `steeringDegrees`, the applied signed target (positive left, negative right). The steering command record immediately becomes `completed`: this confirms the target was accepted, not that wheels have physically reached it. Boomer returns `fail / unsupportedDrivetrain`. Computed invalid arguments return `invalidArgument`; invalid literals are compile errors. Steering requires an installed, enabled drivetrain and remains subject to server damage restrictions on actual controls.
+
+### steer_center()
+
+**Input:** none. **Cost:** 1 tick.
+
+Set the persistent wheel target to zero without stopping. The wheels straighten through existing smoothing. Same result shape as steer_left/right, with `steeringDegrees: 0`. Unsupported on Boomer.
+
+### stop()
+
+**Input:** none. **Cost:** 1 tick.
+
+Cancel active and pending drivetrain commands and release throttle. Actual momentum/recoil is preserved; existing coasting handles the stop. The steering target is retained until changed or program lifecycle cleanup. Turret, weapon and scanner work continue. Returns a completed command ID; cancelled movement IDs report `cancelled / commandCancelled`. Stop requires an installed drivetrain but is accepted at zero allocation for safe release.
+
+### Drivetrain ownership rules
+
+| Issued operation | Active/queued drivetrain behavior |
+| --- | --- |
+| Steering setpoint | Updates the shared wheel target immediately, including when the queue is full. Does not cancel navigation. |
+| `forward()` / `back()` | Cancels all active and pending drivetrain work, then becomes its sole active command. |
+| Finite drive or chassis turn while continuously driving | Cancels continuous drive and starts navigation. |
+| Finite drive or chassis turn while navigating | Existing bounded FIFO and queue-full failure rules. |
+| `stop()` | Cancels active/pending drive work and releases throttle. |
+| `clear_queue("drivetrain")` | Removes pending work, preserving the active command and wheel target. |
+| `abort_command("drivetrain")` | Cancels active work; any pending navigation starts next fixed tick. |
+| Program Stop/replacement/reset/death | Clears queues, active drive and persistent target; manual control returns through existing ownership rules. |
+
+Different threads share one drivetrain and one wheel target. Ascending thread execution order makes competing submissions deterministic: the last reached replacement/setpoint wins. Accepted cancellation records remain queryable within normal history limits. Devices on other buses remain independent. Bus allocation still scales maximum driving speed; acceleration, braking, steering smoothing, recoil and collision physics are unchanged. Immobilization filters throttle/steering server-side without erasing the persistent intent.
+
+### Continuous steering examples (Rattler)
+
+Circle continuously:
+
+```python
+steer_right(20)
+forward()
+```
+
+Change turning radius without stopping (35° clamps to current physical lock):
+
+```python
+steer_right(20)
+forward()
+clock = get_clock()
+wait_for_clock(clock.time + 5)
+steer_right(35)
+```
+
+Change direction of curvature, straighten and coast to a stop:
+
+```python
+steer_right(20)
+forward()
+clock = get_clock()
+wait_for_clock(clock.time + 3)
+steer_left(20)
+clock = get_clock()
+wait_for_clock(clock.time + 3)
+steer_center()
+clock = get_clock()
+wait_for_clock(clock.time + 3)
+stop()
+```
+
+Sensor-based radius adjustment (introductory control, not a complete orbit controller):
+
+```python
+steer_right(20)
+forward()
+while true:
+    scan = Scanner(position=2)
+    if scan.status == "success" and scan.count > 0:
+        target = scan.detections[0]
+        if target.type == "tank":
+            if target.distance < 40:
+                steer_right(10)
+            elif target.distance > 60:
+                steer_right(30)
+            else:
+                steer_right(20)
+```
 
 ### turn_left(degrees) / turn_left(to=heading)
 

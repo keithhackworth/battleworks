@@ -2,22 +2,48 @@
 local Limits=require(script.Parent.BWConfig)
 local Hardware=require(script.Parent.BWChassis)
 local Value=require(script.Parent.BWValue)
+local Definitions=require(script.Parent.TankDefinitions)
 local Physical=require(script.Parent.BWRuntime)
 local Input=require(script.Parent.InputCommand)
 local ScannerConfig=require(script.Parent.ScannerConfig)
 local D={}; D.__index=D
 function D.new(config,state,services)
- local self=setmetatable({config=config,services=services or {},devices={},commands={},completed={},retainedCount=0,nextId=0,generation=state.generation,tankType=state.tankType},D)
+ local self=setmetatable({config=config,services=services or {},devices={},commands={},completed={},retainedCount=0,nextId=0,generation=state.generation,tankType=state.tankType,steering=0},D)
  for name,spec in config.devices do self.devices[name]={name=name,spec=spec,performance=Hardware.performance(spec.allocation),queue={}} end
  return self
 end
 function D:submit(name,instruction,time,thread)
  local d=self.devices[name]
  if not d then return Value.result("deviceUnavailable") end
- if d.performance<=0 then return Value.result("deviceDisabled") end
+ if d.performance<=0 and instruction.op~="stop" then return Value.result("deviceDisabled") end
+ local op=instruction.op
+ local steering=op=="steer_left" or op=="steer_right" or op=="steer_center"
+ local continuous=(op=="forward" or op=="back") and instruction.value==nil
+ if steering and not Definitions.get(self.tankType).Drive then return Value.result("unsupportedDrivetrain") end
+ -- Steering is an immediate setpoint, not queued behind physical navigation.
+ -- Continuous movement/stop explicitly replace the entire drivetrain pipeline.
+ if name=="drivetrain" then
+  if op=="stop" or continuous then
+   self:manage(name,false,time)
+   if d.active then self:terminal(d,d.active,"cancelled","commandCancelled",time) end
+  elseif not steering and d.active and d.active.continuous then
+   self:terminal(d,d.active,"cancelled","commandCancelled",time)
+  end
+ end
+ if steering or op=="stop" then
+  self.nextId+=1
+  local c={id=self.nextId,instruction=instruction,thread=thread,submitted=time,started=time,completed=time,state="completed",device=name}
+  self.commands[c.id]=c; self.retainedCount+=1; self:archive(c)
+  if steering then
+   local max=Definitions.get(self.tankType).Drive.MaxSteer
+   self.steering=if op=="steer_center" then 0 else math.min(math.rad(instruction.value),max)*(if op=="steer_left" then 1 else -1)
+   return Value.result(nil,{commandId=c.id,steeringDegrees=math.deg(self.steering)})
+  end
+  return Value.result(nil,{commandId=c.id})
+ end
  if (d.active or #d.queue>0) and #d.queue>=Hardware.Tiers[self.config.tier].queue then return Value.result("deviceQueueFull") end
  self.nextId+=1
- local c={id=self.nextId,instruction=instruction,thread=thread,submitted=time,state=if d.active or #d.queue>0 then "queued" else "accepted",device=name}
+ local c={id=self.nextId,instruction=instruction,thread=thread,submitted=time,state=if d.active or #d.queue>0 then "queued" else "accepted",device=name,continuous=continuous}
  self.commands[c.id]=c; self.retainedCount+=1
  if not d.active and #d.queue==0 then d.active=c else table.insert(d.queue,c) end
  return Value.result(nil,{commandId=c.id})
@@ -48,6 +74,7 @@ function D:manage(name,abort,time)
  return Value.result()
 end
 function D:stop(time,reason)
+ self.steering=0
  for name,d in self.devices do
   self:manage(name,false,time)
   if d.active then self:terminal(d,d.active,"cancelled",reason or "commandCancelled",time) end
@@ -61,8 +88,15 @@ function D:busy()
  for _,d in self.devices do if d.active or #d.queue>0 then return true end end
  return false
 end
+function D:steerInput()
+ local drive=Definitions.get(self.tankType).Drive
+ return if drive then self.steering/drive.MaxSteer else 0
+end
 function D:step(state,dt,time)
  local input=Input.neutral()
+ if state.health<=0 or state.generation~=self.generation then self:stop(time,"tankDestroyed"); return input end
+ local drive=self.devices.drivetrain
+ if drive and drive.performance>0 then input.steer=self:steerInput() end
  local names={}; for name in self.devices do table.insert(names,name) end; table.sort(names)
  -- The query-budget guard is shared, but sensor cooldowns are not. Rotate
  -- acquisition priority each cooldown interval so fixed lexical order cannot
@@ -82,12 +116,18 @@ function D:step(state,dt,time)
   if not d.active and #d.queue>0 then d.active=table.remove(d.queue,1) end
   local c=d.active
   if not c then continue end
+  if c.continuous then
+   c.state="running"; c.started=c.started or time
+   input.throttle=if c.instruction.op=="forward" then 1 else -1
+   input.steer=self:steerInput()
+   continue
+  end
   if c.state~="running" then
    c.state="running"; c.started=time
    if name:sub(1,6)=="sensor" then c.acquireAt=math.max(time+(d.spec.acquisition or Hardware.AcquisitionSeconds)/d.performance,d.readyAt or 0)
    else
     local instruction=table.clone(c.instruction); instruction.bestEffort=false
-    c.executor=Physical.new({instruction},state)
+    c.executor=Physical.new({instruction},state,if name=="drivetrain" and Definitions.get(self.tankType).Drive then {followSteering=true} else nil)
    end
   end
   if c.acquireAt then
@@ -106,7 +146,7 @@ function D:step(state,dt,time)
     c.result=Value.result(reason or "deviceUnavailable",{sensor=c.instruction.value}); self:terminal(d,c,"failed",reason,time) end
   else
    local command=c.executor:step(state,dt)
-   if name=="drivetrain" then input.throttle=command.throttle; input.steer=command.steer
+   if name=="drivetrain" then input.throttle=command.throttle; input.steer=if c.instruction.op=="forward" or c.instruction.op=="back" then self:steerInput() else command.steer
    elseif name=="turret" then input.turretX=command.turretX; input.turretY=command.turretY
    elseif name=="weapon" then input.fire=command.fire end
    if c.executor.status=="error" and c.executor.message:find("Internal device error:",1,true) then error(c.executor.message,0) end
@@ -121,7 +161,7 @@ function D:diagnostics()
  local out={}
  for name,d in self.devices do
   local queue={}; for _,c in d.queue do table.insert(queue,{id=c.id,op=c.instruction.op,thread=c.thread}) end
-  out[name]={bus=d.spec.bus,allocation=d.spec.allocation,performance=d.performance,scanAttempts=d.scanAttempts or 0,scanSuccesses=d.scanSuccesses or 0,scanFailures=d.scanFailures or 0,lastScan=d.lastScan,capacity=Hardware.Tiers[self.config.tier].queue,
+  out[name]={steeringDegrees=if name=="drivetrain" then math.deg(self.steering) else nil,bus=d.spec.bus,allocation=d.spec.allocation,performance=d.performance,scanAttempts=d.scanAttempts or 0,scanSuccesses=d.scanSuccesses or 0,scanFailures=d.scanFailures or 0,lastScan=d.lastScan,capacity=Hardware.Tiers[self.config.tier].queue,
    active=if d.active then {id=d.active.id,op=d.active.instruction.op,thread=d.active.thread,state=d.active.state} else false,queue=queue}
  end
  return out

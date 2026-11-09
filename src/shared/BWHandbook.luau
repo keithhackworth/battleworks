@@ -13,10 +13,22 @@ function Handbook.commands()
  local function add(...) table.insert(commands,command(...)) end
  local accepted='A standard result: {status: "success", reason: null, commandId: number}. Success means accepted, not finished. Failure: {status: "fail", reason: code}. Inspect command_status(commandId) later.'
  for _,name in {"forward","back"} do
-  add(name,name.."(studs, best_effort=true)",name,
-   "studs: finite number from 0 to "..number(Limits.MaxDistance).."; expressions are allowed.",
-   (if name=="forward" then "Drive forward" else "Reverse").." for the actual requested distance along the direction at command START. Sideways drift and wheel spin do not count; real recoil along that direction does. Returns immediately after submission. Walls can prevent completion. No teleporting.",accepted,"drivetrain")
+  add(name,name.."(studs, best_effort=true)\n"..name.."()",name,
+   "Optional studs: finite number from 0 to "..number(Limits.MaxDistance).."; expressions are allowed. Omit studs for continuous driving.",
+   (if name=="forward" then "Drive forward" else "Reverse").." for the actual requested distance along the direction at command START. Sideways drift and wheel spin do not count; real recoil along that direction does. Rattler honors persistent wheel steering; finite arcs count signed forward travel along the changing heading, excluding lateral drift. Without a distance, drive continuously until replaced/stopped or lifecycle timeout. Both forms return immediately after submission. Walls can prevent completion. No teleporting.",accepted,"drivetrain")
  end
+ for _,name in {"steer_left","steer_right"} do
+  add(name,name.."(degrees, best_effort=true)",name,
+   "degrees: finite number 0..180, clamped to the vehicle's physical steering limit (Rattler approximately "..number(math.deg(Tanks.Rattler.Drive.MaxSteer)).." degrees). No to= argument.",
+   "Set absolute front-wheel steering "..(if name=="steer_left" then "left" else "right").." of center, persisting until changed. Repeated calls do not accumulate. Immediate setpoint update bypasses drivetrain queues; actual wheels follow existing physical smoothing. Does not rotate the chassis directly. Unsupported on Boomer; fail / unsupportedDrivetrain. High-level chassis turns temporarily own actual steering, then the saved setpoint resumes.",
+   'Standard result with commandId and steeringDegrees (positive left, negative right). The setpoint command completes immediately, not when wheels physically finish moving.',"drivetrain")
+ end
+ add("steer_center","steer_center()","steer_center","No arguments. Wheeled drivetrains only.",
+  "Set the persistent wheel target to straight ahead without interrupting movement. Existing wheel steering smoothing still applies. Unsupported on Boomer returns unsupportedDrivetrain.",
+  'Standard result with commandId and steeringDegrees: 0; status success means the wheel target was accepted.',"drivetrain")
+ add("stop","stop()","stop","No arguments. Both drivetrain types.",
+  "Cancel active and queued drivetrain work and release throttle immediately. Preserve steering target, actual velocity and recoil; normal coasting/braking handles physical stopping. Other devices continue. Stop is accepted at zero drive allocation for safety, but requires an installed drivetrain.",
+  'Standard result with commandId. Stop command completes immediately; cancelled movement commands report commandCancelled.',"drivetrain")
  for _,name in {"turn_left","turn_right","turret_left","turret_right"} do
   local turret=name:sub(1,6)=="turret"
   local left=name:find("left",1,true)~=nil
@@ -122,7 +134,7 @@ Edit reservations in Hardware / threads while the program is stopped. First line
 WHAT DOES BUSY MEAN?
 A device is busy while it has an active command. A drive remains busy while covering its distance/turn or waiting for genuine progress. A weapon may be busy during preparation, reload, held fire or waiting for its committed shot to release. A scanner is busy during acquisition/cooldown scheduling. Being busy is not a CPU charge every frame.
 
-Every device has ONE active command plus a bounded FIFO pending queue. Queue depth comes from chassis tier and excludes the active command. Drivetrain forward/back/chassis turns share one pipeline; turret and weapon have separate pipelines. Each physical sensor has its OWN pipeline and cooldown.
+Every device has ONE active command plus a bounded FIFO pending queue. Queue depth comes from chassis tier and excludes the active command. Finite drivetrain forward/back/chassis turns share one pipeline; continuous forward()/back() replaces active/queued drive work. Finite navigation replaces an active continuous drive. stop() cancels all drive work. Steering setpoints bypass the queue, retain one last-written target and cost 1 tick per issue. All new movement/steering/stop commands cost 1 tick, with no repeated operating ticks. Continuous drive keeps BW running after threads finish, until stopped/cancelled or the normal program timeout. Ascending thread order gives deterministic last-submission wins for replacements; finite-versus-finite work remains FIFO. Drivetrain allocation and immobilization still apply; turret and weapon have separate pipelines. Each physical sensor has its OWN pipeline and cooldown.
 
 Idle device: accepted command starts.
 Busy device with room: command joins the queue.
@@ -133,7 +145,24 @@ Device commands capture their starting pose when they BEGIN, not while waiting i
 There is no fixed seconds-per-movement-command: distance, heading, terrain, acceleration, recoil and allocation affect actual completion time. Inspect command_status(id). There is no blocking command-completion wait; a while loop can inspect command_status and use clock waits between polls.
 
 A thread finishing does not stop other threads or devices. The whole program completes after all threads finish and accepted device work drains. Stop/destruction/reset cancel operations and release inputs, preserving real inertia and already released projectiles.]])
- add("movement","Movement","Drivetrain commands",renderCommands(commands,{"forward","back","turn_left","turn_right"}))
+ add("movement","Movement","Drivetrain commands",renderCommands(commands,{"forward","back","steer_left","steer_right","steer_center","stop","turn_left","turn_right"})..[[
+
+RATTLER: CONTINUOUS CIRCLE
+steer_right(20)
+forward()
+
+CHANGE CURVATURE WITHOUT STOPPING
+clock = get_clock()
+wait_for_clock(clock.time + 3)
+steer_left(20)
+
+STRAIGHTEN, THEN STOP
+steer_center()
+clock = get_clock()
+wait_for_clock(clock.time + 3)
+stop()
+
+steer_right(20) positions the wheels, while turn_right(20) changes chassis heading. forward(50) travels a finite distance; forward() drives until replaced/stopped or lifecycle timeout. An issuing thread can finish while its continuous drive remains active. The same physics, collision, coasting, bus performance, airborne restrictions and damage filters still apply.]])
  add("turret","Turret","Turret commands",renderCommands(commands,{"turret_left","turret_right"}))
  add("weapon","Weapons","Firing and weapon timing",renderCommands(commands,{"fire"})..string.format([[
 
@@ -239,7 +268,15 @@ Stop, destruction, respawn and reset cancel loops and clear inputs/queued work. 
 
 RETURNS
 while is a statement, not a callable: it returns no result dictionary. When false, execution continues after the indented block.]],Hardware.Costs.loop,Limits.MaxProgramSeconds))
- add("language","Language","Variables, expressions, branches, threads and costs",[[One statement per line. Names are case-sensitive. Command parameters named studs/degrees/seconds/value in this reference are positional placeholders; use named to=, position= or best_effort= only where shown. # starts a comment outside strings. Blocks use four spaces, not tabs. Variables belong to one tank's program and are shared by all its threads; they do not leak between tanks/runs/resets.
+ add("language","Language","Variables, CONST, expressions, branches, threads and costs",[[CONST move = 10
+CONST double_move = move * 2
+forward(double_move)
+
+CONST declares an immutable number, string, boolean or null during compilation. Its declaration and references cost ZERO runtime ticks and produce no runtime assignment, read or storage. Initializer operators/parentheses and previously declared constants are evaluated at compile time. Commands still pay their usual submission cost; forward(double_move) has exactly the cost of forward(20). Ordinary variables keep their read/write costs; arithmetic outside a CONST initializer still costs ticks.
+
+Names are case-sensitive and program-wide, visible after declaration in textual source order across threads. Prefer declarations at the top. Declarations inside a branch/thread are compile-time, not conditional. No reassignment, duplicate names, mutable-name conflicts, collections, indexing, function calls, runtime dependencies, self/forward/circular references or synchronization variable references are allowed. Compiler errors identify the source line. Built-in and keyword names cannot be constants.
+
+One statement per line. Names are case-sensitive. Command parameters named studs/degrees/seconds/value in this reference are positional placeholders; use named to=, position= or best_effort= only where shown. # starts a comment outside strings. Blocks use four spaces, not tabs. Variables belong to one tank's program and are shared by all its threads; they do not leak between tanks/runs/resets.
 
 VALUES AND EXPRESSIONS
 Numbers (including decimals), quoted strings, true, false, null, arrays and dictionaries. Zero-based arrays: items[0]. String dictionary keys: result.status or result["status"]. Missing dictionary keys return null; invalid array indices are errors. Programmer dictionaries can be mutable; scanner/result snapshots are immutable. Dictionary equality compares identity; compare fields to compare observations.
@@ -342,7 +379,7 @@ The execution log is selectable and read-only. Long retained history is split in
 Run closes the IDE and hands control of this tank to BW. Stop cancels its program/devices and returns manual control. You can switch to the other tank and play while this tank's program continues.]])
  -- Each command has exactly one detailed home, plus a visible index at the
  -- top of that topic. Registry-only coverage is not enough: render every entry.
- local membership={movement={"forward","back","turn_left","turn_right"},turret={"turret_left","turret_right"},weapon={"fire"},radar={"Scanner"},
+ local membership={movement={"forward","back","steer_left","steer_right","steer_center","stop","turn_left","turn_right"},turret={"turret_left","turret_right"},weapon={"fire"},radar={"Scanner"},
   clock={"get_facing_direction","get_clock","wait_for_clock","wait_for","variable_has_changed"},queues={"command_status","clear_queue","abort_command"},examples={"print"}}
  local byName={}; for _,entry in commands do byName[entry.name]=entry end
  local directory={"COMMAND DIRECTORY (choose a topic tab)"}
