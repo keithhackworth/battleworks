@@ -2,6 +2,14 @@
 
 Last reviewed: 2026-11-08. This document records the implemented prototype, user requirements, development workflow, and unresolved questions for future sessions. Read [README.md](README.md) for player setup and the detailed Android test checklist. Source code is the authority if either document becomes stale.
 
+## Unconditional loop-print tracing and bounded log pages
+
+User clarified print(scan0) immediately after Scanner is unconditional and missing, so target-detection guard is not an explanation. Added production entrypoint -> actual client BWIDE test using EXACT source for both detected and completely empty scenes; loop runs and server prints reach visible UI in the mocked integration path. Native blank output is not reproduced here; do not claim a proven native root cause without the user's live evidence.
+
+BWExecution diagnostics now expose total printCount/emittedLogCount and per-thread prints/loopTests. Private runtime packets include generation/request identity. BWIDE counts received print events, shows Prints run/received/page status (unknown '?' if counters are unavailable), and marks selection pauses/rate suppression. This gives a native user a concrete execution-versus-delivery trace.
+
+IDE output now uses bounded pages (MaxOutputPageBytes8192, MaxOutputPageLines120), instead of one giant TextBox containing the full retained history. Older browses prior pages; Latest resumes following. Full bounded event history stays cached, UTF-8 splits are safe, and selection remains read-only/copyable. Restart Studio Play to load changed module caches; Reset Battle alone does not reload scripts. Studio native rendering still unverified.
+
 ## Eight-sensor activity visibility / shared-budget fairness
 
 Verified cooldown is already per-sensor: source.sensorScanTimes and each BWDevices device.readyAt are independent. Found actual light bug: init.server published all BW reactions into ONE scanVisual, so six .0667s and two .05s Rattler acquisitions overwrote each other before 20 Hz snapshots, exposing only the last lens of each group. New state.scanBW retains one coarse actual-completed event per physical lens; legacy scanVisual remains a cloned latest-event alias. Each expires independently; renderer observes the map and deduplicates serials to avoid double-aging the alias. Start/death/reset cleanup includes the map.

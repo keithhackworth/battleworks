@@ -11,6 +11,34 @@ local function text(parent,class,name)
 	item.BorderSizePixel=0; item.Parent=parent
 	return item
 end
+-- Keep each native TextBox page small, even while retained scan dictionaries
+-- contain hundreds of thousands of characters. History remains available.
+function IDE.pages(message)
+ local units={}
+ for line in (message.."\n"):gmatch("([^\n]*)\n") do
+  while #line>Config.MaxOutputPageBytes do
+   local cut=Config.MaxOutputPageBytes
+   while cut>0 do local nextByte=line:byte(cut+1); if not nextByte or nextByte<128 or nextByte>=192 then break end; cut-=1 end
+   table.insert(units,line:sub(1,cut)); line=line:sub(cut+1)
+  end
+  table.insert(units,line)
+ end
+ -- Pack from newest to oldest: the latest page must contain recent prints,
+ -- never just a dangling "Running" footer after a full earlier page.
+ local reversed,lines,bytes={}, {},0
+ local function flush()
+  local ordered={}; for i=#lines,1,-1 do table.insert(ordered,lines[i]) end
+  table.insert(reversed,table.concat(ordered,"\n")); lines={}; bytes=0
+ end
+ for index=#units,1,-1 do
+  local line=units[index]; local needed=#line+(if #lines>0 then 1 else 0)
+  if #lines>0 and (bytes+needed>Config.MaxOutputPageBytes or #lines>=Config.MaxOutputPageLines) then flush(); needed=#line end
+  table.insert(lines,line); bytes+=needed
+ end
+ if #lines>0 or #reversed==0 then flush() end
+ local pages={}; for i=#reversed,1,-1 do table.insert(pages,reversed[i]) end
+ return pages
+end
 function IDE.new(playerGui,onRun,onStop,onConfigure)
 	local self=setmetatable({connections={},running=false,sources={},requests={},scanOutputs={},minimumScanRequests={}},IDE)
 	local gui=Instance.new("ScreenGui"); gui.Name="BWEditor"; gui.ResetOnSpawn=false
@@ -52,10 +80,16 @@ function IDE.new(playerGui,onRun,onStop,onConfigure)
 	output.TextWrapped=false; output.TextSize=12; output.Text="Write BW commands, then Run. Scanner(45) prints one observation. Stop releases program control."
 	output.MultiLine=true; output.ClearTextOnFocus=false; output.TextEditable=false; output.Selectable=true
 	self.output=output
+    local older=text(frame,"TextButton","OlderLogs"); older.Position=UDim2.new(0,12,.75,-46); older.Size=UDim2.fromOffset(54,28)
+    older.Text="Older"; older.TextSize=11; older.Selectable=true; self.olderLogs=older
+    local newer=text(frame,"TextButton","NewerLogs"); newer.Position=UDim2.new(0,72,.75,-46); newer.Size=UDim2.fromOffset(54,28)
+    newer.Text="Latest"; newer.TextSize=11; newer.Selectable=true; self.newerLogs=newer
+    local logStatus=text(frame,"TextLabel","LogStatus"); logStatus.Position=UDim2.new(0,134,.75,-46); logStatus.Size=UDim2.new(1,-146,0,28)
+    logStatus.TextSize=11; logStatus.TextWrapped=true; logStatus.TextXAlignment=Enum.TextXAlignment.Left; logStatus.BackgroundTransparency=1; self.logStatus=logStatus
 	local hardware=text(frame,"TextButton","Hardware")
     hardware.Position=UDim2.new(.5,6,0,39); hardware.Size=UDim2.new(.5,-18,0,22); hardware.Text="Hardware / threads"; self.hardwareButton=hardware
-    scroll.Position=UDim2.fromOffset(12,66); scroll.Size=UDim2.new(1,-24,0.75,-86)
-    local panel=Instance.new("Frame"); panel.Name="HardwarePanel"; panel.Position=UDim2.fromOffset(12,66); panel.Size=UDim2.new(1,-24,0.75,-86)
+    scroll.Position=UDim2.fromOffset(12,66); scroll.Size=UDim2.new(1,-24,0.75,-120)
+    local panel=Instance.new("Frame"); panel.Name="HardwarePanel"; panel.Position=UDim2.fromOffset(12,66); panel.Size=UDim2.new(1,-24,0.75,-120)
     panel.BackgroundColor3=Color3.fromRGB(21,28,33); panel.Visible=false; panel.Parent=frame; self.hardwarePanel=panel
     local configEditor=text(panel,"TextBox","HardwareConfiguration"); configEditor.Position=UDim2.fromOffset(0,0); configEditor.Size=UDim2.new(.5,-4,1,-32)
     configEditor.MultiLine=true; configEditor.ClearTextOnFocus=false; configEditor.TextXAlignment=Enum.TextXAlignment.Left; configEditor.TextYAlignment=Enum.TextYAlignment.Top; configEditor.TextSize=12; self.configEditor=configEditor
@@ -69,7 +103,16 @@ function IDE.new(playerGui,onRun,onStop,onConfigure)
     handbook.Text="BW Handbook"; handbook.TextSize=12; handbook.Selectable=true; self.handbookButton=handbook
     self.handbook=HandbookView.new(frame)
     local function connect(event,callback) table.insert(self.connections,event:Connect(callback)) end
-	connect(handbook.Activated,function()
+	connect(older.Activated,function()
+        self.output:ReleaseFocus(); self.output.SelectionStart=-1
+        self.logPageIndex=math.max(1,(self.currentLogPage or #(self.outputPages or {}))-1)
+        self:setOutput(self.fullOutputMessage or self.output.Text,true); self:renderLogStatus()
+    end)
+    connect(newer.Activated,function()
+        self.output:ReleaseFocus(); self.output.SelectionStart=-1
+        self.logPageIndex=nil; self:setOutput(self.fullOutputMessage or self.output.Text,true); self:renderLogStatus()
+    end)
+    connect(handbook.Activated,function()
         editor:ReleaseFocus(); output:ReleaseFocus(); configEditor:ReleaseFocus()
         self.handbook:open()
     end)
@@ -88,6 +131,7 @@ function IDE.new(playerGui,onRun,onStop,onConfigure)
 		self:close()
 		local source=EditorText.edit(self.lastEditorText,editor.Text,-1)
 		if source~=editor.Text then editor.Text=source end
+		self.logPageIndex=nil; self.fullOutputMessage=nil
 		self.pendingRequest=onRun(source)
 		if self.tankId then
 			self.scanOutputs[self.tankId]=nil
@@ -137,6 +181,7 @@ function IDE:bind(id)
 	end
 	self.editor:ReleaseFocus()
 	self.output:ReleaseFocus()
+	self.logPageIndex=nil; self.fullOutputMessage=nil; self.outputPages=nil; self.currentLogPage=nil
 	self.tankId=id; self.editor.Text=self.sources[id] or Config.DefaultSource
 	self.pendingRequest=self.requests[id]; self.running=false
 	self:layoutSource()
@@ -149,6 +194,8 @@ function IDE:receiveOutput(id,generation,requestId,reading)
 	if not output or output.generation~=generation or output.requestId~=requestId then
 		output={generation=generation,requestId=requestId,readings={},text=""}; self.scanOutputs[id]=output
 	end
+	output.receivedCount=(output.receivedCount or 0)+1
+ if reading.kind=="print" then output.receivedPrints=(output.receivedPrints or 0)+1 end
 	table.insert(output.readings,reading)
 	-- Bound mixed scanner diagnostics and explicit prints for one program.
 	if #output.readings>Config.MaxOutputEvents then table.remove(output.readings,1) end
@@ -170,17 +217,38 @@ function IDE:layoutOutput(follow)
 	self.outputScroll.CanvasSize=UDim2.fromOffset(width+8,height+8)
 	if follow then self.outputScroll.CanvasPosition=Vector2.new(self.outputScroll.CanvasPosition.X,math.max(0,height+8-viewport.Y)) end
 end
-function IDE:setOutput(message)
+function IDE:setOutput(message,force)
 	-- Keep live log updates from clearing a selection while the player copies.
 	if game:GetService("UserInputService"):GetFocusedTextBox()==self.output then
         local first,last=self.output.SelectionStart or -1,self.output.CursorPosition or -1
         if first>0 and last>0 and first~=last then return end
     end
-	if self.output.Text==message then return end
+	local pages=self.outputPages
+    if force or self.fullOutputMessage~=message or not pages then
+        self.fullOutputMessage=message; pages=IDE.pages(message); self.outputPages=pages
+    end
+    local page=math.clamp(self.logPageIndex or #pages,1,#pages)
+    self.currentLogPage=page
+    local visible=pages[page]
+    if not force and self.output.Text==visible then return end
 	local scroll=self.outputScroll
 	local canvas=scroll.CanvasSize
 	local atBottom=not canvas or scroll.CanvasPosition.Y>=canvas.Y.Offset-scroll.AbsoluteSize.Y-8
-	self.output.Text=message; self:layoutOutput(atBottom)
+	self.output.Text=visible; self:layoutOutput(self.logPageIndex==nil and atBottom)
+end
+function IDE:renderLogStatus()
+ local reading=self.runtimeReadings and self.runtimeReadings[self.tankId]
+ local runtime=reading and reading.runtime
+ local own=self.lastObservedState
+ if own and reading and ((reading.generation~=nil and reading.generation~=(own.generation or 0)) or (reading.requestId~=nil and reading.requestId~=(own.bwRunRequestId or own.bwRequestId or 0))) then runtime=nil end
+ local history=self.scanOutputs[self.tankId]
+ local received=if history then history.receivedPrints or 0 else 0
+ local prints=if runtime and runtime.printCount~=nil then tostring(runtime.printCount) else "?"
+ local pages=self.outputPages or {}
+ local suffix=if runtime and (runtime.suppressedLogs or 0)>0 then " • rate-limited: "..tostring(runtime.suppressedLogs) else ""
+ local first,last=self.output.SelectionStart or -1,self.output.CursorPosition or -1
+ if game:GetService("UserInputService"):GetFocusedTextBox()==self.output and first>0 and last>0 and first~=last then suffix..=" • selection paused" end
+ self.logStatus.Text=string.format("Prints run: %s • received: %d • page %d/%d",prints,received,self.currentLogPage or 1,math.max(1,#pages))..suffix
 end
 function IDE:layoutSource()
 	local lines,longest,numbers=0,0,{}
@@ -225,7 +293,7 @@ function IDE:renderRuntime()
   table.insert(lines,string.format("%s • %.3fs • %d ticks/cycle",r.tier,r.clock,r.ticksPerCycle))
   table.insert(lines,string.format("Scans: %d • log attempts: %d • omitted: %d",r.scanCount or 0,r.outputCount or 0,r.suppressedLogs or 0))
   local ids={}; for id in r.threads do table.insert(ids,id) end; table.sort(ids)
-  for _,id in ids do local t=r.threads[id]; table.insert(lines,string.format("T%d L%d %s %s ticks=%.1f",id,t.line,t.state,t.waiting,t.ticks)) end
+  for _,id in ids do local t=r.threads[id]; table.insert(lines,string.format("T%d L%d %s %s ticks=%.1f",id,t.line,t.state,t.waiting,t.ticks)..string.format(" loops=%d prints=%d",t.loopTests or 0,t.prints or 0)) end
   local names={}; for name in r.devices do table.insert(names,name) end; table.sort(names)
   for _,name in names do local d=r.devices[name]; local idsInQueue={}; for _,c in d.queue do table.insert(idsInQueue,tostring(c.id)..":"..c.op) end
    table.insert(lines,string.format("%s B%d %g%% active=%s Q[%s]",name,d.bus,d.allocation,if d.active then tostring(d.active.id)..":"..d.active.op else "idle",table.concat(idsInQueue,",")))
@@ -241,6 +309,7 @@ function IDE:renderRuntime()
  local height=math.max(120,#lines*30); self.diagnostics.Size=UDim2.new(1,-8,0,height); self.diagnosticScroll.CanvasSize=UDim2.fromOffset(0,height)
 end
 function IDE:update(state)
+ self.lastObservedState=state
  self:renderRuntime()
 	if not state then self.running=false; self.current.Text="BW v0.2 • Waiting for tank"; return end
 	self.running=state.bwRunning==true
@@ -259,6 +328,7 @@ function IDE:update(state)
 	elseif output and (output.generation<(state.generation or 0) or output.requestId<(state.bwRunRequestId or state.bwRequestId or 0)) then self.scanOutputs[self.tankId]=nil end
 	if state.bwWarning and state.bwWarning~="" then message..="\n"..state.bwWarning end
 	self:setOutput(message)
+ self:renderLogStatus()
 	self.output.TextColor3=if status=="error" then Color3.fromRGB(255,157,125) else Color3.fromRGB(238,239,220)
 end
 function IDE:destroy()

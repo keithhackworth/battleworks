@@ -13,3 +13,4 @@ sourcemap.json
 .env
 .env.*
 *.log
+*prompt

@@ -289,6 +289,8 @@ The test costs one tick plus expression costs every time, including the final fa
 
 The fixed 15-degree cones have gaps between their 45-degree mounting directions. A conditional print for successful nonempty scans will skip both empty cones and scannerBusy failures; inspect individual sensor rows to tell them apart.
 
+The log pane now pages retained output into bounded native TextBoxes (8,192 bytes / 120 lines), with Older/Latest controls. It shows separate server print execution and client print receipt counters; thread diagnostics include loop-test and print counts. These distinguish a blocked scan, conditional skip and output display/delivery.
+
 The hardware panel shows current source line, running/waiting/finished/failed state, wait reason, charged ticks, device allocations, active command IDs, queue contents and recent terminal failures. Configuration and diagnostic UI is deliberately compact text rather than a new visual garage.
 
 Automated evidence and final results are in [BW_RUNTIME_IMPLEMENTATION_CHECKLIST.md](BW_RUNTIME_IMPLEMENTATION_CHECKLIST.md). Roblox Studio remains necessary for native TextBox/tab/caret/scroll ergonomics, mobile controls, real spatial-query/filtering behavior, two-client privacy/latency, and subjective visual/physics continuity under terrain, recoil, smoke and destruction. No future smart scanner, user functions, for loops, CPU enforcement based on wall time, or automatic tracking is implemented.

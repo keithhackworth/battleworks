@@ -73,6 +73,7 @@ do
  players.GetPlayerByUserId=function(_,id) return if id==101 then first elseif id==102 then second else nil end
  local heartbeat=signal()
  local shots,prepared,snapshots,battleStates,privateOutputs,privateRuntime={}, {}, {}, {}, {}, {}
+ local ideProbe
  local oldFactory=Instance.new
  Instance.new=function(class)
   local p=oldFactory(class)
@@ -81,7 +82,13 @@ do
   end
   if class=="RemoteEvent" then
    p.OnServerEvent=signal()
-   p.FireClient=function(self,recipient,...) if self.Name=="BWOutput" then table.insert(privateOutputs,{recipient=recipient,args={...}}) elseif self.Name=="BWRuntimeState" then table.insert(privateRuntime,{recipient=recipient,args={...}}); if #privateRuntime>32 then table.remove(privateRuntime,1) end end end
+   p.FireClient=function(self,recipient,...)
+   local args={...}
+   if ideProbe and recipient==first then
+    if self.Name=="BWOutput" then ideProbe:receiveOutput(table.unpack(args)) end
+    if self.Name=="BWRuntimeState" then ideProbe:receiveRuntime(table.unpack(args)) end
+   end
+   if self.Name=="BWOutput" then table.insert(privateOutputs,{recipient=recipient,args={...}}) elseif self.Name=="BWRuntimeState" then table.insert(privateRuntime,{recipient=recipient,args={...}}); if #privateRuntime>32 then table.remove(privateRuntime,1) end end end
    p.FireAllClients=function(self,...)
     local args={...}
     if self.Name=="Shot" then table.insert(shots,{time=time,id=args[1],kind=args[4],origin=args[2],direction=args[3],rock=args[6]}) end
@@ -95,6 +102,7 @@ do
        end
       end
      end
+     if ideProbe then ideProbe:update(snapshots["101:Rattler"]) end
     end
    end
   end
@@ -258,6 +266,35 @@ with thread(2):
  check(snapshots[driven].bwRunning and not snapshots[driven].manualScannerActive and snapshots[driven].scanManual==nil,"starting BW stops auto scanning and removes driver-only observations")
  stop(driven); advance(12)
  check(snapshots[driven].manualScannerActive and snapshots[driven].scanManual,"manual sweep resumes automatically after Stop")
+ fresh()
+ -- Exact latest user source: unconditional print of the scanner dictionary.
+ local IDE=require("BWIDE")
+ ideProbe=IDE.new(Instance.new("PlayerGui"),function(code) return run(rattlerId,code) end,function() stop(rattlerId); return request end)
+ ideProbe:bind(rattlerId)
+ local unconditional=[=[with thread(1):
+    while true:
+        scan0 = Scanner(position=0)
+        print(scan0)
+        if scan0.status == "success" and scan0.count > 0:
+            print(scan0.detections[0])]=]
+ ideProbe.editor.Text=unconditional; ideProbe.run.Activated:Fire(); advance(180)
+ check(snapshots[rattlerId].bwRunning,"exact unconditional-print loop remains running")
+ local history=ideProbe.scanOutputs[rattlerId]
+ check(history and history.receivedPrints>10,"server print events reach actual IDE receiver through remotes")
+ check(ideProbe.output.Text:find("print",1,true) and ideProbe.output.Text:find('"status": "success"',1,true),"unconditional print is present in visible log page")
+ check(#ideProbe.outputPages>1 and #ideProbe.output.Text<=8192,"growing loop logs are displayed in bounded native text pages")
+ check(ideProbe.logStatus.Text:find("Prints run:",1,true) and not ideProbe.logStatus.Text:find("run: 0",1,true),"independent header confirms actual server print execution")
+ local reading=ideProbe.runtimeReadings[rattlerId]
+ check(reading.runtime.threads[1].loopTests>0 and reading.runtime.threads[1].prints>0,"thread diagnostics distinguish loop tests and print dispatch")
+ stop(rattlerId); fresh()
+ local queryWithTargets=workspace.GetPartBoundsInRadius
+ workspace.GetPartBoundsInRadius=function() return {} end
+ ideProbe.editor.Text=unconditional; ideProbe.run.Activated:Fire(); advance(90)
+ history=ideProbe.scanOutputs[rattlerId]
+ check(history and history.receivedPrints>0,"unconditional print runs even when every scan is empty")
+ check(ideProbe.output.Text:find('"count": 0',1,true),"empty scan dictionary reaches visible IDE log")
+ workspace.GetPartBoundsInRadius=queryWithTargets
+ stop(rattlerId); ideProbe:destroy(); ideProbe=nil
  fresh()
  local scanBlocks={}
  for position=0,7 do table.insert(scanBlocks,string.format('with thread(%d):\n    while true:\n        scan%d = Scanner(position=%d)\n        if scan%d.status == "success" and scan%d.count > 0:\n            print(scan%d.detections[0])',position+1,position,position,position,position,position)) end

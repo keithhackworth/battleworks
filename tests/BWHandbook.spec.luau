@@ -103,6 +103,29 @@ check(ui.output.Text=="live scan output","actual selection remains stable for co
 ui.output.SelectionStart=-1; ui:setOutput("new scan output")
 check(ui.output.Text=="new scan output","clearing selection resumes live output")
 UIS.focusedTextBox=nil
+-- Display long histories in bounded, selectable pages with accessible older data.
+local logLines={}; for i=1,500 do table.insert(logLines,"row "..i.." "..string.rep("x",180)) end
+local fullLog=table.concat(logLines,"\n")
+ui:setOutput(fullLog,true)
+check(#ui.outputPages>1 and #ui.output.Text<=8192 and ui.output.Text:find("row 500 ",1,true),"long logs show latest bounded page")
+check(table.concat(ui.outputPages,"\n")==fullLog,"paging retains every ordinary log line")
+for _,page in ui.outputPages do check(#page<=8192 and utf8.len(page)~=nil,"each text page bounded and valid UTF-8") end
+local newest=ui.currentLogPage
+ui.olderLogs.Activated:Fire()
+check(ui.currentLogPage==newest-1 and ui.logPageIndex~=nil,"Older opens earlier retained entries")
+ui.newerLogs.Activated:Fire()
+check(ui.currentLogPage==#ui.outputPages and ui.logPageIndex==nil,"Latest resumes newest-page following")
+local exactLines={}; for i=1,120 do table.insert(exactLines,"print entry "..i) end
+local footerPages=IDE.pages(table.concat(exactLines,"\n").."\nRunning")
+check(footerPages[#footerPages]:find("print entry 120",1,true) and footerPages[#footerPages]:find("Running",1,true),"latest page never consists only of status footer")
+local unicode=IDE.pages(string.rep("☀",10000)); local total=0
+for _,page in unicode do local length=utf8.len(page); check(length~=nil and #page<=8192,"long unicode lines split safely"); total+=length end
+check(total==10000,"paging does not lose unicode characters")
+ui:receiveRuntime("Rattler",{generation=0,requestId=1,configuration=Hardware.forTank("Rattler"),runtime={tier="Octa",clock=1,ticksPerCycle=30,threads={[1]={id=1,line=4,state="running",ticks=2,credit=1,waiting="",prints=7,loopTests=3}},devices={},printCount=7,emittedLogCount=10}})
+ui:receiveOutput("Rattler",0,1,{kind="print",line=4,timestamp=1,thread=1,text="scan dictionary"})
+ui:update({generation=0,bwRunRequestId=1,bwRequestId=1,bwRunning=true,bwStatus="running"})
+check(ui.logStatus.Text:find("run: 7",1,true) and ui.logStatus.Text:find("received: 1",1,true),"header separates server print execution and client receipt")
+check(ui.diagnostics.Text:find("loops=3 prints=7",1,true),"per-thread counters show loop entry and print dispatch")
 local popup=ui.handbook.frame
 ui:destroy()
 check(popup.destroyed and ui.gui.destroyed,"popup cleaned on IDE destruction")

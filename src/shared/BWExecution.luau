@@ -43,18 +43,21 @@ function R:stop(reason,status)
  if self.status~="completed" then self.variables={}; self.versions={} end
 end
 function R:log(t,text,line,kind,observation,angle)
+ if kind=="print" then self.printCount=(self.printCount or 0)+1; t.prints=(t.prints or 0)+1 end
  self.outputCount+=1 -- total attempted output; retained UI history is bounded separately
  self.cycleLogCount=self.cycleLogCount or 0
  if self.cycleLogCount>=Limits.MaxLogEventsPerCycle-1 then
   self.suppressedLogs=(self.suppressedLogs or 0)+1
   if self.cycleLogCount<Limits.MaxLogEventsPerCycle then
    self.cycleLogCount+=1
+   self.emittedLogCount=(self.emittedLogCount or 0)+1
    if self.services.onEvent then self.services.onEvent({thread=t.id,timestamp=self.time,line=line,kind="diagnostic",
     text="Debug output rate limit reached; further entries this CPU cycle are omitted. Execution continues."}) end
   end
   return
  end
  self.cycleLogCount+=1
+ self.emittedLogCount=(self.emittedLogCount or 0)+1
  if self.services.onEvent then self.services.onEvent({thread=t.id,timestamp=self.time,line=line,kind=kind or "result",text=text}) end
  if kind=="scan" and self.services.onValue then self.services.onValue(observation,line,angle,t.id)
  elseif kind=="print" and self.services.onPrint then self.services.onPrint(text,line,t.id) end
@@ -177,7 +180,7 @@ function R:instruction(t,n)
   dictionary[key]=value
   local root=target.array; while root.kind=="index" do root=root.array end
   if root.kind=="variable" then self.versions[root.name]=(self.versions[root.name] or 0)+1 end
- elseif op=="$while" then self:charge(t,"loop"); if not Expression.truthy(self:evaluate(t,n.condition)) then nextIndex=n.target end
+ elseif op=="$while" then t.loopTests=(t.loopTests or 0)+1; self:charge(t,"loop"); if not Expression.truthy(self:evaluate(t,n.condition)) then nextIndex=n.target end
  elseif op=="$branch" then self:charge(t,"branch"); if not Expression.boolean(self:evaluate(t,n.condition),n.line) then nextIndex=n.target end
  elseif op=="$switch" then
   self:charge(t,"switch"); local value=self:evaluate(t,n.expression); nextIndex=n.target
@@ -289,9 +292,9 @@ function R:step(state,dt)
 end
 function R:diagnostics()
  local threads={}
- for id,t in self.threads do threads[id]={id=id,line=t.line or 0,state=t.state,ticks=t.ticks,credit=t.credit,waiting=if t.pending then t.pending.kind else t.waitReason or ""} end
+ for id,t in self.threads do threads[id]={id=id,prints=t.prints or 0,loopTests=t.loopTests or 0,line=t.line or 0,state=t.state,ticks=t.ticks,credit=t.credit,waiting=if t.pending then t.pending.kind else t.waitReason or ""} end
  local recent={}
  for id=math.max(1,self.devices.nextId-15),self.devices.nextId do local c=self.devices.commands[id]; if c then table.insert(recent,{id=id,device=c.device,state=c.state,reason=c.reason,thread=c.thread}) end end
- return {scanCount=self.scanCount,outputCount=self.outputCount,suppressedLogs=self.suppressedLogs or 0,retainedScans=#self.results,retainedCommands=self.devices.retainedCount,recent=recent,clock=self.time,tier=self.config.tier,ticksPerCycle=Hardware.Tiers[self.config.tier].ticks,threads=threads,devices=self.devices:diagnostics(),status=self.status}
+ return {printCount=self.printCount or 0,emittedLogCount=self.emittedLogCount or 0,scanCount=self.scanCount,outputCount=self.outputCount,suppressedLogs=self.suppressedLogs or 0,retainedScans=#self.results,retainedCommands=self.devices.retainedCount,recent=recent,clock=self.time,tier=self.config.tier,ticksPerCycle=Hardware.Tiers[self.config.tier].ticks,threads=threads,devices=self.devices:diagnostics(),status=self.status}
 end
 return R

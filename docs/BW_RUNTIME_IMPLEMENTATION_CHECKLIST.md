@@ -172,3 +172,11 @@ Acceptance: visible separated tanks/walls appear once each in nearest-first orde
 - [x] Test real production eight-thread scan/print with actual hitboxes, all8 replicated lens states/private scan angles and explicit opponent print; test renderer simultaneous lenses/expiry, close tank geometry and fixed-cone blind gaps.
 - [x] Final full suites, both Rojo builds and whitespace checks. All suites pass: renderer139, scanner193, handbook315, production server4392; real scanner audit confirms progress on every lens.
 - [ ] Studio: restart Play, run exact code on Rattler, verify all8 lenses pulse, inspect each sensor result row, copy logs, and distinguish blind cones/cover from cooldown or query-budget failures. Studio unavailable.
+
+## Follow-up — unconditional print after Scanner
+- [x] Reproduce exact clarified source through actual server Run/controller/interpreter/scanner/private output and real BWIDE receiver/update; validate visible explicit output with hits AND with zero detections. Detection guard cannot explain the unconditional print.
+- [x] Add server print execution/emission and per-thread loop/print counters; client receipt counts and generation/run-aware visible log status.
+- [x] Page displayed history into bounded TextBoxes with Older/Latest controls and UTF-8-safe splitting; preserve read-only selection and all retained ordinary lines.
+- [x] Add regression checks for paging, explicit counts, actual source/empty scenes and loop entry.
+- [x] Final full suites, both Rojo builds and whitespace checks pass; exact server-to-IDE reproduction covers populated and empty scans, handbook paging suite passes 339 assertions.
+- [ ] Native Studio blank-output cause remains unverified: restart Play (not merely Reset Battle), run exact snippet and report Prints run/received/page plus T1 scan wait/loop counters. Mocked path is verified; no confirmed native diagnosis is claimed.

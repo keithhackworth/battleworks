@@ -628,7 +628,7 @@ Log prefixes identify:
 
 Logging and scan counts are not lifetime execution quotas. Valid continuous loops can scan and print repeatedly until Stop or the normal program timeout. To protect performance, excessive logging emits a rate-limit notice and omits further entries in that CPU cycle; execution and scanner results continue. Hardware diagnostics show total scans/log attempts and omitted log count.
 
-The IDE execution log is selectable and read-only. Click it and use Ctrl+A/Ctrl+C, or platform equivalents, to copy. Display updates pause only while text is selected to preserve copying; simply focusing the log does not freeze updates. Clear the selection or click away to catch up.
+The IDE execution log is selectable and read-only. Long histories use bounded pages (8,192 bytes / 120 lines per displayed text box) to avoid an oversized UI element. Use **Older** for earlier entries and **Latest** to follow live output. The header distinguishes **Prints run** on the server from **received** print events on the client; thread diagnostics show loop-test and print counts. Click it and use Ctrl+A/Ctrl+C, or platform equivalents, to copy. Display updates pause only while text is selected to preserve copying; simply focusing the log does not freeze updates. Clear the selection or click away to catch up.
 
 ## If, elif and else
 

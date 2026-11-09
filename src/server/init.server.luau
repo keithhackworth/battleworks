@@ -431,7 +431,7 @@ RunService.Heartbeat:Connect(function(dt)
                 for id,tank in battle.tanks do
                     if simulationTime-(tank.lastDiagnostics or -math.huge)>=0.2 then
                         tank.lastDiagnostics=simulationTime
-                        bwRuntimeState:FireClient(player,id,{configuration=Hardware.copy(tank.hardware or Hardware.forTank(tank.state.tankType)),runtime=if tank.bw then tank.bw:diagnostics() else nil})
+                        bwRuntimeState:FireClient(player,id,{generation=tank.state.generation,requestId=tank.bwRunRequestId or 0,configuration=Hardware.copy(tank.hardware or Hardware.forTank(tank.state.tankType)),runtime=if tank.bw then tank.bw:diagnostics() else nil})
                     end
                 end
             end

@@ -4,7 +4,7 @@ return table.freeze({
 	MaxCompiledInstructions=512,MaxBlockDepth=12,MaxExpressionDepth=32,MaxExpressionNodes=2048,
 	MaxTokensPerLine=512,MaxArrayItems=64,MaxStringBytes=2048,MaxVariables=128,
 	MaxScannerCalls=128, -- legacy serial-interpreter limit; production retains rolling snapshots
- MaxScannerHistory=128,MaxCommandHistory=512,MaxLogEventsPerCycle=64,MaxOutputEvents=256,MaxOutputBytes=2048,IndentWidth=4,
+ MaxScannerHistory=128,MaxCommandHistory=512,MaxLogEventsPerCycle=64,MaxOutputEvents=256,MaxOutputBytes=2048,MaxOutputPageBytes=8192,MaxOutputPageLines=120,IndentWidth=4,
 	CycleCosts={read=1,write=1,arithmetic=1,comparison=1,logical=1,branch=1,call=0},
 	MaxDistance=1000, MaxRelativeAngle=1440, MaxAbsoluteAngle=36000, MaxFireSeconds=10,
 	MaxProgramSeconds=180, MaxInstructionSeconds=90, StuckSeconds=3,
