@@ -10,9 +10,13 @@ function G.direction(yaw,angle)
 	local a=yaw-math.rad(angle)
 	return Vector3.new(-math.sin(a),0,-math.cos(a))
 end
+function G.worldBearing(delta)
+ if delta.X^2+delta.Z^2<1e-20 then return 0 end
+ return G.normalize(math.deg(math.atan2(delta.X,-delta.Z)))
+end
 function G.bearing(yaw,delta)
 	if delta.X^2+delta.Z^2<1e-20 then return 0 end
-	return G.normalize(math.deg(math.atan2(delta.X,-delta.Z))+math.deg(yaw))
+	return G.normalize(G.worldBearing(delta)+math.deg(yaw))
 end
 function G.inCone(yaw,angle,delta)
 	local bearing=G.bearing(yaw,delta)
@@ -46,7 +50,7 @@ local function closestTriangle(p,a,b,c)
 	if math.abs(sum)<1e-20 then return a end
 	return a+ab*(vb/sum)+ac*(vc/sum)
 end
-function G.probes(part,origin,yaw,angle)
+function G.probes(part,origin,yaw,angle,range)
 	local half=part.Size/2
 	local corners={}
 	for _,v in { {-1,-1,-1},{1,-1,-1},{1,1,-1},{-1,1,-1},{-1,-1,1},{1,-1,1},{1,1,1},{-1,1,1} } do
@@ -58,7 +62,7 @@ function G.probes(part,origin,yaw,angle)
 	local points={}
 	local function add(p)
 		local delta=p-origin
-		if delta.Magnitude>1e-8 and delta.Magnitude<=Config.MaxRange+Config.SurfaceTolerance and G.inCone(yaw,angle,delta) then
+		if delta.Magnitude>1e-8 and delta.Magnitude<=(range or Config.MaxRange)+Config.SurfaceTolerance and G.inCone(yaw,angle,delta) then
 			table.insert(points,{point=p,distance=delta.Magnitude})
 		end
 	end

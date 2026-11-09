@@ -10,11 +10,11 @@ local Recoil=require("RattlerRecoil")
 local count=0
 local function check(ok,message) assert(ok,message); count+=1 end
 local function near(a,b,tolerance) return math.abs(a-b)<(tolerance or 1e-5) end
-local program=assert(Parser.parse(Limits.DefaultSource))
+local program=assert(Parser.parse(Limits.LegacyDefaultSource))
 check(#program==8 and program[1].line==3 and program[8].op=="fire","default program parses with original source lines")
 local parsed=assert(Parser.parse("# hi\n\nforward(10) #inline\r\nturn_left(to=-90)\nturret_right(to=450)\nfire()\nfire(.5)"))
 check(#parsed==5 and parsed[2].value==270 and parsed[3].value==90 and parsed[5].value==0.5,"blank lines, inline comments, CRLF and normalized headings")
-for _,source in {"Forward(1)","forward()","forward(-1)","fire(to=90)","fire(11)","forward(1001)","turn_right(1441)","turn_left(to=36001)","forward(1); fire()","while true do","forward(1,2)","fire(math.huge)"} do
+for _,source in {"Forward(1)","forward()","forward(-1)","fire(to=90)","fire(11)","forward(1001)","turn_right(1441)","turn_left(to=36001)","forward(1); fire()","while true do","forward(1,2)","fire(unknown())"} do
  local result,err=Parser.parse("# line 1\n"..source)
  check(result==nil and err.line==2 and err.message:find("Line 2:",1,true)==1,"invalid syntax is rejected with its source line")
 end
@@ -113,7 +113,7 @@ local function run(source,kind,environment,position)
  error("BW test exceeded tick budget")
 end
 for _,kind in {"Boomer","Rattler"} do
- local runtime,s,shots,transitions,time=run(Limits.DefaultSource,kind)
+ local runtime,s,shots,transitions,time=run(Limits.LegacyDefaultSource,kind)
  check(runtime.status=="completed" and (runtime.skipped or 0)==0,"default demonstration completes with "..kind..": "..runtime.message)
  check(#transitions==8,"all demonstration instructions run sequentially")
  check(near(-transitions[1].position.Z,20,0.2),"forward distance is accurate for "..kind)
@@ -129,7 +129,7 @@ for _,kind in {"Boomer","Rattler"} do
 end
 for _,kind in {"Boomer","Rattler"} do
  local environment=require("Environment").create(Vector2.new(230,230))
- local runtime,_,shots,_,time=run(Limits.DefaultSource,kind,environment,Vector3.new(-45.5,0,35))
+ local runtime,_,shots,_,time=run(Limits.LegacyDefaultSource,kind,environment,Vector3.new(-45.5,0,35))
  check(runtime.status=="completed" and (runtime.skipped or 0)==0,"default demo traverses existing terrain with "..kind..": "..runtime.message)
  print(string.format("BW terrain demo %s: %.2fs, %d shots",kind,time,shots))
 end
@@ -187,7 +187,7 @@ do
  check(not input.fire and input.throttle==0 and not tank.state.bwRunning,"destroyed tank stops and clears program inputs")
  tank.state.health=100; Controller.start(tank,"forward(5, best_effort=false)")
  for _=1,182 do Controller.input(tank,1/60) end
- check(tank.state.bwStatus=="error" and tank.requireFireRelease and not tank.command.fire,"runtime stuck error returns server ownership safely")
+ check(tank.state.bwStatus=="completed" and tank.bw.devices.commands[1].state=="failed" and tank.requireFireRelease and not tank.command.fire,"device stuck failure is recorded and returns server ownership safely")
 end
 for _,kind in {"Boomer","Rattler"} do
  local left,leftState=run("turn_left(to=90)",kind)

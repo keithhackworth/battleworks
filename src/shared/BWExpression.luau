@@ -26,7 +26,15 @@ function E.parse(tokens,start)
 		elseif token.kind=="-" or token.kind=="+" or (token.kind=="id" and token.value=="not") then
 			left=node("unary",{op=token.value,operand=parse(if token.value=="not" then 25 else 60,depth+1),line=token.line})
 		elseif token.kind=="(" then left=node("group",{expression=parse(0,depth+1),line=token.line}); take(")")
-		elseif token.kind=="[" then
+		elseif token.kind=="{" then
+            local entries={}
+            if tokens[pos].kind~="}" then repeat
+                local key=take("string").value; take(":"); table.insert(entries,{key=key,expression=parse(0,depth+1)})
+                if #entries>Limits.MaxArrayItems then Commands.error(token.line,"Dictionary is too large.") end
+                if tokens[pos].kind~="," then break end; take(",")
+            until false end
+            take("}"); left=node("dictionary",{entries=entries,line=token.line})
+        elseif token.kind=="[" then
 			local items={}
 			if tokens[pos].kind~="]" then repeat
 				table.insert(items,parse(0,depth+1)); if #items>Limits.MaxArrayItems then Commands.error(token.line,"Array is too large.") end
@@ -49,7 +57,9 @@ function E.parse(tokens,start)
 		else Commands.error(token.line,"Expected an expression.") end
 		while true do
 			local nextToken=tokens[pos]
-			if nextToken.kind=="[" then
+			if nextToken.kind=="." then
+                take("."); local key=take("id"); left=node("index",{array=left,index=node("literal",{value=key.value,line=key.line}),line=token.line})
+            elseif nextToken.kind=="[" then
 				take("["); local index=parse(0,depth+1); take("]"); left=node("index",{array=left,index=index,line=token.line})
 			else
 				local bp=precedence[nextToken.value]
@@ -65,7 +75,7 @@ function E.parse(tokens,start)
 	local function validate(n,depth,root)
 		if depth>Limits.MaxExpressionDepth then Commands.error(n.line,"Expression nesting exceeds limit.") end
 		if n.kind=="call" then
-			if not root and n.name~="Scanner" then Commands.error(n.line,"Only Scanner may be used as a value-returning function.") end
+
 			for _,arg in n.args do
 				validate(arg.expression,depth+1,false)
 				local known,value=E.constant(arg.expression)
@@ -75,7 +85,8 @@ function E.parse(tokens,start)
 		elseif n.kind=="unary" then validate(n.operand,depth+1,false)
 		elseif n.kind=="group" then validate(n.expression,depth+1,false)
 		elseif n.kind=="index" then validate(n.array,depth+1,false); validate(n.index,depth+1,false)
-		elseif n.kind=="array" then for _,item in n.items do validate(item,depth+1,false) end end
+		elseif n.kind=="array" then for _,item in n.items do validate(item,depth+1,false) end
+        elseif n.kind=="dictionary" then for _,entry in n.entries do validate(entry.expression,depth+1,false) end end
 	end
 	validate(expression,1,true)
 	return expression,pos
@@ -86,6 +97,14 @@ local function boolean(value,line)
 	return value
 end
 E.boolean=boolean
+-- While deliberately accepts value truthiness; existing if/logical contracts
+-- remain strict booleans. Undefined variable reads still raise normal errors.
+function E.truthy(value)
+ if value==nil or value==Value.Null or value==false or value==0 or value=="" then return false end
+ if Value.isArray(value) then return #value>0 end
+ if Value.isDictionary(value) then return next(value)~=nil end
+ return true
+end
 function E.evaluate(n,context)
 	local kind=n.kind
 	if kind=="literal" then return n.value end
@@ -97,21 +116,30 @@ function E.evaluate(n,context)
 		if value==nil then Commands.error(n.line,"Undefined variable '"..n.name.."'.") end
 		return value
 	end
-	if kind=="array" then
+	if kind=="dictionary" then
+        local entries={}; for _,entry in n.entries do entries[entry.key]=E.evaluate(entry.expression,context) end
+        return Value.dictionary(entries)
+    end
+    if kind=="array" then
 		local items={}; for _,item in n.items do table.insert(items,E.evaluate(item,context)) end
 		return Value.array(items)
 	end
 	if kind=="index" then
 		local array,index=E.evaluate(n.array,context),E.evaluate(n.index,context)
-		charge(context,"read")
+		charge(context,"access")
+        if Value.isDictionary(array) then
+            if type(index)~="string" then Commands.error(n.line,"Dictionary keys must be strings.") end
+            return array[index] or (if array[index]==false then false else Value.Null)
+        end
 		if not Value.isArray(array) then Commands.error(n.line,"Cannot index "..Value.type(array).."; expected an array.") end
 		if #array==0 then Commands.error(n.line,"Cannot index an empty array.") end
 		if type(index)~="number" or index%1~=0 or index<0 or index>=#array then Commands.error(n.line,"Array index must be an integer from 0 to "..tostring(#array-1)..".") end
 		return Value.get(array,index)
 	end
 	if kind=="call" then
-		if n.name~="Scanner" then Commands.error(n.line,"Only Scanner returns a value.") end
 		if not context or context.constant then error(dynamic,0) end
+        if context.call then return context.call(n,function(arg) return E.evaluate(arg,context) end) end
+        if n.name~="Scanner" then Commands.error(n.line,"This runtime does not support this value-returning function.") end
 		local instruction=Commands.resolve(n,function(arg) return E.evaluate(arg,context) end)
 		return context.scan(instruction.value,instruction.bestEffort,n.line)
 	end

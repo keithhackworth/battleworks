@@ -47,7 +47,7 @@ function Lexer.line(source,line)
 		else
 			local pair=source:sub(i,i+1)
 			if pair=="==" or pair=="!=" or pair=="<=" or pair==">=" then add(pair,pair); i+=2
-			elseif c:match("[+%-%*/%(%)%[%],:=<>]") then add(c,c); i+=1
+			elseif c:match("[+%-%*/%(%)%[%]{},.:=<>]") then add(c,c); i+=1
 			else Commands.error(line,"Unexpected character '"..c.."'.") end
 		end
 	end

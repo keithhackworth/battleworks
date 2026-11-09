@@ -1,7 +1,8 @@
 -- Server-only ownership and lifecycle glue around the pure BW runtime.
 local Shared=game.ReplicatedStorage.Shared
 local Parser=require(Shared.BWParser)
-local Runtime=require(Shared.BWRuntime)
+local Runtime=require(Shared.BWExecution)
+local Hardware=require(Shared.BWChassis)
 local Command=require(Shared.InputCommand)
 local Controller={}
 local function cleanup(tank)
@@ -26,7 +27,7 @@ function Controller.sync(tank)
 end
 function Controller.running(tank) return tank.bw~=nil and tank.bw.status=="running" end
 function Controller.stop(tank,reason)
-	if not Controller.running(tank) then if tank.bw then tank.bw.variables={} end; return false end
+	if not Controller.running(tank) then if tank.bw then tank.bw.variables={}; tank.bw.versions={}; tank.bw.results={}; tank.bw.lastObservation=nil; tank.bw.lastValue=nil end; return false end
 	tank.bw:stop(reason or "Stopped by player.")
 	cleanup(tank); Controller.sync(tank)
 	return true
@@ -43,7 +44,7 @@ function Controller.reject(tank,message,line)
 end
 function Controller.start(tank,source)
 	if tank.state.manualScannerActive then tank.sensorScanTimes=nil end -- hand off immediately to explicit BW
-	tank.state.manualScannerActive=false; tank.state.scanManual=nil; tank.state.scanVisual=nil
+	tank.state.manualScannerActive=false; tank.state.scanManual=nil; tank.state.scanVisual=nil; tank.state.scanBW=nil
 	tank.bwRunRequestId=tank.lastBWRequest or 0; tank.state.bwRunRequestId=tank.bwRunRequestId
 	tank.state.bwRequestId=tank.lastBWRequest or 0
 	Controller.stop(tank,"Replaced by a new program.")
@@ -52,10 +53,24 @@ function Controller.start(tank,source)
 	if not instructions or tank.state.health<=0 then
 		return Controller.reject(tank,if err then err.message else "Tank is destroyed; reset the battle.",if err then err.line else 0)
 	end
-	tank.bw=Runtime.new(instructions,tank.state,tank.bwServices)
+	tank.hardware=tank.hardware or Hardware.forTank(tank.state.tankType)
+ Controller.applyHardware(tank)
+ tank.bw=Runtime.new(instructions,tank.state,tank.bwServices,tank.hardware)
 	tank.requireFireRelease=false
 	Controller.sync(tank)
-	return true
+	return tank.bw.status=="running"
+end
+function Controller.applyHardware(tank)
+ tank.hardware=tank.hardware or Hardware.forTank(tank.state.tankType)
+ local devices=tank.hardware.devices
+ for name,field in {drivetrain="drivePerformance",turret="turretPerformance",weapon="weaponPerformance"} do
+  tank.state[field]=if devices[name] then Hardware.performance(devices[name].allocation) else 0
+ end
+end
+function Controller.configure(tank,configuration)
+ if Controller.running(tank) then return false,"programRunning" end
+ local valid,reason=Hardware.validate(configuration); if not valid then return false,reason end
+ tank.hardware=Hardware.copy(configuration); Controller.applyHardware(tank); return true
 end
 function Controller.input(tank,dt)
 	if not Controller.running(tank) then return nil end

@@ -157,7 +157,7 @@ print("finished")
 end
 runtime,state,prints,scans=run('angle = 0\na = Scanner(angle)\nb = Scanner(90)\nprint(a[0])',"Boomer",Value.scan(),{cooldowns=true})
 check(runtime.status=="completed" and #scans==2,"different physical scanner channels remain independent inside expressions")
-runtime,state,prints,scans=run('a = Scanner(0)\nb = Scanner(5)',"Boomer",Value.scan(),{cooldowns=true})
+runtime,state,prints,scans=run('a = Scanner(0)\nb = Scanner(0)',"Boomer",Value.scan(),{cooldowns=true})
 check(runtime.status=="error" and runtime.message:find("Line 2",1,true) and #scans==1,"same-sensor cooldown failure is not turned into a fake expression value")
 -- Best effort still applies inside branches without discarding program values.
 runtime,state,prints=run('x = 7\nif true:\n    forward(100)\n    print(x)',"Boomer",nil,{blocked=true})
@@ -239,7 +239,6 @@ for _,source in {
  'switch 1:\n    case Scanner(0):\n        fire()',
  'switch 1:\n    case [1]:\n        fire()',
  'a = missing_function(1)',
- 'a = forward(1)',
  'print(1,2)',
  'print()',
  'a = Scanner("x")',
@@ -247,7 +246,6 @@ for _,source in {
  'a = [1,2][4]',
  'a = "x" + 1',
  'Scanner = 1',
- 'while true:\n    fire()',
  'for x in [1]:\n    fire()',
  'def f():\n    fire()',
  'a = 1 < 2 < 3',
@@ -264,7 +262,7 @@ local Controller=require("BWController")
 local tank={state=Sim.new(Vector3.zero),command=require("InputCommand").neutral(),lastInput=0,rattler=Weapon.new()}
 check(Controller.start(tank,'secret = 42\nif true:\n    forward(100)\n    fire()'),"conditional program starts through authoritative controller")
 for _=1,3 do local input=Controller.input(tank,1/60); Sim.step(tank.state,input,1/60) end
-check(tank.bw.variables.secret==42 and tank.bw.current.kind=="move","branch retains asynchronous movement state")
+check(tank.bw.variables.secret==42 and tank.bw.devices.devices.drivetrain.active.executor.current.kind=="move","branch retains asynchronous movement state")
 Controller.stop(tank,"Stopped by player.")
 check(next(tank.bw.variables)==nil and tank.command.throttle==0 and not tank.command.fire,"Stop inside conditional discards variables and releases owned input")
 Controller.start(tank,'print(secret)'); Controller.input(tank,1/60)

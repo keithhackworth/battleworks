@@ -98,7 +98,10 @@ function Runtime:_step(state,dt)
 		self.current={instruction=instruction} -- errors retain the reached source line
 		local op=instruction.op
 		if op=="$jump" then return self:finish(instruction.target) end
-		if op=="$branch" then
+		if op=="$while" then
+            self:charge("branch")
+            return self:finish(if Expression.truthy(self:evaluate(instruction.condition)) then self.index+1 else instruction.target)
+        elseif op=="$branch" then
 			self:charge("branch")
 			local condition=Expression.boolean(self:evaluate(instruction.condition),instruction.line)
 			return self:finish(if condition then self.index+1 else instruction.target)
@@ -186,7 +189,7 @@ function Runtime:step(state,dt)
 	if type(err)=="table" and err.bwError then
 		if err.scanFailure and not err.expression and err.bestEffort and self.current and self.current.instruction.bestEffort~=false then return self:instructionFailed(err.message) end
 		self:fail(err.message,err.line)
-	else self:fail("Interpreter service failed safely.") end
+	else self:fail("Internal device error: "..tostring(err)) end
 	return Command.neutral()
 end
 return Runtime

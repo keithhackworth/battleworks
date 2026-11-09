@@ -40,9 +40,14 @@ try {
     ['Input', 'Camera'],
     ['Combat', 'Projectiles', 'BarrelAnimation', 'Environment', 'Tanks'],
     ['Renderer'],
+    ['ServerIntegration'],
     ['Trajectory', 'Recoil', 'Speed'],
     ['BW', 'BWBestEffort', 'Battle', 'DamageEffects', 'Scanner'],
     ['BW02'],
+    ['BWExecution'],
+    ['BWHandbook'],
+    ['BWLoops'],
+    ['BWScanLoops'],
   ];
   if (groupIndex === null) {
     state.destroy(); state = null;
@@ -55,6 +60,12 @@ try {
     if (!group) throw new Error('Invalid test group');
     let tests = '';
     for (const suite of group) tests += '\ndo\n' + await readFile(`tests/${suite}.spec.luau`, 'utf8') + '\nend\n';
+    if (group.includes('BWExecution')) {
+      const docs = await readFile('docs/BW_RUNTIME.md', 'utf8');
+      const examples = [...docs.matchAll(/```python\n([\s\S]*?)```/g)].map(match => match[1]);
+      tests += '\ndo\nlocal examples = {' + examples.map(source => '[====[' + source + ']====]').join(',') + '}\n';
+      tests += await readFile('tests/BWRuntimeExamples.luau', 'utf8') + '\nend\n';
+    }
     await state.loadstring(bundle + tests, group.join('-'), true)();
   }
 } finally {

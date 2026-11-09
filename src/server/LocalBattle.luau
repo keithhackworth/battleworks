@@ -20,16 +20,19 @@ function Battle.pose(size,index,kind)
 end
 function Battle.resetTank(tank,size,index,reason)
 	BW.stop(tank,reason)
+ tank.bw=nil -- discard previous lifecycle command history and observation snapshots
 	local generation=(tank.state and tank.state.generation or -1)+1
 	local position,yaw=Battle.pose(size,index,tank.kind)
 	tank.spawn=position; tank.spawnYaw=yaw
 	tank.state=Simulation.new(position,tank.kind,tank.seed)
+ tank.state.bwRunning=false; tank.state.bwStatus="stopped"; tank.state.bwMessage=reason or "Battle reset."
+ tank.state.bwIndex=0; tank.state.bwCount=0; tank.state.bwLine=0; tank.state.bwInstruction=""
 	tank.effects=Effects.new(tank.state)
 	tank.sensorScanTimes=nil; tank.bwRunRequestId=0; tank.manualSensors=nil
 	tank.state.yaw=yaw; tank.state.turretYaw=yaw; tank.state.generation=generation
 	tank.rattler=Weapon.new(); tank.rattler.aimSeed=tank.seed
 	tank.boomerAim={aimSeed=tank.seed}
-	BW.clearInputs(tank); BW.sync(tank)
+	BW.applyHardware(tank); BW.clearInputs(tank); BW.sync(tank)
 	tank.hitbox.CFrame=CFrame.new(position+Vector3.new(0,2.5,0))*CFrame.Angles(0,yaw,0)
 	tank.hitbox.CanQuery=true
 end
@@ -52,7 +55,7 @@ function Battle.damage(battle,victim,source,damage,weaponType,position)
 	Effects.record(victim.effects,victim.state,weaponType or Definitions.get(source.kind).WeaponType,applied,position)
 	if victim.state.health==0 then
 		BW.stop(victim,"Tank destroyed."); BW.clearInputs(victim)
-		victim.hitbox.CanQuery=false; victim.state.scanVisual=nil; victim.state.scanManual=nil; victim.state.manualScannerActive=false
+		victim.hitbox.CanQuery=false; victim.state.scanVisual=nil; victim.state.scanBW=nil; victim.state.scanManual=nil; victim.state.manualScannerActive=false
 		battle.winner=if source.state.health>0 then source.kind else "Draw"
 	end
 	return true

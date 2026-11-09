@@ -4,7 +4,9 @@ local Weapon = {}
 function Weapon.new()
 	return { heat = 0, burst = 0, cooldown = 0, shotClock = 0, idle = 0, firing = false }
 end
-function Weapon.step(weapon, enabled, trigger, dt)
+function Weapon.step(weapon, enabled, trigger, dt, performance)
+ performance=performance or 1
+ enabled=enabled and performance>0
 	dt = math.max(dt, 0)
 	weapon.firing = false
 	weapon.shotClock = math.max(0, weapon.shotClock-dt)
@@ -33,7 +35,7 @@ function Weapon.step(weapon, enabled, trigger, dt)
 	end
 	weapon.firing = true
 	if weapon.shotClock > 1e-6 then return false end
-	weapon.shotClock = Config.Cooldown
+	weapon.shotClock = Config.Cooldown/math.max(performance,0.0001)
 	return true
 end
 return Weapon

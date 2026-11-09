@@ -2,6 +2,66 @@
 
 Last reviewed: 2026-11-08. This document records the implemented prototype, user requirements, development workflow, and unresolved questions for future sessions. Read [README.md](README.md) for player setup and the detailed Android test checklist. Source code is the authority if either document becomes stale.
 
+## Eight-sensor activity visibility / shared-budget fairness
+
+Verified cooldown is already per-sensor: source.sensorScanTimes and each BWDevices device.readyAt are independent. Found actual light bug: init.server published all BW reactions into ONE scanVisual, so six .0667s and two .05s Rattler acquisitions overwrote each other before 20 Hz snapshots, exposing only the last lens of each group. New state.scanBW retains one coarse actual-completed event per physical lens; legacy scanVisual remains a cloned latest-event alias. Each expires independently; renderer observes the map and deduplicates serials to avoid double-aging the alias. Start/death/reset cleanup includes the map.
+
+A real Scanner/Runtime 10-second workload audit also showed shared64/s safety-budget lexical bias: one sensor succeeded only6 times while most got100. BWDevices now rotates ONLY sensor acquisition order each cooldown interval; thread order/FIFO/cooldowns/overall safety budget remain. All sensors exceed50 successes in the same audit. Device diagnostics expose attempts/success/fail totals and lastScan {status,count or reason,timestamp}, all private; public lens map contains no exact observations.
+
+Exact user program in production server fixture now verifies all eight map events, all eight private scan angles, and explicit printing of a real opponent; renderer tests verify eight simultaneous Neon lenses, alias deduplication and independent expiry. Analytic geometry tests verify close body detections around the chassis. Existing15-degree cones at45-degree mounting increments DO have blind gaps; no widening was authorized. Docs now explain this and how to inspect empty versus failed scans.
+
+Also corrected log selection: simply focusing the output TextBox no longer freezes live output. Updates pause only for a nonempty selection, preserving copy/paste; clearing selection resumes.
+
+## Continuous scanner-loop failure fix
+
+Reproduced the user's exact eight-thread scanner/print source on default Rattler: prior production BWExecution stopped at scan 129 (Scanner observation limit exceeded). Absolute log limit 256 and device command-ID ceiling 512 would also break continuous loops. Production now uses rolling histories: MaxScannerHistory128 snapshots, MaxOutputEvents256 IDE rows, MaxCommandHistory512 terminal records plus ALL active/queued commands. IDs increase without a lifetime submission cap; expired terminal status IDs return invalidArgument. Waiting scanner threads retain direct command references so eviction cannot lose ownership/results.
+
+Output attempts are counted but do not terminate execution. MaxLogEventsPerCycle64 bounds emitted logs per tank/CPU cycle, reserving a slot for an explicit diagnostic when excess logs are omitted. CPU budgets, scanner per-sensor cooldown/global work limits, device queue depths, output formatting bounds, and the 180-second program timeout remain. Diagnostics expose total scans/log attempts/omitted logs and retained sizes. BWConfig.MaxScannerCalls remains for the legacy serial-interpreter fixture only. New BWScanLoops suite runs exact user source for 30 seconds beyond all old caps, and tests rolling command history, log suppression/recovery, Stop and rejection on single-core Boomer.
+
+## World/relative scanner bearings and facing query
+
+Latest instruction renames scanner direction to relative_direction and adds world_direction, on every immutable detection AND nearest convenience fields. Empty scans return both as Null; old direction is absent. ScannerGeometry.worldBearing derives compass bearing directly from the observed world hit point; relative bearing uses the captured acquisition yaw. No geometry/raycast behavior changes. Snapshots retain acquisition values when tanks subsequently turn/move.
+
+get_facing_direction() is a no-argument explicit own-chassis state query returning {status,reason,world_direction}; base cost 0.1 ticks. BWExecution reads the current authoritative state yaw through BWTankAdapter.heading, not cursor/turret/queued desired orientation. Standard dictionary return format is retained. Print wrappers do not waive gameplay query costs. Absolute commands are turn_left/right(to=world_heading) and turret_left/right(to=world_heading); no rotate_right alias added. Handbook and standalone Markdown references migrate to these keys/direct aiming examples.
+
+## Tank-specific chassis defaults (2026-11-09)
+
+Latest user requests Rattler eight cores/buses and Boomer single-threaded. BWChassis.TankTiers maps Rattler=Octa, Boomer=Bunny; forTank returns fresh validated presets. Production controller/spawn/diagnostic fallbacks use forTank; explicit editor configurations persist across reset. Generic default() remains Hexadeca for explicit development/test fixtures.
+
+Octa assigns drivetrain/turret/weapon to buses 1/2/3 at 100%, then evenly places the eight sensors on buses 4–8 (paired sensors get 50% each, singles 100%). Bunny retains its existing valid one-bus allocations: drive40%, turret20%, weapon20%, eight sensors2.5% each. Thus Boomer physical caps/preparation follow .64 drive/.36 turret/weapon performance. This is the existing bus performance model, not altered weapon/base-physics tuning. Radar range remains 150 at 100% effectiveness. The handbook hardware section lists current tank defaults dynamically.
+
+## Scanner position alias and while loops (2026-11-09)
+
+Latest user explicitly authorizes while, superseding the prior no-loop restriction. `Scanner(position=index)` accepts literal/computed integers 0..7, normalizes to degrees index*45, and shares the same physical device/cost/result path as Scanner(angle). Mixed inputs/invalid literal indices are static errors; invalid computed indices return invalidSensor. Results still expose sensor in degrees.
+
+BWParser emits $while tests and backward $jump instructions. BWExecution rechecks conditions with Expression.truthy: false/null/zero/empty string/empty array/empty dictionary are false; other supported values true. Undefined reads stay errors; existing if/logical/wait_for semantics stay unchanged. Tests cost BWChassis.Costs.loop (initially 1) plus expression evaluation, including final false test. CPU reservation, per-cycle hard limits and global timeout bound loops; no task waits or recursive interpreter execution. Existing device queues/asynchronous calls are reused; shared-thread condition changes work deterministically. The retained BWRuntime helper understands $while too.
+
+Handbook adds a While loops topic and both scanner signatures. No break/continue/for/while-else or user functions. Existing output/observation/command-history limits still apply. Test suite BWLoops covers parser/errors/aliases/truthiness/nesting/async conditions/polling/cancellation/budget starvation; native Studio testing remains needed.
+
+## Free debug output
+
+Latest instruction: print/debug logging costs zero gameplay ticks. `BWChassis.Costs.print=0`. Production `BWExecution` waives pure display-expression reads/access/arithmetic/comparisons/logicals in print; variables/assignments outside it remain normal. If the print expression contains a real device/query/wait call, its entire expression keeps normal costs, preventing free conditional control paths or nested-scanner bypasses. Automatic logs were already uncharged. Output limits, safety caps and normal side effects/errors remain. Cost reservation mirrors actual charging; handbook and runtime guide explain the exception.
+
+## In-game BW handbook
+
+`shared/BWHandbook` provides ten reference topics and sixteen command contracts with costs generated from `BWChassis.Costs` and current timing/limit configs. `client/BWHandbookView` renders the IDE's BW Handbook popup: horizontally scrollable topic tabs and vertically scrolling, wrapped, selectable/read-only text. The CPU intro includes a complete command directory; each command topic starts with signatures/costs and contains full INPUT/HOW IT WORKS/RETURNS blocks for every assigned callable, including print. Content height/canvas are explicitly measured via TextService and remeasured on resize, with a visible 10px vertical scrollbar; automatic TextBox sizing is no longer used. Opening releases old text focus and leaves execution untouched; closing, Run, tank switching and IDE destruction cleanly dismiss it. `BWIDE` preserves existing Hardware / threads alongside the new button. No gameplay/runtime changes in this feature.
+
+Automated handbook checks cover every supported command/signature, dynamic cost updates, topic navigation, scrolling setup, focus, read-only text, live status updates, source/control preservation and cleanup. Native text autosizing/tab scrolling and touch/gamepad ergonomics still need Studio testing.
+
+## Multi-object radar results (follow-up)
+
+DirectionalScanner now gathers/deduplicates visible physical objects throughout the cone and returns an immutable nearest-first `detections` array, `count` and effective `range` on the standard result dictionary. Each entry retains accurate surface bearing/distance, tank identity/relation and immutable world hit point. Existing top-level fields remain nearest-hit conveniences. Walls still occlude; no hidden tank positions are exposed. All detections share actual acquisition time. Bounded safety overflow returns scannerBusy rather than partial success.
+
+Scanner hardware supports validated/copied `range` and `distancePercent`; defaults are 150 studs/100%, now independent of bus performance (latest user instruction overrides the earlier allocation-driven range rule). Bus allocation still determines availability and acquisition time. Manual and BW scans both use the hardware range. The visual reaction prioritizes visible enemy tanks; private IDE output prints all indexed detections rather than clipping a multi-hit snapshot to the generic 2 KB formatter. No pre-battle allocation UI was added.
+
+## Concurrent BW runtime (2026-11-08)
+
+The latest mission supersedes the earlier parallel-command and scanner-array restrictions. Read `docs/BW_RUNTIME.md` and `docs/BW_RUNTIME_IMPLEMENTATION_CHECKLIST.md` first. Production `BWController` now uses `BWExecution`; `BWDevices` reuses old `BWRuntime` strictly for physical command completion. CPU budgets and devices are independent. Chassis tiers/allocations/costs live in `BWChassis`; default development hardware is Hexadeca at full device performance, preserving existing controls and physics by default.
+
+Thread streams run deterministically in ascending ID order at 10 Hz CPU cycles over the existing 60 Hz server simulation. Source instructions reserve bounded credit atomically, charge actual reached operations and suspend only for explicit waits/physical observations. Shared variables have per-root versions. All callable results are dictionaries; scanner snapshots include acquisition time and world hit point. Literal physical scanner angles are restricted to 45-degree mounts; manual sweeping remains an internal driver-only implementation. Each physical device owns its active command/FIFO/cooldown. Operational failures are results, including legacy best_effort=false. Stop/death/reset cancel device work and prepared shots.
+
+BWHardware intent is ownership/rate/config validated; BWRuntimeState diagnostics go privately at bounded 5 Hz, separate from BWOutput history. The IDE hardware panel uses a compact editable tier/device/bus/allocation text format. No loops/user functions/smart tracking are added. Existing gameplay suites and physical demo regressions remain; server and renderer fixtures now run in separate fresh VMs because Luau Web's fixed heap cannot retain both. All ten documentation Python examples are automatically extracted and executed on both tank simulations. See checklist for final checks and Studio-only remaining work. No commit/push.
+
 ## BW v0.2: values, expressions and decisions (2026-11-08)
 
 The latest user explicitly authorizes variables, expressions, nested if/elif/else and switch/case, superseding all earlier v0.1 restrictions on those features. Loops, user-defined functions, automatic targeting/tracking, parallel commands, extra tank types and arbitrary Luau remain excluded. The default eight-action demonstration retains its behavior/source lines; its comment/version badge now says v0.2.

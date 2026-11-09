@@ -30,13 +30,14 @@ function Visual.update(renderer,state,dt)
 	local readings=renderer.sensorReadings or {}; renderer.sensorReadings=readings
 	local seen={}
 	local function observe(event)
-		if not event then return end
+		if not event or seen[event.serial] then return end
 		seen[event.serial]=true
 		local cached=readings[event.serial]
 		if not cached then cached={event=event,remaining=event.remaining}; readings[event.serial]=cached end
 		cached.remaining=math.max(0,math.min(cached.remaining,event.remaining)-dt)
 	end
 	observe(state.scanVisual)
+	for _,event in state.scanBW or {} do observe(event) end
 	if state.manualScannerActive then for _,event in state.scanManual or {} do observe(event) end end
 	local selected={}
 	for serial,cached in readings do

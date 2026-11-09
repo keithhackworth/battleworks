@@ -51,18 +51,19 @@ for _,source in commands do
  runtime:step(s,1/60)
  check(runtime.status=="error" and runtime.index==1 and not runtime.skipped,"best_effort=false stops on timeout for every command form")
 end
--- A skipped prepared shot is cancelled; BW keeps control for the next command.
+-- Physical failures are now nonfatal device lifecycle outcomes, even for legacy best_effort=false.
 do
- local tank={state=Sim.new(Vector3.zero),rattler=Weapon.new(),command=Command.neutral()}
+ local tank={state=Sim.new(Vector3.zero),rattler=Weapon.new(),command=Command.neutral(),bwServices={}}
+ tank.bwServices.cancelWeapon=function() tank.pendingShot=nil end
  Controller.start(tank,"fire()\nfire()")
  Controller.input(tank,1/60)
  tank.pendingShot={remaining=0.1}; tank.state.weaponActivationSerial=1
- tank.bw.current.elapsed=16
+ local device=tank.bw.devices.devices.weapon
+ device.active.executor.current.elapsed=16
  local output=Controller.input(tank,1/60)
- check(not output.fire and not tank.pendingShot and not tank.command.fire,"skipping fire cancels abandoned weapon preparation")
- check(Controller.running(tank) and not tank.requireFireRelease and tank.state.bwSkipped==1,"BW remains owner and publishes warning/count after skip")
- check(Controller.input(tank,1/60).fire,"following fire instruction can still request activation")
- check(tank.state.bwWarning:find("Line 1 skipped",1,true)~=nil,"warning remains visible while following command runs")
+ check(not output.fire and not tank.pendingShot,"failed device operation cancels abandoned preparation")
+ check(Controller.running(tank) and tank.bw.devices.commands[1].state=="failed","queued operation retains BW ownership after recoverable failure")
+ check(Controller.input(tank,1/60).fire,"next queued fire starts on next tick")
 end
 -- Safety limits and explicit cancellation stay terminal regardless of the flag.
 do

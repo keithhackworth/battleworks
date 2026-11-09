@@ -76,7 +76,7 @@ local function setup()
  return service,source,add,world,parts,records
 end
 for _,sample in {{-721,359},{-45,315},{360,0},{765.5,45.5},{-1e-300,0}} do check(near(G.normalize(sample[1]),sample[2]),"angle normalization") end
-for _,source in {"Scanner(-721.5)","Scanner(-1e-300)","Scanner(1e3)","Scanner(1e300)","Scanner(.25, best_effort=false)"} do
+for _,source in {"Scanner(-720)","Scanner(-45)","Scanner(1e3 - 10)","Scanner(360)","Scanner(45, best_effort=false)"} do
  local parsed=assert(Parser.parse(source)); check(parsed[1].value>=0 and parsed[1].value<360,"finite scanner literals normalized without movement-angle limit")
 end
 for _,source in {"scanner(45)","Scanner()","Scanner(to=0)","Scanner(1e999)","Scanner(0/0)","Scanner(1,2)","Scanner(1, best_effort=1)"} do
@@ -86,17 +86,17 @@ local service,source,add,world,parts,records=setup()
 local target=add("player3",G.direction(0,39.6)*58+Vector3.new(0,2.5,0),Vector3.new(1,5,1),true)
 local observation=assert(service:execute(source,45,1))
 local result=observation.value
-check(#result==5 and Values.get(result,0)=="tank" and result[4]=="player3.Boomer#player3" and result[5]=="enemy","five-element structured tank observation and logical zero indexing")
-check(result[2]>57 and result[2]<58 and result[3]>39 and result[3]<40,"actual surface bearing/range differ from requested 45 degrees")
+check(Values.isDictionary(result) and result.type=="tank" and result.player=="player3.Boomer#player3" and result.relation=="enemy","dictionary tank observation")
+check(result.distance>57 and result.distance<58 and result.relative_direction>39 and result.relative_direction<40,"actual surface bearing/range differ from requested 45 degrees")
 check(observation.timestamp==1 and observation.origin.Y==2.5 and observation.chassisYaw==0,"measurement timestamp and own pose captured at observation")
-check(not pcall(function() result[2]=999 end) and not pcall(function() observation.timestamp=100 end),"observations and values are immutable")
-local oldDistance=result[2]
+check(not pcall(function() result.distance=999 end) and not pcall(function() observation.timestamp=100 end),"observations and values are immutable")
+local oldDistance=result.distance
 source.state.position=Vector3.new(10,1,0); source.state.yaw=0.2; source.state.speed=-10; source.state.firing=true
 local updated=assert(service:execute(source,45,1.2))
-check(observation.value[2]==oldDistance and observation.origin.X==0,"moving/firing cannot mutate previous snapshot")
+check(observation.value.distance==oldDistance and observation.origin.X==0,"moving/firing cannot mutate previous snapshot")
 check(updated.origin.X==10 and updated.origin.Y==3.5 and updated.timestamp==1.2,"new measurement uses current authoritative pose while reversing/firing")
 local rejected,reason=service:execute(source,45,1.21)
-check(not rejected and reason:find("rate limit",1,true),"reusing the same physical sensor is rate bounded")
+check(not rejected and reason=="sensorCooldown","reusing the same physical sensor is rate bounded")
 check(world.overlaps==2 and world.casts<=Config.MaxRaycasts*2,"no background scans and bounded queries per observation")
 check(service:execute(source,90,1.21)~=nil,"cooling sensor cannot block a different directional sensor")
 check(not service:execute(source,50,1.22),"neighboring angles assigned to the same physical sensor share its cooldown")
@@ -105,52 +105,52 @@ service,source,add,world,parts,records=setup()
 source.state.yaw=math.pi/2
 add("north",Vector3.new(0,2.5,-40),Vector3.new(2,5,2),true)
 result=assert(service:execute(source,90,1)).value
-check(result[1]=="tank" and near(result[2],39) and near(result[3],90),"rotated chassis makes world north its right and reports chassis-relative bearing")
+check(result.type=="tank" and near(result.distance,39) and near(result.relative_direction,90),"rotated chassis makes world north its right and reports chassis-relative bearing")
 service,source,add,world,parts,records=setup()
 add("edge",G.direction(0,9)*50+Vector3.new(0,2.5,0),Vector3.new(6,5,5),true,0.3)
 result=assert(service:execute(source,0,1)).value
-check(result[1]=="tank" and result[3]<=7.5+1e-6,"partial tank body detected with center outside cone, including rotated collision bounds")
+check(result.type=="tank" and result.relative_direction<=7.5+1e-6,"partial tank body detected with center outside cone, including rotated collision bounds")
 service,source,add,world,parts,records=setup()
 local far=add("far",Vector3.new(0,2.5,-60),nil,true)
 local wall=add("wall",Vector3.new(0,3,-30),Vector3.new(20,6,2))
 result=assert(service:execute(source,0,1)).value
-check(result[1]=="wall" and near(result[2],29) and result[4]==Values.Null and result[5]==Values.Null,"wall blocks hidden tank and returns its visible surface")
+check(result.type=="wall" and near(result.distance,29) and result.player==Values.Null and result.relation==Values.Null,"wall blocks hidden tank and returns its visible surface")
 local nearTank=add("near",Vector3.new(0,2.5,-20),nil,true)
 result=assert(service:execute(source,0,1.2)).value
-check(result[1]=="tank" and result[4]=="near.Boomer#near" and near(result[2],17),"near tank blocks farther objects in same cone")
-local before=Values.format(result)
+check(result.type=="tank" and result.player=="near.Boomer#near" and near(result.distance,17),"near tank blocks farther objects in same cone")
+local before=result.distance
 table.clear(parts); table.insert(parts,nearTank); table.insert(parts,wall); table.insert(parts,far); table.insert(parts,source.hitbox)
-check(Values.format(assert(service:execute(source,0,1.4)).value)==before,"nearest result independent of part iteration order")
+check(assert(service:execute(source,0,1.4)).value.distance==before,"nearest result independent of part iteration order")
 source.teamId="blue"; records[nearTank].teamId="blue"
-check(assert(service:execute(source,0,1.6)).value[5]=="teammate","explicit shared team relationship recognized")
+check(assert(service:execute(source,0,1.6)).value.relation=="teammate","explicit shared team relationship recognized")
 records[nearTank].playerName=nil
-check(assert(service:execute(source,0,1.8)).value[4]=="AI.Boomer#near","unowned tank uses stable identifier")
+check(assert(service:execute(source,0,1.8)).value.player=="AI.Boomer#near","unowned tank uses stable identifier")
 nearTank.CanQuery=false; wall.CanQuery=false
-check(assert(service:execute(source,0,2)).value[4]=="far.Boomer#far","non-solid wreck/dead cover does not block scanning")
+check(assert(service:execute(source,0,2)).value.player=="far.Boomer#far","non-solid wreck/dead cover does not block scanning")
 service,source,add,world,parts,records=setup()
 local cosmetic=add("smoke",Vector3.new(0,2.5,-5),Vector3.new(9,5,9)); cosmetic.CanQuery=false
 -- A projectile not in the authoritative geometry allowlist cannot be queried.
 local projectile=part("shell",Vector3.new(0,2.5,-10),Vector3.new(2,2,2)); projectile.CanQuery=true
 result=assert(service:execute(source,0,1)).value
-check(Values.format(result)=="[null, null, null, null, null]" and #result==5,"empty scan ignores self, cosmetic volumes and out-of-allowlist projectiles")
+check(result.status=="success" and result.type==Values.Null and result.point==Values.Null,"empty scan ignores self, cosmetic volumes and out-of-allowlist projectiles")
 service,source,add,world,parts,records=setup()
 add("limit",Vector3.new(0,2.5,-151),Vector3.new(2,5,2))
-check(near(assert(service:execute(source,0,1)).value[2],150),"visible surface at maximum range detected")
-check(Values.format(assert(service:execute(source,180,1.2)).value)=="[null, null, null, null, null]","opposite scan has no result")
+check(near(assert(service:execute(source,0,1)).value.distance,150),"visible surface at maximum range detected")
+check(assert(service:execute(source,180,1.2)).value.type==Values.Null,"opposite scan has no result")
 service,source,add,world,parts,records=setup()
 add("round",G.direction(0,10)*50+Vector3.new(0,2.5,0),Vector3.new(4.2,4.2,4.2),false,0,Enum.PartType.Ball)
-check(assert(service:execute(source,0,1)).value[1]==Values.Null,"bounds clipping never invents visibility through empty corners of curved cover")
+check(assert(service:execute(source,0,1)).value.type==Values.Null,"bounds clipping never invents visibility through empty corners of curved cover")
 service,source,add,world,parts,records=setup()
 source.state.position=Vector3.new(0,6,0)
 add("ground",Vector3.new(0,2.5,-40),nil,true)
 result=assert(service:execute(source,0,1)).value
-check(result[1]=="tank" and result[2]>37,"horizontal scan cone uses true 3D surface distance and LOS while airborne")
+check(result.type=="tank" and result.distance>37,"horizontal scan cone uses true 3D surface distance and LOS while airborne")
 service,source,add,world,parts,records=setup()
 add("round-visible",G.direction(0,9)*50+Vector3.new(0,2.5,0),Vector3.new(4.2,4.2,4.2),false,0,Enum.PartType.Ball)
 local rounded=assert(service:execute(source,0,1)).value
 local delta=math.rad(1.5)
 local expectedSurface=50*math.cos(delta)-math.sqrt(2.1^2-(50*math.sin(delta))^2)
-check(rounded[1]=="wall" and near(rounded[2],expectedSurface,0.01),"partially visible rounded cover reports actual curved surface near cone edge")
+check(rounded.type=="wall" and near(rounded.distance,expectedSurface,0.01),"partially visible rounded cover reports actual curved surface near cone edge")
 -- Global and scene budgets reject requests rather than inventing an empty reading.
 service,source,add,world,parts,records=setup()
 for _=1,Config.ServerBurst do
@@ -158,13 +158,13 @@ for _=1,Config.ServerBurst do
  check(service:execute(independent,0,1)~=nil,"initial global scanner token")
 end
 local exhausted,reason=service:execute({state=Sim.new(Vector3.zero),hitbox=source.hitbox},0,1)
-check(not exhausted and reason:find("budget",1,true),"server-wide scanner throughput bounded across independent tanks")
+check(not exhausted and reason=="scannerBusy","server-wide scanner throughput bounded across independent tanks")
 service,source,add,world,parts,records=setup()
 for i=1,Config.MaxSpatialParts do add("crowded"..i,Vector3.new(0,2.5,-30),Vector3.new(1,1,1)) end
 -- Include one extra object beyond the spatial cap (own body is excluded).
 add("overflow",Vector3.new(0,2.5,-31),Vector3.new(1,1,1))
 local overflow,why=service:execute(source,0,1)
-check(not overflow and why:find("budget",1,true),"crowded scenes fail explicitly rather than leaking a false visibility claim")
+check(not overflow and why=="scannerBusy","crowded scenes fail explicitly rather than leaking a false visibility claim")
 -- Human-readable identifiers remain unique with multiple same-type tanks.
 do
  local first={playerName="pilot",state=Sim.new(Vector3.zero,"Rattler"),id="tank-17"}
@@ -284,4 +284,105 @@ check(not ui.output.Text:find("player3",1,true),"other tank editor never shows f
 ui:bind("own"); ui:update({generation=1,bwRequestId=1,bwStatus="stopped"})
 check(ui.scanOutputs.own==nil and not ui.output.Text:find("player3",1,true),"battle reset clears old generation's private scan output")
 ui:destroy()
+-- A single cone reports every visible object, rather than pruning behind its nearest surface.
+do
+ local service,source,add,world,parts,records=setup()
+ add("left",G.direction(0,-5)*40+Vector3.new(0,2.5,0),Vector3.new(1,3,1),true)
+ add("right",G.direction(0,5)*70+Vector3.new(0,2.5,0),Vector3.new(1,3,1),true)
+ add("cover",Vector3.new(0,2.5,-55),Vector3.new(1,3,1))
+ local scan=assert(service:execute(source,0,1)).value
+ check(scan.count==3 and #scan.detections==3 and scan.range==150,"all separate visible tanks/walls returned at full range")
+ check(scan.detections[1].player=="left.Boomer#left" and scan.detections[2].type=="wall" and scan.detections[3].player=="right.Boomer#right","detections nearest-first regardless of object type")
+ check(scan.detections[1].distance==scan.distance and scan.detections[1].relative_direction==scan.relative_direction,"nearest convenience fields retained")
+ check(not pcall(function() scan.detections[1].distance=0 end) and not pcall(function() scan.detections[1]=scan end),"list and individual detections immutable")
+ check(not pcall(function() scan.detections[1].point.x=0 end),"nested observed points immutable")
+ local before=scan.detections[3].distance
+ local reversed={}; for index=#parts,1,-1 do table.insert(reversed,parts[index]) end; table.clear(parts); for _,p in reversed do table.insert(parts,p) end
+ local again=assert(service:execute(source,0,1.2)).value
+ check(again.count==3 and again.detections[3].distance==before,"multi-hit order independent of scene iteration")
+end
+do
+ local service,source,add=setup()
+ add("cover",Vector3.new(0,2.5,-25),Vector3.new(20,10,2))
+ add("hidden",Vector3.new(0,2.5,-45),Vector3.new(2,3,2),true)
+ local scan=assert(service:execute(source,0,1)).value
+ check(scan.count==1 and scan.detections[1].type=="wall","all-object scan never reveals fully occluded tanks")
+end
+do
+ local service,source,add=setup()
+ add("far",Vector3.new(0,2.5,-201),Vector3.new(2,3,2),true)
+ check(assert(service:execute(source,0,1)).value.count==0,"default range is 150")
+ local upgraded=assert(service:execute(source,0,1.2,{range=250,distancePercent=100})).value
+ check(upgraded.count==1 and upgraded.range==250 and upgraded.distance>150,"hardware range extends both probes and actual ray queries")
+ local reduced=assert(service:execute(source,0,1.4,{range=250,distancePercent=50})).value
+ check(reduced.count==0 and reduced.range==125,"future distance effectiveness applied independently of bus performance")
+ check(not service:execute(source,0,1.6,{range=0/0}) and not service:execute(source,0,1.6,{range=150,distancePercent=101}),"invalid hardware distance rejected")
+ local empty=assert(service:execute(source,180,1.8)).value
+ check(empty.status=="success" and empty.count==0 and Values.isArray(empty.detections),"empty scan returns an empty list successfully")
+end
+-- Compass bearings use the observed surface and acquisition pose, not a cursor
+-- or the requested sensor centerline. The renamed keys are present everywhere.
+do
+ for _,heading in {0,90,180,270,350} do
+  local service,source,add=setup()
+  source.state.yaw=-math.rad(heading)
+  add("hit",G.direction(source.state.yaw,45)*60+Vector3.new(0,2.5,0),Vector3.new(2,4,2),true)
+  local observation=assert(service:execute(source,45,1))
+  local result=observation.value; local hit=result.detections[1]
+  check(result.count==1 and result.direction==nil and hit.direction==nil,"old direction key removed from snapshot and detection")
+  local delta=Vector3.new(hit.point.x,hit.point.y,hit.point.z)-observation.origin
+  check(near(hit.world_direction,G.worldBearing(delta)) and near(hit.relative_direction,G.bearing(source.state.yaw,delta)),"each bearing calculated from same observed point")
+  check(near((hit.world_direction-hit.relative_direction-heading+180)%360-180,0),"world bearing includes chassis compass rotation")
+  check(result.world_direction==hit.world_direction and result.relative_direction==hit.relative_direction,"nearest convenience bearings match first detection")
+  check(hit.world_direction>=0 and hit.world_direction<360 and hit.relative_direction>=0 and hit.relative_direction<360,"both bearings normalized")
+  local frozen=result.world_direction; source.state.yaw+=1; source.state.position=Vector3.new(10,3,8)
+  check(result.world_direction==frozen and observation.chassisYaw==-math.rad(heading),"snapshot bearings and acquisition orientation remain immutable")
+ end
+ local service,source=setup()
+ local empty=assert(service:execute(source,0,1)).value
+ check(empty.relative_direction==Values.Null and empty.world_direction==Values.Null and empty.direction==nil,"empty scan has null named bearings and no old alias")
+ for _,sample in {{Vector3.new(0,0,-1),0},{Vector3.new(1,0,0),90},{Vector3.new(0,0,1),180},{Vector3.new(-1,0,0),270}} do
+  check(near(G.worldBearing(sample[1]),sample[2]),"world bearings match compass cardinal directions")
+ end
+end
+-- End-to-end: an actual acquired surface bearing feeds the existing absolute
+-- turret command directly on both tank types; no chassis-offset math in BW.
+do
+ local Concurrent=require("BWExecution"); local Hardware=require("BWChassis"); local Adapter=require("BWTankAdapter")
+ for _,kind in {"Boomer","Rattler"} do
+  local service,source,add=setup()
+  local state=source.state; state.tankType=kind; state.yaw=-math.pi/2; state.turretYaw=0
+  add("enemy",Vector3.new(40,2.5,2),Vector3.new(2,4,2),true)
+  local config=Hardware.forTank(kind)
+  state.turretPerformance=Hardware.performance(config.devices.turret.allocation)
+  local program=assert(Parser.parse('facing = get_facing_direction()\nscan = Scanner(position=0)\nif scan.status == "success" and scan.count > 0:\n    aim = turret_right(to=scan.detections[0].world_direction)'))
+  local runtime=Concurrent.new(program,state,{scan=function(angle,performance,time,hardware) return service:execute(source,angle,time,hardware) end},config)
+  for _=1,420 do local input=runtime:step(state,1/60); Sim.step(state,input,1/60); if runtime.status~="running" then break end end
+  check(runtime.status=="completed" and near(runtime.variables.facing.world_direction,90),"facing getter uses chassis orientation on "..kind)
+  local target=runtime.variables.scan.detections[1]
+  local actual=Adapter.heading(Adapter.angle(state,true))
+  check(math.abs((actual-target.world_direction+180)%360-180)<=0.81,"scan world bearing directly aims existing turret on "..kind)
+  check(math.abs(target.relative_direction)<7.5 and target.world_direction>80,"relative and world headings remain distinct on "..kind)
+ end
+end
+-- The user's exact threaded scan guards print when a close opponent's body
+-- intersects any cone; sensor mounting direction is not a shared cooldown.
+do
+ local Concurrent=require("BWExecution"); local Hardware=require("BWChassis")
+ local blocks={}
+ for position=0,7 do table.insert(blocks,string.format('with thread(%d):\n    while true:\n        scan%d = Scanner(position=%d)\n        if scan%d.status == "success" and scan%d.count > 0:\n            print(scan%d.detections[0])',position+1,position,position,position,position,position)) end
+ local instructions=assert(Parser.parse(table.concat(blocks,"\n\n")))
+ for _,bearing in {0,22.5,90,180,270,337.5} do
+  local service,source,add=setup(); source.state.tankType="Rattler"
+  add("adjacent",G.direction(0,bearing)*12+Vector3.new(0,2.5,0),Vector3.new(8,5,10),true)
+  local prints=0
+  local runtime=Concurrent.new(instructions,source.state,{scan=function(angle,performance,time,hardware) return service:execute(source,angle,time,hardware) end,onPrint=function() prints+=1 end},Hardware.forTank("Rattler"))
+  for _=1,90 do runtime:step(source.state,1/60) end
+  check(runtime.status=="running" and prints>0,"close tank is detected and explicitly printed at bearing "..bearing)
+ end
+ -- Fixed 15-degree cones intentionally leave gaps between their 45-degree mounts.
+ local service,source,add=setup()
+ add("between-cones",G.direction(0,22.5)*40+Vector3.new(0,2.5,0),Vector3.new(2,4,2),true)
+ for position=0,7 do check(assert(service:execute(source,position*45,1)).value.count==0,"empty scan between narrow cones is not a cooldown failure") end
+end
 print(string.format("Directional scanner/value/runtime suite passed: %d assertions",count))

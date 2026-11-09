@@ -6,7 +6,7 @@ function Windup.begin(state, command)
 	local origin = Simulation.tryFire(state, command)
 	if not origin then return nil end
 	state.bounceVelocity = (state.bounceVelocity or 0)-0.6
-	return { remaining = Config.FireWindup }
+	return { remaining = Config.FireWindup / math.max(state.weaponPerformance or 1,0.0001) }
 end
 function Windup.step(pending, state, dt)
 	if state.health <= 0 then return true end

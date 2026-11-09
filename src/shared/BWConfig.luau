@@ -1,14 +1,25 @@
--- Bounded BW v0.2; no loops, user functions or arbitrary Luau.
+-- Bounded BW syntax/safety limits. Production hardware costs live in BWChassis.
 return table.freeze({
 	MaxSourceBytes=16384, MaxLines=400, MaxInstructions=128,
 	MaxCompiledInstructions=512,MaxBlockDepth=12,MaxExpressionDepth=32,MaxExpressionNodes=2048,
 	MaxTokensPerLine=512,MaxArrayItems=64,MaxStringBytes=2048,MaxVariables=128,
-	MaxScannerCalls=128,MaxOutputEvents=256,MaxOutputBytes=2048,IndentWidth=4,
+	MaxScannerCalls=128, -- legacy serial-interpreter limit; production retains rolling snapshots
+ MaxScannerHistory=128,MaxCommandHistory=512,MaxLogEventsPerCycle=64,MaxOutputEvents=256,MaxOutputBytes=2048,IndentWidth=4,
 	CycleCosts={read=1,write=1,arithmetic=1,comparison=1,logical=1,branch=1,call=0},
 	MaxDistance=1000, MaxRelativeAngle=1440, MaxAbsoluteAngle=36000, MaxFireSeconds=10,
 	MaxProgramSeconds=180, MaxInstructionSeconds=90, StuckSeconds=3,
 	DistanceTolerance=0.12, AngleTolerance=math.rad(0.8), ProgressDistance=0.03, ProgressAngle=math.rad(0.1),
-	DefaultSource=[[# BattleWorks BW v0.2
+	DefaultSource=[[# BattleWorks BW: independent devices
+with thread(1):
+    move = forward(20)
+    turret_right(45)
+    observation = Scanner(0)
+    print(observation.type)
+    clock = get_clock()
+    wait_for_clock(clock.time + 2)
+    print(command_status(move.commandId))
+    fire(1)]],
+    LegacyDefaultSource=[[# BattleWorks BW v0.2
 
 forward(20)
 turn_right(90)

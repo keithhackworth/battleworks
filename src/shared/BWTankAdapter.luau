@@ -5,7 +5,7 @@ local Definitions=require(script.Parent.TankDefinitions)
 local Simulation=require(script.Parent.TankSimulation)
 local Limits=require(script.Parent.BWConfig)
 local Adapter={}
-function Adapter.heading(yaw) return (-math.deg(yaw))%360 end
+function Adapter.heading(yaw) local heading=(-math.deg(yaw))%360; return if heading>=360 then 0 else heading end
 function Adapter.angle(state,turret)
 	if not turret then return state.yaw end
 	local _,direction=Simulation.shotPose(state)

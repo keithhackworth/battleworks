@@ -1,12 +1,19 @@
 -- Immutable BW values. Explicit null preserves trailing array entries.
 local Limits=require(script.Parent.BWConfig)
 local Value={}
+local dictionaries=setmetatable({},{__mode="k"})
 local arrays=setmetatable({},{__mode="k"})
 Value.Null=table.freeze({kind="null"})
 function Value.array(items) arrays[items]=true; return table.freeze(items) end
 function Value.isArray(value) return type(value)=="table" and arrays[value]==true end
+function Value.dictionary(fields,immutable) dictionaries[fields]=true; return if immutable then table.freeze(fields) else fields end
+function Value.isDictionary(value) return type(value)=="table" and dictionaries[value]==true end
+function Value.result(reason,fields)
+ local result=fields or {}; result.status=if reason then "fail" else "success"; result.reason=reason or Value.Null
+ return Value.dictionary(result,true)
+end
 function Value.type(value)
-	return if value==Value.Null then "null" elseif Value.isArray(value) then "array" else type(value)
+	return if value==Value.Null then "null" elseif Value.isArray(value) then "array" elseif Value.isDictionary(value) then "dictionary" else type(value)
 end
 function Value.scan(kind,distance,bearing,player,affiliation)
 	return Value.array({kind or Value.Null,distance or Value.Null,bearing or Value.Null,player or Value.Null,affiliation or Value.Null})
@@ -36,12 +43,18 @@ function Value.format(value)
 		if #text>remaining then text=text:sub(1,remaining); truncated=true end
 		table.insert(out,text); remaining-=#text
 	end
+	local visiting={}
 	local function format(v)
 		if remaining<=0 then truncated=true; return end
 		if v==Value.Null then emit("null")
 		elseif type(v)=="number" then emit(string.format("%.17g",v))
 		elseif type(v)=="boolean" then emit(if v then "true" else "false")
 		elseif type(v)=="string" then emit(quote(v))
+		elseif Value.isDictionary(v) then
+            if visiting[v] then emit("<cycle>"); return end
+            visiting[v]=true; emit("{"); local keys={}; for key in v do table.insert(keys,key) end; table.sort(keys)
+            for i,key in keys do if remaining<=0 then truncated=true; break end; if i>1 then emit(", ") end; emit(quote(key)..": "); format(v[key]) end
+            emit("}"); visiting[v]=nil
 		elseif Value.isArray(v) then
 			emit("[")
 			for i,item in v do if remaining<=0 then truncated=true; break end; if i>1 then emit(", ") end; format(item) end

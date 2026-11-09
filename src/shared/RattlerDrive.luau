@@ -2,7 +2,7 @@
 local Config = require(script.Parent.TankDefinitions).Rattler.Drive
 local Drive = {}
 function Drive.step(state, command, dt, surfaceScale)
-	local target = command.throttle*(if command.throttle >= 0 then Config.Speed else Config.ReverseSpeed)*surfaceScale
+	local target = command.throttle*(if command.throttle >= 0 then Config.Speed else Config.ReverseSpeed)*surfaceScale*(state.drivePerformance or 1)
 	local current = state.speed or 0
 	local rate = if command.throttle == 0 then Config.CoastDrag
 		elseif current*target < 0 or math.abs(target)<math.abs(current) then Config.Braking else Config.Acceleration

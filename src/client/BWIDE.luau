@@ -1,6 +1,8 @@
 -- Compact in-game editor. Only source text/Stop intent go to the server.
 local Config=require(game.ReplicatedStorage.Shared.BWConfig)
 local EditorText=require(game.ReplicatedStorage.Shared.BWEditorText)
+local Hardware=require(game.ReplicatedStorage.Shared.BWChassis)
+local HandbookView=require(script.Parent.BWHandbookView)
 local IDE={}
 IDE.__index=IDE
 local function text(parent,class,name)
@@ -9,7 +11,7 @@ local function text(parent,class,name)
 	item.BorderSizePixel=0; item.Parent=parent
 	return item
 end
-function IDE.new(playerGui,onRun,onStop)
+function IDE.new(playerGui,onRun,onStop,onConfigure)
 	local self=setmetatable({connections={},running=false,sources={},requests={},scanOutputs={},minimumScanRequests={}},IDE)
 	local gui=Instance.new("ScreenGui"); gui.Name="BWEditor"; gui.ResetOnSpawn=false
 	gui.ScreenInsets=Enum.ScreenInsets.CoreUISafeInsets; gui.DisplayOrder=30; gui.Parent=playerGui; self.gui=gui
@@ -45,12 +47,39 @@ function IDE.new(playerGui,onRun,onStop)
 	outputScroll.Active=true; outputScroll.ScrollingDirection=Enum.ScrollingDirection.XY
 	outputScroll.BackgroundColor3=Color3.fromRGB(31,39,45); outputScroll.ClipsDescendants=true
 	outputScroll.CanvasPosition=Vector2.zero; outputScroll.Parent=frame; self.outputScroll=outputScroll
-	local output=text(outputScroll,"TextLabel","Output"); output.Position=UDim2.fromOffset(4,4)
+	local output=text(outputScroll,"TextBox","Output"); output.Position=UDim2.fromOffset(4,4)
 	output.TextXAlignment=Enum.TextXAlignment.Left; output.TextYAlignment=Enum.TextYAlignment.Top
 	output.TextWrapped=false; output.TextSize=12; output.Text="Write BW commands, then Run. Scanner(45) prints one observation. Stop releases program control."
+	output.MultiLine=true; output.ClearTextOnFocus=false; output.TextEditable=false; output.Selectable=true
 	self.output=output
-	local function connect(event,callback) table.insert(self.connections,event:Connect(callback)) end
-	connect(toggle.Activated,function()
+	local hardware=text(frame,"TextButton","Hardware")
+    hardware.Position=UDim2.new(.5,6,0,39); hardware.Size=UDim2.new(.5,-18,0,22); hardware.Text="Hardware / threads"; self.hardwareButton=hardware
+    scroll.Position=UDim2.fromOffset(12,66); scroll.Size=UDim2.new(1,-24,0.75,-86)
+    local panel=Instance.new("Frame"); panel.Name="HardwarePanel"; panel.Position=UDim2.fromOffset(12,66); panel.Size=UDim2.new(1,-24,0.75,-86)
+    panel.BackgroundColor3=Color3.fromRGB(21,28,33); panel.Visible=false; panel.Parent=frame; self.hardwarePanel=panel
+    local configEditor=text(panel,"TextBox","HardwareConfiguration"); configEditor.Position=UDim2.fromOffset(0,0); configEditor.Size=UDim2.new(.5,-4,1,-32)
+    configEditor.MultiLine=true; configEditor.ClearTextOnFocus=false; configEditor.TextXAlignment=Enum.TextXAlignment.Left; configEditor.TextYAlignment=Enum.TextYAlignment.Top; configEditor.TextSize=12; self.configEditor=configEditor
+    local diagnosticScroll=Instance.new("ScrollingFrame"); diagnosticScroll.Name="RuntimeScroll"; diagnosticScroll.Position=UDim2.new(.5,4,0,0); diagnosticScroll.Size=UDim2.new(.5,-4,1,0); diagnosticScroll.ScrollBarThickness=5; diagnosticScroll.Parent=panel; self.diagnosticScroll=diagnosticScroll
+    local diagnostics=text(diagnosticScroll,"TextLabel","RuntimeDiagnostics"); diagnostics.Position=UDim2.fromOffset(0,0); diagnostics.Size=UDim2.new(1,-8,1,0)
+    diagnostics.TextXAlignment=Enum.TextXAlignment.Left; diagnostics.TextYAlignment=Enum.TextYAlignment.Top; diagnostics.TextSize=11; diagnostics.TextWrapped=true; self.diagnostics=diagnostics
+    local apply=text(panel,"TextButton","ApplyHardware"); apply.Position=UDim2.new(0,0,1,-28); apply.Size=UDim2.new(.5,-4,0,28); apply.Text="Apply (program stopped)"; self.applyHardware=apply
+    self.runtimeReadings={}
+    local handbook=text(frame,"TextButton","OpenHandbook")
+    handbook.Position=UDim2.fromOffset(12,39); handbook.Size=UDim2.new(.5,-18,0,22)
+    handbook.Text="BW Handbook"; handbook.TextSize=12; handbook.Selectable=true; self.handbookButton=handbook
+    self.handbook=HandbookView.new(frame)
+    local function connect(event,callback) table.insert(self.connections,event:Connect(callback)) end
+	connect(handbook.Activated,function()
+        editor:ReleaseFocus(); output:ReleaseFocus(); configEditor:ReleaseFocus()
+        self.handbook:open()
+    end)
+    connect(hardware.Activated,function() panel.Visible=not panel.Visible; scroll.Visible=not panel.Visible end)
+    connect(apply.Activated,function()
+        local configuration,reason=self:parseHardware(configEditor.Text)
+        if not configuration then diagnostics.Text="Configuration: "..reason; return end
+        if onConfigure then onConfigure(configuration) end
+    end)
+    connect(toggle.Activated,function()
 		frame.Visible=not frame.Visible
 		if not frame.Visible then self:close() end
 	end)
@@ -93,17 +122,21 @@ function IDE.new(playerGui,onRun,onStop)
 	return self
 end
 function IDE:close()
+	self.handbook:close()
+	self.output:ReleaseFocus()
 	self.editor:ReleaseFocus()
 	self.frame.Visible=false
 end
 -- Editing and pending acknowledgments belong to the selected persistent tank.
 function IDE:bind(id)
 	if self.tankId==id then return end
+	self.handbook:close()
 	if self.tankId then
 		self.sources[self.tankId]=self.editor.Text
 		self.requests[self.tankId]=self.pendingRequest
 	end
 	self.editor:ReleaseFocus()
+	self.output:ReleaseFocus()
 	self.tankId=id; self.editor.Text=self.sources[id] or Config.DefaultSource
 	self.pendingRequest=self.requests[id]; self.running=false
 	self:layoutSource()
@@ -121,8 +154,8 @@ function IDE:receiveOutput(id,generation,requestId,reading)
 	if #output.readings>Config.MaxOutputEvents then table.remove(output.readings,1) end
 	local lines={}
 	for _,entry in output.readings do
-		local label=if entry.kind=="print" then "print" elseif entry.angle~=nil then string.format("Scanner(%.6g) ->",entry.angle) else "Scanner"
-		table.insert(lines,string.format("%s • L%d • t=%.3f • %s",label,entry.line,entry.timestamp,entry.text))
+		local label=if entry.kind=="diagnostic" then "Log" elseif entry.kind=="print" then "print" elseif entry.angle~=nil then string.format("Scanner(%.6g) ->",entry.angle) elseif entry.kind=="scan" then "Scanner" else "Command"
+		table.insert(lines,string.format("%s • L%d • t=%.3f • %s",label,entry.line,entry.timestamp,"T"..tostring(entry.thread or 1).." • "..entry.text))
 	end
 	output.text="\n"..table.concat(lines,"\n")
 end
@@ -138,6 +171,11 @@ function IDE:layoutOutput(follow)
 	if follow then self.outputScroll.CanvasPosition=Vector2.new(self.outputScroll.CanvasPosition.X,math.max(0,height+8-viewport.Y)) end
 end
 function IDE:setOutput(message)
+	-- Keep live log updates from clearing a selection while the player copies.
+	if game:GetService("UserInputService"):GetFocusedTextBox()==self.output then
+        local first,last=self.output.SelectionStart or -1,self.output.CursorPosition or -1
+        if first>0 and last>0 and first~=last then return end
+    end
 	if self.output.Text==message then return end
 	local scroll=self.outputScroll
 	local canvas=scroll.CanvasSize
@@ -156,7 +194,54 @@ function IDE:layoutSource()
 	self.editor.Size=UDim2.fromOffset(width,height); self.gutter.Size=UDim2.fromOffset(34,height)
 	self.gutter.Text=table.concat(numbers,"\n"); self.scroll.CanvasSize=UDim2.fromOffset(width+48,height)
 end
+function IDE:parseHardware(source)
+ local lines={}; for line in (source.."\n"):gmatch("([^\n]*)\n") do if line:match("%S") then table.insert(lines,line) end end
+ local config={tier=lines[1],devices={}}
+ for i=2,#lines do
+  local name,bus,allocation=lines[i]:match("^(%w+)%s+(%d+)%s+([%d.]+)%s*$")
+  if not name or config.devices[name] then return nil,"Use: device bus allocation (one per line)." end
+  config.devices[name]={bus=tonumber(bus),allocation=tonumber(allocation)}
+ end
+ local ok,reason=Hardware.validate(config); if not ok then return nil,reason end
+ return config
+end
+function IDE:receiveRuntime(id,reading)
+ local old=self.runtimeReadings[id]
+ if not reading.configurationResult and old then reading.configurationResult=old.configurationResult end
+ self.runtimeReadings[id]=reading
+end
+function IDE:renderRuntime()
+ local reading=self.runtimeReadings[self.tankId]; if not reading then return end
+ local config=reading.configuration
+ if config and self.lastHardwareTank~=self.tankId then
+  self.lastHardwareTank=self.tankId; local lines={config.tier}; local names={}; for name in config.devices do table.insert(names,name) end; table.sort(names)
+  for _,name in names do local d=config.devices[name]; table.insert(lines,string.format("%s %d %g",name,d.bus,d.allocation)) end
+  self.configEditor.Text=table.concat(lines,"\n")
+ end
+ local spec=Hardware.Tiers[config and config.tier or "Hexadeca"]
+ local lines={string.format("%d threads, %d ticks, queue %d",spec.threads,spec.ticks,spec.queue),if reading.configurationResult then "Config: "..reading.configurationResult else "Device bus allocation%"}
+ local r=reading.runtime
+ if r then
+  table.insert(lines,string.format("%s • %.3fs • %d ticks/cycle",r.tier,r.clock,r.ticksPerCycle))
+  table.insert(lines,string.format("Scans: %d • log attempts: %d • omitted: %d",r.scanCount or 0,r.outputCount or 0,r.suppressedLogs or 0))
+  local ids={}; for id in r.threads do table.insert(ids,id) end; table.sort(ids)
+  for _,id in ids do local t=r.threads[id]; table.insert(lines,string.format("T%d L%d %s %s ticks=%.1f",id,t.line,t.state,t.waiting,t.ticks)) end
+  local names={}; for name in r.devices do table.insert(names,name) end; table.sort(names)
+  for _,name in names do local d=r.devices[name]; local idsInQueue={}; for _,c in d.queue do table.insert(idsInQueue,tostring(c.id)..":"..c.op) end
+   table.insert(lines,string.format("%s B%d %g%% active=%s Q[%s]",name,d.bus,d.allocation,if d.active then tostring(d.active.id)..":"..d.active.op else "idle",table.concat(idsInQueue,",")))
+   if d.lastScan then
+    local reading=d.lastScan
+    local result=if reading.status=="success" then tostring(reading.count).." objects" else reading.reason or "failed"
+    table.insert(lines,string.format("  scans %d ok / %d failed • %s @ %.3fs",d.scanSuccesses or 0,d.scanFailures or 0,result,reading.timestamp))
+   end
+  end
+ end
+ if r then for _,c in r.recent or {} do if c.state=="failed" or c.state=="cancelled" then table.insert(lines,string.format("#%d T%d %s %s",c.id,c.thread,c.state,c.reason or "")) end end end
+ self.diagnostics.Text=table.concat(lines,"\n")
+ local height=math.max(120,#lines*30); self.diagnostics.Size=UDim2.new(1,-8,0,height); self.diagnosticScroll.CanvasSize=UDim2.fromOffset(0,height)
+end
 function IDE:update(state)
+ self:renderRuntime()
 	if not state then self.running=false; self.current.Text="BW v0.2 • Waiting for tank"; return end
 	self.running=state.bwRunning==true
 	self.toggle.Text=(state.tankType or "Tank")..(if self.running then " • BW running" else " • BW Editor")
@@ -178,6 +263,7 @@ function IDE:update(state)
 end
 function IDE:destroy()
 	self.destroyed=true
+	self.handbook:destroy()
 	for _,connection in self.connections do connection:Disconnect() end
 	self.gui:Destroy()
 end

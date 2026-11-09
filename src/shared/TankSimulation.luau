@@ -54,6 +54,11 @@ local function suspension(state, dt)
 end
 function Simulation.step(state, command, dt, mapSize, environment)
 	command=DamageEffects.input(state,command)
+    if state.drivePerformance==0 or state.turretPerformance==0 then
+        command=table.clone(command)
+        if state.drivePerformance==0 then command.throttle=0; command.steer=0 end
+        if state.turretPerformance==0 then command.aimMode="Rate"; command.turretX=0; command.turretY=0 end
+    end
 	state.cooldown = math.max(0, state.cooldown - dt)
 	TurretRecoil.step(state,dt)
 	if Recoil.active(state) then
@@ -65,8 +70,8 @@ function Simulation.step(state, command, dt, mapSize, environment)
 	else
 		if state.health <= 0 then state.speed=0; state.firing=false; suspension(state,dt); return end
 		local speedScale = if environment then select(3,Environment.sample(environment,state.position.X,state.position.Z)) else 1
-		state.yaw += command.steer * Config.TurnSpeed * dt
-		state.speed = command.throttle * Config.Speed * speedScale
+		state.yaw += command.steer * Config.TurnSpeed * (state.drivePerformance or 1) * dt
+		state.speed = command.throttle * Config.Speed * speedScale * (state.drivePerformance or 1)
 		suspension(state,dt)
 		local nextPosition = state.position + Simulation.forward(state.yaw) * state.speed * dt
 		local edgeX = (if mapSize then mapSize.X/2 else Config.ArenaLimit) - Config.Radius
@@ -85,23 +90,23 @@ function Simulation.step(state, command, dt, mapSize, environment)
 	end
 	if command.aimMode == "Rate" then
 		-- Positive X aims right; positive Y elevates the cannon.
-		state.turretYaw -= command.turretX * Config.TurretSpeed * dt
-		state.turretPitch = math.clamp(state.turretPitch + command.turretY * Config.TurretPitchSpeed * dt,
+		state.turretYaw -= command.turretX * Config.TurretSpeed * (state.turretPerformance or 1) * dt
+		state.turretPitch = math.clamp(state.turretPitch + command.turretY * Config.TurretPitchSpeed * (state.turretPerformance or 1) * dt,
 			Config.MinPitch, Config.MaxPitch)
 	else
 		local delta = command.aim - state.position
 		if delta.Magnitude > 0.01 then
 			local desired = math.atan2(-delta.X, -delta.Z)
 			local difference = math.atan2(math.sin(desired - state.turretYaw), math.cos(desired - state.turretYaw))
-			state.turretYaw += math.clamp(difference, -Config.TurretSpeed * dt, Config.TurretSpeed * dt)
+			state.turretYaw += math.clamp(difference, -Config.TurretSpeed * (state.turretPerformance or 1) * dt, Config.TurretSpeed * (state.turretPerformance or 1) * dt)
 		end
 		-- Desktop retains its original horizontal mouse aiming.
 		state.turretPitch = 0
 	end
 end
 function Simulation.tryFire(state, command)
-	if state.health <= 0 or not command.fire or state.cooldown > 0 then return nil end
-	state.cooldown = Config.Cooldown
+	if state.health <= 0 or not command.fire or state.cooldown > 0 or (state.weaponPerformance or 1)<=0 then return nil end
+	state.cooldown = Config.Cooldown / (state.weaponPerformance or 1)
 	return Simulation.shotPose(state)
 end
 return Simulation

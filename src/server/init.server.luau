@@ -11,6 +11,7 @@ local environment = Environment.create(mapSize)
 local Command = require(Shared.InputCommand)
 local BWController = require(script.BWController)
 local ScannerConfig=require(Shared.ScannerConfig)
+local ScannerGeometry=require(Shared.ScannerGeometry)
 local ScannerValues=require(Shared.BWValue)
 local DirectionalScanner=require(script.DirectionalScanner)
 local ManualScanner=require(script.ManualScanner)
@@ -40,6 +41,9 @@ local selectTank = remote("SelectTank")
 local bwRun,bwStop = remote("BWRun"),remote("BWStop")
 local resetBattle = remote("ResetBattle")
 local bwOutput=remote("BWOutput")
+local bwHardware=remote("BWHardware")
+local bwRuntimeState=remote("BWRuntimeState")
+local Hardware=require(Shared.BWChassis)
 network.Parent = ReplicatedStorage
 local tanks, targets, battles = {}, {}, {}
 local arena = Instance.new("Folder")
@@ -97,16 +101,27 @@ local scanner=DirectionalScanner.new(workspace,function()
 end)
 local function publishScan(tank,angle,observation,manual)
 	local values=observation.value
-	local distance=if values[2]~=ScannerValues.Null then values[2] else nil
+    -- Show the strongest completed observation; a nearby wall must not mask a
+    -- visible enemy elsewhere in this same cone.
+    local priority=if values.type=="tank" then (if values.relation=="enemy" then 4 else 3) elseif values.type=="wall" then 2 else 1
+    for _,detection in values.detections or {} do
+        local rank=if detection.type=="tank" then (if detection.relation=="enemy" then 4 else 3) else 2
+        if rank>priority then values=detection; priority=rank end
+    end
+	local distance=if values.distance~=ScannerValues.Null then values.distance else nil
 	tank.scanSerial=(tank.scanSerial or 0)+1
 	-- Public decoration state contains no name, exact range, target ID or hit point.
-	local visual={serial=tank.scanSerial,angle=angle,kind=if values[1]~=ScannerValues.Null then values[1] else "none",
-		affiliation=if values[5]~=ScannerValues.Null then values[5] else nil,
+	local visual={serial=tank.scanSerial,angle=angle,kind=if values.type~=ScannerValues.Null then values.type else "none",
+		affiliation=if values.relation~=ScannerValues.Null then values.relation else nil,
 		proximity=if not distance then 0 elseif distance<=ScannerConfig.NearDistance then 1 elseif distance<=ScannerConfig.MidDistance then 0.55 else 0.2,
 		remaining=if manual then ScannerConfig.ManualVisualDuration else ScannerConfig.VisualDuration}
 	if manual then
 		ManualScanner.record(tank,angle,visual)
-	else tank.state.scanVisual=visual end
+	else
+        tank.state.scanBW=tank.state.scanBW or {}
+        tank.state.scanBW[tostring(ScannerGeometry.sensorIndex(angle))]=visual
+        tank.state.scanVisual=table.clone(visual) -- legacy latest event; separate expiry
+    end
 end
 local spawnCount = 0
 local function owned(player,id)
@@ -127,18 +142,30 @@ local function addPlayer(player)
 		Battle.resetTank(tank,mapSize,spawnCount,"Battle started.")
 		tanks[id]=tank; battle.tanks[id]=tank
 		tank.bwServices={
-			scan=function(angle)
-				local observation,err=scanner:execute(tank,angle,simulationTime)
+			getClock=function() return simulationTime end,
+            cancelWeapon=function() tank.pendingShot=nil; tank.rattlerShot=false end,
+            scan=function(angle,performance,time,hardware)
+				local observation,err=scanner:execute(tank,angle,simulationTime,hardware)
 				if observation then publishScan(tank,angle,observation,false) end
 				return observation,err
 			end,
-			onValue=function(observation,line,angle)
+            onEvent=function(event)
+                if event.kind~="scan" and event.kind~="print" then bwOutput:FireClient(player,id,tank.state.generation,tank.bwRunRequestId or 0,event) end
+            end,
+			onValue=function(observation,line,angle,thread)
+                local value=observation.value
+                local text=ScannerValues.format(value)
+                if value.detections then
+                    local lines={string.format("%d detections • range %.6g studs",value.count,value.range)}
+                    for index,detection in value.detections do table.insert(lines,string.format("[%d] %s",index-1,ScannerValues.format(detection))) end
+                    text=table.concat(lines,"\n")
+                end
 				bwOutput:FireClient(player,id,tank.state.generation,tank.bwRunRequestId or 0,
-					{kind="scan",angle=angle,text=ScannerValues.format(observation.value),timestamp=observation.timestamp,line=line})
+					{thread=thread,kind="scan",angle=angle,text=text,timestamp=observation.timestamp,line=line})
 			end,
-			onPrint=function(text,line)
+			onPrint=function(text,line,thread)
 				bwOutput:FireClient(player,id,tank.state.generation,tank.bwRunRequestId or 0,
-					{kind="print",text=text,timestamp=simulationTime,line=line})
+					{thread=thread,kind="print",text=text,timestamp=simulationTime,line=line})
 			end,
 		}
 	end
@@ -186,6 +213,13 @@ end)
 bwStop.OnServerEvent:Connect(function(player,requestId,id)
 	local tank=owned(player,id)
 	if tank and acceptBWRequest(tank,requestId) then BWController.stop(tank,"Stopped by player.") end
+end)
+bwHardware.OnServerEvent:Connect(function(player,configuration,id)
+ local tank=owned(player,id); if not tank then return end
+ local now=os.clock(); if now-(tank.lastHardwareRequest or -math.huge)<0.25 then return end
+ tank.lastHardwareRequest=now
+ local ok,reason=BWController.configure(tank,configuration)
+ bwRuntimeState:FireClient(player,id,{configuration=Hardware.copy(tank.hardware or Hardware.forTank(tank.state.tankType)),configurationResult=if ok then "success" else reason})
 end)
 local shellFolder = Instance.new("Folder")
 shellFolder.Name = "ArtilleryShells"; shellFolder.Parent = workspace
@@ -298,12 +332,18 @@ RunService.Heartbeat:Connect(function(dt)
 		for p, target in targets do PracticeTargets.update(p, target, now, tanks) end
 		for id, tank in tanks do
 			DamageEffects.step(tank.effects,tank.state,Config.Step)
-			local visual=tank.state.scanVisual
+			BWController.applyHardware(tank)
+            local visual=tank.state.scanVisual
 			if visual then visual.remaining=math.max(0,visual.remaining-Config.Step); if visual.remaining==0 then tank.state.scanVisual=nil end end
+            for key,event in tank.state.scanBW or {} do
+                event.remaining=math.max(0,event.remaining-Config.Step)
+                if event.remaining==0 then tank.state.scanBW[key]=nil end
+            end
+            if tank.state.scanBW and next(tank.state.scanBW)==nil then tank.state.scanBW=nil end
 			local command = if tank.state.health<=0 then Command.neutral() else BWController.input(tank,Config.Step) or (if now - tank.lastInput <= Config.InputTimeout then tank.command else Command.neutral())
 			tank.tickCommand=command
 			local trigger = command.fire and not tank.requireFireRelease
-			tank.rattlerShot = RattlerWeapon.step(tank.rattler,tank.state.tankType == "Rattler" and tank.state.health > 0,trigger,Config.Step)
+			tank.rattlerShot = RattlerWeapon.step(tank.rattler,tank.state.tankType == "Rattler" and tank.state.health > 0,trigger,Config.Step,tank.state.weaponPerformance)
 			tank.state.firing = tank.state.tankType == "Rattler" and tank.rattler.firing
 			tank.state.heat = tank.rattler.heat; tank.state.weaponCooldown = tank.rattler.cooldown
 		end
@@ -312,7 +352,12 @@ RunService.Heartbeat:Connect(function(dt)
 		for id,tank in tanks do
 			local battle=battles[tank.owner]
 			ManualScanner.step(tank,battle and battle.selected==id and not BWController.running(tank),simulationTime,Config.Step,
-				function(angle) return scanner:execute(tank,angle,simulationTime) end,
+				function(angle)
+                    local sensor=math.floor((angle%360+22.5)/45)%8*45
+                    local hardware=tank.hardware.devices["sensor"..sensor]
+                    if not hardware or hardware.allocation<=0 then return nil end
+                    return scanner:execute(tank,angle,simulationTime,hardware)
+                end,
 				function(angle,observation) publishScan(tank,angle,observation,true) end)
 		end
 		-- All BW observations precede movement, so every hitbox/state corresponds
@@ -380,7 +425,18 @@ RunService.Heartbeat:Connect(function(dt)
 		snapshotClock %= Config.SnapshotInterval
 		local states = {}
 		for id, tank in tanks do states[tostring(id)] = tank.state end
-		local battleStates={}
+		for owner,battle in battles do
+            local player=Players:GetPlayerByUserId(owner)
+            if player then
+                for id,tank in battle.tanks do
+                    if simulationTime-(tank.lastDiagnostics or -math.huge)>=0.2 then
+                        tank.lastDiagnostics=simulationTime
+                        bwRuntimeState:FireClient(player,id,{configuration=Hardware.copy(tank.hardware or Hardware.forTank(tank.state.tankType)),runtime=if tank.bw then tank.bw:diagnostics() else nil})
+                    end
+                end
+            end
+        end
+        local battleStates={}
 		for owner,battle in battles do battleStates[tostring(owner)]={selected=battle.selected,winner=battle.winner} end
 		snapshot:FireAllClients(states,battleStates)
 	end

@@ -1,5 +1,32 @@
 # BattleWorks: Boomer and Rattler
 
+**BW language reference:** [BW_LANGUAGE.md](docs/BW_LANGUAGE.md) — syntax, all commands, inputs/returns, CPU costs, buses, loops, scanners and examples.
+
+
+## Continuous scanning loops
+
+Valid scan/print loops now use rolling histories instead of lifetime scan/log/command quotas: 128 recent scan snapshots, 256 IDE output entries, and 512 terminal command records plus active/queued work. Excessive logging is rate-limited with an explicit notice; it does not stop the tank program. The eight-thread scanner example requires Rattler (Octa); Boomer remains single-core. CPU/queue/scanner-rate limits and the normal 180-second program timeout still apply.
+
+## Compass bearings and facing query
+
+`get_facing_direction()` now returns the tank body's authoritative compass heading in `.world_direction` (0 north, 90 east, 180 south, 270 west). Scanner `direction` has been renamed to `relative_direction`; each detection and nearest result now also includes `world_direction`. You can pass a hit's world_direction directly to `turn_right(to=...)` or `turret_right(to=...)`, without knowing your chassis heading. Update existing programs that read scan.direction. See [BW_LANGUAGE.md](docs/BW_LANGUAGE.md) for the full contract.
+
+## Scanner positions and while loops (2026-11-09)
+
+`Scanner(position=0..7)` selects a physical sensor by index: 0 = 0°, 1 = 45°, …, 4 = 180°, 7 = 315°. It is an alias for the existing degree argument, with the same cost, hardware validation, cooldown and result; the returned `sensor` remains degrees. Do not supply both angle and position.
+
+`while condition:` now supports repeated execution with four-space indentation. It stops on false, null, 0, an empty string, an empty list or an empty dictionary. The condition is reevaluated each iteration and costs one tick plus expression costs. Existing CPU budgets, Stop, lifecycle cleanup and execution limits apply. See the in-game **While loops** handbook topic and [runtime guide](docs/BW_RUNTIME.md). Earlier historical “no loops” notes below are superseded; if/logical operators retain their strict boolean contracts.
+
+## Concurrent BW runtime (2026-11-08)
+
+The BW editor now supports deterministic chassis threads, shared variables/waits, CPU tick budgets, bus allocations, independent device queues and dictionary command results. Scanner arrays are replaced by immutable dictionaries with acquisition timestamps and visible world hit points. Each scan now includes a nearest-first `detections` list and `count` for all visible tanks/walls in its cone. Radar distance defaults to 150 studs at 100% effectiveness, independently of current bus allocation; hardware range fields are ready for future equipment configuration. Movement/turret/fire calls submit work without blocking; inspect `command_status()` for completion.
+
+Open **BW Editor → BW Handbook** for a selectable, read-only reference popup. Its topic tabs explain CPU cycles/ticks, chassis buses and reservations, device busy/queue timing, every command's inputs/returns/base tick cost, scanner result fields, shared-state waits, and practical programs. Costs and tuning values come from the current runtime configuration. Reading it does not pause execution.
+
+Open **BW Editor → Hardware / threads** to inspect or edit the selected tank's chassis, device buses and allocations while its program is stopped. Boomer defaults to Bunny (1 core/bus); Rattler defaults to Octa (8 cores/buses). Their device allocations follow the existing performance curve; Boomer shares its one bus, while Rattler spreads devices across all eight. The existing tank simulation, recoil, weapons and combat remain in place.
+
+See [runtime guide and executable examples](docs/BW_RUNTIME.md) and the [verified implementation checklist](docs/BW_RUNTIME_IMPLEMENTATION_CHECKLIST.md), which supersede older BW contracts below. Native Studio validation remains necessary; nothing was committed or pushed automatically.
+
 Two persistent tanks per player in a local combat test arena. Choose **Bullet Boomer** (Boomer), the orange tracked cannon tank, or **Rattler**, the green four-wheeled Gatling car inspired by the bottom-left concept in `references/tank-styles.png`. Built from Roblox Parts with shared server-authoritative combat; no external packages are required. BW v0.2 provides an in-game editor and bounded server-authoritative programs with variables, expressions and branching.
 
 For detailed implementation notes, known limitations, and future-session context, read [the Codex handoff](CODEX_HANDOFF.md).
