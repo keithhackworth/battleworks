@@ -1,3 +1,4 @@
+local DefaultFootprint=require(script.Parent.ComponentCatalog)["chassis.standard"].Properties
 -- Deterministic terrain descriptions shared by rendering and authoritative movement.
 local Environment = {}
 local function noise(i, seed)
@@ -69,15 +70,17 @@ function Environment.blocked(data,x,z,radius)
 	end
 	return false
 end
-function Environment.pose(data,position,yaw)
+function Environment.pose(data,position,yaw,footprint)
+ local shape=footprint or DefaultFootprint
+ local length,width=shape.ContactLength,shape.ContactWidth
 	local x,z=position.X,position.Z
 	local s,c=math.sin(yaw),math.cos(yaw)
 	local center,kind,speed=Environment.sample(data,x,z)
-	local front=Environment.sample(data,x-s*2.8,z-c*2.8)
-	local rear=Environment.sample(data,x+s*2.8,z+c*2.8)
-	local right=Environment.sample(data,x+c*2.5,z-s*2.5)
-	local left=Environment.sample(data,x-c*2.5,z+s*2.5)
-	return math.max(center,(front+rear+right+left)/4), math.atan2(front-rear,5.6),
-		math.atan2(right-left,5),kind,speed
+	local front=Environment.sample(data,x-s*length/2,z-c*length/2)
+	local rear=Environment.sample(data,x+s*length/2,z+c*length/2)
+	local right=Environment.sample(data,x+c*width/2,z-s*width/2)
+	local left=Environment.sample(data,x-c*width/2,z+s*width/2)
+	return math.max(center,(front+rear+right+left)/4), math.atan2(front-rear,length),
+		math.atan2(right-left,width),kind,speed
 end
 return Environment

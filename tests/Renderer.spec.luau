@@ -80,6 +80,9 @@ check(boomer.barrelBulge.Transparency==1 and boomer.cannon.Size.Y==1.6,"Boomer s
 state.bodyPitch=0.2; state.bodyRoll=0.1; state.bounce=0.3
 boomer:resetPose(state); boomer:update(state,1/60)
 check(boomer.muzzleFrame.LookVector.Y>0.15,"shared turret inherits suspension tilt")
+state.health=150; state.maxHealth=200; boomer:update(state,1/60)
+check(boomer.healthLabel.Text:find("150/200",1,true) and boomer.healthBar.Size.X.Scale==0.75,"health display uses replicated component durability")
+state.health=100; state.maxHealth=100
 local rattler=Renderer.new("rattler","Rattler")
 local rs=Sim.new(Vector3.new(0,10,0),"Rattler"); rs.lift=10; rs.firing=true
 rattler:resetPose(rs); rattler:update(rs,1/60)

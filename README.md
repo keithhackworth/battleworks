@@ -27,7 +27,7 @@ Open **BW Editor → Hardware / threads** to inspect or edit the selected tank's
 
 See [runtime guide and executable examples](docs/BW_RUNTIME.md) and the [verified implementation checklist](docs/BW_RUNTIME_IMPLEMENTATION_CHECKLIST.md), which supersede older BW contracts below. Native Studio validation remains necessary; nothing was committed or pushed automatically.
 
-Two persistent tanks per player in a local combat test arena. Choose **Bullet Boomer** (Boomer), the orange tracked cannon tank, or **Rattler**, the green four-wheeled Gatling car inspired by the bottom-left concept in `references/tank-styles.png`. Built from Roblox Parts with shared server-authoritative combat; no external packages are required. BW v0.2 provides an in-game editor and bounded server-authoritative programs with variables, expressions and branching.
+Two persistent tanks per player in a local combat test arena. Current component test loadouts are **Bullet Boomer**, the orange tracked body carrying the Gatling, and **Rattler**, the green four-wheeled body carrying the cannon. The weapons were intentionally swapped to verify that recoil/rattling and firing effects follow the gun; older development notes below describe the original loadouts. Built from Roblox Parts with shared server-authoritative combat; no external packages are required. BW v0.2 provides an in-game editor and bounded server-authoritative programs with variables, expressions and branching.
 
 For detailed implementation notes, known limitations, and future-session context, read [the Codex handoff](CODEX_HANDOFF.md).
 
@@ -175,11 +175,11 @@ For live source updates, install the matching Rojo Studio plugin, run `rojo serv
 - **W / S:** forward / reverse along the chassis direction.
 - **A / D:** Boomer rotates left/right, including while stationary. Rattler steers its front wheels while moving; steering reverses naturally when backing up.
 - **Mouse:** aim the turret at the cursor's intersection with cannon height; rotation has a server-enforced speed limit.
-- **Left click (hold):** Boomer fires every 0.65 seconds after its 0.20-second cannon swell. Rattler fires rapidly and lifts under recoil, with a 3-second heat/burst limit and mandatory 2-second overheat cooldown.
+- **Left click (hold):** The Gatling (currently Boomer) fires rapidly and launches/rattles its carrier, with a 3-second burst limit and mandatory 2-second cooldown. The cannon (currently Rattler) swells for0.20 seconds and has a0.65-second base interval. Existing bus allocation scales firing/preparation speed.
 - **Boomer / Rattler buttons:** select control/camera focus below the Input button. Both tanks remain in the arena; switching releases manual controls without resetting either tank or stopping BW.
 - **Reset Battle:** restore both tanks to 100 HP, their original inward-facing spawns, fresh weapons/cooldowns and no residual recoil or active projectiles. Stops both programs; editor source is retained.
 
-The fixed 50°/45° map camera uses a strict central 20% dead zone and a wider default view; small readable maps remain fully framed. The HUD shows health and reload state. Overhead health headers sit 10 studs above the chassis, with 65% transparent label/track backgrounds to avoid covering the tank. Five orange practice targets each take four hits and reset five seconds after destruction when their space is clear. Both tanks start at 100 HP and show a health bar plus numeric HP. Boomer deals 25 damage per shell; Rattler deals 6 per round. Opposing tanks can destroy each other, without self-damage or duplicate impact damage. For a fatal cannon hit, a 24-stud fireball, 40-stud shockwave, fiery bursts, rising smoke and a low boom accompany the complete turret/gun launching off the hull. Boomer’s eight road wheels or Rattler’s four tire assemblies scatter, tumble and settle. All vehicle pieces turn grey and remain as a solid wreck; controls/BW stop and the HUD announces the winner (or a double-KO draw). The breakup is cosmetic and cannot deal damage or block projectiles. Press Reset Battle to try again. The arena walls, targets, and other tanks block movement. Controls clear when the window loses focus or a text field gains focus. Server commands expire after 0.35 seconds without a valid update.
+The fixed 50°/45° map camera uses a strict central 20% dead zone and a wider default view; small readable maps remain fully framed. The HUD shows health and reload state. Overhead health headers sit 10 studs above the chassis, with 65% transparent label/track backgrounds to avoid covering the tank. Five orange practice targets each take four hits and reset five seconds after destruction when their space is clear. Both tanks start at 100 HP and show a health bar plus numeric HP. The cannon deals25 damage per shell; the Gatling deals6 per round, regardless of carrier. Opposing tanks can destroy each other, without self-damage or duplicate impact damage. For a fatal cannon hit, a 24-stud fireball, 40-stud shockwave, fiery bursts, rising smoke and a low boom accompany the complete turret/gun launching off the hull. Boomer’s eight road wheels or Rattler’s four tire assemblies scatter, tumble and settle. All vehicle pieces turn grey and remain as a solid wreck; controls/BW stop and the HUD announces the winner (or a double-KO draw). The breakup is cosmetic and cannot deal damage or block projectiles. Press Reset Battle to try again. The arena walls, targets, and other tanks block movement. Controls clear when the window loses focus or a text field gains focus. Server commands expire after 0.35 seconds without a valid update.
 
 ## Android, touch, and input settings
 
@@ -211,6 +211,10 @@ FIRE:      TRUE
 ```
 
 These are the local normalized command values sampled for the outbound relay, **not server acknowledgments**. The debug display updates each render frame; gameplay input is transmitted at 30 Hz. Server validation clamps all four axes and rejects NaN, infinity, invalid modes/types, and malformed world aim. Cooldown/damage/hit results remain exclusively server-owned.
+
+## Component configuration
+
+See [VEHICLE_COMPONENTS.md](docs/VEHICLE_COMPONENTS.md) for the typed catalog, ID-based vehicle assemblies, resolver, component boundaries and upgrade examples. Steering/pivot capabilities now follow installed mobility; both default tanks support persistent BW steering. Existing model-specific art remains unchanged.
 
 ## Architecture
 

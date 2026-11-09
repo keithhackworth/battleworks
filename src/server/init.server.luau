@@ -18,7 +18,7 @@ local ManualScanner=require(script.ManualScanner)
 local DamageEffects = require(Shared.DamageEffects)
 local Simulation = require(Shared.TankSimulation)
 local MovementTelemetry = require(Shared.MovementTelemetry)
-local TankDefinitions = require(Shared.TankDefinitions)
+local Components = require(Shared.VehicleComponents)
 local TurretRecoil = require(Shared.TurretRecoil)
 local RattlerRecoil = require(Shared.RattlerRecoil)
 local RattlerWeapon = require(Shared.RattlerWeapon)
@@ -135,7 +135,8 @@ local function addPlayer(player)
 	local battle=Battle.new(player.UserId,spawnCount); battles[player.UserId]=battle
 	for _,kind in {"Boomer","Rattler"} do
 		local id=Battle.id(player.UserId,kind)
-		local hitbox=part("TankHitbox",Vector3.new(8,5,10),Vector3.zero,Color3.new())
+		local size=Components.get(kind).Chassis.Hitbox
+		local hitbox=part("TankHitbox",Vector3.new(size.X,size.Y,size.Z),Vector3.zero,Color3.new())
 		hitbox.Transparency=1; hitbox.CanCollide=false
 		hitbox:SetAttribute("OwnerId",player.UserId); hitbox:SetAttribute("TankId",id)
 		local tank={owner=player.UserId,playerName=player.Name,kind=kind,seed=(math.abs(player.UserId)+(if kind=="Rattler" then 7919 else 0))%2147483646+1,hitbox=hitbox,lastPacket=0}
@@ -219,7 +220,7 @@ bwHardware.OnServerEvent:Connect(function(player,configuration,id)
  local now=os.clock(); if now-(tank.lastHardwareRequest or -math.huge)<0.25 then return end
  tank.lastHardwareRequest=now
  local ok,reason=BWController.configure(tank,configuration)
- bwRuntimeState:FireClient(player,id,{configuration=Hardware.copy(tank.hardware or Hardware.forTank(tank.state.tankType)),configurationResult=if ok then "success" else reason})
+ bwRuntimeState:FireClient(player,id,{configuration=Hardware.copy(tank.hardware or Hardware.forTank(tank.state)),configurationResult=if ok then "success" else reason})
 end)
 local shellFolder = Instance.new("Folder")
 shellFolder.Name = "ArtilleryShells"; shellFolder.Parent = workspace
@@ -240,19 +241,19 @@ end
 local function launchShell(id, tank, origin, direction, deferEffects)
 	-- Spawn at the muzzle after checking the pivot-to-tip path for cover.
 	tank.state.weaponShotSerial=(tank.state.weaponShotSerial or 0)+1
-	local tuning = TankDefinitions.get(tank.state.tankType).Weapon
+	local tuning = Components.get(tank.state).Weapon
 	local shell, blocked = Projectiles.launch(workspace,origin,direction,{tank.hitbox,shellFolder},tuning,floor.Position.Y+floor.Size.Y/2)
-	local small = tank.state.tankType == "Rattler"
+	local small = Components.get(tank.state).Weapon.Operation=="Heat"
 	shell.pendingHit = blocked
 	shell.owner = id
-	shell.weaponType=TankDefinitions.get(tank.state.tankType).WeaponType
+	shell.weaponType=Components.get(tank.state).Weapon.WeaponType
 	shell.visualScale = if small then 0.4 else 1
 	shell.model = Instance.new("Model"); shell.model.Name = "Shell_" .. id; shell.model.Parent = shellFolder
 	shell.body = shellPart(shell.model,"Body",Vector3.new(1.5,1.3,1.3)*(if small then 0.4 else 1),Color3.fromRGB(77,87,57),Enum.PartType.Cylinder)
 	shell.nose = shellPart(shell.model,"Nose",Vector3.new(1.3,1.3,1.3)*(if small then 0.4 else 1),Color3.fromRGB(244,158,36),Enum.PartType.Ball)
 	shell.band = shellPart(shell.model,"Band",Vector3.new(0.3,1.4,1.4)*(if small then 0.4 else 1),Color3.fromRGB(255,215,64),Enum.PartType.Cylinder)
 	poseShell(shell); table.insert(shells,shell)
-	if not deferEffects then shot:FireAllClients(id,shell.position,direction,tank.state.tankType,tank.state.generation) end
+	if not deferEffects then shot:FireAllClients(id,shell.position,direction,tank.state.tankType,tank.state.generation,nil,tank.state.weaponId) end
 	if arena:GetAttribute("DebugCombat") then
 		print("[BattleWorks shell launch]",id,"muzzle",shell.position,"direction",direction,"speed",shell.speed)
 	end
@@ -343,8 +344,8 @@ RunService.Heartbeat:Connect(function(dt)
 			local command = if tank.state.health<=0 then Command.neutral() else BWController.input(tank,Config.Step) or (if now - tank.lastInput <= Config.InputTimeout then tank.command else Command.neutral())
 			tank.tickCommand=command
 			local trigger = command.fire and not tank.requireFireRelease
-			tank.rattlerShot = RattlerWeapon.step(tank.rattler,tank.state.tankType == "Rattler" and tank.state.health > 0,trigger,Config.Step,tank.state.weaponPerformance)
-			tank.state.firing = tank.state.tankType == "Rattler" and tank.rattler.firing
+			tank.rattlerShot = RattlerWeapon.step(tank.rattler,Components.get(tank.state).Weapon.Operation=="Heat" and tank.state.health > 0,trigger,Config.Step,tank.state.weaponPerformance)
+			tank.state.firing = Components.get(tank.state).Weapon.Operation=="Heat" and tank.rattler.firing
 			tank.state.heat = tank.rattler.heat; tank.state.weaponCooldown = tank.rattler.cooldown
 		end
 		-- BW gets first use of the shared query budget. Manual sweeps run only for
@@ -369,24 +370,24 @@ RunService.Heartbeat:Connect(function(dt)
 			Simulation.step(tank.state, command, Config.Step, mapSize, environment)
 			for p, target in targets do
 				local delta = tank.state.position - p.Position
-				if target.health > 0 and math.abs(delta.X) < p.Size.X / 2 + Config.Radius
-					and math.abs(delta.Z) < p.Size.Z / 2 + Config.Radius then
+				if target.health > 0 and math.abs(delta.X) < p.Size.X / 2 + Components.get(tank.state).Chassis.Radius
+					and math.abs(delta.Z) < p.Size.Z / 2 + Components.get(tank.state).Chassis.Radius then
 					if RattlerRecoil.active(tank.state) then RattlerRecoil.resolveBlocked(tank.state,previous,environment) else tank.state.position=previous end; break
 				end
 			end
 			for _, other in tanks do
-				if other ~= tank and (other.state.position - tank.state.position).Magnitude < Config.Radius * 2 then
+				if other ~= tank and (other.state.position - tank.state.position).Magnitude < Components.get(tank.state).Chassis.Radius+Components.get(other.state).Chassis.Radius then
 					if RattlerRecoil.active(tank.state) then RattlerRecoil.resolveBlocked(tank.state,previous,environment) else tank.state.position=previous end; break
 				end
 			end
 			MovementTelemetry.update(tank.state,previous,Config.Step)
-			tank.hitbox.CFrame = CFrame.new(tank.state.position + Vector3.new(0, 2.5, 0)) * CFrame.Angles(0, tank.state.yaw, 0)
+			tank.hitbox.CFrame = CFrame.new(tank.state.position + Vector3.new(0, Components.get(tank.state).Chassis.HitboxHeight, 0)) * CFrame.Angles(0, tank.state.yaw, 0)
 			tank.hitbox.CanQuery = tank.state.health > 0
 		end
 		updateShells(now)
 		for id, tank in tanks do
 			local command = tank.tickCommand or Command.neutral()
-			if tank.state.tankType == "Rattler" then
+			if Components.get(tank.state).Weapon.Operation=="Heat" then
 				if tank.rattlerShot and tank.state.health > 0 then
 					local origin,direction = Simulation.shotPose(tank.state)
 					tank.state.weaponActivationSerial=(tank.state.weaponActivationSerial or 0)+1
@@ -394,7 +395,7 @@ RunService.Heartbeat:Connect(function(dt)
 					TurretRecoil.kick(tank.state,tank.rattler)
 					RattlerRecoil.kick(tank.state,tank.rattler.heat,direction)
 					shot:FireAllClients(id,shell.position,direction,tank.state.tankType,tank.state.generation,
-						{serial=tank.state.flightShotSerial,roll=tank.state.flightRoll})
+						{serial=tank.state.flightShotSerial,roll=tank.state.flightRoll},tank.state.weaponId)
 				end
 				continue
 			end
@@ -413,7 +414,7 @@ RunService.Heartbeat:Connect(function(dt)
 				tank.pendingShot = WeaponWindup.begin(tank.state, command)
 				if tank.pendingShot then
 					tank.state.weaponActivationSerial=(tank.state.weaponActivationSerial or 0)+1
-					prepareShot:FireAllClients(id,"Boomer",tank.state.generation)
+					prepareShot:FireAllClients(id,tank.state.tankType,tank.state.generation,tank.state.weaponId)
 				end
 			end
 		end
@@ -431,7 +432,7 @@ RunService.Heartbeat:Connect(function(dt)
                 for id,tank in battle.tanks do
                     if simulationTime-(tank.lastDiagnostics or -math.huge)>=0.2 then
                         tank.lastDiagnostics=simulationTime
-                        bwRuntimeState:FireClient(player,id,{generation=tank.state.generation,requestId=tank.bwRunRequestId or 0,configuration=Hardware.copy(tank.hardware or Hardware.forTank(tank.state.tankType)),runtime=if tank.bw then tank.bw:diagnostics() else nil})
+                        bwRuntimeState:FireClient(player,id,{generation=tank.state.generation,requestId=tank.bwRunRequestId or 0,configuration=Hardware.copy(tank.hardware or Hardware.forTank(tank.state)),runtime=if tank.bw then tank.bw:diagnostics() else nil})
                     end
                 end
             end

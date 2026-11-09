@@ -1,5 +1,6 @@
 -- A driver-only sweep. This never feeds BW values, output logs or CPU accounting.
 local Config=require(game.ReplicatedStorage.Shared.ScannerConfig)
+local Components=require(game.ReplicatedStorage.Shared.VehicleComponents)
 local Geometry=require(game.ReplicatedStorage.Shared.ScannerGeometry)
 local Manual={}
 local function priority(event)
@@ -28,11 +29,13 @@ function Manual.step(tank,enabled,time,dt,scan,publish)
 	end
 	tank.manualSensors=tank.manualSensors or {}
 	local completed=false
+	local hardware=Components.get(state).Sensors
 	for index=1,Config.SensorCount do
+        local installed=hardware[(index-1)*45]; if not installed then continue end
 		local sensor=tank.manualSensors[index]
 		if not sensor then sensor={nextTime=time,phase=0}; tank.manualSensors[index]=sensor end
 		if time<sensor.nextTime-1e-8 then continue end
-		sensor.nextTime=math.max(sensor.nextTime+Config.ManualSensorInterval,time+Config.SensorCooldown)
+		sensor.nextTime=math.max(sensor.nextTime+Config.ManualSensorInterval,time+installed.Cooldown)
 		local offset=if sensor.phase==0 then 0 elseif sensor.phase==1 then Config.ManualStep else -Config.ManualStep
 		local angle=((index-1)*360/Config.SensorCount+offset)%360
 		local observation=scan(angle)

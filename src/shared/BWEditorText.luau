@@ -1,36 +1,219 @@
--- Four-space indentation assistance; parser remains the authority on block syntax.
+-- Pure byte-indexed editor operations. Paste/native edits are never normalized.
 local Config=require(script.Parent.BWConfig)
 local Lexer=require(script.Parent.BWLexer)
 local Text={}
-function Text.edit(previous,source,cursor)
-	cursor=cursor or -1
-	if cursor>1 and #source==#previous+1 and source:sub(cursor-1,cursor-1)=="\n"
-		and source:sub(1,cursor-2)..source:sub(cursor)==previous then
-		local line=source:sub(1,cursor-2):match("([^\n]*)$") or ""
-		local prefix=line:match("^[ \t]*")
-		local extra=0
-		local ok,tokens=pcall(Lexer.line,line,1)
-		if ok and #tokens>1 and tokens[#tokens-1].kind==":" then extra=Config.IndentWidth end
-		local indent=prefix..string.rep(" ",extra)
-		source=source:sub(1,cursor-1)..indent..source:sub(cursor); cursor+=#indent
-	end
-	local out,offset,delta={},1,0
-	for line,ending in (source.."\n"):gmatch("([^\n]*)(\n)") do
-		local originalLength=#line
-		local prefix=line:match("^[ \t]*"); local columns=0
-		for c in prefix:gmatch(".") do columns=if c=="\t" then (math.floor(columns/Config.IndentWidth)+1)*Config.IndentWidth else columns+1 end
-		if prefix:find("\t",1,true) then
-			local replacement=string.rep(" ",columns)
-			if cursor>=offset+#prefix then delta+=#replacement-#prefix
-			elseif cursor>=offset then
-				local before=prefix:sub(1,cursor-offset); local width=0
-				for c in before:gmatch(".") do width=if c=="\t" then (math.floor(width/Config.IndentWidth)+1)*Config.IndentWidth else width+1 end
-				delta+=width-#before
-			end
-			line=replacement..line:sub(#prefix+1)
-		end
-		table.insert(out,line); offset+=originalLength+1
-	end
-	return table.concat(out,"\n"),if cursor<0 then cursor else cursor+delta
+local width=Config.IndentWidth
+local function selection(source,cursor,anchor)
+ cursor=math.clamp(cursor or 1,1,#source+1)
+ anchor=if anchor and anchor>0 then math.clamp(anchor,1,#source+1) else cursor
+ return math.min(cursor,anchor),math.max(cursor,anchor),cursor,anchor
+end
+local function startOfLine(source,position)
+ return (source:sub(1,position-1):match(".*()\n") or 0)+1
+end
+local function columns(prefix)
+ local n=0
+ for c in prefix:gmatch('.') do n=if c=='\t' then (math.floor(n/width)+1)*width else n+1 end
+ return n
+end
+local function prefixTo(prefix,target)
+ local out,n={},0
+ for c in prefix:gmatch('.') do
+  local nextColumn=if c=='\t' then (math.floor(n/width)+1)*width else n+1
+  if nextColumn>target then break end
+  table.insert(out,c); n=nextColumn
+ end
+ return table.concat(out)..string.rep(' ',target-n)
+end
+function Text.enter(source,cursor,anchor)
+ local first,last=selection(source,cursor,anchor)
+ local line=source:sub(startOfLine(source,first),first-1)
+ local prefix=line:match('^[ \t]*')
+ local ok,tokens=pcall(Lexer.line,line,1)
+ if ok and #tokens>1 and tokens[#tokens-1].kind==':' then prefix..=string.rep(' ',width) end
+ local newline=if source:find('\r\n',1,true) then '\r\n' else '\n'
+ local inserted=newline..prefix
+ return source:sub(1,first-1)..inserted..source:sub(last),first+#inserted,-1
+end
+-- After native editing settles, the caret identifies the inserted span more
+-- reliably than cached caret signals, especially beside an EXISTING newline.
+function Text.nativeEnterSelection(previous,source,nativeCursor,cursor,anchor)
+ local first,last=selection(previous,cursor,anchor)
+ local removed=last-first
+ local inserted=#source-#previous+removed
+ local at=(nativeCursor or -1)-inserted
+ if inserted>0 and at>=1 and at+removed<=#previous+1 then
+  local before,after=previous:sub(1,at-1),previous:sub(at+removed)
+  local payload=source:sub(#before+1,#source-#after)
+  if source:sub(1,#before)==before and (#after==0 or source:sub(-#after)==after) and (payload:sub(1,1)=='\n' or payload:sub(1,2)=='\r\n') then return at,at+removed end
+ end
+ return first,last
+end
+-- Decorate a newline that the native TextBox has ALREADY inserted. Never
+-- synthesize an additional newline in response to a keyboard notification.
+function Text.finishEnter(previous,source,cursor,anchor)
+ local first,last=selection(previous,cursor,anchor)
+ local before,after=previous:sub(1,first-1),previous:sub(last)
+ if #source<#before+#after or source:sub(1,#before)~=before or (#after>0 and source:sub(-#after)~=after) then return nil end
+ local payload=source:sub(#before+1,#source-#after)
+ if payload:sub(1,1)~='\n' and payload:sub(1,2)~='\r\n' then return nil end
+ local line=previous:sub(startOfLine(previous,first),first-1)
+ local prefix=line:match('^[ \t]*')
+ local ok,tokens=pcall(Lexer.line,line,1)
+ if ok and #tokens>1 and tokens[#tokens-1].kind==':' then prefix..=string.rep(' ',width) end
+ local wanted=columns(prefix)
+ local out,at={},1
+ repeat
+  local size=if payload:sub(at,at+1)=='\r\n' then 2 elseif payload:sub(at,at)=='\n' then 1 else 0
+  if size==0 then break end
+  table.insert(out,payload:sub(at,at+size-1)); at+=size
+  local existing=payload:sub(at):match('^[ \t]*')
+  local missing=math.max(0,wanted-columns(existing))
+  table.insert(out,string.rep(' ',missing)); table.insert(out,existing); at+=#existing
+ until at>#payload
+ table.insert(out,payload:sub(at))
+ local decorated=table.concat(out)
+ -- Only whitespace is inserted into the native payload; newline bytes are
+ -- copied from it verbatim, never generated by this function.
+ return before..decorated..after,#before+#decorated+1,-1,#before+#payload+1
+end
+function Text.backspace(source,cursor,anchor)
+ local first,last=selection(source,cursor,anchor)
+ if first~=last then return nil end -- native deletion preserves grapheme semantics
+ local start=startOfLine(source,first)
+ local prefix=source:sub(start,first-1)
+ if #prefix==0 or prefix:find('[^ \t]') then return nil end
+ local shortened=prefixTo(prefix,math.floor((columns(prefix)-1)/width)*width)
+ return source:sub(1,start-1)..shortened..source:sub(first),start+#shortened,-1
+end
+function Text.indent(source,cursor,anchor,outdent)
+ local first,last,caret,mark=selection(source,cursor,anchor)
+ local start=startOfLine(source,first)
+ local lastStart=startOfLine(source,last)
+ -- An end selection exactly at the next line's column one excludes that line.
+ if last>first and last==lastStart then lastStart=startOfLine(source,last-1) end
+ local edits={}; local at=start
+ repeat
+  local prefix=source:sub(at):match('^[ \t]*')
+  local inserted=if outdent then prefixTo(prefix,math.max(0,columns(prefix)-width)) else string.rep(' ',width)..prefix
+  table.insert(edits,{at=at,removed=#prefix,inserted=inserted})
+  local nextLine=source:find('\n',at,true)
+  if not nextLine then break end
+  at=nextLine+1
+ until at>lastStart
+ local function map(position)
+  local delta=0
+  for _,edit in edits do
+   if position<edit.at then break end
+   if position<=edit.at+edit.removed then
+    -- Keep the caret/selection at the same content-relative position.
+    local offset=position-edit.at
+    if outdent then offset=math.max(0,offset-(edit.removed-#edit.inserted)) else offset+=width end
+    return edit.at+delta+math.min(#edit.inserted,offset)
+   end
+   delta+=#edit.inserted-edit.removed
+  end
+  return position+delta
+ end
+ for i=#edits,1,-1 do
+  local edit=edits[i]
+  source=source:sub(1,edit.at-1)..edit.inserted..source:sub(edit.at+edit.removed)
+ end
+ return source,map(caret),if anchor and anchor>0 then map(mark) else -1
+end
+-- Align a pasted code block to the prepared insertion indentation. Only the
+-- inserted span changes: preserve relative nesting, strings and line endings.
+function Text.paste(previous,source,cursor,anchor,explicit)
+ local first,last=selection(previous,cursor,anchor)
+ local before,after=previous:sub(1,first-1),previous:sub(last)
+ if #source<#before+#after or source:sub(1,#before)~=before or (#after>0 and source:sub(-#after)~=after) then return source end
+ local payload=source:sub(#before+1,#source-#after)
+ if payload=='' or (not explicit and not payload:find('\n',1,true)) then return source end
+ local destination=previous:sub(startOfLine(previous,first),first-1)
+ if destination:find('[^ \t]') then return source end -- inline paste stays literal
+ local lines,at={},1
+ repeat
+  local ending=payload:find('\n',at,true)
+  local body=if ending then payload:sub(at,ending-1) else payload:sub(at)
+  local eol=if ending then '\n' else ''
+  if ending and body:sub(-1)=='\r' then body=body:sub(1,-2); eol='\r\n' end
+  table.insert(lines,{body=body,eol=eol})
+  if not ending then break end
+  at=ending+1
+ until false
+ local common=math.huge
+ for _,line in lines do if line.body:find('[^ \t]') then common=math.min(common,columns(line.body:match('^[ \t]*'))) end end
+ if common==math.huge then return source end
+ local out={}
+ for i,line in lines do
+  local body=line.body
+  if body:find('[^ \t]') then
+   local prefix=body:match('^[ \t]*')
+   body=(if i==1 then '' else destination)..string.rep(' ',columns(prefix)-common)..body:sub(#prefix+1)
+  elseif i==#lines and i>1 then body=destination end
+  table.insert(out,body..line.eol)
+ end
+ local inserted=table.concat(out)
+ -- AI copy buttons may omit the final newline. Keep an existing obsolete
+ -- line separate instead of concatenating it onto the snippet's final command.
+ if #lines>1 and lines[#lines].body:find('[^ \t]') and (after:match('^[^\r\n]*') or ''):find('[^ \t]') then
+  inserted..=lines[#lines-1].eol..destination
+ end
+ return before..inserted..after,#before+#inserted+1,-1
+end
+-- Detect the native mutation of a handled key, so queued ordinary typing
+-- can be committed without mistaking a native-first key echo for a new edit.
+function Text.nativeEcho(previous,cursor,anchor,action,source)
+ local first,last=selection(previous,cursor,anchor)
+ local before,after=previous:sub(1,first-1),previous:sub(last)
+ if action=='enter' then return source==before..'\n'..after or source==before..'\r\n'..after end
+ if action=='indent' or action=='outdent' then return source==before..'\t'..after end
+ if action=='backspace' then
+  if first~=last then return source==before..after end
+  if first<=1 then return false end
+  local removed=#previous-#source
+  return removed>0 and first-removed>=1 and source==previous:sub(1,first-removed-1)..previous:sub(first)
+ end
+ return false
+end
+-- Legacy helper with explicit Enter intent; all other text is byte-for-byte data.
+function Text.edit(previous,source,cursor,intent)
+ if intent=='enter' and cursor and cursor>1 and #source==#previous+1 and source:sub(cursor-1,cursor-1)=='\n' and source:sub(1,cursor-2)..source:sub(cursor)==previous then
+  return Text.enter(previous,cursor-1,-1)
+ end
+ return source,cursor or -1
+end
+local History={}; History.__index=History
+local function snapshot(text,cursor,anchor) return {text=text,cursor=if cursor and cursor>0 then cursor else 1,anchor=anchor or -1} end
+function Text.history(text)
+ return setmetatable({current=snapshot(text),undoStack={},redoStack={},bytes=0},History)
+end
+function History:select(cursor,anchor)
+ if cursor and cursor>0 then self.current.cursor=cursor; self.current.anchor=anchor or -1 end
+end
+function History:record(text,cursor,anchor,gesture)
+ local old=self.current
+ if old.text==text then self:select(cursor,anchor); return old end
+ if not gesture or gesture~=self.gesture then
+  table.insert(self.undoStack,snapshot(old.text,old.cursor,old.anchor)); self.bytes+=#old.text
+ end
+ self.gesture=gesture; self.redoStack={}; self.current=snapshot(text,cursor,anchor)
+ -- Retain at least the last pre-edit state, even for an oversized paste.
+ while #self.undoStack>1 and (#self.undoStack>96 or self.bytes>524288) do self.bytes-=#table.remove(self.undoStack,1).text end
+ return self.current
+end
+function History:undo()
+ self.gesture=nil
+ if #self.undoStack==0 then return self.current end
+ table.insert(self.redoStack,self.current)
+ self.current=table.remove(self.undoStack); self.bytes-=#self.current.text
+ return self.current
+end
+function History:redo()
+ self.gesture=nil
+ if #self.redoStack==0 then return self.current end
+ table.insert(self.undoStack,self.current); self.bytes+=#self.current.text
+ self.current=table.remove(self.redoStack)
+ return self.current
 end
 return Text

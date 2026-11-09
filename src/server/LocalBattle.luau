@@ -3,7 +3,7 @@
 local Shared=game.ReplicatedStorage.Shared
 local Simulation=require(Shared.TankSimulation)
 local Effects=require(Shared.DamageEffects)
-local Definitions=require(Shared.TankDefinitions)
+local Components=require(Shared.VehicleComponents)
 local Weapon=require(Shared.RattlerWeapon)
 local BW=require(script.Parent.BWController)
 local Battle={}
@@ -24,16 +24,18 @@ function Battle.resetTank(tank,size,index,reason)
 	local generation=(tank.state and tank.state.generation or -1)+1
 	local position,yaw=Battle.pose(size,index,tank.kind)
 	tank.spawn=position; tank.spawnYaw=yaw
-	tank.state=Simulation.new(position,tank.kind,tank.seed)
+	tank.state=Simulation.new(position,tank.kind,tank.seed,tank.assembly)
  tank.state.bwRunning=false; tank.state.bwStatus="stopped"; tank.state.bwMessage=reason or "Battle reset."
  tank.state.bwIndex=0; tank.state.bwCount=0; tank.state.bwLine=0; tank.state.bwInstruction=""
 	tank.effects=Effects.new(tank.state)
 	tank.sensorScanTimes=nil; tank.bwRunRequestId=0; tank.manualSensors=nil
 	tank.state.yaw=yaw; tank.state.turretYaw=yaw; tank.state.generation=generation
-	tank.rattler=Weapon.new(); tank.rattler.aimSeed=tank.seed
+	tank.rattler=Weapon.new(Components.get(tank.state).Weapon); tank.rattler.aimSeed=tank.seed
 	tank.boomerAim={aimSeed=tank.seed}
 	BW.applyHardware(tank); BW.clearInputs(tank); BW.sync(tank)
-	tank.hitbox.CFrame=CFrame.new(position+Vector3.new(0,2.5,0))*CFrame.Angles(0,yaw,0)
+	tank.hitbox.CFrame=CFrame.new(position+Vector3.new(0,Components.get(tank.state).Chassis.HitboxHeight,0))*CFrame.Angles(0,yaw,0)
+	local size=Components.get(tank.state).Chassis.Hitbox
+ tank.hitbox.Size=Vector3.new(size.X,size.Y,size.Z)
 	tank.hitbox.CanQuery=true
 end
 function Battle.select(battle,kind)
@@ -52,7 +54,7 @@ function Battle.damage(battle,victim,source,damage,weaponType,position)
 	if not victim.effects then victim.effects=Effects.new(victim.state) end
 	local applied=math.min(victim.state.health,damage)
 	victim.state.health=math.max(0,victim.state.health-applied)
-	Effects.record(victim.effects,victim.state,weaponType or Definitions.get(source.kind).WeaponType,applied,position)
+	Effects.record(victim.effects,victim.state,weaponType or Components.get(source.state).Weapon.WeaponType,applied,position)
 	if victim.state.health==0 then
 		BW.stop(victim,"Tank destroyed."); BW.clearInputs(victim)
 		victim.hitbox.CanQuery=false; victim.state.scanVisual=nil; victim.state.scanBW=nil; victim.state.scanManual=nil; victim.state.manualScannerActive=false

@@ -121,10 +121,11 @@ local function animateWreck(renderer,dt)
 	end
 end
 function Visual.update(renderer,state,part,anchors,dt)
-	local hp=math.clamp(state.health,0,100)
-	renderer.healthLabel.Text=string.format("%s  %d/100%s",if renderer.tankType=="Boomer" then "Bullet Boomer" else "Rattler",hp,if hp==0 then " • KO" else "")
-	renderer.healthBar.Size=UDim2.fromScale(hp/100,1)
-	renderer.healthBar.BackgroundColor3=if hp>30 then Color3.fromRGB(99,218,77) else Color3.fromRGB(244,69,37)
+	local maximum=state.maxHealth or 100
+	local hp=math.clamp(state.health,0,maximum)
+	renderer.healthLabel.Text=string.format("%s  %d/%d%s",if renderer.tankType=="Boomer" then "Bullet Boomer" else "Rattler",hp,maximum,if hp==0 then " • KO" else "")
+	renderer.healthBar.Size=UDim2.fromScale(hp/maximum,1)
+	renderer.healthBar.BackgroundColor3=if hp/maximum>0.3 then Color3.fromRGB(99,218,77) else Color3.fromRGB(244,69,37)
 	if hp==0 then
 		if not renderer.death then
 			local animate=(renderer.lastHealth or 0)>0

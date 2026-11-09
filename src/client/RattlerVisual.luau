@@ -50,10 +50,15 @@ function Visual.wheelFrames(self,state,dt,base,anchors)
 			*CFrame.Angles(0,if wheel.axle<0 then self.steeringAngle else 0,0)*CFrame.Angles(self.wheelSpin,0,0)
 	end
 end
+function Visual.buildTurret(self,detail,rounded,colors)
+	self.turret = rounded("Turret",Vector3.new(4.9,1.8,4.1),0.65,colors.body,"turret",CFrame.new(0,0.25,0.35))
+ detail("TopLatch",Vector3.new(0.7,0.4,0.9),colors.steel,"turret",CFrame.new(0,1.32,0.5)*CFrame.Angles(math.rad(-12),0,0))
+ detail("RearBattery",Vector3.new(2.1,0.8,0.7),colors.dark,"turret",CFrame.new(0,0.05,2.35))
+end
 function Visual.build(self, detail, rounded, colors)
 	local green,lime,steel,dark = colors.body,colors.deck,colors.steel,colors.dark
 	local ivory = Color3.fromRGB(239,239,186)
-	self.turret = rounded("Turret",Vector3.new(4.9,1.8,4.1),0.65,green,"turret",CFrame.new(0,0.25,0.35))
+
 	rounded("GatlingHousing",Vector3.new(3.3,2.25,2.4),0.75,lime,"barrel",CFrame.new(0,0,-1.7))
 	detail("RotorBearing",Vector3.new(0.5,2.5,2.5),steel,"barrel",CFrame.new(0,0,-2.8)*CFrame.Angles(0,math.pi/2,0),Enum.PartType.Cylinder)
 	for _,side in {-1,1} do
@@ -61,8 +66,6 @@ function Visual.build(self, detail, rounded, colors)
 		detail("AmmoDrumCap",Vector3.new(0.92,1.35,1.35),ivory,"turret",CFrame.new(side*2.7,0.1,0.2),Enum.PartType.Cylinder)
 		detail("DrumHub",Vector3.new(0.95,0.55,0.55),dark,"turret",CFrame.new(side*2.75,0.1,0.2),Enum.PartType.Cylinder)
 	end
-	detail("TopLatch",Vector3.new(0.7,0.4,0.9),steel,"turret",CFrame.new(0,1.32,0.5)*CFrame.Angles(math.rad(-12),0,0))
-	detail("RearBattery",Vector3.new(2.1,0.8,0.7),dark,"turret",CFrame.new(0,0.05,2.35))
 	self.cannon = detail("GatlingCore",Vector3.new(4.4,0.5,0.5),dark,"rotor",CFrame.new(0,0,-4.8)*CFrame.Angles(0,math.pi/2,0),Enum.PartType.Cylinder)
 	for index=1,6 do
 		local angle=(index-1)*math.pi/3

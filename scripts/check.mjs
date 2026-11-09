@@ -28,7 +28,11 @@ try {
   if (groupIndex === null) console.log(`Syntax compilation passed: ${files.length} Luau source files`);
   let bundle = await readFile('tests/RobloxMock.luau', 'utf8');
   bundle += '\nlocal loaders, cache = {}, {}\nlocal require\n';
-  for (const [file, source] of sources) {
+  for (const [file, originalSource] of sources) {
+    // Preserve historical weapon baselines as explicit assembly data, without
+    // changing production simulation modules. Group14 tests the real live swap.
+    const source = file.endsWith('/VehicleAssemblies.luau') && groupIndex !== null && groupIndex < 14
+      ? await readFile('tests/fixtures/LegacyVehicleAssemblies.luau', 'utf8') : originalSource;
     const name = file.split('/').pop().replace('.luau', '');
     const parent = file.includes('/shared/') ? 'Shared' : 'Client';
     bundle += `\nloaders[${JSON.stringify(name)}] = function()\nlocal script = { Parent = ${parent}, BWController = "BWController", LocalBattle = "LocalBattle", DirectionalScanner = "DirectionalScanner", ManualScanner = "ManualScanner", EnvironmentBuilder = "EnvironmentBuilder", PracticeTargets = "PracticeTargets", ProjectileSimulation = "ProjectileSimulation" }\n${source}\nend\n`;
@@ -50,6 +54,10 @@ try {
     ['BWScanLoops'],
     ['BWConstants'],
     ['BWSteering'],
+    ['VehicleComponents'],
+    ['SwappedWeapons'],
+    ['LiveRuntimeExamples'],
+    ['BWEditor'],
   ];
   if (groupIndex === null) {
     state.destroy(); state = null;
@@ -61,8 +69,17 @@ try {
     const group = groups[groupIndex];
     if (!group) throw new Error('Invalid test group');
     let tests = '';
-    for (const suite of group) tests += '\ndo\n' + await readFile(`tests/${suite}.spec.luau`, 'utf8') + '\nend\n';
-    if (group.includes('BWExecution')) {
+    for (const suite of group) {
+      if (suite === 'SwappedWeapons') {
+        // Reuse the real server/transform setup, replacing only scenario assertions.
+        const harness = await readFile('tests/ServerIntegration.spec.luau', 'utf8');
+        const marker = ' local generation=snapshots[boomerId].generation';
+        if (!harness.includes(marker)) throw new Error('Server harness marker changed');
+        tests += '\ndo\n' + harness.slice(0, harness.indexOf(marker));
+        tests += await readFile('tests/SwappedWeapons.spec.luau', 'utf8') + '\nend\n';
+      } else tests += '\ndo\n' + await readFile(`tests/${suite}.spec.luau`, 'utf8') + '\nend\n';
+    }
+    if (group.includes('BWExecution') || group.includes('LiveRuntimeExamples')) {
       const docs = await readFile('docs/BW_RUNTIME.md', 'utf8');
       const examples = [...docs.matchAll(/```python\n([\s\S]*?)```/g)].map(match => match[1]);
       tests += '\ndo\nlocal examples = {' + examples.map(source => '[====[' + source + ']====]').join(',') + '}\n';

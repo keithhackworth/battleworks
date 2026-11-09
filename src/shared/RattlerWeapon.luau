@@ -1,10 +1,12 @@
 -- Pure server-stepped heat state; it persists when switching to another tank.
-local Config = require(script.Parent.TankDefinitions).Rattler.Weapon
+local Default=require(script.Parent.ComponentCatalog)["weapon.gatling"].Properties
 local Weapon = {}
-function Weapon.new()
-	return { heat = 0, burst = 0, cooldown = 0, shotClock = 0, idle = 0, firing = false }
+function Weapon.new(tuning)
+	return { tuning=tuning or Default, heat = 0, burst = 0, cooldown = 0, shotClock = 0, idle = 0, firing = false }
 end
 function Weapon.step(weapon, enabled, trigger, dt, performance)
+ local Config=weapon.tuning or Default
+ if Config.Operation~="Heat" then weapon.firing=false; return false end
  performance=performance or 1
  enabled=enabled and performance>0
 	dt = math.max(dt, 0)

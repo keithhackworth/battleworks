@@ -1,6 +1,7 @@
 -- One bounded server observation per BW instruction or scheduled driver sweep step.
 local Shared=game.ReplicatedStorage.Shared
 local Config=require(Shared.ScannerConfig)
+local Components=require(Shared.VehicleComponents)
 local Geometry=require(Shared.ScannerGeometry)
 local Value=require(Shared.BWValue)
 local Scanner={}
@@ -17,23 +18,31 @@ end
 function Scanner:execute(source,angle,time,hardware)
  -- Range is explicit hardware data, independent of operating/acquisition performance.
  hardware=if type(hardware)=="table" then hardware else {}
- local ratedRange=hardware.range or Config.MaxRange
- local percent=hardware.distancePercent or Config.DistancePercent
+ if type(angle)~="number" or angle~=angle or math.abs(angle)==math.huge then return nil,"invalidArgument" end
+ local mounting=(Geometry.sensorIndex(angle)-1)*45
+ local sensorHardware=Components.get(source.state).Sensors[mounting]
+ if not sensorHardware then return nil,"deviceUnavailable" end
+ local cone=hardware.coneWidth or sensorHardware.ConeWidth
+ local cooldown=hardware.cooldown or sensorHardware.Cooldown
+ local originHeight=hardware.originHeight or sensorHardware.OriginHeight
+ local ratedRange=hardware.range or sensorHardware.Range
+ local percent=hardware.distancePercent or sensorHardware.DistancePercent
  if type(ratedRange)~="number" or ratedRange~=ratedRange or ratedRange<=0 or ratedRange>Config.MaxHardwareRange
   or type(percent)~="number" or percent~=percent or percent<0 or percent>100 then return nil,"invalidArgument" end
+ if type(cone)~="number" or cone~=cone or cone<=0 or cone>180 or type(cooldown)~="number" or cooldown~=cooldown or cooldown<=0 or cooldown>5 or type(originHeight)~="number" or originHeight~=originHeight or math.abs(originHeight)>50 then return nil,"invalidArgument" end
  local range=ratedRange*percent/100
 	if type(angle)~="number" or angle~=angle or math.abs(angle)==math.huge then return nil,"invalidArgument" end
 	if source.state.health<=0 then return nil,"tankDestroyed" end
 	angle=Geometry.normalize(angle)
 	local sensor=Geometry.sensorIndex(angle)
 	local times=source.sensorScanTimes or {}; source.sensorScanTimes=times
-	if time-(times[sensor] or -math.huge)<Config.SensorCooldown-1e-8 then return nil,"sensorCooldown" end
+	if time-(times[sensor] or -math.huge)<cooldown-1e-8 then return nil,"sensorCooldown" end
 	self.tokens=math.min(Config.ServerBurst,self.tokens+math.max(0,time-self.lastTime)*Config.ServerRate); self.lastTime=time
 	if self.tokens<1 then return nil,"scannerBusy" end
 	self.tokens-=1; times[sensor]=time
 	local state=source.state
  local yaw=state.yaw -- one authoritative orientation for this entire observation
-	local origin=state.position+Vector3.new(0,Config.OriginHeight,0)
+	local origin=state.position+Vector3.new(0,originHeight,0)
 	local parts,records=self.scene()
 	local allowed,physical={},{}
 	for _,p in parts do
@@ -46,7 +55,7 @@ function Scanner:execute(source,angle,time,hardware)
 	local ordered={}
 	for _,p in candidates do
 		if allowed[p] then
-			local probes=Geometry.probes(p,origin,yaw,angle,range)
+			local probes=Geometry.probes(p,origin,yaw,angle,range,cone)
 			if #probes>0 then table.insert(ordered,{part=p,probes=probes,lower=probes[1].distance,key=(records[p] and records[p].id or p:GetFullName())..string.format("/%.17g/%.17g/%.17g",p.CFrame.Position.X,p.CFrame.Position.Y,p.CFrame.Position.Z)}) end
 		end
 	end
@@ -75,7 +84,7 @@ function Scanner:execute(source,angle,time,hardware)
    local hit=self.world:Raycast(origin,direction*range,ray)
    if hit and allowed[hit.Instance] then
     local delta=hit.Position-origin; local distance=delta.Magnitude
-    if distance>=Config.MinRange and distance<=range+1e-8 and Geometry.inCone(yaw,angle,delta) then
+    if distance>=Config.MinRange and distance<=range+1e-8 and Geometry.inCone(yaw,angle,delta,cone) then
      local key=keyFor(hit.Instance); local old=visible[key]
      if not old or distance<old.distance then visible[key]={hit=hit,distance=distance,key=key} end
     end

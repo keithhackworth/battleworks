@@ -198,3 +198,50 @@ Acceptance: visible separated tanks/walls appear once each in nearest-first orde
 - [x] Update language/runtime and in-game handbook with all commands/costs/ownership rules and examples; expose wheel target in existing IDE diagnostics.
 - [x] Full regression suites pass, including 57 steering assertions, 391 handbook assertions and 13 runtime documentation programs on both tank simulations. Both Rojo formats and whitespace checks pass.
 - [ ] Studio Play: drive both primary Rattler demos, inspect visible front-wheel smoothing, obstacles/local surfaces, firing/recoil and immobilization while driving, Stop/reset/death/switch/manual/mobile handoff. Native runtime is unavailable; automated simulations/builds do not establish Studio behavior.
+
+
+## Follow-up — vehicle component architecture
+- [x] Inspect tuning, movement/recoil/weapon dispatch, BW queue/completion, sensors and computer/bus policy; document boundaries before code in docs/VEHICLE_COMPONENTS.md.
+- [x] Immutable typed ComponentCatalog + ID-only VehicleAssemblies + validated VehicleComponents resolver/private state binding; optional per-mount sensors and mount-capacity checks.
+- [x] Shared propulsion/steering, component-driven pivot/navigation and tracked BW steering. Reuse existing immediate/inertial solvers without introducing mass/torque multipliers.
+- [x] Component-driven turret/weapon/recoil/sensors and computer/bus defaults. Preserve authority, scheduler/costs, queues/status and lifecycle; public snapshots add maxHealth rather than full profiles.
+- [x] 84 component assertions and all regression groups pass; deliberate tests update Boomer steering availability and configuration value equality rather than old table identity. Existing physical demonstration timings/shot counts remain unchanged.
+- [x] Both Rojo builds, source compilation, whitespace and component/language/runtime/in-game documentation pass.
+- [ ] Studio Play: both manual/BW tanks, tracked/wheeled steering, visual attachment behavior, terrain, recoil/weapons/destruction and reset/manual/mobile handoff. Native Studio unavailable. Mass/torque force modeling, arbitrary upgrade art/visual descriptors and player upgrade UI remain future work by design.
+
+
+## Follow-up — swap guns and prove weapon-owned personality
+- [x] Swap live assembly weapon IDs: Boomer Gatling, Rattler cannon; retain hull/turret art, tracks/wheels, computers and bus allocations.
+- [x] Gun-owned jackhammer overlay works on tracked and wheeled mobility; cannon removes hop/rattle regardless of model. Heat/rates/damage/trajectory/turret recoil remain weapon attributes.
+- [x] Separate turret/body art from gun construction; small weaponId descriptor drives mounted gun, barrel spin/cannon swell, recoil rocking/landing, muzzle VFX, heat/reload HUD and renderer lifecycle. Preparation events use actual carrier identity.
+- [x] Keep canonical legacy cannon/heat-weapon helpers independent of live assembly roles. Historical regression groups use explicit original-loadout assembly fixtures; new live groups use production assemblies without substitution.
+- [x] Actual swapped production server/renderer integration passes1278 assertions; all13 documentation programs complete on both live swapped tank simulations. Historical suites, component84, steering57, CONST405 and source checks pass. Both Rojo formats and whitespace checks pass.
+- [ ] Studio: restart Play, verify orange tracked Gatling visibly jackhammers/rocks/spins and green wheeled cannon visibly coughs/recoils without hopping. Check aiming/HUD, death/reset/switch and BW. Native Studio unavailable; mock simulation tests/builds do not establish native visual feel.
+
+
+## Follow-up — IDE indentation, AI paste and atomic undo
+- [x] Inspect and remove source-wide leading-tab conversion and Run-time normalization.
+- [x] Pure byte-indexed Enter/colon indentation, leading-indent Backspace, selected-line Tab/ShiftTab, reverse selections and CRLF/Unicode handling.
+- [x] Default aligned paste rebases common AI snippet indentation to the prepared insertion point, preserving internal nesting and obsolete suffix. Add a separator for multiline snippets without a final newline; exact mode retains received whitespace unchanged.
+- [x] Add bounded per-tank undo/redo transactions, shortcuts and toolbar controls; paste is one undo operation, including aligned/native-first echo cases. Preserve insertion caret across toolbar focus changes; no editing interception outside source focus.
+- [x] Dedicated BWEditor suite passes90 assertions: key echo/caret races, rapid typing before indent, atomic immediate undo/redo, native clipboard/virtual return stand-ins, paste modes, old-code preservation, selection/history isolation, destruction and exact Run submission.
+- [x] Final complete regression suites pass, including90 editor assertions. Both .rbxl/.rbxlx Rojo builds and git diff --check pass.
+- [ ] Studio: restart Play and verify real Ctrl/Cmd+V AI replacement workflows, exact paste, undo/redo, clipboard CRLF/Unicode, held keys, keyboard focus, mobile keyboard/IME and toolbar sizing. Mock event ordering/builds are not native validation.
+
+
+## Follow-up — first Studio Enter test inserted two lines
+- [x] Identify synthetic Enter plus native insertion/short-lived guard as an unsafe design; remove all eager newline insertion from keyboard notifications.
+- [x] Decorate actual native newline events, retaining intent after key release; cover native-first notifications already committed to history, late caret restoration, colon indent, selection replacement, virtual/physical deduplication and atomic undo/redo.
+- [x] Expanded editor suite passes105 assertions, including the reported indented-line scenario and colon variant. Tests explicitly require no text change from InputBegan alone.
+- [x] All regression groups pass, including105 editor assertions. Both Rojo formats and git diff --check pass.
+- [ ] Studio: restart Play and repeat the user's exact Enter test on a normally indented line and colon header, then undo/redo, soft keyboard and key repeat. No native validation available here.
+
+
+## Follow-up — E3 Enter still jumped below a blank line
+- [x] Inspect remaining timing assumptions; confirm task.defer is within the current frame, not a native input-completion boundary.
+- [x] Wait across actual Heartbeat boundaries for stable native text/caret; avoid writes inside Enter's native input callbacks and ignore deferred own-write events by text identity.
+- [x] Locate inserted span using settled native caret rather than a cached caret already advanced past an existing newline. Restore SelectionStart before CursorPosition on a later frame.
+- [x] Replace newline reconstruction with whitespace-only decoration and add newline-count invariants. Distinguish frame queues in tests and identify the loaded client as E3.
+- [x] Dedicated editor suite123 assertions passes, including the previously missing mid-document/existing-newline stale-caret case, colon variant, undo caret and native auto-indent.
+- [x] All regression suites pass, including123 editor assertions. Both Rojo build formats and git diff --check pass.
+- [ ] Native Studio retest remains required; pending user clarification about Studio/Rojo, built-place or published session. No native success claimed.

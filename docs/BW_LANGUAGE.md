@@ -111,6 +111,33 @@ Use `=` to assign and `==` to compare. Arithmetic requires numbers. Ordering req
 
 `and`/`or` short-circuit: skipped expressions do not scan, submit commands or consume expression ticks. Existing `if` and logical operators require actual booleans. `while` has the broader truthiness rules documented below.
 
+## IDE editing and AI code replacement
+
+- **Enter:** retain the current indentation. After a trailing `:` outside strings/comments, add one four-space level. Inline comments after a block header are supported.
+- **Backspace in leading indentation:** remove back to the previous four-column stop. Ordinary text/selection deletion stays native.
+- **Tab / Shift+Tab:** indent/outdent the current line or all selected lines. A selection ending at the following line's column one excludes that following line.
+- **Paste: align** (default): prepare the insertion indentation, then Ctrl/Cmd+V. The snippet's common outer indentation is removed and its internal nesting is rebased to that point. Leading tabs in the snippet are interpreted as four-column tab stops; strings, inline whitespace and LF/CRLF endings are preserved. Following obsolete code remains aligned rather than moving to column one. A multiline snippet inserted directly before code gets a separating newline when the AI clipboard omitted its final newline. Blank-only and inline/mid-expression pastes stay literal. Multiline native/context-menu paste uses the same alignment where an insertion can be identified.
+- **Paste: exact:** click the paste-mode button to disable alignment and preserve the received text byte-for-byte. No conversion is performed on Run either. BW still requires four-space block indentation; exact pasted tabs/invalid indentation produce normal compiler diagnostics.
+- **Undo / Redo:** toolbar buttons or Ctrl/Cmd+Z, Ctrl/Cmd+Y, Ctrl/Cmd+Shift+Z. A multiline or aligned paste is one undo operation. History and selections stay separate for each selected tank.
+
+Typical replacement workflow: move to the indentation where the new block belongs, paste the AI snippet, then remove obsolete code yourself. The editor preserves relative nesting; it does not infer missing indentation inside malformed code or remove Markdown fences.
+
+```text
+Before (| is the prepared insertion caret):
+with thread(1):
+    |old_command()
+
+Clipboard:
+if true:
+    forward(10)
+
+After paste:
+with thread(1):
+    if true:
+        forward(10)
+    old_command()
+```
+
 ## Compile-time constants
 
 `CONST name = expression` declares an immutable scalar at compilation:
@@ -302,7 +329,7 @@ Supported legacy `best_effort=true/false` arguments do not make asynchronous dev
 | --- | --- |
 | `deviceQueueFull` | Device's pending queue is full. |
 | `deviceUnavailable` | Device is unknown or not installed. |
-| `unsupportedDrivetrain` | Wheel steering requested on a drivetrain such as Boomer. |
+| `unsupportedDrivetrain` | Installed mobility lacks the requested steering capability. |
 | `deviceDisabled` | Device has 0% operating allocation. |
 | `invalidSensor` | Scanner angle/index is invalid. |
 | `invalidArgument` | Invalid computed operational argument or unknown command ID. |
@@ -335,13 +362,13 @@ Distance/navigation commands and steer_left/right accept optional `best_effort=t
 
 **Input:** finite distance from 0 to 1,000 studs.
 
-Drive forward for the requested actual distance. Boomer measures along the starting direction. Rattler follows its persistent wheel target and accumulates signed movement along its changing forward tangent, so full arcs/circles can complete. Sideways/vertical drift and wheel spin do not count; real recoil along the commanded direction does. Walls can prevent completion. The command does not teleport or wait for the full drive.
+Drive forward for the requested actual distance. Installed mobility follows its persistent steering target. Finite BW driving accumulates signed movement along its changing forward tangent, so full arcs/circles can complete on wheels or tracks. Sideways/vertical drift and wheel spin do not count; real recoil along the commanded direction does. Walls can prevent completion. The command does not teleport or wait for the full drive.
 
 ### back(studs)
 
 **Input:** finite distance from 0 to 1,000 studs.
 
-Reverse for the requested actual distance. Boomer uses the inverse starting forward direction; Rattler follows the changing reverse tangent with persistent steering. Uses normal vehicle physics, including naturally reversed yaw while backing. Progress and failure rules match `forward`.
+Reverse for the requested actual distance. Installed mobility follows the changing reverse tangent with persistent steering. Uses normal vehicle physics, including naturally reversed yaw while backing. Progress and failure rules match `forward`.
 
 ### forward() / back()
 
@@ -351,23 +378,23 @@ Drive continuously forward/reverse at normal configured performance. The thread 
 
 ### steer_left(degrees) / steer_right(degrees)
 
-**Input:** a finite angle 0..180 degrees; requests above the installed physical maximum are clamped. Rattler's current maximum is approximately 31.5°, so `steer_right(35)` requests full available lock. **Cost:** 1 tick per update.
+**Input:** a finite angle 0..180 degrees; requests above the installed physical maximum are clamped. Default Boomer tracks use a 45° steering control range, mapped to relative tread intent. Rattler wheels have a current physical maximum of approximately 31.5°, so `steer_right(35)` requests full available lock. **Cost:** 1 tick per update.
 
-Set an absolute front-wheel target relative to straight ahead. Repeating a command does not add angles. `steer_right(20)` positions wheels; `turn_right(20)` requests 20° of chassis heading change. Steering itself does not move/rotate the chassis. It reaches actual wheels through the existing steering smoothing, car physics and airborne control restrictions. New steering takes effect during continuous or finite driving, without restarting throttle. A high-level turn temporarily controls actual steering; the persistent wheel target resumes afterward.
+Set an absolute steering target relative to straight ahead. Wheeled mobility positions the front wheels; tracked mobility changes relative tread intent through the existing differential steering model. Repeating a command does not add angles. `steer_right(20)` sets steering; `turn_right(20)` requests 20° of chassis heading change. Steering itself does not move/rotate the chassis. It reaches actual wheels through the existing steering smoothing, car physics and airborne control restrictions. New steering takes effect during continuous or finite driving, without restarting throttle. A high-level turn temporarily controls actual steering; the persistent wheel target resumes afterward.
 
-Success includes `commandId` and `steeringDegrees`, the applied signed target (positive left, negative right). The steering command record immediately becomes `completed`: this confirms the target was accepted, not that wheels have physically reached it. Boomer returns `fail / unsupportedDrivetrain`. Computed invalid arguments return `invalidArgument`; invalid literals are compile errors. Steering requires an installed, enabled drivetrain and remains subject to server damage restrictions on actual controls.
+Success includes `commandId` and `steeringDegrees`, the applied signed target (positive left, negative right). The steering command record immediately becomes `completed`: this confirms the target was accepted, not that wheels have physically reached it. Both default tanks support steering. A mobility component with steering disabled returns `fail / unsupportedDrivetrain`, regardless of model identity. Computed invalid arguments return `invalidArgument`; invalid literals are compile errors. Steering requires an installed, enabled drivetrain and remains subject to server damage restrictions on actual controls.
 
 ### steer_center()
 
 **Input:** none. **Cost:** 1 tick.
 
-Set the persistent wheel target to zero without stopping. The wheels straighten through existing smoothing. Same result shape as steer_left/right, with `steeringDegrees: 0`. Unsupported on Boomer.
+Set the persistent steering target to zero without stopping. Wheels straighten through existing smoothing; tracks return to equal tread intent. Same result shape as steer_left/right, with `steeringDegrees: 0`. Requires the installed mobility component to support steering.
 
 ### stop()
 
 **Input:** none. **Cost:** 1 tick.
 
-Cancel active and pending drivetrain commands and release throttle. Actual momentum/recoil is preserved; existing coasting handles the stop. The steering target is retained until changed or program lifecycle cleanup. Turret, weapon and scanner work continue. Returns a completed command ID; cancelled movement IDs report `cancelled / commandCancelled`. Stop requires an installed drivetrain but is accepted at zero allocation for safe release.
+Cancel active and pending drivetrain commands and release throttle. Actual momentum/recoil is preserved; existing coasting handles the stop. The steering target is retained until changed or program lifecycle cleanup. With no active drive operation, tracked steering produces no tread movement; `stop()` releases both treads and does not leave a pivot running. Turret, weapon and scanner work continue. Returns a completed command ID; cancelled movement IDs report `cancelled / commandCancelled`. Stop requires an installed drivetrain but is accepted at zero allocation for safe release.
 
 ### Drivetrain ownership rules
 
@@ -443,7 +470,7 @@ while true:
 
 Rotate counterclockwise. Relative turns accumulate rotation, including multiple revolutions. Absolute turns honor the left direction even if it takes the longer route.
 
-Boomer can pivot. Rattler must drive and steer through a curved path and retains its airborne steering restrictions.
+Installed mobility determines turning: default Boomer tracks can pivot, while default Rattler wheels must drive a curved path and retain existing airborne restrictions. Changing components changes these capabilities independently of model identity.
 
 ### turn_right(degrees) / turn_right(to=heading)
 
@@ -489,7 +516,7 @@ Rotate clockwise. The specified direction is honored for absolute targets; it is
 
 Timed firing holds the tank's normal trigger for the duration, respecting reload, preparation, firing rate, heat and overheat cooldown. Submission costs ticks once, not per bullet.
 
-At full performance Boomer prepares its cannon for 0.20 seconds and has a 0.65-second firing interval. Rattler's shot interval is 0.10 seconds; sustained fire stops after at most 3 seconds, followed by a mandatory 2-second cooldown. Bus allocation can lengthen preparation/firing intervals. Neither BW nor bus allocation increases projectile speed or bypasses weapon rules.
+At full performance the cannon (currently mounted on Rattler) prepares for 0.20 seconds and has a 0.65-second firing interval. The Gatling (currently mounted on Boomer) has a 0.10-second shot interval; sustained fire stops after at most 3 seconds, followed by a mandatory 2-second cooldown. Bus allocation can lengthen preparation/firing intervals. Neither BW nor bus allocation increases projectile speed or bypasses weapon rules.
 
 ## Scanner command
 
@@ -892,3 +919,11 @@ Temporary Rattler-damage immobilization can pause movement/turn progress expecta
 Not implemented: user-defined functions, imports, arbitrary Luau, `for`, `break`, `continue`, locks/events, automatic targeting/tracking, future smart-scanner velocity fields, or general-purpose language features beyond the commands and syntax documented here.
 
 Tuning values come from `src/shared/BWChassis.luau`, `BWConfig.luau`, `ScannerConfig.luau` and tank definitions. The implementation and automated tests remain the authority if these values change.
+
+## Component-backed vehicle configuration
+
+Vehicle assemblies install independently configured chassis, drivetrain, mobility, turret, weapon, sensor, computer and bus components. Drivetrain determines propulsion; mobility determines steering/pivot behavior. The same BW commands and costs apply to both. Model names do not decide capabilities. Default Boomer/Rattler tuning is unchanged, apart from enabling persistent tracked steering. The existing development hardware selector remains available; its tier selects a registered computer component and its bus allocations reserve device performance.
+
+There is no new upgrade UI. See [VEHICLE_COMPONENTS.md](VEHICLE_COMPONENTS.md) for the technical catalog/assembly reference and server-side configuration examples. Chassis mass/torque force calculations remain outside the current kinematic simulation.
+
+Current test loadouts intentionally swap guns: **Boomer = Gatling**, **Rattler = cannon**. Recoil/jackhammer movement, turret kicks, heat limits, trajectory, damage and visual effects follow the installed weapon. Chassis/mobility/computer/bus allocations stay unchanged, so the Gatling on Boomer's shared20% weapon allocation fires more slowly than on Rattler's former dedicated weapon bus.

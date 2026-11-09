@@ -9,6 +9,7 @@ local DamageVisual = require(script.Parent.DamageVisual)
 local CombatVisual = require(script.Parent.TankCombatVisual)
 local Config = require(game.ReplicatedStorage.Shared.TankConfig)
 local Simulation = require(game.ReplicatedStorage.Shared.TankSimulation)
+local Components = require(game.ReplicatedStorage.Shared.VehicleComponents)
 local Renderer = {}
 Renderer.__index = Renderer
 local BARREL_DIAMETER = 1.6
@@ -22,9 +23,15 @@ local function part(parent, name, size, color)
 	p.Parent = parent
 	return p
 end
-function Renderer.new(id, tankType)
+function Renderer.new(id, tankType, weaponId)
 	local self = setmetatable({ recoil = 0, phase = 0, bounce = 0, bounceVelocity = 0, movement = 0, bounceClock = 0 }, Renderer)
 	self.tankType = tankType or "Boomer"
+ self.components=Components.forWeapon(self.tankType,weaponId)
+ self.weapon=self.components.Weapon; self.weaponId=self.components.Installed.Weapon
+ self.gatling=self.weapon.Visual.Kind=="Gatling"
+ self.jackhammer=self.components.Recoil.Kind=="Jackhammer"
+ self.inertial=self.components.Mobility.Motion=="Inertial" or self.jackhammer
+ self.shotState={}; Components.bind(self.shotState,self.components)
 	local rattler = self.tankType == "Rattler"
 	self.model = Instance.new("Model"); self.model.Name = "Tank_" .. id; self.model.Parent = workspace
 	self.model:SetAttribute("TankType",self.tankType)
@@ -92,13 +99,17 @@ function Renderer.new(id, tankType)
 		end
 	end
 	if rattler then
-		RattlerVisual.build(self,detail,rounded,colors)
+		RattlerVisual.buildTurret(self,detail,rounded,colors)
 	else
 		-- Short, wide molded-plastic turret; preserve the pivot and lower seating plane.
 		self.turret = rounded("Turret", Vector3.new(6.5, 2.25, 5), 0.85, orange, "turret", CFrame.new(0, 0.375, 0.25))
 		detail("TurretRing", Vector3.new(0.35, 4.1, 4.1), rubber, "turret", CFrame.new(0, -0.75, 0.25) * CFrame.Angles(0, 0, math.pi/2), Enum.PartType.Cylinder)
 		detail("HatchBase", Vector3.new(0.22, 2, 2), Color3.fromRGB(229, 145, 9), "turret", CFrame.new(0.2, 1.57, 0.6) * CFrame.Angles(0, 0, math.pi/2), Enum.PartType.Cylinder)
 		detail("CommanderHatch", Vector3.new(0.35, 1.7, 1.7), yellow, "turret", CFrame.new(0.2, 1.8, 0.6) * CFrame.Angles(0, 0, math.pi/2), Enum.PartType.Cylinder)
+ end
+ if self.gatling then
+  RattlerVisual.build(self,detail,rounded,colors)
+ else
 		self.cannon = detail("Cannon", Vector3.new(6, BARREL_DIAMETER, BARREL_DIAMETER), steel, "barrel", CFrame.new(0, 0, -4) * CFrame.Angles(0, math.pi/2, 0), Enum.PartType.Cylinder)
 		detail("Mantlet", Vector3.new(1, 2.1, 2.1), yellow, "barrel", CFrame.new(0, 0, -2) * CFrame.Angles(0, math.pi/2, 0), Enum.PartType.Cylinder)
 		detail("BarrelCollar", Vector3.new(0.75, 1.95, 1.95), steel, "barrel", CFrame.new(0, 0, -2.65) * CFrame.Angles(0, math.pi/2, 0), Enum.PartType.Cylinder)
@@ -156,9 +167,9 @@ function Renderer.new(id, tankType)
 	return self
 end
 function Renderer:fire(rock)
-	if self.tankType == "Rattler" then self.recoil=0.65; RattlerVisual.jolt(self,rock); return end
-	self.recoil = 1
-	self.shotAge = 0
+	if self.gatling then self.recoil=self.weapon.Visual.Recoil; RattlerVisual.jolt(self,rock); return end
+	self.recoil = self.weapon.Visual.Recoil
+	self.shotAge = if self.weapon.Visual.Swelling then 0 else nil
 end
 function Renderer:resetPose(state)
 	self.position = state.position; self.yaw = state.yaw
@@ -169,7 +180,7 @@ function Renderer:resetPose(state)
 	self.rockSerial=state.flightShotSerial or 0; self.visualRollKick=0; self.rockHold=0
 	self.bodyPitch = state.bodyPitch or 0; self.bodyRoll = state.bodyRoll or 0
 	self.bounce = state.bounce or 0; self.bounceVelocity = 0; self.movement = 0; self.bounceClock = 0
-	if self.tankType == "Boomer" then
+	if not self.gatling then
 		self.cannon.Size = Vector3.new(6, BARREL_DIAMETER, BARREL_DIAMETER)
 		self.barrelBulge.Transparency = 1; self.muzzleSwell.Transparency = 1; self.coughBore.Transparency = 1
 	end
@@ -179,7 +190,7 @@ function Renderer:update(state, dt)
 	local previousPosition=self.position
 	self.position = if self.position then self.position:Lerp(state.position, alpha) else state.position
 	local landed=(state.landingSerial or 0)>(self.landingSerial or 0)
-	if self.tankType == "Rattler" and previousPosition then
+	if self.inertial and previousPosition then
 		local y=if landed then state.position.Y else previousPosition.Y+(state.position.Y-previousPosition.Y)*(1-math.exp(-60*dt))
 		self.position=Vector3.new(self.position.X,y,self.position.Z)
 	end
@@ -196,43 +207,44 @@ function Renderer:update(state, dt)
 	if self.shotAge then self.shotAge += math.max(dt, 0) end
 	local swelling = BarrelAnimation.sample(self.shotAge)
 	if not swelling.active or state.health <= 0 then self.shotAge = nil; swelling = BarrelAnimation.sample(nil) end
-	if self.tankType == "Boomer" then
+	if not self.gatling then
 		self.cannon.Size = Vector3.new(6, BARREL_DIAMETER*swelling.barrelScale, BARREL_DIAMETER*swelling.barrelScale)
 	end
 	-- Suspension is server-owned because the tilted barrel now controls shots.
-	local suspensionAlpha=if self.tankType=="Rattler" then 1-math.exp(-50*dt) else alpha
+	local suspensionAlpha=if self.inertial then 1-math.exp(-50*dt) else alpha
 	self.bounce += ((state.bounce or 0)-self.bounce)*suspensionAlpha
 	self.bodyPitch = (self.bodyPitch or 0)+((state.bodyPitch or 0)-(self.bodyPitch or 0))*suspensionAlpha
 	self.bodyRoll = (self.bodyRoll or 0)+((state.bodyRoll or 0)-(self.bodyRoll or 0))*suspensionAlpha
 	local base = CFrame.new(self.position) * CFrame.Angles(0, self.yaw, 0)
 	local body = base * CFrame.new(0, 2.1+self.bounce, 0) * CFrame.Angles(self.bodyPitch, 0, self.bodyRoll)
-	if self.tankType == "Boomer" then
-		self.left.CFrame = base * CFrame.new(-3.8, 1.4, 0)
-		self.right.CFrame = base * CFrame.new(3.8, 1.4, 0)
-	end
 	local turret = CFrame.new(self.position + Vector3.new(0, Config.MuzzleHeight+self.bounce, 0)) * CFrame.Angles(0, self.yaw, 0) * CFrame.Angles(self.bodyPitch, 0, self.bodyRoll) * CFrame.Angles(0, self.turretYaw-self.yaw, 0)
-	if self.tankType=="Rattler" then
+	if self.tankType=="Rattler" or self.jackhammer then
 		local pivotHeight=Config.MuzzleHeight+self.bounce
-		local roll=RattlerVisual.rock(self,state,dt)
+		local roll=if self.jackhammer then RattlerVisual.rock(self,state,dt) else self.bodyRoll
 		-- One common pose for wheels, hull and turret, rocking about the weapon
 		-- mount so presentation cannot move the authoritative muzzle origin.
 		base=base*CFrame.new(0,pivotHeight,0)*CFrame.Angles(self.bodyPitch,0,roll)*CFrame.new(0,-pivotHeight,0)
 		body=base*CFrame.new(0,2.1+self.bounce,0)
 		turret=base*CFrame.new(0,pivotHeight,0)*CFrame.Angles(0,self.turretYaw-self.yaw,0)
 	end
-	local barrel = turret * CFrame.Angles(self.turretPitch, 0, 0) * CFrame.new(0, 0, self.recoil * 0.8)
-	if self.tankType=="Rattler" then
-		local pivot,direction=Simulation.shotPose({tankType="Rattler",position=self.position,yaw=self.yaw,
-			turretYaw=self.turretYaw,turretPitch=self.turretPitch,bodyPitch=self.bodyPitch,bodyRoll=self.bodyRoll,
-			bounce=self.bounce,groundPlaneY=state.groundPlaneY})
-		barrel=CFrame.lookAt(pivot,pivot+direction,turret.UpVector)*CFrame.new(0,0,self.recoil*0.8)
+	if self.tankType == "Boomer" then
+		self.left.CFrame = base * CFrame.new(-3.8, 1.4, 0)
+		self.right.CFrame = base * CFrame.new(3.8, 1.4, 0)
 	end
+	local barrel = turret * CFrame.Angles(self.turretPitch, 0, 0) * CFrame.new(0, 0, self.recoil * 0.8)
+ if self.weapon.Trajectory then
+  local pose=self.shotState
+  pose.position=self.position; pose.yaw=self.yaw; pose.turretYaw=self.turretYaw; pose.turretPitch=self.turretPitch
+  pose.bodyPitch=self.bodyPitch; pose.bodyRoll=self.bodyRoll; pose.bounce=self.bounce; pose.groundPlaneY=state.groundPlaneY
+  local pivot,direction=Simulation.shotPose(pose)
+  barrel=CFrame.lookAt(pivot,pivot+direction,turret.UpVector)*CFrame.new(0,0,self.recoil*0.8)
+ end
 	self.muzzleFrame = barrel*CFrame.new(0,0,-7)
-	local spin=if self.tankType == "Rattler" then RattlerVisual.spin(self,state,dt) else 0
+	local spin=if self.gatling then RattlerVisual.spin(self,state,dt) else 0
 	local anchors = { body = body, base = base, turret = turret, barrel = barrel, rotor = barrel*CFrame.Angles(0,0,spin) }
 	if self.tankType == "Rattler" then RattlerVisual.wheelFrames(self,state,dt,base,anchors) end
 	for _, item in self.details do item.part.CFrame = anchors[item.anchor] * item.offset end
-	if self.tankType == "Boomer" then
+	if not self.gatling then
 		self.barrelBulge.Size = Vector3.new(swelling.bulge, swelling.bulge, 2.6)
 		self.barrelBulge.CFrame = barrel * CFrame.new(0, 0, swelling.z)
 		local mouth = MUZZLE_DIAMETER + swelling.flare*1.8
@@ -263,12 +275,12 @@ function Renderer:update(state, dt)
 	for _, p in self.model:GetChildren() do
 		if p:IsA("BasePart") or p:IsA("Part") then p.Transparency = if state.health <= 0 then 0.35 else 0 end
 	end
-	if self.tankType == "Boomer" then
+	if not self.gatling then
 		self.barrelBulge.Transparency = if swelling.active then 1-swelling.opacity else 1
 		self.muzzleSwell.Transparency = if swelling.active then 1-swelling.flare else 1
 		self.coughBore.Transparency = if swelling.active then 1-swelling.flare else 1
 	end
-	if landed and self.tankType=="Rattler" and state.health>0 then
+	if landed and self.jackhammer and state.health>0 then
 		RattlerVisual.landing(state.position,part)
 	end
 	self.landingSerial=state.landingSerial or 0
@@ -280,8 +292,8 @@ function Renderer:update(state, dt)
 end
 function Renderer:destroy() self.model:Destroy() end
 -- Exaggerated cosmetic burst readable from the normal battlefield camera; no Explosion/force or damage is involved.
-function Renderer.shot(origin, direction, tankType)
-	if tankType == "Rattler" then RattlerVisual.shot(origin,direction,part); return end
+function Renderer.shot(origin, direction, tankType, weaponId)
+	if Components.forWeapon(tankType or "Boomer",weaponId).Weapon.Visual.Kind=="Gatling" then RattlerVisual.shot(origin,direction,part); return end
 	direction = direction or Vector3.new(0, 0, -1)
 	local frame = CFrame.lookAt(origin, origin + direction)
 	local center = origin - direction*0.2

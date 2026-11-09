@@ -1,6 +1,6 @@
 -- Compact in-game editor. Only source text/Stop intent go to the server.
 local Config=require(game.ReplicatedStorage.Shared.BWConfig)
-local EditorText=require(game.ReplicatedStorage.Shared.BWEditorText)
+local EditorController=require(script.Parent.BWEditorController)
 local Hardware=require(game.ReplicatedStorage.Shared.BWChassis)
 local HandbookView=require(script.Parent.BWHandbookView)
 local IDE={}
@@ -42,14 +42,15 @@ end
 function IDE.new(playerGui,onRun,onStop,onConfigure)
 	local self=setmetatable({connections={},running=false,sources={},requests={},scanOutputs={},minimumScanRequests={}},IDE)
 	local gui=Instance.new("ScreenGui"); gui.Name="BWEditor"; gui.ResetOnSpawn=false
+	gui:SetAttribute("EditorVersion","E3-frame-enter")
 	gui.ScreenInsets=Enum.ScreenInsets.CoreUISafeInsets; gui.DisplayOrder=30; gui.Parent=playerGui; self.gui=gui
 	local toggle=text(gui,"TextButton","ToggleBW")
 	toggle.AnchorPoint=Vector2.new(1,0); toggle.Position=UDim2.new(1,-8,0,172); toggle.Size=UDim2.fromOffset(194,26)
-	toggle.Text="BW Editor"; toggle.Selectable=true; self.toggle=toggle
+	toggle.Text="BW Editor • E3"; toggle.Selectable=true; self.toggle=toggle
 	local frame=Instance.new("Frame"); frame.Name="EditorPanel"; frame.AnchorPoint=Vector2.new(0.5,0.5)
 	frame.Position=UDim2.fromScale(0.5,0.5); frame.Size=UDim2.fromScale(0.94,0.88)
 	frame.BackgroundColor3=Color3.fromRGB(21,28,33); frame.Active=true; frame.Visible=false; frame.Parent=gui; self.frame=frame
-	local size=Instance.new("UISizeConstraint"); size.MaxSize=Vector2.new(780,620); size.MinSize=Vector2.new(240,170); size.Parent=frame
+	local size=Instance.new("UISizeConstraint"); size.MaxSize=Vector2.new(780,620); size.MinSize=Vector2.new(240,260); size.Parent=frame
 	local current=text(frame,"TextLabel","CurrentInstruction")
 	current.Position=UDim2.fromOffset(12,8); current.Size=UDim2.new(1,-206,0,28)
 	current.BackgroundTransparency=1; current.TextXAlignment=Enum.TextXAlignment.Left; current.TextSize=12; current.TextWrapped=true
@@ -69,6 +70,12 @@ function IDE.new(playerGui,onRun,onStop,onConfigure)
 	editor.MultiLine=true; editor.ClearTextOnFocus=false; editor.TextWrapped=false
 	editor.TextXAlignment=Enum.TextXAlignment.Left; editor.TextYAlignment=Enum.TextYAlignment.Top
 	editor.Text=Config.DefaultSource; self.editor=editor
+ local tools=Instance.new("Frame"); tools.Name="SourceTools"; tools.BackgroundTransparency=1
+ tools.Position=UDim2.fromOffset(12,66); tools.Size=UDim2.new(1,-24,0,24); tools.Parent=frame; self.sourceTools=tools
+ local undo=text(tools,"TextButton","Undo"); undo.Size=UDim2.fromOffset(54,22); undo.Text="Undo"; undo.TextSize=11; self.undo=undo
+ local redo=text(tools,"TextButton","Redo"); redo.Position=UDim2.fromOffset(60,0); redo.Size=UDim2.fromOffset(54,22); redo.Text="Redo"; redo.TextSize=11; self.redo=redo
+ local pasteMode=text(tools,"TextButton","PasteMode"); pasteMode.Position=UDim2.fromOffset(124,0); pasteMode.Size=UDim2.new(1,-124,0,22)
+ pasteMode.TextSize=11; pasteMode.Text="Paste: align"; self.pasteMode=pasteMode
 	local outputScroll=Instance.new("ScrollingFrame"); outputScroll.Name="OutputScroll"
 	outputScroll.Position=UDim2.new(0,12,0.75,-12); outputScroll.Size=UDim2.new(1,-24,0.25,0)
 	outputScroll.ScrollBarThickness=6; outputScroll.BorderSizePixel=0
@@ -88,7 +95,7 @@ function IDE.new(playerGui,onRun,onStop,onConfigure)
     logStatus.TextSize=11; logStatus.TextWrapped=true; logStatus.TextXAlignment=Enum.TextXAlignment.Left; logStatus.BackgroundTransparency=1; self.logStatus=logStatus
 	local hardware=text(frame,"TextButton","Hardware")
     hardware.Position=UDim2.new(.5,6,0,39); hardware.Size=UDim2.new(.5,-18,0,22); hardware.Text="Hardware / threads"; self.hardwareButton=hardware
-    scroll.Position=UDim2.fromOffset(12,66); scroll.Size=UDim2.new(1,-24,0.75,-120)
+    scroll.Position=UDim2.fromOffset(12,94); scroll.Size=UDim2.new(1,-24,0.75,-148)
     local panel=Instance.new("Frame"); panel.Name="HardwarePanel"; panel.Position=UDim2.fromOffset(12,66); panel.Size=UDim2.new(1,-24,0.75,-120)
     panel.BackgroundColor3=Color3.fromRGB(21,28,33); panel.Visible=false; panel.Parent=frame; self.hardwarePanel=panel
     local configEditor=text(panel,"TextBox","HardwareConfiguration"); configEditor.Position=UDim2.fromOffset(0,0); configEditor.Size=UDim2.new(.5,-4,1,-32)
@@ -116,7 +123,7 @@ function IDE.new(playerGui,onRun,onStop,onConfigure)
         editor:ReleaseFocus(); output:ReleaseFocus(); configEditor:ReleaseFocus()
         self.handbook:open()
     end)
-    connect(hardware.Activated,function() panel.Visible=not panel.Visible; scroll.Visible=not panel.Visible end)
+    connect(hardware.Activated,function() panel.Visible=not panel.Visible; scroll.Visible=not panel.Visible; tools.Visible=not panel.Visible end)
     connect(apply.Activated,function()
         local configuration,reason=self:parseHardware(configEditor.Text)
         if not configuration then diagnostics.Text="Configuration: "..reason; return end
@@ -129,8 +136,7 @@ function IDE.new(playerGui,onRun,onStop,onConfigure)
 	connect(run.Activated,function()
 		if self.running or self.pendingRequest then return end
 		self:close()
-		local source=EditorText.edit(self.lastEditorText,editor.Text,-1)
-		if source~=editor.Text then editor.Text=source end
+		local source=editor.Text
 		self.logPageIndex=nil; self.fullOutputMessage=nil
 		self.pendingRequest=onRun(source)
 		if self.tankId then
@@ -144,28 +150,24 @@ function IDE.new(playerGui,onRun,onStop,onConfigure)
 		self.pendingRequest=onStop()
 		self:setOutput("Stop requested…"..(if self.scanOutputs[self.tankId] then self.scanOutputs[self.tankId].text else ""))
 	end)
-	self.lastEditorText=editor.Text
-	connect(editor:GetPropertyChangedSignal("Text"),function()
-		if self.adjustingText then return end
-		-- Native TextBox caret updates may follow Text; read the settled position.
-		task.defer(function()
-			if self.destroyed then return end
-			local source,cursor=EditorText.edit(self.lastEditorText,editor.Text,editor.CursorPosition or -1)
-			self.lastEditorText=source
-			if source~=editor.Text then
-				self.adjustingText=true; editor.Text=source
-				if cursor>0 then editor.CursorPosition=cursor end
-				self.adjustingText=false
-			end
-			self:layoutSource()
-		end)
-	end)
+ self.lastEditorText=editor.Text
+ self.editorController=EditorController.new(editor,function(source)
+  self.lastEditorText=source; self:layoutSource()
+ end)
+ connect(pasteMode.Activated,function()
+  self.editorController:release(); self.editorController.smartPaste=not self.editorController.smartPaste
+  pasteMode.Text=if self.editorController.smartPaste then "Paste: align" else "Paste: exact"
+  self.editorController:focus()
+ end)
+ connect(undo.Activated,function() self.editorController:release(); self.editorController:focus(); self.editorController:key("undo") end)
+ connect(redo.Activated,function() self.editorController:release(); self.editorController:focus(); self.editorController:key("redo") end)
 	connect(scroll:GetPropertyChangedSignal("AbsoluteSize"),function() self:layoutSource() end)
 	connect(outputScroll:GetPropertyChangedSignal("AbsoluteSize"),function() self:layoutOutput(false) end)
 	self:layoutSource(); self:layoutOutput(false)
 	return self
 end
 function IDE:close()
+ self.editorController:release()
 	self.handbook:close()
 	self.output:ReleaseFocus()
 	self.editor:ReleaseFocus()
@@ -174,6 +176,7 @@ end
 -- Editing and pending acknowledgments belong to the selected persistent tank.
 function IDE:bind(id)
 	if self.tankId==id then return end
+ self.editorController:release()
 	self.handbook:close()
 	if self.tankId then
 		self.sources[self.tankId]=self.editor.Text
@@ -182,7 +185,7 @@ function IDE:bind(id)
 	self.editor:ReleaseFocus()
 	self.output:ReleaseFocus()
 	self.logPageIndex=nil; self.fullOutputMessage=nil; self.outputPages=nil; self.currentLogPage=nil
-	self.tankId=id; self.editor.Text=self.sources[id] or Config.DefaultSource
+	self.tankId=id; self.editorController:bind(id,self.sources[id] or Config.DefaultSource)
 	self.pendingRequest=self.requests[id]; self.running=false
 	self:layoutSource()
 end
@@ -333,6 +336,7 @@ function IDE:update(state)
 	self.output.TextColor3=if status=="error" then Color3.fromRGB(255,157,125) else Color3.fromRGB(238,239,220)
 end
 function IDE:destroy()
+ self.editorController:destroy()
 	self.destroyed=true
 	self.handbook:destroy()
 	for _,connection in self.connections do connection:Disconnect() end

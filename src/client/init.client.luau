@@ -1,3 +1,4 @@
+local Components=require(game.ReplicatedStorage.Shared.VehicleComponents)
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local network = game.ReplicatedStorage:WaitForChild("TankNetwork")
@@ -85,26 +86,26 @@ end)
 bwOutput.OnClientEvent:Connect(function(id,generation,requestId,reading)
 	ide:receiveOutput(id,generation,requestId,reading)
 end)
-prepareShot.OnClientEvent:Connect(function(id, tankType, generation)
+prepareShot.OnClientEvent:Connect(function(id, tankType, generation, weaponId)
 	local renderer = renderers[tostring(id)]
-	if renderer and renderer.tankType == (tankType or "Boomer") and renderer.generation == (generation or 0) then renderer:fire() end
+	if renderer and renderer.tankType == (tankType or "Boomer") and renderer.generation == (generation or 0) and (not weaponId or renderer.weaponId==weaponId) then renderer:fire() end
 end)
-shot.OnClientEvent:Connect(function(id, origin, direction, tankType, generation, rock)
+shot.OnClientEvent:Connect(function(id, origin, direction, tankType, generation, rock, weaponId)
 	local renderer = renderers[tostring(id)]
 	if renderer and (generation or 0)<renderer.generation then return end
-	local matches = renderer and renderer.tankType == (tankType or "Boomer") and renderer.generation == (generation or 0)
-	if matches and renderer.tankType == "Rattler" then renderer:fire(rock) end
+	local matches = renderer and renderer.tankType == (tankType or "Boomer") and renderer.generation == (generation or 0) and (not weaponId or renderer.weaponId==weaponId)
+	if matches and renderer.gatling then renderer:fire(rock) end
 	if matches and renderer.position and renderer.muzzleFrame then
 		-- Use the rendered barrel tip, including its bounce and recoil, so the
 		-- sparks stay attached to the opening despite snapshot smoothing.
-		if renderer.tankType == "Rattler" then
+		if renderer.gatling then
 			direction = renderer.muzzleFrame.LookVector; origin = renderer.muzzleFrame.Position
 		else
 			direction = renderer.cannon.CFrame.RightVector
 			origin = renderer.cannon.CFrame.Position + direction*3
 		end
 	end
-	Renderer.shot(origin, direction, tankType)
+	Renderer.shot(origin, direction, tankType,weaponId)
 end)
 local elapsed, debugElapsed = 0, 0
 RunService:BindToRenderStep("BattleWorksFrame", Enum.RenderPriority.Camera.Value + 1, function(dt)
@@ -129,9 +130,9 @@ RunService:BindToRenderStep("BattleWorksFrame", Enum.RenderPriority.Camera.Value
 		selector:update(own)
 		local status
 		if own.health <= 0 then status = "WRECKED • Reset Battle to retry"
-		elseif own.tankType == "Rattler" then
+		elseif Components.forWeapon(own.tankType,own.weaponId).Weapon.Operation=="Heat" then
 			status = if (own.weaponCooldown or 0)>0 then string.format("COOLING %.1fs",own.weaponCooldown)
-				else string.format("HEAT %d%%%s",math.floor((own.heat or 0)/3*100),if own.firing then " / BRRR!" else "")
+				else string.format("HEAT %d%%%s",math.floor((own.heat or 0)/Components.forWeapon(own.tankType,own.weaponId).Weapon.MaxHeat*100),if own.firing then " / BRRR!" else "")
 		else status = if own.cooldown>0 then "Reloading" else "Ready" end
 		if own.immobilized then status..=string.format(" / RATTLED %.1fs",own.immobilizedRemaining or 0) end
 		if own.smokeBurst then status..=" / SMOKE" end

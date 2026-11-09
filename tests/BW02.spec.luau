@@ -273,12 +273,12 @@ check(second.status=="error" and first.variables.x==1,"simultaneous tanks/progra
 Controller.start(tank,'x = 1'); Controller.input(tank,1/60); Controller.stop(tank,"Battle reset.")
 check(next(tank.bw.variables)==nil,"reset also clears completed program's variables")
 local Text=require("BWEditorText")
-local text,cursor=Text.edit('if true:','if true:\n',10)
+local text,cursor=Text.edit('if true:','if true:\n',10,'enter')
 check(text=='if true:\n    ' and cursor==14,"Enter after block header inserts four-space indent")
-text=Text.edit('    print(1)','    print(1)\n',14)
+text=Text.edit('    print(1)','    print(1)\n',14,'enter')
 check(text=='    print(1)\n    ',"Enter retains current indentation")
 text=Text.edit('', '\tif true:\n\t\tprint("\\t")',-1)
-check(text=='    if true:\n        print("\\t")',"editor converts leading tabs without changing string content")
+check(text=='\tif true:\n\t\tprint("\\t")',"editor preserves pasted whitespace without normalization")
 local large=Value.array({1}); for _=1,12 do large=Value.array({large,large,large,large}) end
 check(#Value.format(large)<=Config.MaxOutputBytes+24,"printing shared nested arrays has a bounded formatting budget")
 -- Printed values share the private, chronological IDE history with observations.
@@ -291,8 +291,9 @@ ui:update({generation=0,bwRequestId=1,bwRunRequestId=1,bwStatus="completed",bwMe
 check(ui.output.Text:find("Scanner(45)",1,true) and ui.output.Text:find("Enemy detected",1,true)<ui.output.Text:find("Program completed.",1,true),"diagnostic, print and completion remain visible in chronological output")
 for i=3,Config.MaxOutputEvents do ui:receiveOutput("tank",0,1,{kind="print",text=tostring(i),timestamp=i,line=3}) end
 check(#ui.scanOutputs.tank.readings==Config.MaxOutputEvents,"IDE preserves bounded mixed print/scan history rather than replacing it")
-ui.editor.Text="if true:\n"; ui.editor.CursorPosition=10; ui.lastEditorText="if true:"
-ui.editor:GetPropertyChangedSignal("Text"):Fire()
+ui.editorController:bind("indent-test","if true:")
+ui.editor.CursorPosition=9; ui.editorController:key("enter",Enum.KeyCode.Return)
+ui.editor.Text="if true:\n"; ui.editor.CursorPosition=10; ui.editor:GetPropertyChangedSignal("Text"):Fire()
 check(ui.editor.Text=="if true:\n    " and ui.editor.CursorPosition==14,"live editor change hook applies indentation without recursive editing")
 ui:destroy()
 print(string.format("BW v0.2 expressions/blocks/runtime suite passed: %d assertions",count))

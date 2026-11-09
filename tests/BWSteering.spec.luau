@@ -50,7 +50,7 @@ advance(stop,st,120); check(math.abs(st.speed)<0.001,"stop settles")
 local center,ce=create('steer_right(20)\nforward()\nc = get_clock()\nwait_for_clock(c.time+2)\nsteer_center()')
 advance(center,ce,240); check(math.abs(ce.steeringAngle)<1e-6 and ce.speed>29,"center maintains speed")
 local boomer,bs=create('a = steer_right(20)\nturn_right(90)',"Boomer"); advance(boomer,bs,180)
-check(boomer.variables.a.reason=="unsupportedDrivetrain" and boomer.status=="completed" and bs.yaw< -1.5,"Boomer rejects wheel steering but preserves pivot")
+check(boomer.variables.a.status=="success" and boomer.status=="completed" and bs.yaw< -1.5,"Boomer now supports track steering and preserves pivot")
 local bc,bcs=create('forward()',"Boomer"); advance(bc,bcs,60); check(bcs.position.Z< -10,"Boomer continuous compatible")
 local devices=D.new(H.default("Bunny"),S.new(Vector3.zero,"Rattler"))
 local function submit(op,value,t) return devices:submit("drivetrain",{op=op,value=value,line=1},t or 0,1) end

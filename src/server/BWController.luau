@@ -3,6 +3,7 @@ local Shared=game.ReplicatedStorage.Shared
 local Parser=require(Shared.BWParser)
 local Runtime=require(Shared.BWExecution)
 local Hardware=require(Shared.BWChassis)
+local Components=require(Shared.VehicleComponents)
 local Command=require(Shared.InputCommand)
 local Controller={}
 local function cleanup(tank)
@@ -53,7 +54,7 @@ function Controller.start(tank,source)
 	if not instructions or tank.state.health<=0 then
 		return Controller.reject(tank,if err then err.message else "Tank is destroyed; reset the battle.",if err then err.line else 0)
 	end
-	tank.hardware=tank.hardware or Hardware.forTank(tank.state.tankType)
+	tank.hardware=tank.hardware or Hardware.forTank(tank.state)
  Controller.applyHardware(tank)
  tank.bw=Runtime.new(instructions,tank.state,tank.bwServices,tank.hardware)
 	tank.requireFireRelease=false
@@ -61,10 +62,11 @@ function Controller.start(tank,source)
 	return tank.bw.status=="running"
 end
 function Controller.applyHardware(tank)
- tank.hardware=tank.hardware or Hardware.forTank(tank.state.tankType)
+ tank.hardware=tank.hardware or Hardware.forTank(tank.state)
+ Components.withComputer(tank.state,tank.hardware.tier)
  local devices=tank.hardware.devices
  for name,field in {drivetrain="drivePerformance",turret="turretPerformance",weapon="weaponPerformance"} do
-  tank.state[field]=if devices[name] then Hardware.performance(devices[name].allocation) else 0
+  tank.state[field]=if devices[name] then Hardware.performance(devices[name].allocation,Components.get(tank.state).Bus) else 0
  end
 end
 function Controller.configure(tank,configuration)

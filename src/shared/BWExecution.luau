@@ -25,7 +25,7 @@ local function debugOnly(n)
  return true
 end
 function R.new(instructions,state,services,configuration)
- local config=Hardware.copy(configuration or Hardware.default()); local valid,reason=Hardware.validate(config); assert(valid,reason)
+ local config=Hardware.copy(configuration or Hardware.forTank(state)); local valid,reason=Hardware.validate(config); assert(valid,reason)
  local self=setmetatable({instructions=instructions,index=1,services=services or {},config=config,variables={},versions={},threads={},results={},cyclesSpent=0,
   status="running",message="Running",elapsed=0,time=0,cycle=-1,generation=state.generation or 0,tankType=state.tankType or "Boomer",outputCount=0,scanCount=0},R)
  self.devices=Devices.new(config,state,self.services)

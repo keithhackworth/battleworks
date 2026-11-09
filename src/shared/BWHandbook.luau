@@ -3,6 +3,7 @@ local Hardware=require(script.Parent.BWChassis)
 local Limits=require(script.Parent.BWConfig)
 local Scanner=require(script.Parent.ScannerConfig)
 local Tanks=require(script.Parent.TankDefinitions)
+local Catalog=require(script.Parent.ComponentCatalog)
 local Handbook={}
 local function number(n) return string.format("%g",n) end
 local function command(name,signature,category,inputs,behavior,returns,device)
@@ -15,16 +16,16 @@ function Handbook.commands()
  for _,name in {"forward","back"} do
   add(name,name.."(studs, best_effort=true)\n"..name.."()",name,
    "Optional studs: finite number from 0 to "..number(Limits.MaxDistance).."; expressions are allowed. Omit studs for continuous driving.",
-   (if name=="forward" then "Drive forward" else "Reverse").." for the actual requested distance along the direction at command START. Sideways drift and wheel spin do not count; real recoil along that direction does. Rattler honors persistent wheel steering; finite arcs count signed forward travel along the changing heading, excluding lateral drift. Without a distance, drive continuously until replaced/stopped or lifecycle timeout. Both forms return immediately after submission. Walls can prevent completion. No teleporting.",accepted,"drivetrain")
+   (if name=="forward" then "Drive forward" else "Reverse").." for the actual requested distance. Installed mobility honors persistent steering; finite arcs count signed forward travel along the changing heading, excluding lateral drift and wheel spin. Real recoil along the commanded direction counts. Without a distance, drive continuously until replaced/stopped or lifecycle timeout. Both forms return immediately after submission. Walls can prevent completion. No teleporting.",accepted,"drivetrain")
  end
  for _,name in {"steer_left","steer_right"} do
   add(name,name.."(degrees, best_effort=true)",name,
-   "degrees: finite number 0..180, clamped to the vehicle's physical steering limit (Rattler approximately "..number(math.deg(Tanks.Rattler.Drive.MaxSteer)).." degrees). No to= argument.",
-   "Set absolute front-wheel steering "..(if name=="steer_left" then "left" else "right").." of center, persisting until changed. Repeated calls do not accumulate. Immediate setpoint update bypasses drivetrain queues; actual wheels follow existing physical smoothing. Does not rotate the chassis directly. Unsupported on Boomer; fail / unsupportedDrivetrain. High-level chassis turns temporarily own actual steering, then the saved setpoint resumes.",
-   'Standard result with commandId and steeringDegrees (positive left, negative right). The setpoint command completes immediately, not when wheels physically finish moving.',"drivetrain")
+   "degrees: finite number 0..180, clamped to the installed mobility steering limit (Boomer tracks use a 45-degree control range; Rattler wheels approximately "..number(math.deg(Tanks.Rattler.Drive.MaxSteer)).." degrees). No to= argument.",
+   "Set an absolute steering target "..(if name=="steer_left" then "left" else "right").." of center, persisting until changed. Repeated calls do not accumulate. Immediate updates bypass queues. Wheeled mobility positions front wheels through existing smoothing; tracked mobility changes relative tread intent while driving. steer_right(20) sets steering; turn_right(20) changes heading. Unsupported only when installed mobility lacks steering: fail / unsupportedDrivetrain. High-level turns temporarily own actual steering, then the saved target resumes.",
+   'Standard result with commandId and steeringDegrees (positive left, negative right). The setpoint command completes immediately, not when wheels physically finish moving. Positive is left and negative is right for both mobility types.',"drivetrain")
  end
- add("steer_center","steer_center()","steer_center","No arguments. Wheeled drivetrains only.",
-  "Set the persistent wheel target to straight ahead without interrupting movement. Existing wheel steering smoothing still applies. Unsupported on Boomer returns unsupportedDrivetrain.",
+ add("steer_center","steer_center()","steer_center","No arguments. Installed mobility must support steering.",
+  "Set the persistent steering target to straight ahead without interrupting movement. Wheels use existing smoothing; tracks return to equal tread intent. Installed mobility without steering returns unsupportedDrivetrain.",
   'Standard result with commandId and steeringDegrees: 0; status success means the wheel target was accepted.',"drivetrain")
  add("stop","stop()","stop","No arguments. Both drivetrain types.",
   "Cancel active and queued drivetrain work and release throttle immediately. Preserve steering target, actual velocity and recoil; normal coasting/braking handles physical stopping. Other devices continue. Stop is accepted at zero drive allocation for safety, but requires an installed drivetrain.",
@@ -162,16 +163,16 @@ clock = get_clock()
 wait_for_clock(clock.time + 3)
 stop()
 
-steer_right(20) positions the wheels, while turn_right(20) changes chassis heading. forward(50) travels a finite distance; forward() drives until replaced/stopped or lifecycle timeout. An issuing thread can finish while its continuous drive remains active. The same physics, collision, coasting, bus performance, airborne restrictions and damage filters still apply.]])
+steer_right(20) sets steering: wheel angle for wheels, relative tread intent for tracks. turn_right(20) changes chassis heading. Capabilities come from installed components, not the model name. forward(50) travels a finite distance; forward() drives until replaced/stopped or lifecycle timeout. An issuing thread can finish while its continuous drive remains active. The same physics, collision, coasting, bus performance, airborne restrictions and damage filters still apply.]])
  add("turret","Turret","Turret commands",renderCommands(commands,{"turret_left","turret_right"}))
  add("weapon","Weapons","Firing and weapon timing",renderCommands(commands,{"fire"})..string.format([[
 
 CURRENT FULL-PERFORMANCE TIMING
-Boomer: %g seconds cannon preparation and %g seconds firing interval. Lower allocation divides these durations by effective performance. It still swells, recoils and releases a shell along the actual barrel direction.
+Cannon (currently Rattler): %g seconds cannon preparation and %g seconds firing interval. Lower allocation divides these durations by effective performance. It still swells, recoils and releases a shell along the actual barrel direction.
 
-Rattler: %g seconds firing interval, at most %g seconds continuous fire, then %g seconds mandatory overheat cooldown. Lower allocation lengthens the shot interval; it does not increase projectile speed or bypass heat. Releasing and tapping does not reset accumulated heat.
+Gatling (currently Boomer): %g seconds firing interval, at most %g seconds continuous fire, then %g seconds mandatory overheat cooldown. Lower allocation lengthens the shot interval; it does not increase projectile speed or bypass heat. Releasing and tapping does not reset accumulated heat.
 
-fire(2) holds the trigger for 2 simulated seconds; it does not mean two shots. Preparation/cooldown can delay activation, and active commands have bounded safety timeouts. Neither tank's recoil, movement or weapon mechanics is replaced by BW.]],Tanks.Boomer.Weapon.FireWindup,Tanks.Boomer.Weapon.Cooldown,Tanks.Rattler.Weapon.Cooldown,Tanks.Rattler.Weapon.MaxBurst,Tanks.Rattler.Weapon.OverheatCooldown))
+fire(2) holds the trigger for 2 simulated seconds; it does not mean two shots. Preparation/cooldown can delay activation, and active commands have bounded safety timeouts. Neither tank's recoil, movement or weapon mechanics is replaced by BW.]],Catalog["weapon.cannon"].Properties.FireWindup,Catalog["weapon.cannon"].Properties.Cooldown,Catalog["weapon.gatling"].Properties.Cooldown,Catalog["weapon.gatling"].Properties.MaxBurst,Catalog["weapon.gatling"].Properties.OverheatCooldown))
  add("radar","Radar","Scanner input, timing and all returned fields",renderCommands(commands,{"Scanner"})..string.format([[
 
 PHYSICAL TIME (separate from CPU cost)
@@ -275,6 +276,11 @@ forward(double_move)
 CONST declares an immutable number, string, boolean or null during compilation. Its declaration and references cost ZERO runtime ticks and produce no runtime assignment, read or storage. Initializer operators/parentheses and previously declared constants are evaluated at compile time. Commands still pay their usual submission cost; forward(double_move) has exactly the cost of forward(20). Ordinary variables keep their read/write costs; arithmetic outside a CONST initializer still costs ticks.
 
 Names are case-sensitive and program-wide, visible after declaration in textual source order across threads. Prefer declarations at the top. Declarations inside a branch/thread are compile-time, not conditional. No reassignment, duplicate names, mutable-name conflicts, collections, indexing, function calls, runtime dependencies, self/forward/circular references or synchronization variable references are allowed. Compiler errors identify the source line. Built-in and keyword names cannot be constants.
+
+EDITOR
+Enter retains indentation and adds four spaces after a block-header colon. Backspace in leading indentation removes one level. Tab/Shift+Tab indent/outdent the current line or selected lines. Undo/Redo buttons and Ctrl/Cmd+Z, Ctrl/Cmd+Y or Ctrl/Cmd+Shift+Z use separate history for each tank.
+
+Paste: align is the default: prepare the insertion indentation, then paste the AI code. Common outer indentation is removed and internal nesting is aligned to your insertion point; existing obsolete code stays in place for you to remove. A multiline paste is one undo operation. Inline whitespace/strings and line endings stay intact. Use Paste: exact when every received whitespace byte must remain unchanged. Run never normalizes source. The compiler still expects four-space indentation; the editor does not fix missing internal nesting or strip Markdown fences.
 
 One statement per line. Names are case-sensitive. Command parameters named studs/degrees/seconds/value in this reference are positional placeholders; use named to=, position= or best_effort= only where shown. # starts a comment outside strings. Blocks use four spaces, not tabs. Variables belong to one tank's program and are shared by all its threads; they do not leak between tanks/runs/resets.
 

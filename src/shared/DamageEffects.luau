@@ -1,5 +1,6 @@
 -- Pure server-driven injury/status state. Hits never extend an active episode.
 local Config=require(script.Parent.DamageEffectsConfig)
+local Components=require(script.Parent.VehicleComponents)
 local Effects={}
 local function clearActive(state)
 	state.smokeBurst=false; state.smokeRemaining=0
@@ -14,7 +15,7 @@ function Effects.new(state)
 end
 function Effects.severity(state)
 	local band=0
-	for index,hp in Config.Thresholds do if state.health<=hp then band=index end end
+	for index,hp in Config.Thresholds do if state.health/Components.get(state).Chassis.Health*100<=hp then band=index end end
 	local total,smoke,rattle=0,0,0
 	for weapon,amount in state.damageByWeapon or {} do
 		total+=amount

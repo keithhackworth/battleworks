@@ -91,8 +91,8 @@ do
    if self.Name=="BWOutput" then table.insert(privateOutputs,{recipient=recipient,args={...}}) elseif self.Name=="BWRuntimeState" then table.insert(privateRuntime,{recipient=recipient,args={...}}); if #privateRuntime>32 then table.remove(privateRuntime,1) end end end
    p.FireAllClients=function(self,...)
     local args={...}
-    if self.Name=="Shot" then table.insert(shots,{time=time,id=args[1],kind=args[4],origin=args[2],direction=args[3],rock=args[6]}) end
-    if self.Name=="PrepareShot" then table.insert(prepared,{time=time,id=args[1]}) end
+    if self.Name=="Shot" then table.insert(shots,{time=time,id=args[1],kind=args[4],origin=args[2],direction=args[3],rock=args[6],weaponId=args[7]}) end
+    if self.Name=="PrepareShot" then table.insert(prepared,{time=time,id=args[1],kind=args[2],weaponId=args[4]}) end
     if self.Name=="Snapshot" then
      battleStates=args[2] or {}; snapshots={}; for id,state in args[1] do
       snapshots[id]=table.clone(state)

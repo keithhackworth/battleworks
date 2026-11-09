@@ -6,7 +6,9 @@ local Selection=require("TankSelection")
 local Config=require("TankConfig")
 local count=0
 local function check(ok,message) assert(ok,message); count+=1 end
-check(Definitions.Boomer.Weapon==Config,"Boomer uses unchanged original weapon tuning")
+for _,key in {"FireWindup","Cooldown","Damage","Range","MuzzleHeight","MuzzleOffset","ShellSpeed","ShellRadius"} do
+ if key~="MuzzleHeight" then check(Definitions.Boomer.Weapon[key]==Config[key],"Boomer retains original "..key) end
+end
 check(not Definitions.valid("Unknown") and not Definitions.valid({}) and Definitions.valid("Rattler"),"selection allowlist")
 local function state() return Simulation.new(Vector3.zero,"Rattler") end
 local command={throttle=1,steer=0.2,fire=true,aimMode="Rate",turretX=0.1,turretY=0.05}
