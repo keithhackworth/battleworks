@@ -59,6 +59,7 @@ try {
     ['LiveRuntimeExamples'],
     ['BWEditor'],
     ['BWFunctions'],
+    ['PhysicsForces'],
   ];
   if (groupIndex === null) {
     state.destroy(); state = null;
