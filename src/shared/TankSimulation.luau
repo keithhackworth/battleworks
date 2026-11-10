@@ -84,16 +84,26 @@ function Simulation.moveBody(state,command,dt,mapSize,environment,deferContacts)
  ground+=(state.groundPlaneY or 0)
  state.position=Vector3.new(x,state.position.Y,z)
  state.groundPitch=pitch; state.groundRoll=roll; state.surface=kind
- Recoil.step(state,dt,ground)
+ if deferContacts then state.motionDeferredDt=dt else Recoil.step(state,dt,ground) end
  Motion.sync(state)
 end
 function Simulation.reconcileGround(state,environment)
  local c=Components.get(state); local h,p,r,kind=0,0,0,"Grass"
  if environment then h,p,r,kind=Environment.pose(environment,state.position,state.yaw,c.Chassis) end
- state.bodyPitch=(state.bodyPitch or 0)+p-(state.groundPitch or 0)
- state.bodyRoll=(state.bodyRoll or 0)+r-(state.groundRoll or 0)
- state.groundPitch=p; state.groundRoll=r; state.surface=kind
- Recoil.step(state,0,h+(state.groundPlaneY or 0)); Motion.sync(state)
+ local dt=state.motionDeferredDt
+ state.motionDeferredDt=nil
+ if dt then
+  state.groundPitch=p; state.groundRoll=r; state.surface=kind
+  Recoil.step(state,dt,h+(state.groundPlaneY or 0))
+  suspension(state,dt)
+  state.bodyPitch+=p; state.bodyRoll+=r
+ else
+  state.bodyPitch=(state.bodyPitch or 0)+p-(state.groundPitch or 0)
+  state.bodyRoll=(state.bodyRoll or 0)+r-(state.groundRoll or 0)
+  state.groundPitch=p; state.groundRoll=r; state.surface=kind
+  Recoil.step(state,0,h+(state.groundPlaneY or 0))
+ end
+ Motion.sync(state)
 end
 function Simulation.step(state, command, dt, mapSize, environment, deferContacts)
  local c=Components.get(state); local turret=c.Turret
@@ -107,8 +117,10 @@ function Simulation.step(state, command, dt, mapSize, environment, deferContacts
 	TurretRecoil.step(state,dt)
 	if state.health<=0 then state.firing=false end
     Simulation.moveBody(state,command,dt,mapSize,environment,deferContacts)
-    suspension(state,dt)
-    state.bodyPitch+=state.groundPitch or 0; state.bodyRoll+=state.groundRoll or 0
+    if not deferContacts then
+     suspension(state,dt)
+     state.bodyPitch+=state.groundPitch or 0; state.bodyRoll+=state.groundRoll or 0
+    end
     if state.health<=0 then return end
 	if command.aimMode == "Rate" then
 		-- Positive X aims right; positive Y elevates the cannon.

@@ -112,3 +112,44 @@ local contactAir=record("air",-3,0,30,0); contactAir.state.position=Vector3.new(
 Contacts.solve({contactAir},{wall},.2)
 check(contactAir.state.position.X>0,"non-overlapping vertical intervals do not collide")
 print(string.format("Physics contact coverage passed: %d assertions",checks))
+local blendA={id="a",x=0,z=0,rx=10,rz=10,priority=4,surface=Surface.Profiles.Normal}
+local blendB={id="b",x=0,z=0,rx=10,rz=10,priority=4,surface=Surface.Profiles.Ice}
+local mix=Surface.sample(Surface.prepare({blendB,blendA}),0,0)
+check(near(mix,(16+.025)/2),"equal-priority full regions blend instead of multiplying grip")
+check(mix==Surface.sample(Surface.prepare({blendA,blendB}),0,0),"equal-priority blend is insertion-order independent")
+local mutableProfile={staticFriction=.2,kineticFriction=.1,resistance=.4}
+local mutableRegion={id="owned",x=0,z=0,rx=10,rz=10,surface=mutableProfile}
+local isolated=Surface.prepare({mutableRegion}); mutableProfile.staticFriction=10; mutableRegion.x=100
+check(near(Surface.sample(isolated,0,0),.2),"prepared surfaces do not leak source mutations")
+check(not pcall(Surface.prepare,{{id="bad",x=0,z=0,rx=10,rz=10,surface={staticFriction=.1,kineticFriction=.2,resistance=1}}}),"invalid friction ordering rejected")
+check(not pcall(M.configure,{},0,1),"zero mass rejected")
+check(not pcall(M.impulse,body(),Vector3.new(0/0,0,0)),"non-finite impulse rejected")
+local patch=Surface.prepare({{id="small",shape="box",x=0,z=0,rx=2,rz=10,surface=Surface.Profiles.Ice}})
+check(Surface.contact(patch,Vector3.zero,0,Components.get("Rattler").Chassis)==16,"contact patch sampling differs correctly from center-only sampling")
+local invisible=tank(); run(invisible,forward,1,ice)
+check(invisible.surface=="Grass" and invisible.motionSlipping,"visual terrain kind is independent from physical grip")
+local outside=record("outside",10000,10000)
+Contacts.solve({outside},Contacts.obstacles(nil,Vector2.new(25,40)),1/60)
+check(math.abs(outside.state.position.X)<=11.5001 and math.abs(outside.state.position.Z)<=19.0001,"infinite arena planes recover invalid initial positions")
+check(energy(outside)==0,"deep boundary correction does not add energy")
+print(string.format("Physics surface/validation coverage passed: %d assertions",checks))
+-- Flight must land against the resolved position, not ground sampled behind
+-- an obstacle in the unconstrained prediction.
+local landing=tank(); landing.position=Vector3.new(0,1.5,0); landing.lift=1.5
+M.setVelocity(landing,Vector3.new(480,-20,0))
+local ledge={zones={},trees={},logs={},rocks={{x=8,z=0,rx=2,rz=4,height=3}}}
+Sim.step(landing,neutral,1/60,Vector2.new(2000,2000),ledge,true)
+Contacts.solve({Contacts.body("landing",landing,Components.get(landing).Chassis)},{Contacts.box("cover",Vector3.new(6,0,0),.5,10,0,10)},1/60)
+Sim.reconcileGround(landing,ledge)
+check(landing.position.X<.501 and landing.position.Y>1 and landing.position.Y<1.5,"resolved contact position controls vertical flight support")
+check((landing.landingSerial or 0)==0 and landing.linearVelocity.Y< -20 and landing.motionDeferredDt==nil,"no phantom landing or duplicate gravity from deferred contacts")
+local localFlight,serverFlight=tank(),tank()
+for _,s in {localFlight,serverFlight} do s.position=Vector3.new(0,3,0); s.lift=3; M.setVelocity(s,Vector3.new(3,12,-5)); M.setYawVelocity(s,.3) end
+for _=1,120 do
+ Sim.step(localFlight,neutral,1/60,Vector2.new(2000,2000),normal)
+ Sim.step(serverFlight,neutral,1/60,Vector2.new(2000,2000),normal,true)
+ Contacts.solve({Contacts.body("server",serverFlight,Components.get(serverFlight).Chassis)},Contacts.obstacles(normal,Vector2.new(2000,2000)),1/60)
+ Sim.reconcileGround(serverFlight,normal)
+ check((localFlight.position-serverFlight.position).Magnitude<1e-8 and localFlight.linearVelocity.Y==serverFlight.linearVelocity.Y,"standalone and two-phase server flight are equivalent")
+end
+print(string.format("Physics resolved-flight coverage passed: %d assertions",checks))
