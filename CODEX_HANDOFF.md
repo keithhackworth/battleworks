@@ -1,6 +1,16 @@
+
+Undo follow-up (E3.2): keyboard undo/redo retains an authoritative history snapshot beyond key release and settling frames. Late native history callbacks restore that snapshot on the next Heartbeat and cannot become new edits. The next non-modifier editing/navigation input or explicit lifecycle release relinquishes ownership. Native Studio Ctrl+Z/Ctrl+Y retesting remains required.
 # BattleWorks game and Codex handoff
 
 Last reviewed: 2026-11-08. This document records the implemented prototype, user requirements, development workflow, and unresolved questions for future sessions. Read [README.md](README.md) for player setup and the detailed Android test checklist. Source code is the authority if either document becomes stale.
+
+## 2026-11-10: CtrlZ/Y native history conflict; E3.1
+
+User reports CtrlZ no effect, CtrlY removes typing and cannot redo reliably; ShiftDelete works. Short key guards cleared at key-up let late native undo become a new app edit and wipe redo. Keyboard undo/redo now changes one logical app-history target and defers widget writes across stable Heartbeats, retaining ownership past key release/native property callbacks. Rapid successive chords update the same app history without recording the native intermediate buffer. Ordinary native edit history commits also wait stable frames so native-first keyboard callbacks aren't prematurely recorded as typing. Buttons use the same history directly. Non-history keys, bind/release settle pending history ownership. Confirmed E3 Enter and ShiftDelete paths retained. UI label E3.1-history. New reproduction tests include typing, late after key-up native callbacks, native-first redo, empty redo, immediate undo before native commit, Control-modifier flush before native undo and rapid undo/redo. Editor suite171 assertions passes. Native user confirmation still needed; do not claim Studio success from mocks.
+
+## User confirmed E3 Enter; line-delete shortcuts added
+
+User said Enter is perfect. Preserve that native/frame-boundary path. Ctrl/Cmd+Z/Y undo/redo are verified; Shift+Delete now removes the caret's entire line (including following newline, or preceding newline for final line). It ignores selection extent, preserves CRLF and valid Unicode caret, and is one undo transaction. Native-first line deletion/cut/default-delete echoes are recognized so two lines are not removed. Editor suite158 assertions and all regressions pass; both Rojo builds/whitespace pass. New shortcut behavior remains native-user-test pending. No commit/push.
 
 ## Enter E3: actual frame boundary and stale caret beside existing newline
 

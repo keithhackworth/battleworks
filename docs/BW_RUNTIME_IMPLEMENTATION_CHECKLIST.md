@@ -1,3 +1,6 @@
+
+- [x] Regression test for native redo after undo settling has completed.
+- [ ] Verify E3.2 keyboard undo/redo in Roblox Studio, including typing and paste afterward.
 # BW runtime implementation checklist
 
 Source of truth for this change. Checked means verified, not merely written. Native Roblox Studio checks remain separate. No automatic commit/push.
@@ -245,3 +248,18 @@ Acceptance: visible separated tanks/walls appear once each in nearest-first orde
 - [x] Dedicated editor suite123 assertions passes, including the previously missing mid-document/existing-newline stale-caret case, colon variant, undo caret and native auto-indent.
 - [x] All regression suites pass, including123 editor assertions. Both Rojo build formats and git diff --check pass.
 - [ ] Native Studio retest remains required; pending user clarification about Studio/Rojo, built-place or published session. No native success claimed.
+
+
+## Follow-up — Ctrl+Z/Y and Shift+Delete
+- [x] Verify Ctrl/Cmd+Z and Ctrl/Cmd+Y route to application undo/redo while source is focused.
+- [x] Add Shift+Delete for the complete caret line, including its line break, as one undo transaction; preserve CRLF/UTF-8 caret validity and recognize native-first deletion/cut echoes.
+- [x] All regression groups pass, including158 editor assertions. Both Rojo formats and whitespace checks pass. E3 Enter path is preserved.
+- [ ] Native keyboard retest for these shortcuts remains required; user confirmed E3 Enter works before this addition.
+
+
+## Follow-up — keyboard undo/redo direction corrupted by native history
+- [x] Trace key-up guard release allowing late native undo to become a new edit and erase redo.
+- [x] Add keyboard history transactions that own one target through stable frame boundaries and key release; ignore native history callbacks and caret changes until settled. Native edit commits also cross frame boundaries.
+- [x] Preserve Enter E3 and Shift+Delete; test ordinary typing, immediate undo, native-first events, late-after-key-up callbacks, empty redo and rapid CtrlZ/CtrlY sequences.
+- [x] All regression groups pass, including171 editor assertions. Both Rojo builds and whitespace checks pass.
+- [ ] Native E3.1 keyboard retest remains required.

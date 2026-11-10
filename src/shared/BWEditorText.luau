@@ -86,6 +86,29 @@ function Text.backspace(source,cursor,anchor)
  local shortened=prefixTo(prefix,math.floor((columns(prefix)-1)/width)*width)
  return source:sub(1,start-1)..shortened..source:sub(first),start+#shortened,-1
 end
+-- Shift+Delete removes the caret's complete line, independent of selection.
+function Text.deleteLine(source,cursor)
+ cursor=math.clamp(cursor or 1,1,#source+1)
+ local first=startOfLine(source,cursor)
+ local ending=source:find('\n',first,true)
+ if not ending then
+  if first==1 then return '',1,-1 end
+  local before=first-1
+  if source:sub(before-1,before)=='\r\n' then before-=1 end
+  local result=source:sub(1,before-1)
+  return result,#result+1,-1
+ end
+ local result=source:sub(1,first-1)..source:sub(ending+1)
+ local nextEnding=result:find('\n',first,true) or (#result+1)
+ if result:sub(nextEnding-1,nextEnding-1)=='\r' then nextEnding-=1 end
+ local position=math.min(first+(cursor-first),nextEnding)
+ while position>first do
+  local byte=result:byte(position)
+  if not byte or byte<128 or byte>=192 then break end
+  position-=1
+ end
+ return result,position,-1
+end
 function Text.indent(source,cursor,anchor,outdent)
  local first,last,caret,mark=selection(source,cursor,anchor)
  local start=startOfLine(source,first)
@@ -168,6 +191,12 @@ function Text.nativeEcho(previous,cursor,anchor,action,source)
  local before,after=previous:sub(1,first-1),previous:sub(last)
  if action=='enter' then return source==before..'\n'..after or source==before..'\r\n'..after end
  if action=='indent' or action=='outdent' then return source==before..'\t'..after end
+ if action=='deleteLine' then
+  if source==Text.deleteLine(previous,cursor) then return true end
+  if first~=last then return source==before..after end
+  local removed=#previous-#source
+  return removed>0 and source==previous:sub(1,first-1)..previous:sub(first+removed)
+ end
  if action=='backspace' then
   if first~=last then return source==before..after end
   if first<=1 then return false end

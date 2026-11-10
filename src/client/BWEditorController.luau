@@ -10,7 +10,7 @@ function Editor.new(box,changed)
  connect(box:GetPropertyChangedSignal('Text'),function() self:nativeChanged() end)
  for _,property in {'CursorPosition','SelectionStart'} do
   connect(box:GetPropertyChangedSignal(property),function()
-   if self.writing then return end
+   if self.writing or self.historyAction or self.historyLatch then return end
    local caret=self.enterCaret
    if caret and caret.history==self.history and self.history.current==caret.state and box.Text==caret.state.text and box.CursorPosition==caret.nativeCursor then
     self:queueEnterCaret(); return
@@ -26,6 +26,13 @@ function Editor.new(box,changed)
   local shift=down('LeftShift') or down('RightShift')
   if down('LeftAlt') or down('RightAlt') then return end -- preserve OS/AltGr input
   local key=input.KeyCode
+  local modifier=key==Enum.KeyCode.LeftControl or key==Enum.KeyCode.RightControl or key==Enum.KeyCode.LeftMeta or key==Enum.KeyCode.RightMeta or key==Enum.KeyCode.LeftShift or key==Enum.KeyCode.RightShift
+  local historyKey=control and (key==Enum.KeyCode.Z or key==Enum.KeyCode.Y)
+  if self.historyLatch and not modifier and not historyKey then self:releaseHistoryLatch() end
+  -- A modifier starts a new shortcut, before native Z/Y can undo pending
+  -- typing. Commit that typing now rather than losing its redo snapshot.
+  if not self.enterIntent and not self.historyAction and (key==Enum.KeyCode.LeftControl or key==Enum.KeyCode.RightControl or key==Enum.KeyCode.LeftMeta or key==Enum.KeyCode.RightMeta) then self:commitNative() end
+  if self.historyAction and not (control and (key==Enum.KeyCode.Z or key==Enum.KeyCode.Y)) then self:finishHistoryAction() end
   if self.enterIntent and key~=Enum.KeyCode.Return and key~=Enum.KeyCode.KeypadEnter and box.Text==self.enterIntent.base.text then self.enterIntent=nil end
   if control and key==Enum.KeyCode.V then
    self.serial+=1; self.pasteGesture=self.serial
@@ -37,6 +44,7 @@ function Editor.new(box,changed)
   end
   if control and key==Enum.KeyCode.Z then self:key(if shift then 'redo' else 'undo',key)
   elseif control and key==Enum.KeyCode.Y then self:key('redo',key)
+  elseif not control and shift and key==Enum.KeyCode.Delete then self:key('deleteLine',key)
   elseif not control and (key==Enum.KeyCode.Return or key==Enum.KeyCode.KeypadEnter) then self.enterHeld=true; if not self.enterIntent then self:key('enter',key) end
   elseif not control and key==Enum.KeyCode.Tab then self:key(if shift then 'outdent' else 'indent',key)
   elseif not control and key==Enum.KeyCode.Backspace then self:key('backspace',key) end
@@ -63,7 +71,7 @@ function Editor:write(state)
  self.changed(state.text)
 end
 function Editor:commitNative()
- if self.destroyed or self.writing or self.guard then return end
+ if self.destroyed or self.writing or self.guard or self.historyAction or self.historyLatch then return end
  local box=self.box
  local source,cursor,anchor=box.Text,box.CursorPosition,box.SelectionStart
  local old=self.history.current
@@ -84,8 +92,25 @@ function Editor:commitNative()
   self:write(state)
  else self.changed(source) end
 end
+function Editor:releaseHistoryLatch()
+ self:finishHistoryAction()
+ local latch=self.historyLatch
+ self.historyLatch=nil
+ if latch and latch.history==self.history then self:write(latch.snapshot) end
+end
 function Editor:nativeChanged()
- if self.destroyed or self.writing then return end
+ if self.historyLatch and not self.historyAction and not self.writing and not self.destroyed then
+  local latch=self.historyLatch
+  if self.box.Text~=latch.snapshot.text and not latch.scheduled then
+   latch.scheduled=true
+   task.delay(0,function()
+    latch.scheduled=false
+    if not self.destroyed and self.historyLatch==latch and self.history==latch.history then self:write(latch.snapshot) end
+   end)
+  end
+  return
+ end
+ if self.destroyed or self.writing or self.historyAction or self.historyLatch then return end
  -- Deferred engine signals from our own Text assignment arrive after the
  -- writing flag clears. Equality, not that flag alone, identifies the echo.
  if self.box.Text==self.history.current.text then return end
@@ -102,13 +127,51 @@ function Editor:nativeChanged()
   task.defer(function() if not self.destroyed and self.guard==guard then self:write(guard.state) end end)
   return
  end
+ self:queueNativeCommit()
+end
+-- Native edits and native history callbacks share Text signals. Do not commit
+-- them in the input resumption: let keyboard history intent arrive first.
+function Editor:queueNativeCommit()
  if self.pending then return end
  local history=self.history
  self.pending=true
- task.defer(function()
-  self.pending=false
-  if not self.destroyed and self.history==history then self:commitNative() end
+ task.delay(0,function()
+  if self.destroyed or self.history~=history then self.pending=false; return end
+  local source,cursor=self.box.Text,self.box.CursorPosition
+  task.delay(0,function()
+   self.pending=false
+   if self.destroyed or self.history~=history or self.historyAction then return end
+   if source==self.box.Text and cursor==self.box.CursorPosition then self:commitNative()
+   else self:queueNativeCommit() end
+  end)
  end)
+end
+function Editor:finishHistoryAction()
+ local action=self.historyAction
+ self.historyAction=nil
+ if action and action.history==self.history and self.history.current==action.state then self:write(action.snapshot) end
+end
+function Editor:historyShortcut(state)
+ local action={history=self.history,state=state,snapshot={text=state.text,cursor=state.cursor,anchor=state.anchor}}
+ self.historyAction=action
+ self.historyLatch=action
+ local function settle()
+  task.delay(0,function()
+   if self.destroyed or self.historyAction~=action then return end
+   local source,cursor=self.box.Text,self.box.CursorPosition
+   task.delay(0,function()
+    if self.destroyed or self.historyAction~=action then return end
+    if source~=self.box.Text or cursor~=self.box.CursorPosition then settle(); return end
+    self:write(action.snapshot)
+    -- Keep ownership past key release and deferred native property events.
+    task.delay(0,function()
+     if self.destroyed or self.historyAction~=action then return end
+     self:finishHistoryAction()
+    end)
+   end)
+  end)
+ end
+ settle()
 end
 function Editor:queueEnter()
  local intent=self.enterIntent
@@ -186,8 +249,10 @@ function Editor:key(action,key)
  if self.destroyed then return end
  if action=='enter' then self:requestEnter(); return end
  if self.enterIntent then self:finishEnter(); self.enterIntent=nil end
+ if not key then self:releaseHistoryLatch() end
+ if self.historyAction and not (key and (action=='undo' or action=='redo')) then self:finishHistoryAction() end
  local history=self.history; local old=history.current
- if self.box.Text~=old.text then
+ if not self.historyAction and not self.historyLatch and self.box.Text~=old.text then
   local stack=if action=='undo' then history.undoStack elseif action=='redo' then history.redoStack else nil
   local target=stack and stack[#stack]
   local format=self.lastNativeFormat
@@ -195,12 +260,14 @@ function Editor:key(action,key)
   local echo=not self.pasteBase and (Text.nativeEcho(old.text,old.cursor,old.anchor,action,self.box.Text) or (target and target.text==self.box.Text) or formatEcho)
   if not echo then self:commitNative(); old=history.current end
  end
- if self.box.Text==old.text then history:select(self.box.CursorPosition,self.box.SelectionStart) end
+ if not self.historyAction and not self.historyLatch and self.box.Text==old.text then history:select(self.box.CursorPosition,self.box.SelectionStart) end
  local source,cursor,anchor
  if action=='undo' or action=='redo' then
   old=history[action](history)
+  if key then self:historyShortcut(old); return end
  else
   if action=='backspace' then source,cursor,anchor=Text.backspace(old.text,old.cursor,old.anchor)
+  elseif action=='deleteLine' then source,cursor,anchor=Text.deleteLine(old.text,old.cursor)
   else source,cursor,anchor=Text.indent(old.text,old.cursor,old.anchor,action=='outdent') end
   if not source then return end -- ordinary Backspace is left to the native editor
   old=history:record(source,cursor,anchor)
@@ -221,6 +288,7 @@ function Editor:focus()
  self.history:select(saved.cursor,saved.anchor); self:write(saved)
 end
 function Editor:release()
+ self:releaseHistoryLatch()
  self.guard=nil; self:finishEnter(); self.enterIntent=nil; self.enterCaret=nil; self.enterHeld=false; self:commitNative(); self.pasteGesture=nil; self.pasteBase=nil; self.pasteVerbatim=nil
 end
 function Editor:bind(id,source)
@@ -231,7 +299,7 @@ function Editor:bind(id,source)
  self:write(self.history.current)
 end
 function Editor:destroy()
- self.destroyed=true; self.guard=nil; self.enterIntent=nil; self.enterCaret=nil
+ self.destroyed=true; self.historyAction=nil; self.historyLatch=nil; self.guard=nil; self.enterIntent=nil; self.enterCaret=nil
  for _,connection in self.connections do connection:Disconnect() end
  self.connections={}; self.sessions={}; self.lastNativeFormat=nil
 end

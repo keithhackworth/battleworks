@@ -42,11 +42,11 @@ end
 function IDE.new(playerGui,onRun,onStop,onConfigure)
 	local self=setmetatable({connections={},running=false,sources={},requests={},scanOutputs={},minimumScanRequests={}},IDE)
 	local gui=Instance.new("ScreenGui"); gui.Name="BWEditor"; gui.ResetOnSpawn=false
-	gui:SetAttribute("EditorVersion","E3-frame-enter")
+	gui:SetAttribute("EditorVersion","E3.2-history")
 	gui.ScreenInsets=Enum.ScreenInsets.CoreUISafeInsets; gui.DisplayOrder=30; gui.Parent=playerGui; self.gui=gui
 	local toggle=text(gui,"TextButton","ToggleBW")
 	toggle.AnchorPoint=Vector2.new(1,0); toggle.Position=UDim2.new(1,-8,0,172); toggle.Size=UDim2.fromOffset(194,26)
-	toggle.Text="BW Editor • E3"; toggle.Selectable=true; self.toggle=toggle
+	toggle.Text="BW Editor • E3.2"; toggle.Selectable=true; self.toggle=toggle
 	local frame=Instance.new("Frame"); frame.Name="EditorPanel"; frame.AnchorPoint=Vector2.new(0.5,0.5)
 	frame.Position=UDim2.fromScale(0.5,0.5); frame.Size=UDim2.fromScale(0.94,0.88)
 	frame.BackgroundColor3=Color3.fromRGB(21,28,33); frame.Active=true; frame.Visible=false; frame.Parent=gui; self.frame=frame

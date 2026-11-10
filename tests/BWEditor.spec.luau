@@ -35,6 +35,22 @@ s=T.indent('\tprint("💥")\r\n  back(2)',1,#'\tprint("💥")\r\n  back(2)'+1,fa
 equal(s,'    \tprint("💥")\r\n      back(2)','explicit indent preserves tabs/CRLF/Unicode outside requested edit')
 -- Native Backspace can remove an entire multi-codepoint grapheme.
 check(T.nativeEcho('    é',#'    é'+1,-1,'backspace','    '),'native grapheme deletion is not mistaken for extra indent deletion')
+for _,case in {
+ {'one\ntwo\nthree',2,'two\nthree'},
+ {'one\ntwo\nthree',6,'one\nthree'},
+ {'one\ntwo',6,'one'},
+ {'one\n',5,'one'},
+ {'one',2,''}, {'',1,''},
+ {'one\r\ntwo\r\nthree',7,'one\r\nthree'},
+ {'one\r\ntwo',7,'one'},
+ {'one\n\nthree',5,'one\nthree'},
+ {'one\n💥💥',2,'💥💥'},
+} do
+ local deleted,position,mark=T.deleteLine(case[1],case[2])
+ equal(deleted,case[3],'ShiftDelete complete line including newline')
+ check(position>=1 and position<=#deleted+1 and mark==-1,'line-delete caret valid')
+ local byte=deleted:byte(position); check(not byte or byte<128 or byte>=192,'line-delete caret is a UTF8 boundary')
+end
 local pasted='\tif true:\r\n  \tprint("💥")  \r\n\r\n    back(2)\n'
 local untouched=T.edit('',pasted,#pasted+1); equal(untouched,pasted,'multiline paste exactly preserved')
 equal(T.edit('', '\n',2),'\n','pasted single newline is not Enter')
@@ -181,6 +197,71 @@ press('Return'); box.ReturnPressedFromOnScreenKeyboard:Fire(); native(physicalBe
 equal(box.Text,expected,'physical/virtual return events do not double-indent')
 -- Exact paste mode retains the earlier literal-whitespace workflow.
 ed.smartPaste=false
+-- ShiftDelete is line deletion, not native cut-selection/delete-next-char.
+local lines='    first()\n    old()\n    last()'
+ed:bind('delete-shortcuts',lines)
+box.CursorPosition=#'    first()\n    ol'+1; box.SelectionStart=-1; box:GetPropertyChangedSignal('CursorPosition'):Fire()
+down[Enum.KeyCode.LeftShift]=true; press('Delete')
+native('    first()\n    lastX()',20); flush(); release('Delete'); down[Enum.KeyCode.LeftShift]=false
+equal(box.Text,'    first()\n    last()','ShiftDelete removes entire caret line and discards native echo')
+down[Enum.KeyCode.LeftControl]=true; press('Z'); flush(); release('Z'); equal(box.Text,lines,'CtrlZ restores deleted line in one step')
+press('Y'); flush(); release('Y'); equal(box.Text,'    first()\n    last()','CtrlY reapplies line deletion')
+down[Enum.KeyCode.LeftControl]=false
+ed:bind('native-first-delete',lines)
+box.CursorPosition=#'    first()\n    ol'+1; box:GetPropertyChangedSignal('CursorPosition'):Fire()
+down[Enum.KeyCode.LeftShift]=true
+native('    first()\n    last()',18); press('Delete'); flush(); release('Delete'); down[Enum.KeyCode.LeftShift]=false
+equal(box.Text,'    first()\n    last()','native-first full-line deletion is not applied twice')
+ed:key('undo'); equal(box.Text,lines,'native-first line deletion remains one undo step')
+ed:bind('a','ignored')
+-- User reproduction: native undo/redo results arrive AFTER shortcut key-up.
+ed:bind('typing-history','base')
+native('base typed',11); flush()
+down[Enum.KeyCode.LeftControl]=true
+press('Z'); release('Z'); flushDeferred()
+equal(box.Text,'base typed','keyboard undo does not rewrite during native input processing')
+native('base typed',11); flush() -- native undo of an eager programmatic write
+ equal(box.Text,'base','late native callback cannot cancel application undo')
+check(#ed.history.redoStack==1,'undo retains redo despite late native callback')
+-- Echoes can arrive long after key release and the initial settling frames.
+native('base typed',11); flush()
+equal(box.Text,'base','native redo after completed settling cannot overwrite undo')
+check(#ed.history.redoStack==1,'late native redo never becomes a new typing transaction')
+
+press('Y'); release('Y'); native('base',5); flush()
+equal(box.Text,'base typed','CtrlY reapplies typing instead of undoing it')
+press('Y'); release('Y'); native('base',5); flush()
+equal(box.Text,'base typed','empty redo does not consume a native undo result')
+press('Z'); release('Z'); press('Y'); release('Y'); native('base',5); flush()
+equal(box.Text,'base typed','rapid CtrlZ then CtrlY uses one deterministic history')
+press('Z'); release('Z'); native('base',5); flush()
+equal(box.Text,'base','repeated undo remains predictable')
+-- Native history callbacks before InputBegan must not be committed as typing.
+native('base typed',11); flushDeferred(); press('Y'); release('Y'); flush()
+equal(box.Text,'base typed','native-first redo remains an application redo')
+check(#ed.history.redoStack==0,'redo stack consumed exactly once')
+-- A genuine editing key relinquishes the latch and starts a fresh edit.
+down[Enum.KeyCode.LeftControl]=false
+press('X'); native('base typedX',12); flush(); release('X')
+equal(box.Text,'base typedX','typing after history latch remains editable')
+down[Enum.KeyCode.LeftControl]=true; press('Z'); release('Z'); flush()
+equal(box.Text,'base typed','new typing after latch is undoable')
+-- Undo before a typed change has reached its native-commit heartbeat.
+down[Enum.KeyCode.LeftControl]=false
+ed:bind('uncommitted-typing','start'); native('startX',7)
+down[Enum.KeyCode.LeftControl]=true; press('Z'); release('Z'); flush()
+equal(box.Text,'start','uncommitted typing is recorded before undo')
+press('Y'); release('Y'); flush(); equal(box.Text,'startX','uncommitted typing still supports redo')
+down[Enum.KeyCode.LeftControl]=false
+-- Real chord ordering: Control flushes pending typing before native Z runs.
+ed:bind('modifier-flush','prefix'); down[Enum.KeyCode.LeftControl]=false
+native('prefix typed',13) -- no heartbeat/history commit yet
+down[Enum.KeyCode.LeftControl]=true; press('LeftControl')
+native('prefix',7); flushDeferred(); press('Z'); release('Z'); flush()
+equal(box.Text,'prefix','native-first undo of pending typing uses the correct base')
+press('Y'); release('Y'); flush(); equal(box.Text,'prefix typed','modifier flush retains pending typing for redo')
+down[Enum.KeyCode.LeftControl]=false
+ed:bind('a','ignored')
 -- Clipboard edits are ordinary native payloads; no source-wide processing.
 local beforePaste=box.Text; local beforeCount=#ed.history.undoStack
 down[Enum.KeyCode.LeftControl]=true; press('V')

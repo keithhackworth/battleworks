@@ -1,3 +1,5 @@
+
+Undo follow-up (E3.2): keyboard undo/redo retains an authoritative history snapshot beyond key release and settling frames. Late native history callbacks restore that snapshot on the next Heartbeat and cannot become new edits. The next non-modifier editing/navigation input or explicit lifecycle release relinquishes ownership. Native Studio Ctrl+Z/Ctrl+Y retesting remains required.
 # BW concurrent runtime
 
 For the standalone programmer handbook, see [BW_LANGUAGE.md](BW_LANGUAGE.md).
@@ -369,3 +371,11 @@ The previous task.defer-based correction was still within the native input resum
 A second concrete bug was stale caret data adjacent to an existing newline: the cached cursor could identify the following existing line instead of the newly inserted line, leaving a blank line and moving the caret below it. E3 derives the insertion span from the settled native caret and validates it against previous/native text. The Enter decorator copies all native newline bytes verbatim and inserts whitespace only; it cannot generate another newline. Unmatched native edits fall back to ordinary native history rather than trapping future typing.
 
 The toggle reads BW Editor • E3 and the ScreenGui has EditorVersion=E3-frame-enter. These identify the loaded client code after restart. Tests use separate same-resumption and later-Heartbeat queues, cover indented/colon lines followed by existing code, stale cached carets, late caret signals, native indentation, deferred own-write signals and newline-count invariants. Studio verification is still required; previous immediate mocks did not model this scheduler distinction.
+
+
+Shift+Delete uses BWEditorText.deleteLine to remove the caret line and its newline (or the preceding newline for the final line). It preserves LF/CRLF and a valid UTF-8 caret, and ignores selection extent. The operation participates in the same undo history as Ctrl/Cmd+Z and Ctrl/Cmd+Y. Source-focus routing leaves hardware/log shortcuts native. Editor regression tests cover first/middle/final/empty lines, CRLF, Unicode, native delete echoes and keyboard undo/redo.
+
+
+### E3.1 keyboard history ownership
+
+Ctrl/Cmd+Z/Y now chooses one application-history target without rewriting the TextBox during native shortcut processing. The target remains authoritative past key release and across stable Heartbeat observations; native undo/redo Text/caret callbacks cannot create new edit records or clear redo. Repeated history chords advance the same logical history, and non-history input/lifecycle release settles the pending target first. Toolbar actions use the same history without a native-key transaction. Normal native text edits also wait for a stable frame boundary before automatic history recording, letting native-first shortcut intent arrive before recording a native undo as typing. Pressing Control/Command commits any pending ordinary typing before native Z/Y can erase its redo snapshot; pending Enter formatting stays on its own confirmed path. Enter's confirmed E3 path and Shift+Delete operation are preserved. Editor version label is E3.1.
