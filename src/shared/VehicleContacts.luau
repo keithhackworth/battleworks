@@ -13,6 +13,11 @@ local function vertical(a,b)
  return ay+a.top>by+b.bottom+C.Skin and by+b.top>ay+a.bottom+C.Skin
 end
 local function separating(a,b,margin)
+ if b.plane then
+  local p=b.plane; local gap=dot(a.state.position.X,a.state.position.Z,p.nx,p.nz)-p.offset-extent(a,p.nx,p.nz)
+  if gap>C.Skin+(margin or 0) then return nil end
+  return p.nx,p.nz,math.max(0,-gap),math.max(0,gap)
+ end
  if not vertical(a,b) then return nil end
  local radius=a.halfX+a.halfZ+b.halfX+b.halfZ+(margin or 0)+C.Skin
  if math.abs(a.state.position.X-b.state.position.X)>radius or math.abs(a.state.position.Z-b.state.position.Z)>radius then return nil end
@@ -41,7 +46,11 @@ end
 local function manifold(a,b,dt)
  local margin=(math.abs(a.state.angularVelocity.Y)*math.sqrt(a.halfX^2+a.halfZ^2)+(if b.fixed then 0 else math.abs(b.state.angularVelocity.Y)*math.sqrt(b.halfX^2+b.halfZ^2)))*(dt or 0)
  local nx,nz,depth,gap=separating(a,b,margin); if not nx then return nil end
- local fa,da=feature(a,nx,nz,true); local fb,db=feature(b,nx,nz,false)
+ local fa,da=feature(a,nx,nz,true); local fb,db
+ if b.plane then
+  db=b.plane.offset; fb={}
+  for _,p in fa do local shift=db-dot(p.x,p.z,nx,nz); table.insert(fb,{x=p.x+nx*shift,z=p.z+nz*shift}) end
+ else fb,db=feature(b,nx,nz,false) end
  local tx,tz=-nz,nx
  local function interval(f)
   local low,high=math.huge,-math.huge
@@ -146,7 +155,7 @@ local function resolve(bodies,statics,dt)
    local nx,nz,depth=separating(a,b)
    if nx and depth>C.Skin then
     local ia=inverse(a); local ib=inverse(b); local sum=ia+ib
-    if sum>0 then local correction=(depth-C.Skin)*0.8/sum
+    if sum>0 then local correction=if b.plane then (depth+C.Skin)/sum else (depth-C.Skin)*0.8/sum
      correct(a,nx*correction*ia,nz*correction*ia); correct(b,-nx*correction*ib,-nz*correction*ib)
     end
    end
@@ -156,6 +165,13 @@ end
 -- Continuous translational SAT. Yaw is subdivided deterministically; its
 -- swept envelope expansion prevents a rotating corner crossing unnoticed.
 local function impactTime(a,b,dt)
+ if b.plane then
+  local p=b.plane; local s=a.state; local v=Motion.ensure(s)
+  local gap=dot(s.position.X,s.position.Z,p.nx,p.nz)-p.offset-extent(a,p.nx,p.nz)
+  local closing=dot(v.X,v.Z,p.nx,p.nz)-math.abs(s.angularVelocity.Y)*math.sqrt(a.halfX^2+a.halfZ^2)
+  if gap<=C.Skin or closing>=0 then return nil end
+  local t=gap/(-closing*dt); return if t>1e-8 and t<=1 then t else nil
+ end
  if not vertical(a,b) or separating(a,b) then return nil end
  local ax,az,bx,bz=axes(a); local cx,cz,dx,dz=axes(b)
  local av=Motion.ensure(a.state); local bv=if b.fixed then Vector3.zero else Motion.ensure(b.state)
@@ -193,9 +209,13 @@ function C.obstacles(environment,mapSize,radius)
  if mapSize then
   local x,z=mapSize.X/2,mapSize.Y/2; local thick=100
   table.insert(out,C.box("boundary:e",Vector3.new(x+thick,0,0),thick,z+thick,-math.huge,math.huge))
+  out[#out].plane={nx=-1,nz=0,offset=-x}
   table.insert(out,C.box("boundary:w",Vector3.new(-x-thick,0,0),thick,z+thick,-math.huge,math.huge))
+  out[#out].plane={nx=1,nz=0,offset=-x}
   table.insert(out,C.box("boundary:n",Vector3.new(0,0,-z-thick),x+thick,thick,-math.huge,math.huge))
+  out[#out].plane={nx=0,nz=1,offset=-z}
   table.insert(out,C.box("boundary:s",Vector3.new(0,0,z+thick),x+thick,thick,-math.huge,math.huge))
+  out[#out].plane={nx=0,nz=-1,offset=-z}
  end
  for i,t in environment and environment.trees or {} do table.insert(out,C.box("tree:"..i,Vector3.new(t.x,0,t.z),t.radius,t.radius,0,t.height or math.huge)) end
  if environment then environment.motionObstacles={width=mapSize and mapSize.X,depth=mapSize and mapSize.Y,records=out} end

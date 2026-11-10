@@ -44,9 +44,8 @@ local tree=terrain.trees[1]
 check(Environment.blocked(terrain,tree.x,tree.z,5),"trunks block movement")
 check(not Environment.blocked(terrain,0,20,5),"spawn corridor remains clear")
 local approach=Simulation.new(Vector3.new(tree.x,0,tree.z+6))
-local before=approach.position
 Simulation.step(approach,cmd,0.1,terrain.size,terrain)
-check(approach.position.Z==before.Z and approach.speed==0,"tank stops at a trunk without entering it")
+check(math.abs(approach.position.Z-(tree.z+tree.radius+5))<0.001 and math.abs(approach.speed)<0.001,"tank stops at trunk contact surface without entering it")
 -- Execute the actual builders/effects against small service stand-ins.
 do
  local originalNew,originalFrame,originalAngles=Instance.new,CFrame.new,CFrame.Angles
