@@ -113,13 +113,13 @@ do
   Recoil.kick(s,3,Vector3.new(1,0,0)); Sim.step(s,neutral,1/120)
   check(s.lift<=6+1e-8,"rapid recoil cannot accumulate altitude beyond limit")
  end
- s.position=Vector3.new(109.9,3,0); s.lift=3; require("VehicleMotion").setVelocity(s,Vector3.new(20,0,0))
+ s.position=Vector3.new(109.9,3,0); s.yaw=0; require("VehicleMotion").setYawVelocity(s,0); s.lift=3; require("VehicleMotion").setVelocity(s,Vector3.new(20,0,0))
  Sim.step(s,neutral,1/60,Vector2.new(230,230))
- check(s.position.X==110 and s.velocityX==0,"world boundary stops airborne recoil momentum")
+ check(math.abs(s.position.X-110)<0.001 and math.abs(s.velocityX)<0.001,string.format("world boundary stops airborne recoil momentum: x=%.6f vx=%.6f yaw=%.6f",s.position.X,s.velocityX,s.yaw))
  local obstacles={zones={},rocks={},logs={},trees={{x=0,z=0,radius=1}}}
- s.position=Vector3.new(0,3,6.1); s.lift=3; require("VehicleMotion").setVelocity(s,Vector3.new(0,0,-20))
+ s.position=Vector3.new(0,3,6.1); s.yaw=0; require("VehicleMotion").setYawVelocity(s,0); s.lift=3; require("VehicleMotion").setVelocity(s,Vector3.new(0,0,-20))
  Sim.step(s,neutral,1/60,Vector2.new(230,230),obstacles)
- check(s.position.Z==6.1 and s.velocityZ==0,"tree collision stops airborne recoil movement")
+ check(math.abs(s.position.Z-6)<0.001 and math.abs(s.velocityZ)<0.001,"tree contact stops normal airborne recoil at its actual surface")
 end
 -- Motion uses a distinct RNG stream and never consumes the accuracy ledger.
 do

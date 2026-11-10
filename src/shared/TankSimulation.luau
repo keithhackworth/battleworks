@@ -4,6 +4,7 @@ local Components = require(script.Parent.VehicleComponents)
 local Drive = require(script.Parent.RattlerDrive)
 local Motion = require(script.Parent.VehicleMotion)
 local Surface = require(script.Parent.SurfacePhysics)
+local Contacts = require(script.Parent.VehicleContacts)
 local Trajectory = require(script.Parent.ProjectileTrajectory)
 local Config = require(script.Parent.TankConfig)
 local Environment = require(script.Parent.Environment)
@@ -61,7 +62,7 @@ local function suspension(state, dt)
 	state.bodyPitch = (math.sin(state.bounceClock or 0)*tuning.Pitch*(state.movement or 0))+(state.flightPitch or 0)
 	state.bodyRoll = (math.cos((state.bounceClock or 0)*tuning.RollFrequency)*tuning.Roll*(state.movement or 0))+(state.flightRoll or 0)
 end
-function Simulation.moveBody(state,command,dt,mapSize,environment)
+function Simulation.moveBody(state,command,dt,mapSize,environment,deferContacts)
  local c=Components.get(state)
  Motion.beginStep(state,dt)
  local support=state.groundPlaneY or 0
@@ -72,16 +73,12 @@ function Simulation.moveBody(state,command,dt,mapSize,environment)
  local static,kinetic,resistance=Surface.contact(environment and environment.physicsSurfaces,state.position,state.yaw,c.Chassis)
  if not airborne then Drive.ground(state,command,dt,speedScale,static,kinetic,resistance) end
  -- No traction, steering, coasting or ground damping is applied in the air.
- local previous=state.position
+ state.motionStepStart=state.position; state.motionYawStart=state.yaw
  Motion.integrateHorizontal(state,dt)
- local edgeX=(if mapSize then mapSize.X/2 else Config.ArenaLimit)-c.Chassis.Radius
- local edgeZ=(if mapSize then mapSize.Y/2 else Config.ArenaLimit)-c.Chassis.Radius
- local x,z=math.clamp(state.position.X,-edgeX,edgeX),math.clamp(state.position.Z,-edgeZ,edgeZ)
- local v=Motion.ensure(state)
- if x~=state.position.X or z~=state.position.Z then Motion.setVelocity(state,Vector3.new(if x~=state.position.X then 0 else v.X,v.Y,if z~=state.position.Z then 0 else v.Z)) end
- if environment and Environment.blocked(environment,x,z,c.Chassis.Radius) then
-  x=previous.X; z=previous.Z; v=Motion.ensure(state); Motion.setVelocity(state,Vector3.new(0,v.Y,0))
+ if not deferContacts then
+  Contacts.solve({Contacts.body("vehicle",state,c.Chassis)},Contacts.obstacles(environment,mapSize or Vector2.new(Config.ArenaLimit*2,Config.ArenaLimit*2)),dt)
  end
+ local x,z=state.position.X,state.position.Z
  local ground,pitch,roll,kind=0,0,0,"Grass"
  if environment then ground,pitch,roll,kind=Environment.pose(environment,Vector3.new(x,0,z),state.yaw,c.Chassis) end
  ground+=(state.groundPlaneY or 0)
@@ -90,7 +87,15 @@ function Simulation.moveBody(state,command,dt,mapSize,environment)
  Recoil.step(state,dt,ground)
  Motion.sync(state)
 end
-function Simulation.step(state, command, dt, mapSize, environment)
+function Simulation.reconcileGround(state,environment)
+ local c=Components.get(state); local h,p,r,kind=0,0,0,"Grass"
+ if environment then h,p,r,kind=Environment.pose(environment,state.position,state.yaw,c.Chassis) end
+ state.bodyPitch=(state.bodyPitch or 0)+p-(state.groundPitch or 0)
+ state.bodyRoll=(state.bodyRoll or 0)+r-(state.groundRoll or 0)
+ state.groundPitch=p; state.groundRoll=r; state.surface=kind
+ Recoil.step(state,0,h+(state.groundPlaneY or 0)); Motion.sync(state)
+end
+function Simulation.step(state, command, dt, mapSize, environment, deferContacts)
  local c=Components.get(state); local turret=c.Turret
 	command=DamageEffects.input(state,command)
     if state.drivePerformance==0 or state.turretPerformance==0 then
@@ -101,7 +106,7 @@ function Simulation.step(state, command, dt, mapSize, environment)
 	state.cooldown = math.max(0, state.cooldown - dt)
 	TurretRecoil.step(state,dt)
 	if state.health<=0 then state.firing=false end
-    Simulation.moveBody(state,command,dt,mapSize,environment)
+    Simulation.moveBody(state,command,dt,mapSize,environment,deferContacts)
     suspension(state,dt)
     state.bodyPitch+=state.groundPitch or 0; state.bodyRoll+=state.groundRoll or 0
     if state.health<=0 then return end

@@ -41,6 +41,9 @@ function C.resolve(assembly,catalog)
  positive(out.Chassis,"Mass")
  out.Chassis.YawInertia=out.Chassis.YawInertia or out.Chassis.Mass*(out.Chassis.Hitbox.X^2+out.Chassis.Hitbox.Z^2)/12
  positive(out.Chassis,"YawInertia")
+ out.Chassis.CollisionWidth=out.Chassis.CollisionWidth or out.Chassis.Radius*2
+ out.Chassis.CollisionLength=out.Chassis.CollisionLength or out.Chassis.Radius*2
+ positive(out.Chassis,"CollisionWidth"); positive(out.Chassis,"CollisionLength")
  for _,slot in {"Turret","Weapon","Drivetrain","Mobility","Computer","Bus"} do assert((out.Chassis.MountingSlots[slot] or 0)>=1,"Missing chassis mounting slot: "..slot) end
  for _,axis in {"X","Y","Z"} do positive(out.Chassis.Hitbox,axis) end
  positive(out.Drivetrain,"Speed"); positive(out.Drivetrain,"ReverseSpeed")

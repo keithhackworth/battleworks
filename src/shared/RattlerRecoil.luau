@@ -1,8 +1,6 @@
 -- Seeded, weapon-powered hops and world-space inertia. No animation-driven lift.
 local Components = require(script.Parent.VehicleComponents)
-local TankConfig = require(script.Parent.TankConfig)
 local Motion = require(script.Parent.VehicleMotion)
-local Environment = require(script.Parent.Environment)
 local Recoil = {}
 local EPSILON = 1e-6
 local function random(state)
@@ -124,16 +122,5 @@ end
 -- Retained compatibility entry; there is only one tank movement coordinator.
 function Recoil.move(state,command,dt,mapSize,environment)
  return require(script.Parent.TankSimulation).moveBody(state,command,dt,mapSize,environment)
-end
-function Recoil.resolveBlocked(state,previous,environment)
-	local v=Motion.ensure(state); Motion.setVelocity(state,Vector3.new(0,v.Y,0))
-	local ground,pitch,roll,kind=0,0,0,"Grass"
-	if environment then ground,pitch,roll,kind=Environment.pose(environment,previous,state.yaw,Components.get(state).Chassis) end
-	ground+=(state.groundPlaneY or 0)
-	state.bodyPitch=(state.bodyPitch or 0)+pitch-(state.groundPitch or 0)
-	state.bodyRoll=(state.bodyRoll or 0)+roll-(state.groundRoll or 0)
-	state.groundPitch=pitch; state.groundRoll=roll; state.surface=kind
-	state.position=Vector3.new(previous.X,state.position.Y,previous.Z)
-	Recoil.step(state,0,ground)
 end
 return Recoil

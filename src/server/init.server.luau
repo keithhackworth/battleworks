@@ -25,6 +25,7 @@ local RattlerWeapon = require(Shared.RattlerWeapon)
 local Battle = require(script.LocalBattle)
 local WeaponWindup = require(Shared.WeaponWindup)
 local PracticeTargets = require(script.PracticeTargets)
+local VehicleContacts=require(Shared.VehicleContacts)
 local Projectiles = require(script.ProjectileSimulation)
 local Debris = game:GetService("Debris")
 Players.CharacterAutoLoads = false
@@ -73,6 +74,7 @@ local function buildTargets(size)
 	for i = 1, count do
 		local p = part("Target", Vector3.new(7, 7, 5), Vector3.new((i-(count+1)/2)*math.min(18,(size.X-10)/count), 3.5, -size.Y*65/230), Color3.fromRGB(210, 102, 60))
 		local target = PracticeTargets.new(p)
+        target.collisionId="target:"..i
 		targets[p] = target
 		local gui = Instance.new("BillboardGui")
 		gui.Name = "TargetHealth"; gui.Size = UDim2.fromOffset(100, 26)
@@ -363,27 +365,25 @@ RunService.Heartbeat:Connect(function(dt)
 		end
 		-- All BW observations precede movement, so every hitbox/state corresponds
 		-- to the same completed simulation timestamp, regardless of table order.
-		for _,tank in tanks do
+        local contactBodies={}
+        local contactObstacles=table.clone(VehicleContacts.obstacles(environment,mapSize))
+        for p,target in targets do
+            if target.health>0 then table.insert(contactObstacles,VehicleContacts.box(target.collisionId,p.Position,p.Size.X/2,p.Size.Z/2,-p.Size.Y/2,p.Size.Y/2)) end
+        end
+		for id,tank in tanks do
 			local command=tank.tickCommand
 			tank.state.groundPlaneY=floor.Position.Y+floor.Size.Y/2
-			local previous = tank.state.position
-			Simulation.step(tank.state, command, Config.Step, mapSize, environment)
-			for p, target in targets do
-				local delta = tank.state.position - p.Position
-				if target.health > 0 and math.abs(delta.X) < p.Size.X / 2 + Components.get(tank.state).Chassis.Radius
-					and math.abs(delta.Z) < p.Size.Z / 2 + Components.get(tank.state).Chassis.Radius then
-					if RattlerRecoil.active(tank.state) then RattlerRecoil.resolveBlocked(tank.state,previous,environment) else tank.state.position=previous end; break
-				end
-			end
-			for _, other in tanks do
-				if other ~= tank and (other.state.position - tank.state.position).Magnitude < Components.get(tank.state).Chassis.Radius+Components.get(other.state).Chassis.Radius then
-					if RattlerRecoil.active(tank.state) then RattlerRecoil.resolveBlocked(tank.state,previous,environment) else tank.state.position=previous end; break
-				end
-			end
-			MovementTelemetry.update(tank.state,previous,Config.Step)
-			tank.hitbox.CFrame = CFrame.new(tank.state.position + Vector3.new(0, Components.get(tank.state).Chassis.HitboxHeight, 0)) * CFrame.Angles(0, tank.state.yaw, 0)
-			tank.hitbox.CanQuery = tank.state.health > 0
-		end
+			Simulation.step(tank.state, command, Config.Step, mapSize, environment,true)
+            table.insert(contactBodies,VehicleContacts.body(id,tank.state,Components.get(tank.state).Chassis))
+        end
+        VehicleContacts.solve(contactBodies,contactObstacles,Config.Step)
+        for _,record in contactBodies do
+            local tank=tanks[record.id]
+            Simulation.reconcileGround(tank.state,environment)
+            MovementTelemetry.update(tank.state,tank.state.motionStepStart,Config.Step)
+            tank.hitbox.CFrame=CFrame.new(tank.state.position+Vector3.new(0,Components.get(tank.state).Chassis.HitboxHeight,0))*CFrame.Angles(0,tank.state.yaw,0)
+            tank.hitbox.CanQuery=tank.state.health>0
+        end
 		updateShells(now)
 		for id, tank in tanks do
 			local command = tank.tickCommand or Command.neutral()
