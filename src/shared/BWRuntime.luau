@@ -10,6 +10,11 @@ local Command=require(script.Parent.InputCommand)
 local Runtime={}
 Runtime.__index=Runtime
 function Runtime.new(instructions,state,services)
+ -- Function programs use the production virtual CPU, including when invoked
+ -- through this legacy serial harness. Device navigation still uses this module.
+ if instructions.functions and next(instructions.functions) then
+  return require(script.Parent.BWExecution).new(instructions,state,services)
+ end
 	return setmetatable({services=services or {},variables={},cycleCounts={},outputCount=0,results={},cyclesSpent=0,instructions=instructions,index=1,status="running",message="Running",elapsed=0,
 		generation=state.generation or 0,tankType=state.tankType or "Boomer"},Runtime)
 end

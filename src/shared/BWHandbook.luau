@@ -285,7 +285,7 @@ Paste: align is the default: prepare the insertion indentation, then paste the A
 One statement per line. Names are case-sensitive. Command parameters named studs/degrees/seconds/value in this reference are positional placeholders; use named to=, position= or best_effort= only where shown. # starts a comment outside strings. Blocks use four spaces, not tabs. Variables belong to one tank's program and are shared by all its threads; they do not leak between tanks/runs/resets.
 
 VALUES AND EXPRESSIONS
-Numbers (including decimals), quoted strings, true, false, null, arrays and dictionaries. Zero-based arrays: items[0]. String dictionary keys: result.status or result["status"]. Missing dictionary keys return null; invalid array indices are errors. Programmer dictionaries can be mutable; scanner/result snapshots are immutable. Dictionary equality compares identity; compare fields to compare observations.
+Numbers (including decimals), quoted strings, true, false, null, arrays and dictionaries. Zero-based arrays: items[0]. String dictionary keys: result.status or result["status"]. Missing dictionary keys return null; invalid array indices are errors. Programmer arrays and dictionaries are mutable references; scanner/result snapshots are immutable. Dictionary equality compares identity; compare fields to compare observations.
 
 Use = for assignment and == for comparison. Arithmetic: + - * / and unary -. Comparisons: == != < <= > >=. Logical: and or not. Parentheses group expressions. Arithmetic has conventional precedence; comparisons bind before not, then and, then or. Conditions/logical operators require booleans; there is no implicit number/string coercion. and/or short-circuit, skipping unused calls and their costs. Division by zero and undefined reads are errors.
 
@@ -305,7 +305,7 @@ switch value:
     default:
         print("other")
 
-One matching branch executes. switch evaluates its value once, has no fallthrough and needs no break. Case labels are constant scalars/simple constant expressions. Nested blocks work. while loops are supported (see While loops tab). for loops, break/continue, user-defined functions and automatic targeting are not available yet.
+One matching branch executes. switch evaluates its value once, has no fallthrough and needs no break. Case labels are constant scalars/simple constant expressions. Nested blocks work. while loops are supported (see While loops tab). User functions are supported (Functions tab). for loops, break/continue and automatic targeting are not available yet.
 
 THREADS
 with thread(1):
@@ -383,6 +383,47 @@ Open Hardware / threads for thread state/current line/tick totals, device alloca
 The execution log is selectable and read-only. Long retained history is split into bounded pages; Older opens earlier entries and Latest follows new output. The log header shows server prints executed, print events received by this client and the current page. Each thread row also shows loop-test and print counts, so you can distinguish a waiting scan from skipped print code or a display/transport issue. Click it and use Ctrl+A / Ctrl+C (or platform equivalents) to copy. Updates pause only while text is actually selected, so merely clicking/focusing the log does not freeze it. Clear the selection or click away to catch up. Output history retains the latest 256 entries; older entries roll out. Scan history retains 128 recent snapshots, and terminal command history retains 512 records plus all active/queued work. Excess logging is rate-limited per CPU cycle with an explicit notice; it never makes a valid loop fail. Programs continue running while you read this handbook.
 
 Run closes the IDE and hands control of this tank to BW. Stop cancels its program/devices and returns manual control. You can switch to the other tank and play while this tank's program continues.]])
+ add("functions","Functions","Functions, const references, stacks and ticks",string.format([[FUNCTION SYNTAX
+function advance(const distance):
+    return forward(distance)
+
+function double(const value):
+    return value * 2
+
+move = advance(double(10))
+print(move.status)
+
+Functions take positional arguments, may be defined after calls, and support recursive/mutually recursive calls. Definitions run only when called. return expression exits immediately; return alone or fallthrough returns null. Calls work in expressions, conditions and arguments. Four spaces per block; definitions must be top-level. Built-in names cannot be replaced; identifiers stay case-sensitive. No function values, nested definitions or closures.
+
+COPY OR REFERENCE?
+Scalars (number, string, boolean, null) are copied. Mutable parameters are local bindings and may be reassigned. Arrays and objects keep identity: obj.x = 2 or items[0] = 2 changes caller storage, but obj = {x: 2} only rebinds the parameter. Direct object/array literal arguments are valid. Array writes must be in bounds. Assignments anywhere in a function declare function-local names. Other reads resolve shared top-level variables. Return a value to publish it via a top-level assignment.
+
+CONST PARAMETERS
+function inspect(const target):
+    return target.distance
+
+No reassignment to target, no mutation through fields, indexing or aliases. Const object references may only be forwarded to const parameters; const scalars may be copied into mutable parameters. Independent mutable objects may be passed alongside protected references, but potential aliases between const/mutable arguments are rejected. Const does not permanently freeze the original caller object after return.
+
+Validation is conservative and compile-time: aliases merge across branches/rebindings/call sites. Unknown object-versus-scalar flows can be rejected. Multithread programs cannot pass potentially shared top-level objects as const references: another thread could modify them during a wait. Prefer function-local storage or scalar observations. Existing BW has no public clone() or append() API; neither is introduced. New objects built from proven scalar fields have independent mutable storage.
+
+STACKS AND SCHEDULING
+Each thread has independent call frames, locals and return destinations. Scanner/clock/variable/CPU waits suspend only the calling thread; other devices and threads continue. Default maximum is %d live function frames per thread, excluding top-level execution. Aggregate limit is %d times installed computer thread capacity. The server can configure this depth. Overflow names the function/thread/line, cancels that thread's commands, and lets other threads finish; the final program reports an error. Stop/destruction/reset/replacement clear all frames.
+
+CPU COST
+Function calls and returns: 0 ticks.
+Const parameter initialization and reads: 0 ticks.
+Mutable parameter initialization: normal write cost.
+Mutable parameter/local reads and writes: normal variable costs.
+Property/index traversal, arithmetic and device submissions retain their usual costs. Collection literal allocation keeps its existing zero cost; element expressions still cost ticks. Current read/write defaults are %g/%g, not 1 tick each. Calls never duplicate argument evaluation. Uncalled functions and unexecuted branches cost nothing. Optional compiler tips suggest const for unmodified scalar parameters without changing code.
+
+function costly(distance):
+    distance = distance + 10
+    forward(distance)
+
+function efficient(const distance):
+    forward(distance + 10)
+
+At current costs, costly(5) is %g ticks; efficient(5) is %g. Both submit asynchronously and preserve normal device queues. A function returning forward(10) returns acceptance, not physical arrival. Use command_status and an explicit clock wait to wait for completion. Infinite/free code is still bounded by scheduler dispatch and program safety limits. Hardware diagnostics show each thread's function, source line and call depth.]],Limits.MaxCallDepthPerThread,Limits.MaxCallDepthPerThread,Hardware.Costs.read,Hardware.Costs.write,2*Hardware.Costs.read+2*Hardware.Costs.write+Hardware.Costs.arithmetic+Hardware.Costs.forward,Hardware.Costs.arithmetic+Hardware.Costs.forward))
  -- Each command has exactly one detailed home, plus a visible index at the
  -- top of that topic. Registry-only coverage is not enough: render every entry.
  local membership={movement={"forward","back","steer_left","steer_right","steer_center","stop","turn_left","turn_right"},turret={"turret_left","turret_right"},weapon={"fire"},radar={"Scanner"},

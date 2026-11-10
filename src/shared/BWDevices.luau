@@ -36,6 +36,7 @@ function D:submit(name,instruction,time,thread)
   local c={id=self.nextId,instruction=instruction,thread=thread,submitted=time,started=time,completed=time,state="completed",device=name}
   self.commands[c.id]=c; self.retainedCount+=1; self:archive(c)
   if steering then
+   self.steeringThread=thread
    local max=self.components.Mobility.MaxSteer
    self.steering=if op=="steer_center" then 0 else math.min(math.rad(instruction.value),max)*(if op=="steer_left" then 1 else -1)
    return Value.result(nil,{commandId=c.id,steeringDegrees=math.deg(self.steering)})
@@ -73,6 +74,21 @@ function D:manage(name,abort,time)
   d.queue={}
  end
  return Value.result()
+end
+function D:stopThread(thread,time)
+ if self.steeringThread==thread then self.steering=0; self.steeringThread=nil end
+ for _,d in self.devices do
+  local retained={}
+  for _,c in d.queue do
+   if c.thread==thread then
+    c.state="cancelled"; c.reason="commandCancelled"; c.completed=time
+    if d.name:sub(1,6)=="sensor" then c.result=Value.result("commandCancelled",{sensor=c.instruction.value}) end
+    self:archive(c)
+   else table.insert(retained,c) end
+  end
+  d.queue=retained
+  if d.active and d.active.thread==thread then self:terminal(d,d.active,"cancelled","commandCancelled",time) end
+ end
 end
 function D:stop(time,reason)
  self.steering=0

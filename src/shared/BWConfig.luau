@@ -1,6 +1,7 @@
 -- Bounded BW syntax/safety limits. Production hardware costs live in BWChassis.
 return table.freeze({
-	MaxSourceBytes=16384, MaxLines=400, MaxInstructions=128,
+	MaxCallDepthPerThread=50, -- top-level execution is not a function frame
+ MaxSourceBytes=16384, MaxLines=400, MaxInstructions=128,
 	MaxCompiledInstructions=512,MaxBlockDepth=12,MaxExpressionDepth=32,MaxExpressionNodes=2048,
 	MaxTokensPerLine=512,MaxArrayItems=64,MaxStringBytes=2048,MaxVariables=128,
 	MaxScannerCalls=128, -- legacy serial-interpreter limit; production retains rolling snapshots

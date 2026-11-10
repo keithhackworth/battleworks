@@ -73,7 +73,7 @@ Arguments called `studs`, `degrees`, `seconds`, `value` or `device` in this docu
 | String | `"enemy"`, `'hello'`, `""` | Single/double quotes; common escaped characters supported. |
 | Boolean | `true`, `false` | Lowercase. |
 | Null | `null` | Explicit absence of a value. |
-| Array/list | `[10, 20]`, `[]` | **Zero-based indexing**; arrays are immutable. |
+| Array/list | `[10, 20]`, `[]` | **Zero-based indexing**; program-created arrays are mutable references. Scanner/result arrays remain immutable. |
 | Dictionary | `{"shots": 0}` | String keys; programmer-created dictionaries can be mutable. |
 
 ```python
@@ -917,7 +917,7 @@ A waiting/finished thread does not stop other streams or device work. Variables 
 
 Temporary Rattler-damage immobilization can pause movement/turn progress expectations for bounded grace time; it does not silently complete the command. Overall program limits still apply.
 
-Not implemented: user-defined functions, imports, arbitrary Luau, `for`, `break`, `continue`, locks/events, automatic targeting/tracking, future smart-scanner velocity fields, or general-purpose language features beyond the commands and syntax documented here.
+Not implemented: function values/closures, imports, arbitrary Luau, `for`, `break`, `continue`, locks/events, automatic targeting/tracking, future smart-scanner velocity fields, or general-purpose language features beyond the commands and syntax documented here.
 
 Tuning values come from `src/shared/BWChassis.luau`, `BWConfig.luau`, `ScannerConfig.luau` and tank definitions. The implementation and automated tests remain the authority if these values change.
 
@@ -928,3 +928,88 @@ Vehicle assemblies install independently configured chassis, drivetrain, mobilit
 There is no new upgrade UI. See [VEHICLE_COMPONENTS.md](VEHICLE_COMPONENTS.md) for the technical catalog/assembly reference and server-side configuration examples. Chassis mass/torque force calculations remain outside the current kinematic simulation.
 
 Current test loadouts intentionally swap guns: **Boomer = Gatling**, **Rattler = cannon**. Recoil/jackhammer movement, turret kicks, heat limits, trajectory, damage and visual effects follow the installed weapon. Chassis/mobility/computer/bus allocations stay unchanged, so the Gatling on Boomer's shared20% weapon allocation fires more slowly than on Rattler's former dedicated weapon bus.
+
+
+## User-defined functions
+
+Define reusable code with `function name(parameters):` and four-space indentation. Calls and identifiers remain case-sensitive. Definitions are top-level, may appear after their calls, and do not run until called. Built-in names cannot be redefined. Calls accept positional arguments only, with exact arity. Functions can call themselves or each other and can be used in expressions, conditions, command arguments, and return expressions.
+
+```python
+function advance(const distance):
+    return forward(distance)
+
+function twice(const n):
+    return n * 2
+
+move = advance(twice(10))
+print(move.status)
+```
+
+Movement commands still return **acceptance**, not physical completion. Wrapping a command in a function does not wait for the device or bypass its queue. `return expression` exits immediately; `return` and falling off the body return `null`. False, zero and empty strings are preserved as return values.
+
+### Parameters and scope
+
+Numbers, strings, booleans and null are copied. Ordinary parameters are mutable local bindings; passing a literal or compile-time constant to one is valid. Dictionaries and arrays preserve object identity. Rebinding a parameter changes only the local binding; property/element writes change the caller's object. Arrays use in-bounds zero-based writes, without append/resize methods. Object literals accept quoted or identifier keys.
+
+```python
+function mark(location):
+    location.done = true
+    location = {done: false}  # Only rebinds the local parameter
+
+position = {x: 3, y: 12}
+mark(position)
+print(position.done)  # true
+```
+
+Every invocation has independent parameters and locals. Every name assigned anywhere in a function is local throughout that function (reads before initialization fail). Other reads resolve to shared top-level variables. Parameters may shadow top-level variables/constants; local value names may shadow user-function names, but call syntax still resolves to the statically registered function. Built-ins cannot be shadowed. Functions are not values: no closures, nested definitions, dynamic function dispatch or global-write declaration. Return a value to publish it through a top-level shared assignment. `wait_for()` and `variable_has_changed()` preserve identity for both local bindings and shared globals; local versions/observations belong to each invocation.
+
+Existing `CONST` remains compile-time, scalar-only and zero-cost. Lowercase `const name = expression` is an equivalent declaration spelling. Define compile-time constants outside functions; `const` in a parameter list is a different feature and may qualify runtime values, including objects.
+
+### Const parameters and aliases
+
+`function inspect(const target):` prohibits rebinding `target` and mutation anywhere reachable through an object/array reference. References derived through fields, indexing, assignments, returned aliases, or nested calls remain protected during the invocation. A mutable reference can be passed to a const parameter. A const reference can be forwarded to another const parameter. A const **scalar** can be copied into a mutable parameter; a const **object/array** cannot.
+
+The compiler rejects const/mutable arguments that may share the same object, including ancestor/child aliases, even if the function happens not to mutate that particular object. Caller-owned objects are not permanently frozen: after a const function returns, the caller may mutate its original reference.
+
+```python
+function range_squared(const observation):
+    return observation.distance * observation.distance
+
+observation = {distance: 20}
+squared = range_squared(observation)
+observation.distance = 30  # Valid after the call
+```
+
+Compile-time safety is deliberately conservative. Allocation-site points-to sets are merged across assignments, branches, loops, calls and recursion. Ambiguous dynamic fields, unknown scalar-versus-reference types, and rebinding/mixed call patterns may be rejected even when a particular execution would be safe. A function used with many different object layouts may need separation into more specific helpers. Uncalled functions are validated too; unknown parameters are not assumed to be scalars. With multiple declared threads, a const reference that may alias shared top-level storage is rejected because another thread could mutate it while the call waits. Independent function-local storage and shared scalar copies remain usable. This is a compile-time rejection policy, not a promise to allow every safe dynamic program.
+
+There is no existing public `clone()` API or collection mutation-method API in BW, so neither is added here. Creating a new object from proven scalar fields gives independent mutable storage; simply assigning an existing nested object preserves its alias. General cyclic deep copying is not provided.
+
+### Stacks, scheduling and CPU cost
+
+Each thread has its own resumable call stack. Calls can wait for scanners, clocks, shared variables or CPU credit while other threads and devices continue. Recursive calls have independent bindings. Functions use the same compiled instruction executor as top-level code.
+
+The server setting `BWConfig.MaxCallDepthPerThread` defaults to **50**. Top-level execution does **not** count as a function frame. Total live function frames are bounded by `MaxCallDepthPerThread × installed computer thread capacity` (50/100/200/400/800 for Bunny/Dual/Quad/Octa/Hexadeca). A stack overflow reports the function/thread/line, fails that thread and cancels its device work; other threads can finish. Ordinary language/runtime errors retain the existing whole-program stop behavior. Stop, replacement, destruction and reset clear every suspended frame and active input.
+
+| Executed operation | CPU ticks |
+|---|---:|
+| Function call / return | 0 |
+| Const parameter initialization / read | 0 |
+| Mutable parameter initialization | Existing write cost: 0.2 |
+| Mutable parameter or local read | Existing read cost: 0.1 |
+| Mutable binding/property write | Existing write cost: 0.2 |
+| Property/index access | Existing access cost: 0.1, plus evaluated base/index reads |
+| Arithmetic | Existing cost: 0.2 |
+| Object/array literal allocation | Existing allocation cost: 0; contained expressions retain their costs |
+
+These are current defaults from `BWChassis.Costs`, not a second set of tuning values. Calls do not duplicate argument charges. A compile-time constant argument costs zero to read, but initializing a **mutable** parameter still costs a write. Debug-only printing retains its existing cost waiver; a user function invoked inside print is gameplay work and pays its normal executed costs. Uncalled functions and unexecuted branches cost nothing. Free calls/returns still count against the bounded scheduler dispatch limit.
+
+```python
+function inefficient(distance):
+    distance = distance + 10
+    forward(distance)
+
+function efficient(const distance):
+    forward(distance + 10)
+```
+
+At current rates, `inefficient(5)` costs two reads, two writes, arithmetic and the forward submission: **1.8 ticks**. `efficient(5)` costs arithmetic and the same submission: **1.2 ticks**. Both remain subject to normal device availability and queue limits. The IDE can log a nonintrusive tip when an inferred scalar parameter is never reassigned; it never rewrites the source.

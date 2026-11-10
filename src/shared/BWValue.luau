@@ -4,6 +4,7 @@ local Value={}
 local dictionaries=setmetatable({},{__mode="k"})
 local arrays=setmetatable({},{__mode="k"})
 Value.Null=table.freeze({kind="null"})
+function Value.mutableArray(items) arrays[items]=true; return items end
 function Value.array(items) arrays[items]=true; return table.freeze(items) end
 function Value.isArray(value) return type(value)=="table" and arrays[value]==true end
 function Value.dictionary(fields,immutable) dictionaries[fields]=true; return if immutable then table.freeze(fields) else fields end
@@ -56,9 +57,11 @@ function Value.format(value)
             for i,key in keys do if remaining<=0 then truncated=true; break end; if i>1 then emit(", ") end; emit(quote(key)..": "); format(v[key]) end
             emit("}"); visiting[v]=nil
 		elseif Value.isArray(v) then
+            if visiting[v] then emit("<cycle>"); return end
+            visiting[v]=true
 			emit("[")
 			for i,item in v do if remaining<=0 then truncated=true; break end; if i>1 then emit(", ") end; format(item) end
-			emit("]")
+			emit("]"); visiting[v]=nil
 		else error("Unsupported BW value.",0) end
 	end
 	format(value)

@@ -4,8 +4,9 @@ local Lexer=require(script.Parent.BWLexer)
 local Expression=require(script.Parent.BWExpression)
 local Commands=require(script.Parent.BWCommands)
 local Value=require(script.Parent.BWValue)
+local Analysis=require(script.Parent.BWFunctionAnalysis)
 local Parser={}
-local reserved={CONST=true,['with']=true,['thread']=true,['if']=true,['elif']=true,['else']=true,['switch']=true,['case']=true,['default']=true,['and']=true,['or']=true,['not']=true,['true']=true,['false']=true,['null']=true,['while']=true,['for']=true,['def']=true,['break']=true,['return']=true}
+local reserved={CONST=true,const=true,["function"]=true,['with']=true,['thread']=true,['if']=true,['elif']=true,['else']=true,['switch']=true,['case']=true,['default']=true,['and']=true,['or']=true,['not']=true,['true']=true,['false']=true,['null']=true,['while']=true,['for']=true,['def']=true,['break']=true,['return']=true}
 local function parse(source)
 	if type(source)~="string" then Commands.error(1,"Source must be text.") end
 	if #source>Limits.MaxSourceBytes then Commands.error(1,"Program exceeds 16,384 bytes.") end
@@ -20,6 +21,29 @@ local function parse(source)
 		if #leading%Limits.IndentWidth~=0 then Commands.error(line,"Indentation must use multiples of four spaces.") end
 		table.insert(lines,{tokens=tokens,indent=#leading,line=line,text=raw:match("^%s*(.-)%s*$"):sub(1,200)})
 	end
+ -- Register headers before bodies, so forward and mutually recursive calls validate.
+ local functions={}
+ for _,row in lines do
+  local ts=row.tokens
+  if ts[1].value=="function" then
+   if row.indent~=0 then Commands.error(row.line,"Function definitions must be at top level.") end
+   local name=ts[2]
+   if name.kind~="id" or reserved[name.value] or Commands.known(name.value) or ts[3].kind~="(" then Commands.error(row.line,"Expected function name(parameters):") end
+   if functions[name.value] then Commands.error(row.line,"Duplicate function '"..name.value.."'.") end
+   local params,seen={},{}; local pos=4
+   if ts[pos].kind~=")" then repeat
+    local immutable=ts[pos].value=="const"; if immutable then pos+=1 end
+    local param=ts[pos]; pos+=1
+    if param.kind~="id" or reserved[param.value] or Commands.known(param.value) or seen[param.value] then Commands.error(row.line,"Invalid or duplicate parameter name.") end
+    seen[param.value]=true; table.insert(params,{name=param.value,const=immutable})
+    if #params>Limits.MaxVariables then Commands.error(row.line,"Too many function parameters.") end
+    if ts[pos].kind~="," then break end; pos+=1
+   until false end
+   if ts[pos].kind~=")" or ts[pos+1].kind~=":" or ts[pos+2].kind~="eof" then Commands.error(row.line,"Expected function name(parameters):") end
+   functions[name.value]={name=name.value,parameters=params,line=row.line,locals={}}
+  end
+ end
+ local activeFunction
 	local cursor,count=1,0
     -- Like mutable BW names, constants have program-wide scope. Resolve in
     -- textual declaration order, including inside thread/branch blocks.
@@ -27,16 +51,16 @@ local function parse(source)
     local function resolveConstants(n,required)
         if n.kind=="variable" then
             local value=constants[n.name]
-            if value~=nil then return {kind="literal",value=value,line=n.line} end
+            if value~=nil and not (activeFunction and activeFunction.locals[n.name]) then return {kind="literal",value=value,line=n.line} end
             if required then Commands.error(n.line,"CONST requires a previously declared constant; '"..n.name.."' is undefined, self-referential or runtime-dependent.") end
         elseif n.kind=="call" then
             if required then Commands.error(n.line,"Function calls are not allowed in CONST expressions.") end
             for _,arg in n.args do
                 arg.expression=resolveConstants(arg.expression,false)
                 local known,value=Expression.constant(arg.expression)
-                if known then Commands.validate(n.name,arg.key or "value",value,n.line) end
+                if known and not n.userFunction then Commands.validate(n.name,arg.key or "value",value,n.line) end
             end
-            Commands.signature(n)
+            Commands.signature(n,functions)
         elseif n.kind=="binary" then
             n.left=resolveConstants(n.left,required); n.right=resolveConstants(n.right,required)
         elseif n.kind=="unary" then n.operand=resolveConstants(n.operand,required)
@@ -52,11 +76,12 @@ local function parse(source)
         return n
     end
     local function writable(name,line)
-        if constants[name]~=nil then Commands.error(line,"Cannot assign to CONST '"..name.."'.") end
-        mutableNames[name]=true
+        if constants[name]~=nil and not (activeFunction and activeFunction.locals[name]) then Commands.error(line,"Cannot assign to CONST '"..name.."'.") end
+        if functions[name] and not (activeFunction and activeFunction.locals[name]) then Commands.error(line,"Cannot assign to function '"..name.."'.") end
+        if not activeFunction then mutableNames[name]=true end
     end
 	local function expression(row,start,last,required)
-		local node,pos=Expression.parse(row.tokens,start)
+		local node,pos=Expression.parse(row.tokens,start,functions)
 		if row.tokens[pos].kind~=(last or "eof") or (last and row.tokens[pos+1].kind~="eof") then Commands.error(row.line,"Unexpected token after expression; expected "..(last or "end of line")..".") end
 		return resolveConstants(node,required)
 	end
@@ -93,9 +118,29 @@ local function parse(source)
 			local token=row.tokens[1]; local word=token.value
 			cursor+=1
 			local node={line=row.line,text=row.text}
-			if word=="CONST" then
+			if word=="function" then
+                node.kind="function"; node.name=row.tokens[2].value
+                local fn=functions[node.name]; activeFunction=fn
+                for _,param in fn.parameters do fn.locals[param.name]=true end
+                -- Assignments anywhere in a function are local, including before their first write.
+                local scan=cursor
+                while lines[scan] and lines[scan].indent>indent do
+                 local ts=lines[scan].tokens
+                 if ts[1].kind=="id" and ts[2].kind=="=" then fn.locals[ts[1].value]=true end
+                 scan+=1
+                end
+                local localsCount=0; for _ in fn.locals do localsCount+=1 end
+                if localsCount>Limits.MaxVariables then Commands.error(row.line,"Too many function-local bindings.") end
+                node.body=suite(row,indent,depth); fn.body=node.body; activeFunction=nil
+            elseif word=="return" then
+                if not activeFunction then Commands.error(row.line,"return is only valid inside a function.") end
+                node.kind="return"; node.expression=if row.tokens[2].kind=="eof" then {kind="literal",value=Value.Null,line=row.line} else expression(row,2)
+                constant(node.expression)
+            elseif word=="CONST" or word=="const" then
                 local name=row.tokens[2]
                 if name.kind~="id" or reserved[name.value] or Commands.known(name.value) or row.tokens[3].kind~="=" then Commands.error(row.line,"Expected CONST name = scalar expression; name must not be reserved.") end
+                if functions[name.value] then Commands.error(row.line,"Constant conflicts with function name.") end
+                if activeFunction then Commands.error(row.line,"Declare compile-time constants at top level, outside functions.") end
                 if constants[name.value]~=nil or mutableNames[name.value] then Commands.error(row.line,"Duplicate or conflicting CONST name '"..name.value.."'.") end
                 local initializer=expression(row,4,nil,true)
                 local known,value=constant(initializer)
@@ -146,7 +191,7 @@ local function parse(source)
 				end
 			elseif reserved[word] then Commands.error(row.line,"Unexpected or unsupported statement '"..word.."'.")
 			elseif token.kind=="id" and (row.tokens[2].kind=="." or row.tokens[2].kind=="[") then
-                local target,pos=Expression.parse(row.tokens,1)
+                local target,pos=Expression.parse(row.tokens,1,functions)
                 if row.tokens[pos].kind~="=" or target.kind~="index" then Commands.error(row.line,"Expected dictionary assignment.") end
                 local root=target; while root.kind=="index" do root=root.array end
                 if root.kind=="variable" then writable(root.name,row.line) end
@@ -160,7 +205,7 @@ local function parse(source)
 				local call=expression(row,1)
 				if call.kind~="call" then Commands.error(row.line,"Expected an assignment or function-style command.") end
 				if call.name=="print" then node.kind="print"; node.expression=call.args[1].expression; constant(node.expression)
-				elseif Commands.special[call.name] then node.kind="call"; node.expression=call
+				elseif call.userFunction or Commands.special[call.name] then node.kind="call"; node.expression=call
                 else node.kind="action"; node.instruction=numericCall(row,call) end
 			end
 			table.insert(result,node)
@@ -168,6 +213,7 @@ local function parse(source)
 		return result
 	end
 	local ast=block(0,0)
+	local tips=Analysis.validate(ast,functions)
 	local instructions={}
     local streams={[1]=instructions}; local declared={}
 	local function emit(op,node,fields)
@@ -179,7 +225,12 @@ local function parse(source)
 	local compile
 	compile=function(body)
 		for _,node in body do
-			if node.kind=="thread" then
+			if node.kind=="function" then
+                local previous=instructions; instructions={}
+                compile(node.body); emit("$return",node,{expression={kind="literal",value=Value.Null,line=node.line}})
+                functions[node.name].instructions=instructions; instructions=previous
+            elseif node.kind=="return" then emit("$return",node,{expression=node.expression})
+            elseif node.kind=="thread" then
                 if declared[node.id] then Commands.error(node.line,"Duplicate thread entry block.") end
                 declared[node.id]=true
                 local previous=instructions; instructions=streams[node.id] or {}; streams[node.id]=instructions
@@ -218,6 +269,8 @@ local function parse(source)
 	end
 	compile(ast)
 	instructions.streams=streams
+ instructions.functions=functions
+ instructions.tips=tips or {}
     return instructions,ast
 end
 function Parser.parse(source)

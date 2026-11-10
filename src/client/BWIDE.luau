@@ -296,7 +296,7 @@ function IDE:renderRuntime()
   table.insert(lines,string.format("%s • %.3fs • %d ticks/cycle",r.tier,r.clock,r.ticksPerCycle))
   table.insert(lines,string.format("Scans: %d • log attempts: %d • omitted: %d",r.scanCount or 0,r.outputCount or 0,r.suppressedLogs or 0))
   local ids={}; for id in r.threads do table.insert(ids,id) end; table.sort(ids)
-  for _,id in ids do local t=r.threads[id]; table.insert(lines,string.format("T%d L%d %s %s ticks=%.1f",id,t.line,t.state,t.waiting,t.ticks)..string.format(" loops=%d prints=%d",t.loopTests or 0,t.prints or 0)) end
+  for _,id in ids do local t=r.threads[id]; table.insert(lines,string.format("T%d L%d %s %s ticks=%.1f",id,t.line,t.state,t.waiting,t.ticks)..string.format(" loops=%d prints=%d",t.loopTests or 0,t.prints or 0)..string.format(" depth=%d %s",t.callDepth or 0,t.functionName or "")); if t.error and t.error~="" then table.insert(lines,"  "..t.error) end end
   local names={}; for name in r.devices do table.insert(names,name) end; table.sort(names)
   for _,name in names do local d=r.devices[name]; local idsInQueue={}; for _,c in d.queue do table.insert(idsInQueue,tostring(c.id)..":"..c.op) end
    table.insert(lines,string.format("%s B%d %g%% active=%s Q[%s]",name,d.bus,d.allocation,if d.active then tostring(d.active.id)..":"..d.active.op else "idle",table.concat(idsInQueue,",")))

@@ -48,7 +48,7 @@ with thread(2):
     print("ready")
 ```
 
-Four spaces per indentation level. Thread blocks must be top-level, have unique integer IDs within chassis capacity, and start together. Legacy top-level statements append to thread 1 in source order. No user-defined functions, locks or events are added. Nested while loops are supported and scheduled under the same CPU/safety budgets.
+Four spaces per indentation level. Thread blocks must be top-level, have unique integer IDs within chassis capacity, and start together. Legacy top-level statements append to thread 1 in source order. User-defined functions use independent call stacks within these threads (see Function compilation and execution below). No locks or events are added. Nested while loops are supported and scheduled under the same CPU/safety budgets.
 
 All streams share one variable environment for this tank/run. Other tanks/programs have separate environments. Stop, error, death, replacement and reset clear variables and versions. Completed values remain private until Stop/replacement/reset.
 
@@ -379,3 +379,43 @@ Shift+Delete uses BWEditorText.deleteLine to remove the caret line and its newli
 ### E3.1 keyboard history ownership
 
 Ctrl/Cmd+Z/Y now chooses one application-history target without rewriting the TextBox during native shortcut processing. The target remains authoritative past key release and across stable Heartbeat observations; native undo/redo Text/caret callbacks cannot create new edit records or clear redo. Repeated history chords advance the same logical history, and non-history input/lifecycle release settles the pending target first. Toolbar actions use the same history without a native-key transaction. Normal native text edits also wait for a stable frame boundary before automatic history recording, letting native-first shortcut intent arrive before recording a native undo as typing. Pressing Control/Command commits any pending ordinary typing before native Z/Y can erase its redo snapshot; pending Enter formatting stays on its own confirmed path. Enter's confirmed E3 path and Shift+Delete operation are preserved. Editor version label is E3.1.
+
+
+## Function compilation and execution
+
+`BWParser` pre-registers top-level function headers before parsing expressions. `BWCommands.signature` validates exact positional arity and records const/mutable parameter metadata. `BWExpression` keeps calls as AST nodes; user calls are never passed to device command resolution. Each function body is compiled with the existing `$assign`, `$set`, `$branch`, `$switch`, `$while`, `$jump`, `$call` instructions and the new `$return`. A final implicit `$return null` terminates fallthrough. Function definitions emit no top-level execution instruction. Names assigned in a function and its parameters form its lexical local set. Compile-time scalar constants are still substituted, except where shadowed by local bindings.
+
+`BWFunctionAnalysis` performs bounded fixed-point, allocation-site points-to inference over the AST, followed by deep const/alias validation. Reference sets, unknown reference flows, readonly views, heap fields (including conservative dynamic-field slots), transitive function writes, and returns are propagated. Known built-in result metadata is scalar; unknown extension fields are not optimistically scalar. Conflicting const/mutable views, const-derived mutation and shared const references in multithread programs are rejected. This analysis intentionally merges branches/rebindings/call sites: false-positive rejection is possible, particularly for polymorphic helpers and allocation sites reused recursively. The compiler rejects nonconvergence rather than running unchecked code. There is no runtime const exception mechanism for parameter enforcement and no newly invented clone API.
+
+`BWExecution.invoke` evaluates argument expressions exactly once, checks both stack guards before push, reserves mutable binding initialization, and executes compiled bodies through the **same** `instruction` method. The existing coroutine retains the expression continuation, return destination, evaluated operands and pending scanner acquisition. Explicit frames hold caller instruction stream/index/line, caller frame, local bindings, local variable versions and synchronization observations. A locals proxy reads shared globals only when a name is not lexically local. On return, the frame is popped and the caller's stream/index/line restored. The legacy `BWRuntime.new` delegates function-bearing programs to this production execution path; device navigation's single-instruction physical executor remains unchanged.
+
+Top-level execution consumes no frame. Default server `BWConfig.MaxCallDepthPerThread=50`; runtime constructor argument five may supply a trusted `{MaxCallDepthPerThread=N}` override. The server never accepts it from BW source or a client hardware configuration. The aggregate guard is derived from installed computer thread capacity, not the number of used source streams. No push/count change occurs on rejected overflow. Stack overflow fails only its thread, cancels only commands owned by that thread, reports the function/thread/line, and lets other threads complete; final program status remains error. Other runtime errors retain the existing program-wide cleanup contract. Stop/destruction/replacement/reset clear all coroutines, pending evaluations, frames and devices.
+
+Cost reservation and execution consume the same annotated AST. User call reservation includes arguments and normal writes for mutable bindings; body statements reserve separately. Const parameter variable nodes are explicitly annotated so neither cost estimation nor execution charges a variable read. Calls and returns have no fixed cost. Mutable arguments, ordinary locals, global reads/writes, property traversal, arithmetic and devices retain `BWChassis.Costs`; no costs were normalized to the illustrative one-tick read/write examples. Literal collection allocation keeps its existing zero cost. CPU exhaustion suspends before an operation, preserving evaluated operands and preventing duplicated side effects. Atomic ordinary body assignments retain their statement reservation. Device waits may suspend a larger expression, matching existing asynchronous expression semantics.
+
+Free internal returns/statement transitions still count against `MaxOperationsPerCycle`; they cannot cause an unbounded dispatch loop. Diagnostics include current function, depth, peak depth, total/peak frames and derived limits. IDE thread rows show function/depth and the current function source line. Compiler tips for unmodified scalar parameters are metadata and zero-cost log events, not automatic edits.
+
+### Function and device example
+
+Commands remain asynchronous. This helper explicitly polls physical completion while yielding simulated time; wrapping `forward()` alone would merely return its acceptance dictionary.
+
+```python
+function await_command(const id):
+    state = command_status(id)
+    while state.state == "running" or state.state == "accepted" or state.state == "queued":
+        clock = get_clock()
+        wait_for_clock(clock.time + 0.1)
+        state = command_status(id)
+    return state
+
+function drive_and_wait(const distance):
+    accepted = forward(distance)
+    if accepted.status == "fail":
+        return accepted
+    return await_command(accepted.commandId)
+
+move = drive_and_wait(10)
+print(move)
+```
+
+`tests/BWFunctions.spec.luau` executes real compiler output through the production VM, including recursion, alias validation, exact category totals, CPU starvation, independent stacks, physical device work, scanner waits, lifecycle cleanup, source locations and deterministic traces. Unit/server mocks do not validate native Studio input, rendering, mobile controls or transport timing.

@@ -58,6 +58,7 @@ try {
     ['SwappedWeapons'],
     ['LiveRuntimeExamples'],
     ['BWEditor'],
+    ['BWFunctions'],
   ];
   if (groupIndex === null) {
     state.destroy(); state = null;

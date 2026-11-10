@@ -112,6 +112,44 @@
  local oldModel=boomer.model
  registry.sync(art,{test=visualState},Renderer.new)
  check(oldModel.destroyed and not art.test.gatling and #art.test.treads==0 and #art.test.wheels==4,"weapon descriptor change rebuilds gun without changing body type")
+ -- Function-bearing source through production networking and runtime snapshots.
+ reset.OnServerEvent:Fire(first); advance(6)
+ local functionSource=[[function twice(const n):
+    return n * 2
+function observe(const slot):
+    snapshot = Scanner(position=slot)
+    return snapshot.status
+with thread(1):
+    print(twice(21))
+with thread(2):
+    print(observe(0))]]
+ bwRun.OnServerEvent:Fire(first,functionSource,901,rattlerId); advance(120)
+ check(snapshots[rattlerId].bwStatus=="completed","server accepts concurrent user functions and scanner-return continuation")
+ local sawReturn,sawScan=false,false
+ for _,event in privateOutputs do
+  if event.args[1]==rattlerId and event.args[3]==901 then
+   local entry=event.args[4]
+   if type(entry)=="table" and entry.kind=="print" then
+    if entry.text=="42" and entry.thread==1 then sawReturn=true end
+    if entry.text=="success" and entry.thread==2 then sawScan=true end
+   end
+  end
+ end
+ check(sawReturn and sawScan,"function returns reach correct thread/request private IDE logs")
+ bwRun.OnServerEvent:Fire(first,"function hold():\n    clock = get_clock()\n    wait_for_clock(clock.time + 100)\nhold()",902,rattlerId); advance(30)
+ check(snapshots[rattlerId].bwRunning and snapshots[rattlerId].bwLine==3,"public execution highlighting follows current function source line")
+ local foundDepth=false
+ for _,event in privateRuntime do
+  local reading=event.args[2]
+  if event.args[1]==rattlerId and reading.requestId==902 and reading.runtime then
+   local thread=reading.runtime.threads[1]
+   if thread.callDepth==1 and thread.functionName=="hold" and thread.line==3 then foundDepth=true end
+  end
+ end
+ check(foundDepth,"private runtime diagnostics replicate function name/depth/line")
+ bwStop.OnServerEvent:Fire(first,903,rattlerId); advance(12)
+ check(not snapshots[rattlerId].bwRunning,"server Stop cleans suspended function and returns control")
+ check(snapshots[rattlerId].variables==nil,"function locals stay private rather than entering public snapshots")
  boomer=art.test
  boomer:destroy(); rattler:destroy()
  os.clock=savedClock; workspace.FindFirstChild=originalWorkspaceFind

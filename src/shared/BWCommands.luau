@@ -7,7 +7,15 @@ C.steering={steer_left=true,steer_right=true,steer_center=true}
 C.turns={turn_left=true,turn_right=true,turret_left=true,turret_right=true}
 function C.known(name) return C.special[name] or C.moves[name] or C.turns[name] or C.steering[name] or name=="stop" or name=="fire" or name=="Scanner" or name=="print" end
 function C.error(line,message) error({bwError=true,line=line,message=message},0) end
-function C.signature(call)
+function C.signature(call,functions)
+ local fn=functions and functions[call.name]
+ if fn then
+  if #call.args~=#fn.parameters then C.error(call.line,"Function '"..call.name.."' expects "..#fn.parameters.." arguments, received "..#call.args..".") end
+  for _,arg in call.args do if arg.key then C.error(call.line,"User functions accept positional arguments only.") end end
+  call.userFunction=true; call.mutableParameters=0
+  for _,param in fn.parameters do if not param.const then call.mutableParameters+=1 end end
+  return
+ end
 	if not C.known(call.name) then C.error(call.line,"Unknown function '"..call.name.."' (names are case-sensitive).") end
 	if call.name=="steer_center" or call.name=="stop" then
         if #call.args~=0 then C.error(call.line,call.name.." expects no arguments.") end

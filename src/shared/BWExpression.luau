@@ -5,7 +5,7 @@ local Value=require(script.Parent.BWValue)
 local E={}
 local dynamic={dynamic=true}
 local precedence={['or']=10,['and']=20,['==']=30,['!=']=30,['<']=30,['<=']=30,['>']=30,['>=']=30,['+']=40,['-']=40,['*']=50,['/']=50}
-function E.parse(tokens,start)
+function E.parse(tokens,start,functions)
 	local pos,nodes=start or 1,0
 	local function node(kind,fields)
 		nodes+=1; if nodes>Limits.MaxExpressionNodes then Commands.error(tokens[pos].line,"Expression is too large.") end
@@ -29,7 +29,7 @@ function E.parse(tokens,start)
 		elseif token.kind=="{" then
             local entries={}
             if tokens[pos].kind~="}" then repeat
-                local key=take("string").value; take(":"); table.insert(entries,{key=key,expression=parse(0,depth+1)})
+                local token=take(); if token.kind~="string" and token.kind~="id" then Commands.error(token.line,"Expected a dictionary key.") end; local key=token.value; take(":"); table.insert(entries,{key=key,expression=parse(0,depth+1)})
                 if #entries>Limits.MaxArrayItems then Commands.error(token.line,"Dictionary is too large.") end
                 if tokens[pos].kind~="," then break end; take(",")
             until false end
@@ -52,7 +52,7 @@ function E.parse(tokens,start)
 					if tokens[pos].kind~="," then break end; take(",")
 					if tokens[pos].kind==")" then Commands.error(token.line,"Trailing comma is not supported.") end
 				until false end
-				take(")"); left=node("call",{name=token.value,args=args,line=token.line}); Commands.signature(left)
+				take(")"); left=node("call",{name=token.value,args=args,line=token.line}); Commands.signature(left,functions)
 			else left=node("variable",{name=token.value,line=token.line}) end
 		else Commands.error(token.line,"Expected an expression.") end
 		while true do
@@ -79,7 +79,7 @@ function E.parse(tokens,start)
 			for _,arg in n.args do
 				validate(arg.expression,depth+1,false)
 				local known,value=E.constant(arg.expression)
-				if known then Commands.validate(n.name,arg.key or "value",value,n.line) end
+				if known and not n.userFunction then Commands.validate(n.name,arg.key or "value",value,n.line) end
 			end
 		elseif n.kind=="binary" then validate(n.left,depth+1,false); validate(n.right,depth+1,false)
 		elseif n.kind=="unary" then validate(n.operand,depth+1,false)
@@ -111,7 +111,7 @@ function E.evaluate(n,context)
 	if kind=="group" then return E.evaluate(n.expression,context) end
 	if kind=="variable" then
 		if not context or context.constant then error(dynamic,0) end
-		charge(context,"read")
+		if not n.constParameter then charge(context,"read") end
 		local value=context.variables[n.name]
 		if value==nil then Commands.error(n.line,"Undefined variable '"..n.name.."'.") end
 		return value
@@ -122,7 +122,7 @@ function E.evaluate(n,context)
     end
     if kind=="array" then
 		local items={}; for _,item in n.items do table.insert(items,E.evaluate(item,context)) end
-		return Value.array(items)
+		return Value.mutableArray(items)
 	end
 	if kind=="index" then
 		local array,index=E.evaluate(n.array,context),E.evaluate(n.index,context)

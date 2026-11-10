@@ -23,8 +23,8 @@ function Controller.sync(tank)
 	tank.state.bwWarning=runtime.warning or ""; tank.state.bwSkipped=runtime.skipped or 0
 	tank.state.bwStatus=runtime.status; tank.state.bwMessage=runtime.message
 	tank.state.bwIndex=runtime.index; tank.state.bwCount=#runtime.instructions
-	tank.state.bwLine=if instruction then instruction.line else 0
-	tank.state.bwInstruction=if instruction then instruction.text else ""
+	tank.state.bwLine=runtime.currentLine or (if instruction then instruction.line else 0)
+	tank.state.bwInstruction=runtime.currentText or (if instruction then instruction.text else "")
 end
 function Controller.running(tank) return tank.bw~=nil and tank.bw.status=="running" end
 function Controller.stop(tank,reason)
