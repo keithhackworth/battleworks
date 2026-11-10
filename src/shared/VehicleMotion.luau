@@ -52,6 +52,7 @@ end
 -- forces each fixed step; impulses never receive a dt multiplier.
 function M.beginStep(body,dt)
  assert(finite(dt) and dt>=0,"Invalid motion timestep"); local v=M.ensure(body)
+ body.motionCorrectionAtStepStart=body.motionCorrection or Vector3.zero
  body.motionExternalY=(body.motionForce or Vector3.zero).Y
  body.motionWasResting=v.X*v.X+v.Z*v.Z<0.0004 and math.abs(body.angularVelocity.Y)<0.02
  M.setVelocity(body,v+(body.motionForce or Vector3.zero)*(dt/body.motionMass))
@@ -59,12 +60,17 @@ function M.beginStep(body,dt)
  body.motionForce=nil; body.motionTorque=nil
 end
 function M.advanceYaw(body,dt)
- M.ensure(body); body.yaw=(body.yaw or 0)+body.angularVelocity.Y*dt; M.sync(body)
+ M.ensure(body); local delta=body.angularVelocity.Y*dt
+ body.yaw=(body.yaw or 0)+delta; body.motionYawTravel=(body.motionYawTravel or 0)+delta; M.sync(body)
 end
 function M.integrateHorizontal(body,dt)
- local v=M.ensure(body)
+ local v=M.ensure(body); local previous=body.position; local angle=body.angularVelocity.Y*dt
+ local middle=(body.yaw or 0)+angle/2
  M.advanceYaw(body,dt)
  body.position=body.position+Vector3.new(v.X*dt,0,v.Z*dt)
+ local delta=body.position-previous
+ local sinc=if math.abs(angle)<1e-6 then 1-angle*angle/24 else math.sin(angle/2)/(angle/2)
+ body.motionForwardTravel=(body.motionForwardTravel or 0)+(delta.X*(-math.sin(middle))+delta.Z*(-math.cos(middle)))*sinc
  M.sync(body)
 end
 return M

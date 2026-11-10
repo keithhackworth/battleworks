@@ -1,7 +1,7 @@
 -- Deterministic planar rigid contacts for the existing scripted simulation.
 -- Records are generic body+box geometry; no tank names, Instances or tasks.
 local Motion=require(script.Parent.VehicleMotion)
-local C={Skin=0.00001,Iterations=10,MaxEvents=12,MaxSubsteps=16,Friction=0.15}
+local C={Skin=0.0001,Iterations=10,MaxEvents=12,MaxSubsteps=16,Friction=0.15}
 local function dot(x,z,a,b) return x*a+z*b end
 local function axes(r) local c,s=math.cos(r.state.yaw),math.sin(r.state.yaw); return c,-s,s,c end
 local function extent(r,x,z)
@@ -130,9 +130,10 @@ local function solveFriction(c)
 end
 local function correct(r,x,z)
  if r.fixed then return end
- local delta=Vector3.new(x,0,z)
- r.state.position+=delta
- r.state.motionCorrection=(r.state.motionCorrection or Vector3.zero)+delta
+ local previous=r.state.position
+ r.state.position+=Vector3.new(x,0,z)
+ -- Record the actual applied displacement, including Vector3 quantization.
+ r.state.motionCorrection=(r.state.motionCorrection or Vector3.zero)+(r.state.position-previous)
 end
 local function eachPair(bodies,statics,visit)
  for i,a in bodies do
@@ -145,6 +146,7 @@ local function resolve(bodies,statics,dt)
  eachPair(bodies,statics,function(a,b)
   local found=manifold(a,b,dt); if found then table.insert(contacts,found) end
  end)
+ if #contacts==0 then return end -- open space needs no positional solver passes
  for _=1,C.Iterations do for _,group in contacts do
   if #group==2 then solveBlock(group[1],group[2]) else solveNormal(group[1]) end
   for _,c in group do solveFriction(c) end
@@ -228,7 +230,10 @@ function C.solve(bodies,statics,dt)
   local s=r.state
   substeps=math.max(substeps,math.ceil(math.abs(s.angularVelocity.Y)*dt/0.08))
   local previous=s.motionStepStart
-  if previous then s.position=Vector3.new(previous.X,s.position.Y,previous.Z); s.yaw=s.motionYawStart end
+  if previous then
+   s.position=Vector3.new(previous.X,s.position.Y,previous.Z); s.yaw=s.motionYawStart
+   s.motionForwardTravel=s.motionForwardStart or 0; s.motionYawTravel=s.motionYawTravelStart or 0
+  end
  end
  substeps=math.min(C.MaxSubsteps,substeps)
  for _=1,substeps do

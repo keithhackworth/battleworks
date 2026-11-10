@@ -38,7 +38,7 @@ function Recoil.kick(state, _heat, direction)
 	if magnitude>EPSILON then
 		local impulse=range(Config.HorizontalImpulseMin,Config.HorizontalImpulseMax,shove)
 		local v=Motion.ensure(state)
-        local dx,dz=-direction.X/magnitude*impulse,-direction.Z/magnitude*impulse
+        local dx,dz=-direction.X/magnitude*impulse/state.motionMass,-direction.Z/magnitude*impulse/state.motionMass
         local before=math.sqrt(v.X*v.X+v.Z*v.Z)
         local after=math.sqrt((v.X+dx)^2+(v.Z+dz)^2)
         -- Limit only newly contributed recoil, never erase existing momentum.

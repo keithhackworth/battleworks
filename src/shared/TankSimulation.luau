@@ -80,6 +80,7 @@ function Simulation.moveBody(state,command,dt,mapSize,environment,deferContacts)
  if not airborne then Drive.ground(state,command,dt,speedScale,static,kinetic,resistance) end
  -- No traction, steering, coasting or ground damping is applied in the air.
  state.motionStepStart=state.position; state.motionYawStart=state.yaw
+ state.motionForwardStart=state.motionForwardTravel or 0; state.motionYawTravelStart=state.motionYawTravel or 0
  Motion.integrateHorizontal(state,dt)
  if not deferContacts then
   Contacts.solve({Contacts.body("vehicle",state,c.Chassis)},Contacts.obstacles(environment,mapSize or Vector2.new(Config.ArenaLimit*2,Config.ArenaLimit*2)),dt)

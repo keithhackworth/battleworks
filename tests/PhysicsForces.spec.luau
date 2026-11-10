@@ -160,3 +160,11 @@ check((supported.landingSerial or 0)==0,"normal reaction does not create a phant
 local lifted=tank(); M.force(lifted,Vector3.new(0,Components.get(lifted).Recoil.Gravity*2,0)); run(lifted,forward,1,normal)
 check(not lifted.grounded and lifted.position.Y>0 and lifted.speed==0,"force exceeding weight lifts body and disables ground propulsion")
 print(string.format("Physics support reaction coverage passed: %d assertions",checks))
+
+local catalog=Components.copy(require(Shared.ComponentCatalog)); catalog["chassis.standard"].Properties.Mass=2
+local heavyProfile=Components.resolve(assembly,catalog)
+local lightGun=Sim.new(Vector3.zero,"Rattler",17,assembly)
+local heavyGun=Sim.new(Vector3.zero,"Rattler",17,heavyProfile)
+recoil.kick(lightGun,0,Vector3.new(1,0,0)); recoil.kick(heavyGun,0,Vector3.new(1,0,0))
+check(near(heavyGun.linearVelocity.X*2,lightGun.linearVelocity.X),"horizontal weapon impulse respects physical chassis mass")
+print(string.format("Physics recoil mass coverage passed: %d assertions",checks))

@@ -471,7 +471,7 @@ while true:
 
 Rotate counterclockwise. Relative turns accumulate rotation, including multiple revolutions. Absolute turns honor the left direction even if it takes the longer route.
 
-Installed mobility determines turning: default Boomer tracks can pivot, while default Rattler wheels must drive a curved path and retain existing airborne restrictions. Changing components changes these capabilities independently of model identity.
+Installed mobility determines turning: installed tracks can pivot, while installed wheels must drive a curved path and retain existing airborne restrictions. Changing components changes these capabilities independently of model identity.
 
 ### turn_right(degrees) / turn_right(to=heading)
 
@@ -925,7 +925,7 @@ Tuning values come from `src/shared/BWChassis.luau`, `BWConfig.luau`, `ScannerCo
 
 Vehicle assemblies install independently configured chassis, drivetrain, mobility, turret, weapon, sensor, computer and bus components. Drivetrain determines propulsion; mobility determines steering/pivot behavior. The same BW commands and costs apply to both. Model names do not decide capabilities. Default Boomer/Rattler tuning is unchanged, apart from enabling persistent tracked steering. The existing development hardware selector remains available; its tier selects a registered computer component and its bus allocations reserve device performance.
 
-There is no new upgrade UI. See [VEHICLE_COMPONENTS.md](VEHICLE_COMPONENTS.md) for the technical catalog/assembly reference and server-side configuration examples. Chassis mass/torque force calculations remain outside the current kinematic simulation.
+There is no new upgrade UI. See [VEHICLE_COMPONENTS.md](VEHICLE_COMPONENTS.md) for the technical catalog/assembly reference and server-side configuration examples. The flat-ground motion extension uses chassis mass/yaw inertia, contact traction and world momentum; see PHYSICS_FORCES_IMPLEMENTATION.md.
 
 Current test loadouts intentionally swap guns: **Boomer = Gatling**, **Rattler = cannon**. Recoil/jackhammer movement, turret kicks, heat limits, trajectory, damage and visual effects follow the installed weapon. Chassis/mobility/computer/bus allocations stay unchanged, so the Gatling on Boomer's shared20% weapon allocation fires more slowly than on Rattler's former dedicated weapon bus.
 
@@ -1013,3 +1013,14 @@ function efficient(const distance):
 ```
 
 At current rates, `inefficient(5)` costs two reads, two writes, arithmetic and the forward submission: **1.8 ticks**. `efficient(5)` costs arithmetic and the same submission: **1.2 ticks**. Both remain subject to normal device availability and queue limits. The IDE can log a nonintrusive tip when an inferred scalar parameter is never reassigned; it never rewrites the source.
+
+
+## Motion under traction and external impulses
+
+The BW command syntax, CPU costs, queues and completion/result contracts are unchanged. Manual input and BW go through the same authoritative movement simulation. Drivetrain ratings and bus allocation limit propulsion; recoil or supplied forces can carry a tank faster than that rating.
+
+On low grip, braking and steering take longer, the chassis can rotate while sliding sideways, and external off-center impulses can produce yaw momentum. `stop()` releases drive input and uses ordinary coasting/resistance; it does not anchor, teleport or erase velocity. Partial/reverse throttle can request braking through the existing controls. There is no separate public handbrake command.
+
+Finite movement counts signed actual horizontal travel along the commanded direction (the changing heading tangent for steered arcs). Sideways/vertical displacement and collision penetration corrections do not count. Backward displacement subtracts progress; external forward displacement can help. Turns measure actual signed unwrapped yaw, so external angular impulses can help or oppose the requested rotation. Completion does not promise the tank is stationary or holding its exact final pose: residual sliding/spinning remains possible. Existing tolerance, bounded immobilization pauses, stuck detection and timeouts apply; environmental difficulty does not create an infinite instruction or silently complete unfinished motion. Low-traction braking estimates help approach the target without introducing a second movement engine.
+
+BW cannot directly invoke the server's force/impulse APIs. Those are internal simulation interfaces, not new language commands. See [PHYSICS_FORCES_IMPLEMENTATION.md](PHYSICS_FORCES_IMPLEMENTATION.md).

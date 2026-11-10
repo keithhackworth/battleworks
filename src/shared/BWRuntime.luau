@@ -73,6 +73,8 @@ end
 local function begin(instruction,state)
 	local c={instruction=instruction,elapsed=0,held=0,noProgress=0,progress=0,best=0,
 		startPosition=state.position,startHeading=state.yaw,lastPosition=state.position,
+        startCorrection=state.motionCorrection or Vector3.zero,lastCorrection=state.motionCorrection or Vector3.zero,
+        startForwardTravel=state.motionForwardTravel or 0,startYawTravel=state.motionYawTravel or 0,
 		startActivation=state.weaponActivationSerial or 0,startShot=state.weaponShotSerial or 0}
 	local op=instruction.op
 	if op=="forward" or op=="back" then
@@ -166,21 +168,26 @@ function Runtime:_step(state,dt)
 		return command
 	end
 	if c.kind=="move" then
-        if self.services.followSteering then
+        if self.services.followSteering and state.motionForwardTravel~=nil then
+            c.progress=(state.motionForwardTravel-c.startForwardTravel)*c.sign
+        elseif self.services.followSteering then
             -- Actual signed travel along the changing chassis-forward tangent.
             -- Excludes lateral drift; unlike a start-axis projection this can
             -- complete a long arc or full circle without losing progress.
-            local delta=state.position-c.lastPosition
+            local correction=state.motionCorrection or Vector3.zero
+            local delta=state.position-c.lastPosition-(correction-c.lastCorrection)
+            c.lastCorrection=correction
             local heading=c.startHeading+Adapter.delta(c.startHeading,state.yaw)*0.5
             c.progress+=(delta.X*(-math.sin(heading))+delta.Z*(-math.cos(heading)))*c.sign
             c.lastPosition=state.position; c.startHeading=state.yaw
         else
-            local delta=state.position-c.startPosition
+            local delta=state.position-c.startPosition-((state.motionCorrection or Vector3.zero)-c.startCorrection)
             c.progress=delta.X*c.axis.X+delta.Z*c.axis.Z
         end
 	else
 		local angle=Adapter.angle(state,c.turret)
-		c.progress+=Adapter.delta(c.lastAngle,angle)*c.sign
+		if not c.turret and state.motionYawTravel~=nil then c.progress=(state.motionYawTravel-c.startYawTravel)*c.sign
+        else c.progress+=Adapter.delta(c.lastAngle,angle)*c.sign end
 		c.lastAngle=angle
 	end
 	local remaining=c.target-c.progress

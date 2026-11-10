@@ -32,7 +32,7 @@ function Adapter.move(state,sign,remaining,dt)
 	if vehicle.Drivetrain.Response=="Accelerated" then
 		local drive=vehicle.Drivetrain
 		maxSpeed=if sign>0 then drive.Speed else drive.ReverseSpeed
-		speed=math.min(maxSpeed,remaining*3,math.sqrt(2*drive.Braking*remaining)*0.65)
+		speed=math.min(maxSpeed,remaining*3,math.sqrt(2*(state.motionBrakeAcceleration or drive.Braking)*remaining)*0.65)
 	end
 	command.throttle=sign*math.clamp(speed/maxSpeed,0,1)
 	return command

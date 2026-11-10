@@ -1,0 +1,63 @@
+local Sim=require(Shared.TankSimulation)
+local Surface=require(Shared.SurfacePhysics)
+local checks=0
+local function check(v,m) checks+=1; assert(v,m) end
+local function near(a,b) return math.abs(a-b)<1e-7 end
+local function tank() return Sim.new(Vector3.zero,"Rattler") end
+local ice={zones={},trees={},rocks={},logs={},physicsSurfaces=Surface.prepare({{id="invisible-ice",x=0,z=0,rx=1000,rz=1000,surface=Surface.Profiles.Ice}})}
+local Runtime=require(Shared.BWRuntime)
+local function finiteMove(s,follow)
+ return Runtime.new({{op="forward",value=10,line=1,bestEffort=false}},s,if follow then {followSteering=true} else nil)
+end
+for _,follow in {true,false} do
+ local s=tank(); local runtime=finiteMove(s,follow); runtime:step(s,1/60)
+ s.position=Vector3.new(20,3,0); runtime:step(s,1/60)
+ check(near(runtime.current.progress,0),"sideways/vertical displacement excluded from distance")
+ s.position=Vector3.new(20,3,4); runtime:step(s,1/60)
+ check(near(runtime.current.progress,-4),"backward environmental drift subtracts progress")
+ s.position=Vector3.new(20,3,0); runtime:step(s,1/60)
+ check(near(runtime.current.progress,0),"returning to origin does not bank backwards travel")
+ s.position=Vector3.new(20,3,-15); s.motionCorrection=Vector3.new(0,0,-15); runtime:step(s,1/60)
+ check(near(runtime.current.progress,0),"position solver correction cannot satisfy BW distance")
+ s.position=Vector3.new(20,3,-25); runtime:step(s,1/60)
+ check(runtime.status=="completed","actual forward drift can complete distance")
+end
+local s=tank(); local turn=Runtime.new({{op="turn_left",value=90,line=1,bestEffort=false}},s)
+turn:step(s,1/60); s.yaw=-.3; turn:step(s,1/60)
+check(turn.current.progress<0,"opposing angular impulse subtracts rotation progress")
+s.yaw=math.pi/2; turn:step(s,1/60)
+check(turn.status=="completed","actual environmental rotation can complete turn")
+local Execution=require(Shared.BWExecution)
+local Parser=require(Shared.BWParser)
+local Hardware=require(Shared.BWChassis)
+local code,err=Parser.parse('steer_right(20)\nforward()'); assert(code,err and err.message)
+local programTank,manualTank=tank(),tank()
+local runtime=Execution.new(code,programTank,nil,Hardware.default("Octa"))
+for _=1,180 do
+ local input=runtime:step(programTank,1/60)
+ Sim.step(programTank,input,1/60,Vector2.new(2000,2000),ice)
+ Sim.step(manualTank,input,1/60,Vector2.new(2000,2000),ice)
+ check(programTank.position.X==manualTank.position.X and programTank.angularVelocity.Y==manualTank.angularVelocity.Y,"BW and manual input use identical traction simulation")
+end
+runtime:stop("stop")
+check(not runtime.devices:busy(),"program stop releases devices without clearing physical momentum")
+local Telemetry=require(Shared.MovementTelemetry)
+local displaced=tank(); displaced.motionCorrection=Vector3.new(10,0,0); displaced.motionCorrectionAtStepStart=Vector3.zero; displaced.position=Vector3.new(10,0,0)
+Telemetry.update(displaced,Vector3.zero,1/60)
+check(displaced.movementSpeedXZ==0,"depenetration does not appear as a turbo boost")
+local Hud=require("SpeedDebugHud"); local hud=Hud.new(Instance.new("ScreenGui"))
+hud:update({tankType="Boomer",drivePerformance=.64,movementSpeedXZ=27,angularVelocity=Vector3.new(0,1,0),motionSlipping=true})
+check(hud.label.Text:find("BOOST +4.6",1,true) and hud.label.Text:find("SLIDING",1,true),"HUD shows allocation-limited boost and traction/angular diagnostics")
+hud:update({tankType="Boomer",drivePerformance=0,movementSpeedXZ=10})
+check(hud.label.Text:find("MOVING WITH DRIVE DISABLED",1,true),"HUD handles external movement with disabled propulsion")
+hud:destroy()
+print(string.format("Physics BW/control/telemetry coverage passed: %d assertions",checks))
+
+local Motion=require(Shared.VehicleMotion)
+local spinning=tank(); local rotation=Runtime.new({{op="turn_left",value=360,line=1,bestEffort=false}},spinning)
+rotation:step(spinning,1/60); Motion.setYawVelocity(spinning,100); Motion.integrateHorizontal(spinning,.1); rotation:step(spinning,1/60)
+check(rotation.status=="completed","unwrapped physical rotation counts more than a revolution within one update")
+local orbit=tank(); local distance=finiteMove(orbit,true); distance:step(orbit,1/60)
+Motion.setVelocity(orbit,Vector3.new(0,0,-10)); Motion.setYawVelocity(orbit,2*math.pi/.1); Motion.integrateHorizontal(orbit,.1); distance:step(orbit,1/60)
+check(math.abs(distance.current.progress)<1e-7,"full-spin lateral/forward/back drift integrates without banking false distance")
+print(string.format("Physics unwrapped progress coverage passed: %d assertions",checks))

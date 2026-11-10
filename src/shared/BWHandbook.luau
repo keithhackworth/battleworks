@@ -424,6 +424,17 @@ function efficient(const distance):
     forward(distance + 10)
 
 At current costs, costly(5) is %g ticks; efficient(5) is %g. Both submit asynchronously and preserve normal device queues. A function returning forward(10) returns acceptance, not physical arrival. Use command_status and an explicit clock wait to wait for completion. Infinite/free code is still bounded by scheduler dispatch and program safety limits. Hardware diagnostics show each thread's function, source line and call depth.]],Limits.MaxCallDepthPerThread,Limits.MaxCallDepthPerThread,Hardware.Costs.read,Hardware.Costs.write,2*Hardware.Costs.read+2*Hardware.Costs.write+Hardware.Costs.arithmetic+Hardware.Costs.forward,Hardware.Costs.arithmetic+Hardware.Costs.forward))
+ add("physics","Physics","Momentum, traction and command completion",[[BW and manual controls use the same authoritative movement simulation. Drivetrain ratings and bus allocation limit propulsion; they do not cap world velocity from recoil or supplied environmental forces.
+
+On low-grip surfaces, braking/turning take longer. A chassis can rotate while sliding sideways. Off-center collisions or supplied impulses can create yaw momentum. Ground traction does not act in the air; existing recoil hops, gravity and landing behavior remain.
+
+stop() releases driving input and follows ordinary coast/resistance; it does not anchor the tank or erase momentum. Existing partial/reverse throttle can brake. Steering changes still position wheels or request differential tread steering rather than teleporting the chassis to a heading.
+
+Finite forward/back measures signed actual horizontal travel along the requested direction; curved motion follows the changing heading tangent. Sideways/vertical drift and collision penetration corrections do not count. Backward displacement subtracts progress; external forward displacement can help. Turns count actual signed yaw, so an external spin can help or oppose them.
+
+Completion means the requested travel/rotation was achieved, not that the tank is stationary or holding its final position. Residual sliding/spinning may continue. Timeouts, stuck detection, bounded immobilization pauses, best_effort, queues, command results and CPU tick costs retain their existing meaning. A program cannot bypass traction or teleport a tank to finish a command.
+
+The debug speed HUD shows measured world speed against the allocation-limited drive target, rated engine speed, yaw rate and sliding/contact state. Physical surface regions can be configured independently from visible map terrain. Wind/river generators, buoyancy and general prop physics are not part of this phase. The internal force/impulse API is server-only and is not a new BW command.]])
  -- Each command has exactly one detailed home, plus a visible index at the
  -- top of that topic. Registry-only coverage is not enough: render every entry.
  local membership={movement={"forward","back","steer_left","steer_right","steer_center","stop","turn_left","turn_right"},turret={"turret_left","turret_right"},weapon={"fire"},radar={"Scanner"},

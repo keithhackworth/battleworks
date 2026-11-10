@@ -12,7 +12,8 @@ function Drive.ground(state,command,dt,surfaceScale,static,kinetic,resistance)
  local forward=v.X*fx+v.Z*fz; local lateral=v.X*rx+v.Z*rz
  local target=command.throttle*(if command.throttle>=0 then p.Speed else p.ReverseSpeed)*surfaceScale*(state.drivePerformance or 1)
  local acceleration=p.Acceleration or 2880; local braking=p.Braking or 2880; local coast=(p.CoastDrag or 1440)*(resistance or 1)
- local rate=if command.throttle==0 then coast elseif forward*target<0 then braking elseif math.abs(forward)>math.abs(target) then coast else acceleration
+ local rated=(if command.throttle>=0 then p.Speed else p.ReverseSpeed)*surfaceScale*(state.drivePerformance or 1)
+ local rate=if command.throttle==0 then coast elseif forward*target<0 then braking elseif math.abs(forward)>math.abs(target) then (if math.abs(forward)>rated and math.abs(command.throttle)>=0.999 then coast else braking) else acceleration
  -- Over-speed motion coasts; propulsion never snaps it down to its rating.
  local desired=forward+math.clamp(target-forward,-rate*dt,rate*dt)
  local wantedOmega=0
@@ -36,6 +37,7 @@ function Drive.ground(state,command,dt,surfaceScale,static,kinetic,resistance)
  local spin=dw*state.yawInertia/(state.motionMass*c.Chassis.Radius)
  local demand=math.sqrt(long*long+lat*lat+spin*spin)
  local normalAcceleration=math.max(0,c.Recoil.Gravity-(state.motionExternalY or 0)/state.motionMass)
+ state.motionBrakeAcceleration=math.min(braking,(kinetic or Surface.Profiles.Normal.kineticFriction)*normalAcceleration*m.LongitudinalGrip)
  local staticLimit=(static or Surface.Profiles.Normal.staticFriction)*normalAcceleration*dt
  local slipping=(state.motionSlipping and not state.motionWasResting) or demand>staticLimit+1e-8
  local limit=if slipping then (kinetic or Surface.Profiles.Normal.kineticFriction)*normalAcceleration*dt else staticLimit

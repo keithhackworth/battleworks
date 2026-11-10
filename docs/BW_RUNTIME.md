@@ -69,7 +69,7 @@ Installed device names are `drivetrain`, `turret`, `weapon`, and `sensor0`, `sen
 
 `performance = 1 - (1 - allocation/100)^2`
 
-50% allocation gives 75% performance. Allocation affects drivetrain maximum speed (and Boomer pivot rate), turret rotation rate, scanner acquisition time, and weapon preparation/firing interval. Rattler acceleration, braking, steering geometry, airborne momentum and recoil remain existing physics. Projectile speed/damage and heat/overheat rules are unchanged. Weapon timing is divided by performance; zero allocation disables operation without dividing by zero. Manual controls respect the same configured hardware. Manual scanner's internal three-angle sweep remains driver-only; BW addresses physical mounting angles only.
+50% allocation gives 75% performance. Allocation affects drivetrain propulsion target speed (and tracked pivot request rate), turret rotation rate, scanner acquisition time, and weapon preparation/firing interval. Drivetrain acceleration/braking ratings and steering geometry remain component-defined; contact traction and world linear/yaw momentum resolve actual motion. Airborne recoil/landing policy is retained. Projectile speed/damage and heat/overheat rules are unchanged. Weapon timing is divided by performance; zero allocation disables operation without dividing by zero. Manual controls respect the same configured hardware. Manual scanner's internal three-angle sweep remains driver-only; BW addresses physical mounting angles only.
 
 Open **BW Editor → Hardware / threads**. Left side is editable:
 
@@ -341,7 +341,7 @@ See the [movement reference](BW_LANGUAGE.md#movement-commands) for continuous ci
 
 See [VEHICLE_COMPONENTS.md](VEHICLE_COMPONENTS.md) for catalog IDs, assembly/resolver contracts, source boundaries, migration tests and extension examples. BWDevices captures an immutable resolved profile at creation. Steering availability/limits and navigation pivot behavior come from mobility capabilities, not tankType; finite arcs project signed movement along changing headings. Installed sensor mounts populate independent pipelines using their own hardware properties. Computer components select registered instruction/queue tiers. Bus components supply the existing allocation curve and default reservations; instruction costs remain global BW policy.
 
-BWController applies hardware allocation exactly once to state performance factors. Its existing development-tier selector installs the matching registered computer profile; component base ratings remain unscaled. No mass multiplier or duplicate propulsion modifier is introduced. Destruction/reset create a fresh state/profile binding and new pipelines. Model identifiers remain for visuals, identity and lifecycle checks, not for selecting movement or weapon mechanics. Full component tables are retained privately in a weak-key state registry; public snapshots gain only maxHealth for correct durability display.
+BWController applies hardware allocation exactly once to state performance factors. Its existing development-tier selector installs the matching registered computer profile; component base ratings remain unscaled. No mass multiplier or duplicate propulsion modifier is introduced. Destruction/reset create a fresh state/profile binding and new pipelines. Model identifiers remain for visuals, identity and lifecycle checks, not for selecting movement or weapon mechanics. Full component tables are retained privately in a weak-key state registry; public snapshots include maxHealth, current physical velocity and motion diagnostics; full resolved component tables remain private.
 
 
 ## Current weapon-swap test loadouts
@@ -419,3 +419,12 @@ print(move)
 ```
 
 `tests/BWFunctions.spec.luau` executes real compiler output through the production VM, including recursion, alias validation, exact category totals, CPU starvation, independent stacks, physical device work, scanner waits, lifecycle cleanup, source locations and deterministic traces. Unit/server mocks do not validate native Studio input, rendering, mobile controls or transport timing.
+
+
+## Flat-ground motion integration
+
+The physics extension preserves BW syntax, CPU/device allocation, asynchronous queues and scanner timing. `BWTankAdapter` uses the resolved available braking acceleration when planning finite accelerated movement. `BWRuntime` uses resolved forward-travel odometry for changing-tangent progress and subtracts cumulative `motionCorrection` changes for fixed-axis/legacy fallback progress. Actual unwrapped-yaw odometry preserves full revolutions even within one update. The correction ledger separates split collision depenetration from physical travel; signed backward drift remains negative progress. Turn progress uses actual yaw, including angular impulses. Releasing a device or program does not zero physical momentum.
+
+The server still uses its 60Hz fixed step. It predicts all tank poses, then resolves dynamic pairs and authoritative static cover in stable-ID order before committing all hitboxes and movement telemetry. Existing scanner observations occur before movement, as before; weapon recoil is applied at release after contact resolution and affects subsequent integration. Contact substeps do not advance BW or weapon/scanner clocks. Manual input and BW input feed the same `TankSimulation` path. No workspace physics ownership or client-supplied force results are introduced.
+
+See [PHYSICS_FORCES_IMPLEMENTATION.md](PHYSICS_FORCES_IMPLEMENTATION.md) for the concrete state, surface/force interfaces, compatibility choices and tests. Native Studio behavior is not established by mocked tests/builds.
