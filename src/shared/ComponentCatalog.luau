@@ -7,15 +7,15 @@ end
 local function add(id,kind,name,properties,capabilities)
  C[id]={Id=id,Type=kind,DisplayName=name,Properties=properties,Capabilities=capabilities or {}}
 end
-add("chassis.standard","Chassis","Standard toy hull",{Health=100,Radius=5,ContactLength=5.6,ContactWidth=5,Hitbox={X=8,Y=5,Z=10},HitboxHeight=2.5,MountingSlots={Turret=1,Weapon=1,Sensor=8,Drivetrain=1,Mobility=1,Computer=1,Bus=1}})
-add("drive.classic","Drivetrain","Scamper v0.1",{Speed=24,ReverseSpeed=24,Response="Immediate"})
+add("chassis.standard","Chassis","Standard toy hull",{Mass=1,Health=100,Radius=5,ContactLength=5.6,ContactWidth=5,Hitbox={X=8,Y=5,Z=10},HitboxHeight=2.5,MountingSlots={Turret=1,Weapon=1,Sensor=8,Drivetrain=1,Mobility=1,Computer=1,Bus=1}})
+add("drive.classic","Drivetrain","Scamper v0.1",{Speed=24,ReverseSpeed=24,Response="Immediate",Acceleration=2880,Braking=2880,CoastDrag=1440})
 add("drive.car","Drivetrain","Stride 3.0",{Speed=30,ReverseSpeed=18,Response="Accelerated",Acceleration=22,Braking=38,CoastDrag=14})
 -- Hyper shares Stride response tuning; only its forward rating differs.
 add("drive.hyper_p35","Drivetrain","Hyper P35",{Speed=35,ReverseSpeed=18,Response="Accelerated",Acceleration=22,Braking=38,CoastDrag=14})
 local inertia={Gravity=180,MaxFallSpeed=65,GroundFriction=8,MaxLift=6,RockRecovery=10,LandingCompression=0.3,MaxLandingImpulse=14,DefaultSeed=13579}
-add("mobility.tracks","Mobility","Differential tracks",{Kind="Tracked",Motion="Immediate",MaxSteer=math.rad(45),TurnSpeed=1.8,Inertia=inertia,
+add("mobility.tracks","Mobility","Differential tracks",{LongitudinalGrip=1,LateralGrip=1,YawAcceleration=120,Kind="Tracked",Motion="Immediate",MaxSteer=math.rad(45),TurnSpeed=1.8,Inertia=inertia,
  Suspension={Bob=0.38,Pitch=0.05,Roll=0.035,Speed=24,Frequency=8,RollFrequency=0.8,Response=8,Spring=150,Damping=12}}, {Steer=true,Pivot=true})
-add("mobility.wheels","Mobility","Steering wheels",{Kind="Wheeled",Motion="Inertial",MaxSteer=0.55,Wheelbase=5.2,MaxYawRate=1.9,SteeringResponse=10,Inertia=inertia,
+add("mobility.wheels","Mobility","Steering wheels",{LongitudinalGrip=1,LateralGrip=1,YawAcceleration=120,Kind="Wheeled",Motion="Inertial",MaxSteer=0.55,Wheelbase=5.2,MaxYawRate=1.9,SteeringResponse=10,Inertia=inertia,
  Suspension={Bob=0,Pitch=0,Roll=0,Speed=24,Frequency=8,RollFrequency=0.8,Response=8,Spring=150,Damping=12}}, {Steer=true,Pivot=false})
 add("turret.standard","Turret","Toy turret",{TraverseSpeed=3.5,PitchSpeed=1.1,MinPitch=math.rad(-12),MaxPitch=math.rad(30),MuzzleHeight=3.6})
 add("weapon.cannon","Weapon","Cough cannon",{WeaponType="Cannon",Operation="Windup",Visual={Kind="Cannon",Swelling=true,Recoil=1},PreparationImpulse=0.6,FireWindup=0.20,Cooldown=0.65,Damage=25,Range=320,MuzzleOffset=7,ShellSpeed=24,ShellRadius=0.65,

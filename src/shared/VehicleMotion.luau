@@ -52,14 +52,18 @@ end
 -- forces each fixed step; impulses never receive a dt multiplier.
 function M.beginStep(body,dt)
  assert(finite(dt) and dt>=0,"Invalid motion timestep"); local v=M.ensure(body)
+ body.motionExternalY=(body.motionForce or Vector3.zero).Y
  body.motionWasResting=v.X*v.X+v.Z*v.Z<0.0004 and math.abs(body.angularVelocity.Y)<0.02
  M.setVelocity(body,v+(body.motionForce or Vector3.zero)*(dt/body.motionMass))
  M.setYawVelocity(body,body.angularVelocity.Y+(body.motionTorque or 0)*dt/body.yawInertia)
  body.motionForce=nil; body.motionTorque=nil
 end
+function M.advanceYaw(body,dt)
+ M.ensure(body); body.yaw=(body.yaw or 0)+body.angularVelocity.Y*dt; M.sync(body)
+end
 function M.integrateHorizontal(body,dt)
  local v=M.ensure(body)
- body.yaw=(body.yaw or 0)+body.angularVelocity.Y*dt
+ M.advanceYaw(body,dt)
  body.position=body.position+Vector3.new(v.X*dt,0,v.Z*dt)
  M.sync(body)
 end

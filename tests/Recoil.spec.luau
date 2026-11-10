@@ -113,11 +113,11 @@ do
   Recoil.kick(s,3,Vector3.new(1,0,0)); Sim.step(s,neutral,1/120)
   check(s.lift<=6+1e-8,"rapid recoil cannot accumulate altitude beyond limit")
  end
- s.position=Vector3.new(109.9,3,0); s.lift=3; s.verticalSpeed=0; s.velocityX=20; s.velocityZ=0
+ s.position=Vector3.new(109.9,3,0); s.lift=3; require("VehicleMotion").setVelocity(s,Vector3.new(20,0,0))
  Sim.step(s,neutral,1/60,Vector2.new(230,230))
  check(s.position.X==110 and s.velocityX==0,"world boundary stops airborne recoil momentum")
  local obstacles={zones={},rocks={},logs={},trees={{x=0,z=0,radius=1}}}
- s.position=Vector3.new(0,3,6.1); s.lift=3; s.velocityX=0; s.velocityZ=-20
+ s.position=Vector3.new(0,3,6.1); s.lift=3; require("VehicleMotion").setVelocity(s,Vector3.new(0,0,-20))
  Sim.step(s,neutral,1/60,Vector2.new(230,230),obstacles)
  check(s.position.Z==6.1 and s.velocityZ==0,"tree collision stops airborne recoil movement")
 end

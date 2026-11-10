@@ -2,6 +2,8 @@ local DamageEffects=require(script.Parent.DamageEffects)
 -- Pure state math: no Instances, input devices, rendering, or physics ownership.
 local Components = require(script.Parent.VehicleComponents)
 local Drive = require(script.Parent.RattlerDrive)
+local Motion = require(script.Parent.VehicleMotion)
+local Surface = require(script.Parent.SurfacePhysics)
 local Trajectory = require(script.Parent.ProjectileTrajectory)
 local Config = require(script.Parent.TankConfig)
 local Environment = require(script.Parent.Environment)
@@ -10,7 +12,9 @@ local Recoil = require(script.Parent.RattlerRecoil)
 local Simulation = {}
 function Simulation.new(position, tankType, seed, assembly)
     local c=if assembly then (if assembly.Resolved then assembly else Components.resolve(assembly)) else Components.get(tankType)
-    return Components.bind({ recoilSeed = seed or c.Recoil.DefaultSeed, tankType = tankType or "Boomer", weaponId=c.Installed.Weapon, generation = 0, position = position, yaw = 0, turretYaw = 0, turretPitch = 0, speed = 0, health = c.Chassis.Health, maxHealth=c.Chassis.Health, cooldown = 0, bounce = 0, bounceVelocity = 0, movement = 0, bounceClock = 0, bodyPitch = 0, bodyRoll = 0 },c)
+    local state=Components.bind({ recoilSeed = seed or c.Recoil.DefaultSeed, tankType = tankType or "Boomer", weaponId=c.Installed.Weapon, generation = 0, position = position, yaw = 0, turretYaw = 0, turretPitch = 0, speed = 0, health = c.Chassis.Health, maxHealth=c.Chassis.Health, cooldown = 0, bounce = 0, bounceVelocity = 0, movement = 0, bounceClock = 0, bodyPitch = 0, bodyRoll = 0 },c)
+    Motion.configure(state,c.Chassis.Mass,c.Chassis.YawInertia)
+    return state
 end
 function Simulation.forward(yaw, pitch)
 	pitch = pitch or 0
@@ -57,6 +61,35 @@ local function suspension(state, dt)
 	state.bodyPitch = (math.sin(state.bounceClock or 0)*tuning.Pitch*(state.movement or 0))+(state.flightPitch or 0)
 	state.bodyRoll = (math.cos((state.bounceClock or 0)*tuning.RollFrequency)*tuning.Roll*(state.movement or 0))+(state.flightRoll or 0)
 end
+function Simulation.moveBody(state,command,dt,mapSize,environment)
+ local c=Components.get(state)
+ Motion.beginStep(state,dt)
+ local support=state.groundPlaneY or 0
+ if environment then support+=Environment.pose(environment,state.position,state.yaw,c.Chassis) end
+ if state.position.Y>support+0.001 then state.lift=math.max(state.lift or 0,state.position.Y-support) end
+ local airborne=Recoil.airborne(state)
+ local speedScale=if environment then select(3,Environment.sample(environment,state.position.X,state.position.Z)) else 1
+ local static,kinetic,resistance=Surface.contact(environment and environment.physicsSurfaces,state.position,state.yaw,c.Chassis)
+ if not airborne then Drive.ground(state,command,dt,speedScale,static,kinetic,resistance) end
+ -- No traction, steering, coasting or ground damping is applied in the air.
+ local previous=state.position
+ Motion.integrateHorizontal(state,dt)
+ local edgeX=(if mapSize then mapSize.X/2 else Config.ArenaLimit)-c.Chassis.Radius
+ local edgeZ=(if mapSize then mapSize.Y/2 else Config.ArenaLimit)-c.Chassis.Radius
+ local x,z=math.clamp(state.position.X,-edgeX,edgeX),math.clamp(state.position.Z,-edgeZ,edgeZ)
+ local v=Motion.ensure(state)
+ if x~=state.position.X or z~=state.position.Z then Motion.setVelocity(state,Vector3.new(if x~=state.position.X then 0 else v.X,v.Y,if z~=state.position.Z then 0 else v.Z)) end
+ if environment and Environment.blocked(environment,x,z,c.Chassis.Radius) then
+  x=previous.X; z=previous.Z; v=Motion.ensure(state); Motion.setVelocity(state,Vector3.new(0,v.Y,0))
+ end
+ local ground,pitch,roll,kind=0,0,0,"Grass"
+ if environment then ground,pitch,roll,kind=Environment.pose(environment,Vector3.new(x,0,z),state.yaw,c.Chassis) end
+ ground+=(state.groundPlaneY or 0)
+ state.position=Vector3.new(x,state.position.Y,z)
+ state.groundPitch=pitch; state.groundRoll=roll; state.surface=kind
+ Recoil.step(state,dt,ground)
+ Motion.sync(state)
+end
 function Simulation.step(state, command, dt, mapSize, environment)
  local c=Components.get(state); local turret=c.Turret
 	command=DamageEffects.input(state,command)
@@ -67,32 +100,11 @@ function Simulation.step(state, command, dt, mapSize, environment)
     end
 	state.cooldown = math.max(0, state.cooldown - dt)
 	TurretRecoil.step(state,dt)
-	if Recoil.active(state) then
-		if state.health<=0 then state.firing=false end
-		Recoil.move(state,command,dt,mapSize,environment)
-		suspension(state,dt)
-		state.bodyPitch+=state.groundPitch or 0; state.bodyRoll+=state.groundRoll or 0
-		if state.health<=0 then return end
-	else
-		if state.health <= 0 then state.speed=0; state.firing=false; suspension(state,dt); return end
-		local speedScale = if environment then select(3,Environment.sample(environment,state.position.X,state.position.Z)) else 1
-		Drive.step(state,command,dt,speedScale)
-		suspension(state,dt)
-		local nextPosition = state.position + Simulation.forward(state.yaw) * state.speed * dt
-		local edgeX = (if mapSize then mapSize.X/2 else Config.ArenaLimit) - c.Chassis.Radius
-		local edgeZ = (if mapSize then mapSize.Y/2 else Config.ArenaLimit) - c.Chassis.Radius
-		local x,z = math.clamp(nextPosition.X,-edgeX,edgeX),math.clamp(nextPosition.Z,-edgeZ,edgeZ)
-		if environment and Environment.blocked(environment,x,z,c.Chassis.Radius) then x=state.position.X; z=state.position.Z; state.speed=0 end
-		local height,pitch,roll,kind = 0,0,0,"Grass"
-		if environment then height,pitch,roll,kind = Environment.pose(environment,Vector3.new(x,0,z),state.yaw,c.Chassis) end
-		local blend=1-math.exp(-12*dt)
-		state.groundHeight=(state.groundHeight or 0)+(height-(state.groundHeight or 0))*blend
-		state.groundPitch=(state.groundPitch or 0)+(pitch-(state.groundPitch or 0))*blend
-		state.groundRoll=(state.groundRoll or 0)+(roll-(state.groundRoll or 0))*blend
-		state.bodyPitch += state.groundPitch; state.bodyRoll += state.groundRoll
-		state.surface=kind
-		state.position = Vector3.new(x,state.groundHeight+(state.lift or 0),z)
-	end
+	if state.health<=0 then state.firing=false end
+    Simulation.moveBody(state,command,dt,mapSize,environment)
+    suspension(state,dt)
+    state.bodyPitch+=state.groundPitch or 0; state.bodyRoll+=state.groundRoll or 0
+    if state.health<=0 then return end
 	if command.aimMode == "Rate" then
 		-- Positive X aims right; positive Y elevates the cannon.
 		state.turretYaw -= command.turretX * turret.TraverseSpeed * (state.turretPerformance or 1) * dt

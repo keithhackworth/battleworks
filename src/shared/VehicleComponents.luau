@@ -37,7 +37,10 @@ function C.resolve(assembly,catalog)
  end
  nonnegative(out.Chassis,"HitboxHeight")
  positive(out.Chassis,"Health"); positive(out.Chassis,"Radius"); positive(out.Chassis,"ContactLength"); positive(out.Chassis,"ContactWidth")
- if out.Chassis.Mass~=nil then positive(out.Chassis,"Mass") end -- metadata only in current kinematic solver
+ out.Chassis.Mass=out.Chassis.Mass or 1
+ positive(out.Chassis,"Mass")
+ out.Chassis.YawInertia=out.Chassis.YawInertia or out.Chassis.Mass*(out.Chassis.Hitbox.X^2+out.Chassis.Hitbox.Z^2)/12
+ positive(out.Chassis,"YawInertia")
  for _,slot in {"Turret","Weapon","Drivetrain","Mobility","Computer","Bus"} do assert((out.Chassis.MountingSlots[slot] or 0)>=1,"Missing chassis mounting slot: "..slot) end
  for _,axis in {"X","Y","Z"} do positive(out.Chassis.Hitbox,axis) end
  positive(out.Drivetrain,"Speed"); positive(out.Drivetrain,"ReverseSpeed")
@@ -46,6 +49,9 @@ function C.resolve(assembly,catalog)
  assert(out.Mobility.Kind=="Tracked" or out.Mobility.Kind=="Wheeled","Unsupported mobility solver")
  assert(out.Mobility.Motion=="Immediate" or out.Mobility.Motion=="Inertial","Unsupported motion solver")
  assert(type(out.Capabilities.Steer)=="boolean" and type(out.Capabilities.Pivot)=="boolean","Mobility capabilities required")
+ for key,default in {LongitudinalGrip=1,LateralGrip=1,YawAcceleration=120} do
+  out.Mobility[key]=out.Mobility[key] or default; positive(out.Mobility,key)
+ end
  positive(out.Mobility,"MaxSteer")
  for _,key in {"Speed","Frequency","RollFrequency","Response","Spring","Damping"} do positive(out.Mobility.Suspension,key) end
  for _,key in {"Bob","Pitch","Roll"} do assert(type(out.Mobility.Suspension[key])=="number" and out.Mobility.Suspension[key]>=0,"Invalid suspension amplitude") end

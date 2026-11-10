@@ -23,3 +23,48 @@ local blended=Surface.sample(prepared,9,0); check(blended>.025 and blended<16,"b
 local reversed=Surface.prepare({regions[2],regions[1]}); check(Surface.sample(prepared,9,0)==Surface.sample(reversed,9,0),"region insertion order irrelevant")
 check(not pcall(Surface.prepare,{regions[1],regions[1]}),"duplicate IDs rejected")
 print(string.format("Physics forces suite passed: %d assertions",checks))
+local Sim=require(Shared.TankSimulation)
+local Components=require(Shared.VehicleComponents)
+local Input=require(Shared.InputCommand)
+local Environment=require(Shared.Environment)
+local function tank() return Sim.new(Vector3.zero,"Rattler") end
+local normal={zones={},trees={},rocks={},logs={}}
+local ice={zones={},trees={},rocks={},logs={},physicsSurfaces=Surface.prepare({{id="invisible-ice",x=0,z=0,rx=1000,rz=1000,surface=Surface.Profiles.Ice}})}
+local neutral=Input.neutral()
+local forward=Input.neutral(); forward.throttle=1
+local function run(s,input,n,env) for _=1,n do Sim.step(s,input,1/60,Vector2.new(2000,2000),env) end end
+local stopped=tank(); M.force(stopped,Vector3.new(1,0,0)); run(stopped,neutral,1,ice)
+check(stopped.linearVelocity.Magnitude<1e-7,"static friction holds small force on ice")
+local sliding=tank()
+for _=1,60 do M.force(sliding,Vector3.new(8,0,0)); run(sliding,neutral,1,ice) end
+check(sliding.linearVelocity.X>3 and sliding.position.X>1,"force beyond static threshold causes kinetic sliding")
+local normalStop,iceStop=tank(),tank()
+M.setVelocity(normalStop,Vector3.new(0,0,-20)); M.setVelocity(iceStop,Vector3.new(0,0,-20))
+run(normalStop,neutral,60,normal); run(iceStop,neutral,60,ice)
+check(math.abs(iceStop.speed)>math.abs(normalStop.speed)+5,"ice braking retains momentum")
+local sideNormal,sideIce=tank(),tank()
+M.impulse(sideNormal,Vector3.new(8,0,0)); M.impulse(sideIce,Vector3.new(8,0,0))
+run(sideNormal,forward,60,normal); run(sideIce,forward,60,ice)
+check(sideIce.linearVelocity.X>sideNormal.linearVelocity.X+2,"lateral sliding lasts longer on ice")
+local spinNormal,spinIce=tank(),tank()
+M.angularImpulse(spinNormal,Vector3.new(0,Components.get(spinNormal).Chassis.YawInertia*3,0))
+M.angularImpulse(spinIce,Vector3.new(0,Components.get(spinIce).Chassis.YawInertia*3,0))
+run(spinNormal,neutral,30,normal); run(spinIce,neutral,30,ice)
+check(math.abs(spinIce.angularVelocity.Y)>math.abs(spinNormal.angularVelocity.Y)+1,"angular momentum persists on low-grip surface")
+local airborne=tank(); airborne.position=Vector3.new(0,4,0); airborne.lift=4
+M.setVelocity(airborne,Vector3.new(5,0,-3)); M.setYawVelocity(airborne,2)
+local airInput=Input.neutral(); airInput.throttle=-1; airInput.steer=-1
+run(airborne,airInput,1,normal)
+check(near(airborne.linearVelocity.X,5) and near(airborne.linearVelocity.Z,-3) and near(airborne.angularVelocity.Y,2),"airborne controls apply neither contact friction nor drive/steer torque")
+check(near(airborne.yaw,2/60),"airborne angular momentum remains physical")
+local fast=tank(); M.setVelocity(fast,Vector3.new(0,0,-70)); run(fast,forward,1,normal)
+check(fast.speed>60,"propulsion rating is not a world speed clamp")
+local recoil=require(Shared.RattlerRecoil)
+local assembly=Components.copy(require(Shared.VehicleAssemblies).Rattler); assembly.Weapon="weapon.gatling"
+local boost=Sim.new(Vector3.zero,"Rattler",1,assembly); M.setVelocity(boost,Vector3.new(0,0,-70)); recoil.kick(boost,0,Vector3.new(0,0,1))
+check(boost.linearVelocity.Z<=-70+1e-7,"recoil cap cannot erase pre-existing overspeed")
+local yawA,yawB=tank(),tank()
+M.setVelocity(yawA,Vector3.new(3,0,-7)); M.setVelocity(yawB,Vector3.new(3,0,-7))
+for _=1,120 do run(yawA,forward,1,ice); run(yawB,forward,1,ice); check(yawA.position.X==yawB.position.X and yawA.linearVelocity.Z==yawB.linearVelocity.Z,"deterministic force integration") end
+check(near(yawA.speed,-math.sin(yawA.yaw)*yawA.linearVelocity.X-math.cos(yawA.yaw)*yawA.linearVelocity.Z),"legacy speed is a projection, not authority")
+print(string.format("Physics motion/traction coverage passed: %d assertions",checks))

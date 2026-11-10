@@ -1,7 +1,7 @@
 -- Seeded, weapon-powered hops and world-space inertia. No animation-driven lift.
 local Components = require(script.Parent.VehicleComponents)
 local TankConfig = require(script.Parent.TankConfig)
-local Drive = require(script.Parent.RattlerDrive)
+local Motion = require(script.Parent.VehicleMotion)
 local Environment = require(script.Parent.Environment)
 local Recoil = {}
 local EPSILON = 1e-6
@@ -20,36 +20,37 @@ function Recoil.active(state)
 	local c=Components.get(state)
  return c.Mobility.Motion=="Inertial" or c.Recoil.Kind=="Jackhammer" or Recoil.airborne(state)
 end
-local function initializeVelocity(state)
-	if state.velocityX==nil then
-		state.velocityX=-math.sin(state.yaw)*(state.speed or 0)
-		state.velocityZ=-math.cos(state.yaw)*(state.speed or 0)
-	end
-end
 local function launch(state,peak,ground)
  local Config=Components.get(state).Recoil
 	local height=math.max(0,state.position.Y-ground)
 	if height>=peak then return end
 	-- Replace, never accumulate, vertical impulse energy. Every hop has a
 	-- ballistic apex below the safety ceiling even if shots arrive rapidly.
-	state.verticalSpeed=math.sqrt(2*Config.Gravity*(peak-height))
+	local v=Motion.ensure(state)
+ Motion.setVelocity(state,Vector3.new(v.X,math.sqrt(2*Config.Gravity*(peak-height)),v.Z))
 	state.grounded=false
 end
 function Recoil.kick(state, _heat, direction)
  local Config=Components.get(state).Recoil
 	if Components.get(state).Recoil.Kind~="Jackhammer" or state.health<=0 then return end
 	local intensity,timing,choice,rockPitch,rockRoll,shove=random(state),random(state),random(state),random(state),random(state),random(state)
-	initializeVelocity(state)
+	Motion.ensure(state)
 	direction=direction or Vector3.new(-math.sin(state.turretYaw),0,-math.cos(state.turretYaw))
 	local magnitude=math.sqrt(direction.X^2+direction.Z^2)
 	if magnitude>EPSILON then
 		local impulse=range(Config.HorizontalImpulseMin,Config.HorizontalImpulseMax,shove)
-		state.velocityX-=direction.X/magnitude*impulse
-		state.velocityZ-=direction.Z/magnitude*impulse
-		local speed=math.sqrt(state.velocityX^2+state.velocityZ^2)
-		if speed>Config.MaxHorizontalSpeed then
-			state.velocityX*=Config.MaxHorizontalSpeed/speed; state.velocityZ*=Config.MaxHorizontalSpeed/speed
-		end
+		local v=Motion.ensure(state)
+        local dx,dz=-direction.X/magnitude*impulse,-direction.Z/magnitude*impulse
+        local before=math.sqrt(v.X*v.X+v.Z*v.Z)
+        local after=math.sqrt((v.X+dx)^2+(v.Z+dz)^2)
+        -- Limit only newly contributed recoil, never erase existing momentum.
+        if after>Config.MaxHorizontalSpeed and after>before then
+            local cap=math.max(before,Config.MaxHorizontalSpeed)
+            local low,high=0,1
+            for _=1,20 do local t=(low+high)/2; if (v.X+dx*t)^2+(v.Z+dz*t)^2>cap^2 then high=t else low=t end end
+            dx*=low; dz*=low
+        end
+        Motion.impulse(state,Vector3.new(dx,0,dz)*state.motionMass)
 	end
 	state.flightShotSerial=(state.flightShotSerial or 0)+1
 	local oldPitch,oldRoll=state.flightPitch or 0,state.flightRoll or 0
@@ -95,7 +96,7 @@ function Recoil.step(state,dt,ground)
 		end
 	end
 	local height=state.position.Y
-	local velocity=state.verticalSpeed or 0
+	local velocity=Motion.ensure(state).Y
 	local wasAirborne=Recoil.airborne(state)
 	if not wasAirborne then
 		height=ground; velocity=0
@@ -114,46 +115,18 @@ function Recoil.step(state,dt,ground)
 			if nextHeight>=ground+Config.MaxLift then velocity=math.min(0,velocity) end
 		end
 	end
-	state.lift=math.max(0,height-ground); state.verticalSpeed=velocity
+	state.lift=math.max(0,height-ground)
+ local v=Motion.ensure(state); Motion.setVelocity(state,Vector3.new(v.X,velocity,v.Z))
 	state.grounded=state.lift<=EPSILON and velocity<=0
 	state.groundHeight=ground
 	state.position=Vector3.new(state.position.X,height,state.position.Z)
 end
+-- Retained compatibility entry; there is only one tank movement coordinator.
 function Recoil.move(state,command,dt,mapSize,environment)
- local Config=Components.get(state).Recoil
-	initializeVelocity(state)
-	local airborne=Recoil.airborne(state)
-	if not airborne and state.health<=0 then
-		local friction=math.exp(-Config.GroundFriction*dt)
-		state.velocityX*=friction; state.velocityZ*=friction
-	elseif not airborne then
-		local surface=if environment then select(3,Environment.sample(environment,state.position.X,state.position.Z)) else 1
-		local lateral=(state.velocityX*math.cos(state.yaw)-state.velocityZ*math.sin(state.yaw))*math.exp(-Config.GroundFriction*dt)
-		Drive.step(state,command,dt,surface)
-		state.velocityX=-math.sin(state.yaw)*state.speed+math.cos(state.yaw)*lateral
-		state.velocityZ=-math.cos(state.yaw)*state.speed-math.sin(state.yaw)*lateral
-	end
-	-- In the air, no player yaw, drive acceleration, braking or friction.
-	local desiredX=state.position.X+state.velocityX*dt
-	local desiredZ=state.position.Z+state.velocityZ*dt
-	local limitX=(if mapSize then mapSize.X/2 else TankConfig.ArenaLimit)-Components.get(state).Chassis.Radius
-	local limitZ=(if mapSize then mapSize.Y/2 else TankConfig.ArenaLimit)-Components.get(state).Chassis.Radius
-	local x,z=math.clamp(desiredX,-limitX,limitX),math.clamp(desiredZ,-limitZ,limitZ)
-	if x~=desiredX then state.velocityX=0 end
-	if z~=desiredZ then state.velocityZ=0 end
-	if environment and Environment.blocked(environment,x,z,Components.get(state).Chassis.Radius) then
-		x=state.position.X; z=state.position.Z; state.velocityX=0; state.velocityZ=0
-	end
-	local ground,pitch,roll,kind=0,0,0,"Grass"
-	if environment then ground,pitch,roll,kind=Environment.pose(environment,Vector3.new(x,0,z),state.yaw,Components.get(state).Chassis) end
-	ground+=(state.groundPlaneY or 0)
-	state.position=Vector3.new(x,state.position.Y,z)
-	state.groundPitch=pitch; state.groundRoll=roll; state.surface=kind
-	Recoil.step(state,dt,ground)
-	state.speed=-math.sin(state.yaw)*state.velocityX-math.cos(state.yaw)*state.velocityZ
+ return require(script.Parent.TankSimulation).moveBody(state,command,dt,mapSize,environment)
 end
 function Recoil.resolveBlocked(state,previous,environment)
-	state.velocityX=0; state.velocityZ=0; state.speed=0
+	local v=Motion.ensure(state); Motion.setVelocity(state,Vector3.new(0,v.Y,0))
 	local ground,pitch,roll,kind=0,0,0,"Grass"
 	if environment then ground,pitch,roll,kind=Environment.pose(environment,previous,state.yaw,Components.get(state).Chassis) end
 	ground+=(state.groundPlaneY or 0)

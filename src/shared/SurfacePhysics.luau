@@ -36,6 +36,15 @@ function S.weight(r,x,z)
  if (r.transition or 0)==0 then return 1 end
  local t=math.clamp(edge/r.transition,0,1); return t*t*(3-2*t)
 end
+function S.contact(prepared,position,yaw,chassis)
+ local a,b,c=0,0,0; local s,co=math.sin(yaw),math.cos(yaw)
+ for _,side in {-1,1} do for _,endSign in {-1,1} do
+  local x=side*chassis.ContactWidth/2; local z=endSign*chassis.ContactLength/2
+  local sa,sb,sc=S.sample(prepared,position.X+co*x+s*z,position.Z-s*x+co*z)
+  a+=sa/4; b+=sb/4; c+=sc/4
+ end end
+ return a,b,c
+end
 function S.sample(prepared,x,z,base)
  base=base or S.Profiles.Normal
  local a,b,c=base.staticFriction,base.kineticFriction,base.resistance

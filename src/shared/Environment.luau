@@ -1,6 +1,10 @@
 local DefaultFootprint=require(script.Parent.ComponentCatalog)["chassis.standard"].Properties
 -- Deterministic terrain descriptions shared by rendering and authoritative movement.
 local Environment = {}
+local Surface=require(script.Parent.SurfacePhysics)
+function Environment.setPhysicsSurfaces(data,regions)
+ data.physicsSurfaces=Surface.prepare(regions)
+end
 local function noise(i, seed)
 	local n = math.sin(i*127.1+seed*311.7)*43758.5453
 	return n-math.floor(n)
