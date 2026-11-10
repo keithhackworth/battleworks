@@ -153,3 +153,10 @@ for _=1,120 do
  check((localFlight.position-serverFlight.position).Magnitude<1e-8 and localFlight.linearVelocity.Y==serverFlight.linearVelocity.Y,"standalone and two-phase server flight are equivalent")
 end
 print(string.format("Physics resolved-flight coverage passed: %d assertions",checks))
+
+local supported=tank(); M.force(supported,Vector3.new(0,Components.get(supported).Recoil.Gravity*.5,0)); run(supported,forward,1,normal)
+check(supported.grounded and supported.position.Y==0 and supported.speed>0,"sub-weight upward force reduces normal load without fake takeoff or lost traction")
+check((supported.landingSerial or 0)==0,"normal reaction does not create a phantom landing")
+local lifted=tank(); M.force(lifted,Vector3.new(0,Components.get(lifted).Recoil.Gravity*2,0)); run(lifted,forward,1,normal)
+check(not lifted.grounded and lifted.position.Y>0 and lifted.speed==0,"force exceeding weight lifts body and disables ground propulsion")
+print(string.format("Physics support reaction coverage passed: %d assertions",checks))

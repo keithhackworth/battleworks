@@ -64,9 +64,15 @@ local function suspension(state, dt)
 end
 function Simulation.moveBody(state,command,dt,mapSize,environment,deferContacts)
  local c=Components.get(state)
- Motion.beginStep(state,dt)
  local support=state.groundPlaneY or 0
  if environment then support+=Environment.pose(environment,state.position,state.yaw,c.Chassis) end
+ local supported=state.position.Y<=support+0.001 and Motion.ensure(state).Y<=0 and (state.lift or 0)<=0.001
+ Motion.beginStep(state,dt)
+ -- A supported body's normal reaction absorbs sub-weight vertical forces.
+ -- An actual launch impulse (positive velocity before this step) is not held.
+ if supported and (state.motionExternalY or 0)<=state.motionMass*c.Recoil.Gravity then
+  local v=Motion.ensure(state); Motion.setVelocity(state,Vector3.new(v.X,0,v.Z))
+ end
  if state.position.Y>support+0.001 then state.lift=math.max(state.lift or 0,state.position.Y-support) end
  local airborne=Recoil.airborne(state)
  local speedScale=if environment then select(3,Environment.sample(environment,state.position.X,state.position.Z)) else 1
