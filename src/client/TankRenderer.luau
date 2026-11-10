@@ -126,7 +126,7 @@ function Renderer.new(id, tankType, weaponId)
 		self.coughBore.Shape = Enum.PartType.Cylinder; self.coughBore.Transparency = 1
 	end
 	self.treads={}
-	if rattler then
+	if self.components.Mobility.Kind=="Wheeled" then
 		RattlerVisual.buildWheels(self,detail,colors)
 	else
 		self.left = part(self.model, "LeftTrack", Vector3.new(1.7, 2.4, 9), rubber)
@@ -218,7 +218,7 @@ function Renderer:update(state, dt)
 	local base = CFrame.new(self.position) * CFrame.Angles(0, self.yaw, 0)
 	local body = base * CFrame.new(0, 2.1+self.bounce, 0) * CFrame.Angles(self.bodyPitch, 0, self.bodyRoll)
 	local turret = CFrame.new(self.position + Vector3.new(0, Config.MuzzleHeight+self.bounce, 0)) * CFrame.Angles(0, self.yaw, 0) * CFrame.Angles(self.bodyPitch, 0, self.bodyRoll) * CFrame.Angles(0, self.turretYaw-self.yaw, 0)
-	if self.tankType=="Rattler" or self.jackhammer then
+	if self.components.Mobility.Motion=="Inertial" or self.jackhammer then
 		local pivotHeight=Config.MuzzleHeight+self.bounce
 		local roll=if self.jackhammer then RattlerVisual.rock(self,state,dt) else self.bodyRoll
 		-- One common pose for wheels, hull and turret, rocking about the weapon
@@ -227,7 +227,7 @@ function Renderer:update(state, dt)
 		body=base*CFrame.new(0,2.1+self.bounce,0)
 		turret=base*CFrame.new(0,pivotHeight,0)*CFrame.Angles(0,self.turretYaw-self.yaw,0)
 	end
-	if self.tankType == "Boomer" then
+	if self.left then
 		self.left.CFrame = base * CFrame.new(-3.8, 1.4, 0)
 		self.right.CFrame = base * CFrame.new(3.8, 1.4, 0)
 	end
@@ -242,7 +242,7 @@ function Renderer:update(state, dt)
 	self.muzzleFrame = barrel*CFrame.new(0,0,-7)
 	local spin=if self.gatling then RattlerVisual.spin(self,state,dt) else 0
 	local anchors = { body = body, base = base, turret = turret, barrel = barrel, rotor = barrel*CFrame.Angles(0,0,spin) }
-	if self.tankType == "Rattler" then RattlerVisual.wheelFrames(self,state,dt,base,anchors) end
+	if self.wheels then RattlerVisual.wheelFrames(self,state,dt,base,anchors) end
 	for _, item in self.details do item.part.CFrame = anchors[item.anchor] * item.offset end
 	if not self.gatling then
 		self.barrelBulge.Size = Vector3.new(swelling.bulge, swelling.bulge, 2.6)

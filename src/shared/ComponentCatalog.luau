@@ -8,8 +8,10 @@ local function add(id,kind,name,properties,capabilities)
  C[id]={Id=id,Type=kind,DisplayName=name,Properties=properties,Capabilities=capabilities or {}}
 end
 add("chassis.standard","Chassis","Standard toy hull",{Health=100,Radius=5,ContactLength=5.6,ContactWidth=5,Hitbox={X=8,Y=5,Z=10},HitboxHeight=2.5,MountingSlots={Turret=1,Weapon=1,Sensor=8,Drivetrain=1,Mobility=1,Computer=1,Bus=1}})
-add("drive.classic","Drivetrain","Classic track propulsion",{Speed=24,ReverseSpeed=24,Response="Immediate"})
-add("drive.car","Drivetrain","Car propulsion",{Speed=30,ReverseSpeed=18,Response="Accelerated",Acceleration=22,Braking=38,CoastDrag=14})
+add("drive.classic","Drivetrain","Scamper v0.1",{Speed=24,ReverseSpeed=24,Response="Immediate"})
+add("drive.car","Drivetrain","Stride 3.0",{Speed=30,ReverseSpeed=18,Response="Accelerated",Acceleration=22,Braking=38,CoastDrag=14})
+-- Hyper shares Stride response tuning; only its forward rating differs.
+add("drive.hyper_p35","Drivetrain","Hyper P35",{Speed=35,ReverseSpeed=18,Response="Accelerated",Acceleration=22,Braking=38,CoastDrag=14})
 local inertia={Gravity=180,MaxFallSpeed=65,GroundFriction=8,MaxLift=6,RockRecovery=10,LandingCompression=0.3,MaxLandingImpulse=14,DefaultSeed=13579}
 add("mobility.tracks","Mobility","Differential tracks",{Kind="Tracked",Motion="Immediate",MaxSteer=math.rad(45),TurnSpeed=1.8,Inertia=inertia,
  Suspension={Bob=0.38,Pitch=0.05,Roll=0.035,Speed=24,Frequency=8,RollFrequency=0.8,Response=8,Spring=150,Damping=12}}, {Steer=true,Pivot=true})

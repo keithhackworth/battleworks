@@ -38,6 +38,14 @@ for id,entry in Catalog do
  check(entry.Id==id and #entry.Type>0 and #entry.DisplayName>0 and type(entry.Properties)=="table","component identity and interface")
  check(not pcall(function() entry.Properties.Test=1 end),"immutable catalog")
 end
+check(Catalog["drive.classic"].DisplayName=="Scamper v0.1" and Catalog["drive.car"].DisplayName=="Stride 3.0","existing drivetrains have hardware names")
+check(Catalog["drive.hyper_p35"].DisplayName=="Hyper P35","Hyper hardware identity")
+local hyperAssembly=C.copy(Assemblies.Rattler); hyperAssembly.Drivetrain="drive.hyper_p35"
+local hyperProfile=C.resolve(hyperAssembly)
+local hyperTank=state(hyperProfile)
+drive(hyperTank,1,0,180)
+check(near(hyperTank.speed,35),"Hyper P35 reaches 35 studs/sec via existing simulation")
+check(C.default("Rattler").Drivetrain.Speed==30 and C.default("Boomer").Drivetrain.Speed==24,"catalog addition does not replace installed drivetrains")
 check(C.default("Boomer").Drivetrain.Speed==24 and C.default("Rattler").Drivetrain.Speed==30,"baseline propulsion preserved")
 check(C.default("Boomer").Capabilities.Pivot and not C.default("Rattler").Capabilities.Pivot,"mobility pivot capability")
 local boom=Sim.new(Vector3.zero,"Boomer"); drive(boom,1,0,60)

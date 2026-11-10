@@ -20,7 +20,7 @@ function Handbook.commands()
  end
  for _,name in {"steer_left","steer_right"} do
   add(name,name.."(degrees, best_effort=true)",name,
-   "degrees: finite number 0..180, clamped to the installed mobility steering limit (Boomer tracks use a 45-degree control range; Rattler wheels approximately "..number(math.deg(Tanks.Rattler.Drive.MaxSteer)).." degrees). No to= argument.",
+   "degrees: finite number 0..180, clamped to the installed mobility steering limit (tracks use a 45-degree control range; wheels approximately "..number(math.deg(Catalog["mobility.wheels"].Properties.MaxSteer)).." degrees). No to= argument.",
    "Set an absolute steering target "..(if name=="steer_left" then "left" else "right").." of center, persisting until changed. Repeated calls do not accumulate. Immediate updates bypass queues. Wheeled mobility positions front wheels through existing smoothing; tracked mobility changes relative tread intent while driving. steer_right(20) sets steering; turn_right(20) changes heading. Unsupported only when installed mobility lacks steering: fail / unsupportedDrivetrain. High-level turns temporarily own actual steering, then the saved target resumes.",
    'Standard result with commandId and steeringDegrees (positive left, negative right). The setpoint command completes immediately, not when wheels physically finish moving. Positive is left and negative is right for both mobility types.',"drivetrain")
  end

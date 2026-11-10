@@ -1,3 +1,12 @@
+## Boomer Hyper installation (2026-11-10)
+Boomer now installs drive.hyper_p35 (Hyper P35): forward35, reverse18, acceleration22, braking38, coast14. Wheels, Gatling, Bunny and bus allocations unchanged; Rattler retains Stride drive.car. Live integration1288 checks includes simulated Boomer full-throttle35 and speed HUD baselines;13 docs programs on both live assemblies pass. Both builds/diff check pass. Native driving feel still requires Studio validation.
+
+## Speed HUD after mobility swap (2026-11-10)
+User Studio trace exposed SpeedDebugHud dereferencing Definitions.Rattler.Drive.Speed after Rattler became tracked (legacy Drive view is wheeled-only). Replaced vehicle-name dispatch with Components.get(state).Drivetrain.Speed. Audited production .Drive reads: remaining TouchInput.sticks.Drive is unrelated UI input. Live swap suite now explicitly updates HUD across repeated Boomer/Rattler switches and nil selection:1286 assertions pass. Existing speed11, trajectory1855 and recoil6015 checks pass; both Rojo builds and diff check pass. Native Studio retest pending.
+
+# Mobility swap (2026-11-10)
+Boomer now installs mobility.wheels; Rattler mobility.tracks. Propulsion, weapons and computers remain installed as before. Renderer selects wheel/tread assembly, animation and inertial pose by component capabilities instead of body name. Live integration tests cover wheel/no-pivot versus track pivot, moving wheel arcs and unchanged propulsion tuning. Full regression run passed all groups except a handbook assumption exposed in editor group; replaced name-specific wheel limit with catalog mobility limit, then editor175 and handbook391 pass. Live swap1281 and all13 documentation programs on both simulations pass. Both Rojo builds and whitespace checks pass. Studio visual/driving validation pending. User confirms E3.2 CtrlZ works but flashes; undo flash remains outstanding, no further history changes in this mobility swap.
+
 
 Undo follow-up (E3.2): keyboard undo/redo retains an authoritative history snapshot beyond key release and settling frames. Late native history callbacks restore that snapshot on the next Heartbeat and cannot become new edits. The next non-modifier editing/navigation input or explicit lifecycle release relinquishes ownership. Native Studio Ctrl+Z/Ctrl+Y retesting remains required.
 # BattleWorks game and Codex handoff

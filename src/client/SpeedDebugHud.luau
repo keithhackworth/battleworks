@@ -1,6 +1,5 @@
 -- Studio readout: horizontal recoil boost is separate from vertical hopping speed.
-local Definitions=require(game.ReplicatedStorage.Shared.TankDefinitions)
-local Config=require(game.ReplicatedStorage.Shared.TankConfig)
+local Components=require(game.ReplicatedStorage.Shared.VehicleComponents)
 local Hud={}
 Hud.__index=Hud
 function Hud.new(gui)
@@ -18,7 +17,7 @@ function Hud.new(gui)
 end
 function Hud:update(state)
 	if not state then self.label.Text="SPEED: waiting for tank…"; return end
-	local normal=if state.tankType=="Rattler" then Definitions.Rattler.Drive.Speed else Config.Speed
+	local normal=Components.get(state).Drivetrain.Speed
 	local horizontal=state.movementSpeedXZ or 0
 	local extra=math.max(0,horizontal-normal)
 	self.label.Text=string.format("XZ SPEED %5.1f studs/s\nPEAK %4.1f | DRIVE %4.1f\nVERT %+5.1f | 3D %5.1f\n%s",

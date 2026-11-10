@@ -2,9 +2,19 @@
 
 ## Current installed weapons
 
-The live assemblies now install **weapon.gatling on Boomer** and **weapon.cannon on Rattler**. Bodies, turrets, mobility, computers and bus allocations stay unchanged. Jackhammer physics and cosmetic firing personality belong to the weapon; a tracked vehicle carrying that gun also hops/rattles. The cannon carries its windup, swell, reload, turret kick and muzzle burst onto the wheeled vehicle. The pre-migration notes and original baseline verification below describe the historical loadouts, not this intentional test swap.
+The live assemblies now install **weapon.gatling on Boomer** and **weapon.cannon on Rattler**. Bodies, turrets, computers and bus allocations stay unchanged. Mobility has subsequently been swapped: Boomer installs mobility.wheels; Rattler installs mobility.tracks. Propulsion components remain independently installed (Boomer drive.hyper_p35, Rattler drive.car). Rendering and wheel/tread animations follow installed mobility rather than the model name. Jackhammer physics and cosmetic firing personality belong to the weapon; a tracked vehicle carrying that gun also hops/rattles. The cannon carries its windup, swell, reload, turret kick and muzzle burst onto the wheeled vehicle. The pre-migration notes and original baseline verification below describe the historical loadouts, not this intentional test swap.
 
 Weapon `Properties.Visual` selects Kind, Swelling and cosmetic Recoil. Physical `Recoil.Kind=Jackhammer` is independent of mobility and selects the shared recoil overlay. The renderer now composes body/turret art separately from mounted gun art and receives a compact weaponId descriptor; full custom component profiles remain private. Event/HUD effects follow the descriptor. TankConfig and the default heat-weapon helper are canonical cannon/Gatling compatibility defaults, not aliases for whichever tank currently carries a gun.
+
+## Drivetrain models
+
+| Display name | Component ID | Forward studs/sec | Reverse studs/sec |
+|---|---|---:|---:|
+| Scamper v0.1 | `drive.classic` | 24 | 24 |
+| Stride 3.0 | `drive.car` | 30 | 18 |
+| Hyper P35 | `drive.hyper_p35` | 35 | 18 |
+
+Boomer installs Hyper P35 and Rattler retains Stride 3.0. Scamper v0.1 remains available in the catalog. It initially shares Stride's acceleration (22), braking (38), and coast drag (14). Mobility remains independent of drivetrain model. Existing component IDs are retained for compatibility.
 
 ## Inspection and proposed boundaries (before implementation)
 

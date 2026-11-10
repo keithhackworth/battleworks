@@ -5,7 +5,37 @@
  local Recoil=require("RattlerRecoil")
  check(Assemblies.Boomer.Weapon=="weapon.gatling" and Assemblies.Rattler.Weapon=="weapon.cannon","live assemblies swap installed weapon IDs")
  check(snapshots[boomerId].weaponId=="weapon.gatling" and snapshots[rattlerId].weaponId=="weapon.cannon","server publishes installed weapon descriptor")
- check(Components.get("Boomer").Mobility.Kind=="Tracked" and Components.get("Rattler").Mobility.Kind=="Wheeled","bodies retain original mobility")
+ check(Components.get("Boomer").Mobility.Kind=="Wheeled" and Components.get("Rattler").Mobility.Kind=="Tracked","live assemblies swap mobility independently from weapons")
+ local Input=require("InputCommand")
+ local hyper=Sim.new(Vector3.zero,"Boomer")
+ local fullThrottle=Input.neutral(); fullThrottle.throttle=1
+ for _=1,180 do Sim.step(hyper,fullThrottle,1/60,Vector2.new(2000,2000)) end
+ check(math.abs(hyper.speed-35)<1e-6,"live Boomer reaches Hyper P35 forward rating")
+ check(Components.get(hyper).Installed.Drivetrain=="drive.hyper_p35","live Boomer resolves installed Hyper hardware")
+
+ local steer=Input.neutral(); steer.steer=1
+ local wheelState=Sim.new(Vector3.zero,"Boomer")
+ local trackState=Sim.new(Vector3.zero,"Rattler")
+ for _=1,30 do
+  Sim.step(wheelState,steer,1/60); Sim.step(trackState,steer,1/60)
+ end
+ check(math.abs(wheelState.yaw)<1e-6 and math.abs(trackState.yaw)>.5,"installed wheels cannot pivot; installed tracks pivot on either body")
+ steer.throttle=1
+ for _=1,30 do Sim.step(wheelState,steer,1/60) end
+ check(math.abs(wheelState.yaw)>.1 and wheelState.position.Magnitude>1,"wheeled Boomer drives a steering arc through shared simulation")
+ check(Components.get("Boomer").Drivetrain.Speed==35 and Components.get("Rattler").Drivetrain.Speed==30,"Boomer installs Hyper P35 independently from mobility")
+ -- Exercise the render-loop HUD against the actual swapped assemblies, not
+ -- legacy fixtures: tracked Rattler intentionally has no legacy Drive view.
+ local SpeedHud=require("SpeedDebugHud")
+ local speedHud=SpeedHud.new(Instance.new("ScreenGui"))
+ for _,kind in {"Boomer","Rattler","Boomer","Rattler"} do
+  speedHud:update({tankType=kind,movementSpeedXZ=36,movementPeakXZ=36})
+  local expected=if kind=="Boomer" then "BOOST +1.0 (+3%)" else "BOOST +6.0 (+20%)"
+  check(string.find(speedHud.label.Text,expected,1,true)~=nil,"speed HUD follows installed propulsion when switching to "..kind)
+ end
+ speedHud:update(nil)
+ check(string.find(speedHud.label.Text,"waiting",1,true)~=nil,"speed HUD handles selection handoff without a tank")
+ speedHud:destroy()
  local cannon=Catalog["weapon.cannon"].Properties
  local gatling=Catalog["weapon.gatling"].Properties
  tick(false)
@@ -30,9 +60,9 @@
   local found={}; for _,p in renderer.model:GetChildren() do if p.Name==name then table.insert(found,p) end end; return found
  end
  check(boomer.gatling and boomer.jackhammer and #named(boomer,"GatlingBarrel")==6 and #named(boomer,"Cannon")==0,"orange tracked body mounts visible Gatling assembly")
- check(#boomer.treads==56 and #named(boomer,"ChunkyTire")==0 and boomer.chassis.Color[1]==245,"Boomer keeps original body/tracks/palette")
+ check(#boomer.treads==0 and #named(boomer,"ChunkyTire")==4 and boomer.chassis.Color[1]==245,"Boomer mounts wheels and keeps orange palette")
  check(not rattler.gatling and not rattler.jackhammer and #named(rattler,"Cannon")==1 and #named(rattler,"GatlingBarrel")==0,"green wheeled body mounts visible cannon")
- check(#rattler.treads==0 and #named(rattler,"ChunkyTire")==4 and rattler.chassis.Color[2]==144,"Rattler keeps wheeled body/palette")
+ check(#rattler.treads==56 and #named(rattler,"ChunkyTire")==0 and rattler.chassis.Color[2]==144,"Rattler mounts tracks and keeps green palette")
  local rstate=Sim.new(Vector3.zero,"Rattler")
  rattler:resetPose(rstate); rattler:fire(); rattler:update(rstate,0.1)
  check(rattler.barrelBulge.Transparency<1 and rattler.shotAge~=nil,"cannon swell transfers to wheeled body")
@@ -41,7 +71,7 @@
  local bs=Sim.new(Vector3.new(0,4,0),"Boomer"); bs.lift=4; bs.flightRoll=.15; bs.flightShotSerial=1; bs.bodyRoll=.15; bs.firing=true
  boomer:resetPose(bs); boomer:fire({serial=2,roll=-.16}); boomer:update(bs,1/60)
  check(boomer.rotorAngle>0 and boomer.visualRollKick< -0.2,"Gatling rotation and exaggerated rocking transfer to tracked body")
- check(math.abs(boomer.left.CFrame.UpVector.X)>0.05,"track assemblies inherit weapon-induced rocking")
+ check(math.abs(named(boomer,"ChunkyTire")[1].CFrame.UpVector.X)>0.05,"wheeled hull inherits weapon-induced rocking")
  local effectsAt=#created
  Renderer.shot(Vector3.zero,Vector3.new(0,0,-1),"Boomer","weapon.gatling")
  local rapidFlash=false; for i=effectsAt+1,#created do if created[i].Name=="RattlerFlash" then rapidFlash=true end end
@@ -81,7 +111,7 @@
  local art={test=boomer}; local visualState=Sim.new(Vector3.zero,"Boomer",123,Components.forWeapon("Boomer","weapon.cannon"))
  local oldModel=boomer.model
  registry.sync(art,{test=visualState},Renderer.new)
- check(oldModel.destroyed and not art.test.gatling and #art.test.treads==56,"weapon descriptor change rebuilds gun without changing body type")
+ check(oldModel.destroyed and not art.test.gatling and #art.test.treads==0 and #art.test.wheels==4,"weapon descriptor change rebuilds gun without changing body type")
  boomer=art.test
  boomer:destroy(); rattler:destroy()
  os.clock=savedClock; workspace.FindFirstChild=originalWorkspaceFind
