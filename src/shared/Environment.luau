@@ -3,8 +3,9 @@ local DefaultFootprint=require(script.Parent.ComponentCatalog)["chassis.standard
 local Environment = {}
 local Surface=require(script.Parent.SurfacePhysics)
 local Motion=require(script.Parent.VehicleMotion)
--- Gameplay crosswind: exceeds ice breakaway, but tapers its push at gentle drift.
-Environment.IceWind=table.freeze({direction=Vector3.new(1,0,-0.35).Unit,maxForce=5.4,driftSpeed=1.5})
+-- Gentle crosswind exceeds passive rolling resistance, not powered ice grip.
+Environment.IceWind=table.freeze({direction=Vector3.new(1,0,-0.35).Unit,maxForce=1.2,driftSpeed=1.5})
+Environment.WindyIce=table.freeze({staticFriction=Surface.Profiles.Ice.staticFriction,kineticFriction=Surface.Profiles.Ice.kineticFriction,resistance=Surface.Profiles.Ice.resistance,passiveGrip=0.15})
 function Environment.applyForces(data,state)
  local wind=data and data.wind
  if not wind then return end
@@ -63,7 +64,7 @@ function Environment.create(size,weather)
 		end
 	end
  if weather=="IceWind" then
-  Environment.setPhysicsSurfaces(data,{{id="arena-ice",shape="box",x=0,z=0,rx=w/2+10,rz=d/2+10,priority=10,surface=Surface.Profiles.Ice}})
+  Environment.setPhysicsSurfaces(data,{{id="arena-ice",shape="box",x=0,z=0,rx=w/2+10,rz=d/2+10,priority=10,surface=Environment.WindyIce}})
   data.wind=Environment.IceWind
  end
 	return data

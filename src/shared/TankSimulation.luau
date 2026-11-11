@@ -77,8 +77,8 @@ function Simulation.moveBody(state,command,dt,mapSize,environment,deferContacts)
  if state.position.Y>support+0.001 then state.lift=math.max(state.lift or 0,state.position.Y-support) end
  local airborne=Recoil.airborne(state)
  local speedScale=if environment then select(3,Environment.sample(environment,state.position.X,state.position.Z)) else 1
- local static,kinetic,resistance=Surface.contact(environment and environment.physicsSurfaces,state.position,state.yaw,c.Chassis)
- if not airborne then Drive.ground(state,command,dt,speedScale,static,kinetic,resistance) end
+ local static,kinetic,resistance,passiveGrip=Surface.contact(environment and environment.physicsSurfaces,state.position,state.yaw,c.Chassis)
+ if not airborne then Drive.ground(state,command,dt,speedScale,static,kinetic,resistance,passiveGrip) end
  -- No traction, steering, coasting or ground damping is applied in the air.
  state.motionStepStart=state.position; state.motionYawStart=state.yaw
  state.motionForwardStart=state.motionForwardTravel or 0; state.motionYawTravelStart=state.motionYawTravel or 0

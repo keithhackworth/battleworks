@@ -8,6 +8,7 @@ local function finite(n) return type(n)=="number" and n==n and math.abs(n)<math.
 local function validate(p)
  assert(finite(p.staticFriction) and finite(p.kineticFriction) and p.staticFriction>=p.kineticFriction and p.kineticFriction>=0,"Invalid static/kinetic friction")
  assert(finite(p.resistance) and p.resistance>=0,"Invalid surface resistance")
+ assert(p.passiveGrip==nil or (finite(p.passiveGrip) and p.passiveGrip>=0 and p.passiveGrip<=1),"Invalid passive grip fraction")
 end
 function S.validateRegion(r)
  assert(type(r.id)=="string" and #r.id>0 and finite(r.priority or 0),"Region needs stable ID/priority")
@@ -37,26 +38,26 @@ function S.weight(r,x,z)
  local t=math.clamp(edge/r.transition,0,1); return t*t*(3-2*t)
 end
 function S.contact(prepared,position,yaw,chassis)
- local a,b,c=0,0,0; local s,co=math.sin(yaw),math.cos(yaw)
+ local a,b,c,d=0,0,0,0; local s,co=math.sin(yaw),math.cos(yaw)
  for _,side in {-1,1} do for _,endSign in {-1,1} do
   local x=side*chassis.ContactWidth/2; local z=endSign*chassis.ContactLength/2
-  local sa,sb,sc=S.sample(prepared,position.X+co*x+s*z,position.Z-s*x+co*z)
-  a+=sa/4; b+=sb/4; c+=sc/4
+  local sa,sb,sc,sd=S.sample(prepared,position.X+co*x+s*z,position.Z-s*x+co*z)
+  a+=sa/4; b+=sb/4; c+=sc/4; d+=sd/4
  end end
- return a,b,c
+ return a,b,c,d
 end
 function S.sample(prepared,x,z,base)
  base=base or S.Profiles.Normal
- local a,b,c=base.staticFriction,base.kineticFriction,base.resistance
+ local a,b,c,d=base.staticFriction,base.kineticFriction,base.resistance,base.passiveGrip or 1
  local i=1
  while prepared and i<=#prepared do
-  local priority=prepared[i].priority or 0; local sum,sa,sb,sc,coverage=0,0,0,0,0
+  local priority=prepared[i].priority or 0; local sum,sa,sb,sc,sd,coverage=0,0,0,0,0,0
   while i<=#prepared and (prepared[i].priority or 0)==priority do
    local r=prepared[i]; local w=S.weight(r,x,z); local p=r.surface
-   sum+=w; sa+=w*p.staticFriction; sb+=w*p.kineticFriction; sc+=w*p.resistance; coverage=math.max(coverage,w); i+=1
+   sum+=w; sa+=w*p.staticFriction; sb+=w*p.kineticFriction; sc+=w*p.resistance; sd+=w*(p.passiveGrip or 1); coverage=math.max(coverage,w); i+=1
   end
-  if sum>0 then a+=(sa/sum-a)*coverage; b+=(sb/sum-b)*coverage; c+=(sc/sum-c)*coverage end
+  if sum>0 then a+=(sa/sum-a)*coverage; b+=(sb/sum-b)*coverage; c+=(sc/sum-c)*coverage; d+=(sd/sum-d)*coverage end
  end
- return a,b,c
+ return a,b,c,d
 end
 return S

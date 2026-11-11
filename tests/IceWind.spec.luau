@@ -25,6 +25,16 @@
  local redrawnStart=snapshots[boomerId].position
  advance(90)
  check(snapshots[boomerId].position.X>redrawnStart.X+.2,"map redraw preserves full-arena ice and wind")
+ -- Reproduce through real manual-control networking on the resized arena.
+ select.OnServerEvent:Fire(first,"Rattler")
+ command.throttle=-1
+ for _=1,450 do tick(false) end
+ local pinned=snapshots[rattlerId].position.X
+ check(pinned>54,"manual reverse reaches the downwind wall")
+ command.throttle=1
+ for _=1,240 do tick(false) end
+ check(snapshots[rattlerId].position.X<pinned-2,"manual forward escapes the wall despite steady wind")
+ command.throttle=0; tick(false)
  os.clock=savedClock; workspace.FindFirstChild=originalWorkspaceFind
 end -- server fixture
 print(string.format("Ice/wind production integration passed: %d assertions",count))
@@ -56,3 +66,27 @@ local heavy=Simulation.new(Vector3.zero,"Boomer",1,profile)
 for _=1,120 do Simulation.step(heavy,Input.neutral(),1/60,Vector2.new(2000,2000),cold) end
 check(heavy.position.Magnitude<1e-6,"heavier stationary chassis can resist the same wind")
 print(string.format("Ice/wind force contract passed: %d assertions",count))
+-- Regression: a parked tank can drift, but the wind must not overpower its
+-- powered traction and pin it indefinitely against a downwind wall.
+local map=Vector2.new(230,230)
+for _,kind in {"Boomer","Rattler"} do
+ for _,approach in {{yaw=-math.pi/2,throttle=-1},{yaw=math.pi/2,throttle=1}} do
+  local tank=Simulation.new(Vector3.new(109.9999,0,20),kind)
+  tank.yaw=approach.yaw
+  local drive=Input.neutral(); drive.throttle=approach.throttle
+  for _=1,360 do Simulation.step(tank,drive,1/60,map,cold) end
+  check(tank.position.X<106,""..kind.." can drive/reverse away from downwind wall")
+  check(tank.linearVelocity.X< -1,kind.." continues moving upwind rather than re-pinning")
+ end
+ local yaw=math.atan2(cold.wind.direction.X,cold.wind.direction.Z)
+ local extent=5*(math.abs(math.cos(yaw))+math.abs(math.sin(yaw)))
+ local tank=Simulation.new(Vector3.new(115-extent-.0001,0,-115+extent+.0001),kind)
+ tank.yaw=yaw
+ local drive=Input.neutral(); drive.throttle=1
+ for _=1,360 do Simulation.step(tank,drive,1/60,map,cold) end
+ check(tank.position.X<115-extent-2 and tank.position.Z> -115+extent+2,kind.." can leave downwind corner")
+end
+check(cold.wind.maxForce<Surface.Profiles.Ice.kineticFriction*Components.get("Boomer").Recoil.Gravity,"wind remains below full powered traction")
+local _,_,_,idle=Surface.sample(cold.physicsSurfaces,0,0)
+check(idle<1,"weather config separates passive resistance from powered grip")
+print(string.format("Ice/wind wall escape regression passed: %d assertions",count))

@@ -4,7 +4,7 @@ local Components=require(script.Parent.VehicleComponents)
 local Motion=require(script.Parent.VehicleMotion)
 local Surface=require(script.Parent.SurfacePhysics)
 local Drive={}
-function Drive.ground(state,command,dt,surfaceScale,static,kinetic,resistance)
+function Drive.ground(state,command,dt,surfaceScale,static,kinetic,resistance,passiveGrip)
  local c=Components.get(state); local p,m=c.Drivetrain,c.Mobility
  local v=Motion.ensure(state); local omega=state.angularVelocity.Y
  local fx,fz=-math.sin(state.yaw),-math.cos(state.yaw)
@@ -38,9 +38,14 @@ function Drive.ground(state,command,dt,surfaceScale,static,kinetic,resistance)
  local demand=math.sqrt(long*long+lat*lat+spin*spin)
  local normalAcceleration=math.max(0,c.Recoil.Gravity-(state.motionExternalY or 0)/state.motionMass)
  state.motionBrakeAcceleration=math.min(braking,(kinetic or Surface.Profiles.Normal.kineticFriction)*normalAcceleration*m.LongitudinalGrip)
- local staticLimit=(static or Surface.Profiles.Normal.staticFriction)*normalAcceleration*dt
+ -- Unpowered resistance is a request budget, distinct from the full grip
+ -- available to actual propulsion/differential steering. Wheel positioning
+ -- alone does not count as powered driving. Existing profiles default to 1.
+ local powered=state.health>0 and (command.throttle~=0 or (m.Kind=="Tracked" and command.steer~=0))
+ local resistanceBudget=if powered then 1 else (passiveGrip or 1)
+ local staticLimit=(static or Surface.Profiles.Normal.staticFriction)*normalAcceleration*dt*resistanceBudget
  local slipping=(state.motionSlipping and not state.motionWasResting) or demand>staticLimit+1e-8
- local limit=if slipping then (kinetic or Surface.Profiles.Normal.kineticFriction)*normalAcceleration*dt else staticLimit
+ local limit=if slipping then (kinetic or Surface.Profiles.Normal.kineticFriction)*normalAcceleration*dt*resistanceBudget else staticLimit
  local scale=if demand>0 then math.min(1,limit/demand) else 1
  state.motionSlipping=slipping and demand>1e-6
  state.motionTraction=scale
