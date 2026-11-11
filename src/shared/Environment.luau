@@ -2,6 +2,17 @@ local DefaultFootprint=require(script.Parent.ComponentCatalog)["chassis.standard
 -- Deterministic terrain descriptions shared by rendering and authoritative movement.
 local Environment = {}
 local Surface=require(script.Parent.SurfacePhysics)
+local Motion=require(script.Parent.VehicleMotion)
+-- Gameplay crosswind: exceeds ice breakaway, but tapers its push at gentle drift.
+Environment.IceWind=table.freeze({direction=Vector3.new(1,0,-0.35).Unit,maxForce=5.4,driftSpeed=1.5})
+function Environment.applyForces(data,state)
+ local wind=data and data.wind
+ if not wind then return end
+ local v=Motion.ensure(state)
+ local along=v.X*wind.direction.X+v.Z*wind.direction.Z
+ local strength=wind.maxForce*math.clamp(1-along/wind.driftSpeed,0,1)
+ Motion.force(state,wind.direction*strength)
+end
 function Environment.setPhysicsSurfaces(data,regions)
  data.physicsSurfaces=Surface.prepare(regions)
 end
@@ -12,9 +23,11 @@ end
 local function inside(zone, x, z)
 	return ((x-zone.x)/zone.rx)^2+((z-zone.z)/zone.rz)^2 <= 1
 end
-function Environment.create(size)
+function Environment.create(size,weather)
+ weather=weather or "Normal"
+ assert(weather=="Normal" or weather=="IceWind","Unknown arena weather preset")
 	local w,d=size.X,size.Y
-	local data={size=size,rocks={},logs={},trees={},zones={
+	local data={size=size,weather=weather,rocks={},logs={},trees={},zones={
 		{kind="Water",x=w*0.28,z=0,rx=w*0.16,rz=d*0.13,speed=0.9},
 		{kind="Mud",x=-w*0.27,z=-d*0.04,rx=w*0.17,rz=d*0.14,speed=0.75},
 		{kind="Woods",x=w*0.27,z=-d*0.36,rx=w*0.16,rz=d*0.11,speed=1},
@@ -49,12 +62,16 @@ function Environment.create(size)
 			if separated and clear(x,z,3.5) then table.insert(data.trees,{x=x,z=z,radius=0.9,height=9+noise(i,12)*4}) end
 		end
 	end
+ if weather=="IceWind" then
+  Environment.setPhysicsSurfaces(data,{{id="arena-ice",shape="box",x=0,z=0,rx=w/2+10,rz=d/2+10,priority=10,surface=Surface.Profiles.Ice}})
+  data.wind=Environment.IceWind
+ end
 	return data
 end
 function Environment.sample(data,x,z)
-	local height,kind,speed=0,"Grass",1
+	local height,kind,speed=0,if data.weather=="IceWind" then "Ice" else "Grass",1
 	for _,zone in data.zones do
-		if inside(zone,x,z) then kind=zone.kind; speed=zone.speed end
+		if inside(zone,x,z) and data.weather~="IceWind" then kind=zone.kind; speed=zone.speed end
 	end
 	for _,rock in data.rocks do
 		local q=((x-rock.x)/rock.rx)^2+((z-rock.z)/rock.rz)^2

@@ -60,6 +60,7 @@ try {
     ['BWEditor'],
     ['BWFunctions'],
     ['PhysicsForces', 'PhysicsBW'],
+    ['IceWind'],
   ];
   if (groupIndex === null) {
     state.destroy(); state = null;
@@ -72,13 +73,15 @@ try {
     if (!group) throw new Error('Invalid test group');
     let tests = '';
     for (const suite of group) {
-      if (suite === 'SwappedWeapons') {
+      if (suite === 'SwappedWeapons' || suite === 'IceWind') {
         // Reuse the real server/transform setup, replacing only scenario assertions.
         const harness = await readFile('tests/ServerIntegration.spec.luau', 'utf8');
         const marker = ' local generation=snapshots[boomerId].generation';
         if (!harness.includes(marker)) throw new Error('Server harness marker changed');
-        tests += '\ndo\n' + harness.slice(0, harness.indexOf(marker));
-        tests += await readFile('tests/SwappedWeapons.spec.luau', 'utf8') + '\nend\n';
+        let setup = harness.slice(0, harness.indexOf(marker));
+        if (suite === 'IceWind') setup = setup.replace('workspace:SetAttribute("ArenaWeather","Normal")', 'workspace:SetAttribute("ArenaWeather",nil)');
+        tests += '\ndo\n' + setup;
+        tests += await readFile(`tests/${suite}.spec.luau`, 'utf8') + '\nend\n';
       } else tests += '\ndo\n' + await readFile(`tests/${suite}.spec.luau`, 'utf8') + '\nend\n';
     }
     if (group.includes('BWExecution') || group.includes('LiveRuntimeExamples')) {

@@ -9,7 +9,13 @@ local function part(parent,name,size,frame,color,material,shape,query)
 	p.Parent=parent
 	return p
 end
-function Builder.build(arena,data)
+function Builder.build(arena,data,floor)
+ local icy=data.weather=="IceWind"
+ if floor then
+  floor.Material=if icy then Enum.Material.Ice else Enum.Material.Grass
+  floor.Color=if icy then Color3.fromRGB(184,218,235) else Color3.fromRGB(100,112,86)
+  floor.Reflectance=if icy then 0.16 else 0
+ end
 	local old=arena:FindFirstChild("Environment")
 	if old then old:Destroy() end
 	local folder=Instance.new("Folder"); folder.Name="Environment"; folder.Parent=arena
@@ -28,6 +34,26 @@ function Builder.build(arena,data)
 			end
 		end
 	end
+ if icy then
+  for _,p in folder:GetChildren() do
+   if p:IsA("BasePart") then
+    p.Material=Enum.Material.Ice; p.Color=Color3.fromRGB(165,206,225); p.Reflectance=0.12
+   end
+  end
+  -- Cosmetic frost streaks never enter collision/scanner queries.
+  for i=1,12 do
+   local x=math.sin(i*2.4)*data.size.X*.42; local z=math.cos(i*1.7)*data.size.Y*.42
+   local length=math.min(12,data.size.X*.12)
+   local streak=part(folder,"IceStreak",Vector3.new(length,.025,.12),CFrame.new(x,.015,z)*CFrame.Angles(0,-.3,0),Color3.fromRGB(228,246,251),Enum.Material.SmoothPlastic)
+   streak.Transparency=.4
+  end
+  local direction=data.wind.direction
+  local frame=CFrame.new(0,.18,data.size.Y*.32)*CFrame.Angles(0,math.atan2(-direction.X,-direction.Z),0)
+  part(folder,"WindArrow",Vector3.new(.2,.04,5),frame,Color3.fromRGB(93,154,184),Enum.Material.SmoothPlastic)
+  for _,side in {-1,1} do
+   part(folder,"WindArrowHead",Vector3.new(.2,.04,2),frame*CFrame.new(side*.65,0,-1.8)*CFrame.Angles(0,side*math.pi/4,0),Color3.fromRGB(93,154,184),Enum.Material.SmoothPlastic)
+  end
+ end
 	for i,rock in data.rocks do
 		part(folder,"Rock",Vector3.new(rock.rx*2,rock.height*2,rock.rz*2),CFrame.new(rock.x,0,rock.z),
 			if i%2==0 then Color3.fromRGB(115,123,126) else Color3.fromRGB(137,143,139),Enum.Material.Slate,Enum.PartType.Ball,true)
@@ -42,7 +68,7 @@ function Builder.build(arena,data)
 		part(folder,"TreeTrunk",Vector3.new(tree.height,tree.radius*2,tree.radius*2),CFrame.new(tree.x,tree.height/2,tree.z)*CFrame.Angles(0,0,math.pi/2),Color3.fromRGB(100,72,44),Enum.Material.Wood,Enum.PartType.Cylinder,true)
 		for layer=1,2 do
 			local crown=part(folder,"TreeCrown",Vector3.new(6.5-layer,5,6.5-layer),CFrame.new(tree.x,tree.height-1+layer*1.7,tree.z),
-				if i%2==0 then Color3.fromRGB(66,126,61) else Color3.fromRGB(91,147,63),Enum.Material.Grass,Enum.PartType.Ball)
+				if icy then Color3.fromRGB(218,235,237) elseif i%2==0 then Color3.fromRGB(66,126,61) else Color3.fromRGB(91,147,63),Enum.Material.Grass,Enum.PartType.Ball)
 			crown.Transparency=0.15
 		end
 	end

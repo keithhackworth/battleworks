@@ -66,6 +66,7 @@ function Simulation.moveBody(state,command,dt,mapSize,environment,deferContacts)
  local c=Components.get(state)
  local support=state.groundPlaneY or 0
  if environment then support+=Environment.pose(environment,state.position,state.yaw,c.Chassis) end
+ Environment.applyForces(environment,state)
  local supported=state.position.Y<=support+0.001 and Motion.ensure(state).Y<=0 and (state.lift or 0)<=0.001
  Motion.beginStep(state,dt)
  -- A supported body's normal reaction absorbs sub-weight vertical forces.

@@ -123,6 +123,7 @@ do
   return saveService(self,name)
  end
  game.ReplicatedStorage.WaitForChild=function(self,name) return self[name] end
+ workspace:SetAttribute("ArenaWeather","Normal") -- historical handling/combat baseline
  require("ServerEntrypoint")
  local network
  for _,p in created do if p.Name=="TankNetwork" and not p.destroyed then network=p end end

@@ -7,7 +7,8 @@ local ArenaLayout = require(Shared.ArenaLayout)
 local Environment = require(Shared.Environment)
 local EnvironmentBuilder = require(script.EnvironmentBuilder)
 local mapSize = Vector2.new(Config.ArenaLimit*2, Config.ArenaLimit*2)
-local environment = Environment.create(mapSize)
+local weather=workspace:GetAttribute("ArenaWeather") or "IceWind"
+local environment = Environment.create(mapSize,weather)
 local Command = require(Shared.InputCommand)
 local BWController = require(script.BWController)
 local ScannerConfig=require(Shared.ScannerConfig)
@@ -50,6 +51,11 @@ local tanks, targets, battles = {}, {}, {}
 local arena = Instance.new("Folder")
 arena.Name = "Arena"; arena.Parent = workspace
 arena:SetAttribute("DebugCombat", false)
+arena:SetAttribute("Weather",weather)
+if environment.wind then
+ arena:SetAttribute("WindMaxForce",environment.wind.maxForce)
+ arena:SetAttribute("WindDriftSpeed",environment.wind.driftSpeed)
+end
 local function part(name, size, position, color)
 	local p = Instance.new("Part")
 	p.Name = name; p.Anchored = true; p.Size = size; p.Position = position; p.Color = color; p.Parent = arena
@@ -64,7 +70,7 @@ floor.CanCollide = false -- anchored, scripted tanks need no supporting physics
 floor.CanTouch = false
 floor.CanQuery = true -- downward combat rays should still hit the ground
 floor.Material = Enum.Material.Grass
-EnvironmentBuilder.build(arena,environment)
+EnvironmentBuilder.build(arena,environment,floor)
 local walls = {}
 for _, data in ipairs({ {Vector3.new(0, 3, -118), Vector3.new(240, 6, 4)}, {Vector3.new(0, 3, 118), Vector3.new(240, 6, 4)}, {Vector3.new(-118, 3, 0), Vector3.new(4, 6, 240)}, {Vector3.new(118, 3, 0), Vector3.new(4, 6, 240)} }) do
 	table.insert(walls, part("Boundary", data[2], data[1], Color3.fromRGB(57, 66, 73)))
@@ -310,7 +316,7 @@ if RunService:IsStudio() then
 	redraw.OnServerEvent:Connect(function(player, size)
 		if not battles[player.UserId] or not ArenaLayout.validSize(size) or os.clock()-lastRedraw < 1 then return end
 		lastRedraw = os.clock(); mapSize = size
-		environment=Environment.create(size); EnvironmentBuilder.build(arena,environment)
+		environment=Environment.create(size,weather); EnvironmentBuilder.build(arena,environment,floor)
 		floor.Size = Vector3.new(size.X+10,1,size.Y+10)
 		walls[1].Size = Vector3.new(size.X+10,6,4); walls[1].Position = Vector3.new(0,3,-size.Y/2-3)
 		walls[2].Size = walls[1].Size; walls[2].Position = Vector3.new(0,3,size.Y/2+3)
