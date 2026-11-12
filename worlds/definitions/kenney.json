@@ -1,0 +1,8 @@
+{
+  "definitions": {
+    "tree_large": {
+      "type": "model",
+      "asset": "GLBs/suburban/tree-large.glb"
+    }
+  }
+}

@@ -1,0 +1,170 @@
+{
+  "Children": [
+    {
+      "Children": [
+        {
+          "ClassName": "StringValue",
+          "Name": "WorldId",
+          "Properties": {
+            "Value": "default"
+          }
+        },
+        {
+          "ClassName": "StringValue",
+          "Name": "DisplayName",
+          "Properties": {
+            "Value": "Default Test Arena"
+          }
+        },
+        {
+          "ClassName": "StringValue",
+          "Name": "Status",
+          "Properties": {
+            "Value": "ready"
+          }
+        },
+        {
+          "ClassName": "StringValue",
+          "Name": "Reason",
+          "Properties": {
+            "Value": "Built-in BattleWorks arena; no imported assets required."
+          }
+        },
+        {
+          "ClassName": "StringValue",
+          "Name": "ManifestPath",
+          "Properties": {
+            "Value": ""
+          }
+        },
+        {
+          "ClassName": "IntValue",
+          "Name": "ObjectCount",
+          "Properties": {
+            "Value": 0
+          }
+        },
+        {
+          "ClassName": "IntValue",
+          "Name": "AssetCount",
+          "Properties": {
+            "Value": 0
+          }
+        }
+      ],
+      "ClassName": "Configuration",
+      "Name": "default"
+    },
+    {
+      "Children": [
+        {
+          "ClassName": "StringValue",
+          "Name": "WorldId",
+          "Properties": {
+            "Value": "tree_test"
+          }
+        },
+        {
+          "ClassName": "StringValue",
+          "Name": "DisplayName",
+          "Properties": {
+            "Value": "Kenney Tree Test"
+          }
+        },
+        {
+          "ClassName": "StringValue",
+          "Name": "Status",
+          "Properties": {
+            "Value": "preview-only"
+          }
+        },
+        {
+          "ClassName": "StringValue",
+          "Name": "Reason",
+          "Properties": {
+            "Value": "1 symbolic GLB resources have no Roblox asset mapping or supported placement. Only a single mapped model with uniform scale is supported."
+          }
+        },
+        {
+          "ClassName": "StringValue",
+          "Name": "ManifestPath",
+          "Properties": {
+            "Value": "build/worlds/tree-test.json"
+          }
+        },
+        {
+          "ClassName": "IntValue",
+          "Name": "ObjectCount",
+          "Properties": {
+            "Value": 1
+          }
+        },
+        {
+          "ClassName": "IntValue",
+          "Name": "AssetCount",
+          "Properties": {
+            "Value": 1
+          }
+        }
+      ],
+      "ClassName": "Configuration",
+      "Name": "tree_test"
+    },
+    {
+      "Children": [
+        {
+          "ClassName": "StringValue",
+          "Name": "WorldId",
+          "Properties": {
+            "Value": "village_battle"
+          }
+        },
+        {
+          "ClassName": "StringValue",
+          "Name": "DisplayName",
+          "Properties": {
+            "Value": "Village Battle"
+          }
+        },
+        {
+          "ClassName": "StringValue",
+          "Name": "Status",
+          "Properties": {
+            "Value": "preview-only"
+          }
+        },
+        {
+          "ClassName": "StringValue",
+          "Name": "Reason",
+          "Properties": {
+            "Value": "18 symbolic GLB resources have no Roblox asset mapping or supported placement. Only a single mapped model with uniform scale is supported."
+          }
+        },
+        {
+          "ClassName": "StringValue",
+          "Name": "ManifestPath",
+          "Properties": {
+            "Value": "build/worlds/example.json"
+          }
+        },
+        {
+          "ClassName": "IntValue",
+          "Name": "ObjectCount",
+          "Properties": {
+            "Value": 157
+          }
+        },
+        {
+          "ClassName": "IntValue",
+          "Name": "AssetCount",
+          "Properties": {
+            "Value": 18
+          }
+        }
+      ],
+      "ClassName": "Configuration",
+      "Name": "village_battle"
+    }
+  ],
+  "ClassName": "Folder"
+}

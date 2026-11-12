@@ -1,0 +1,100 @@
+{
+  "version": 1,
+  "id": "village_battle",
+  "name": "Village Battle",
+  "seed": "BattleWorks-world-v1",
+  "definitionFiles": [
+    "definitions/example-assets.json"
+  ],
+  "instances": [
+    {
+      "id": "village_west",
+      "ref": "village",
+      "position": [
+        -60,
+        0,
+        0
+      ],
+      "rotation": [
+        0,
+        15,
+        0
+      ]
+    },
+    {
+      "id": "village_east",
+      "ref": "village",
+      "position": [
+        65,
+        0,
+        -15
+      ],
+      "rotation": [
+        0,
+        -35,
+        0
+      ],
+      "scale": 1.1
+    },
+    {
+      "id": "wet_rocks",
+      "ref": "rocky_terrain",
+      "position": [
+        -20,
+        0,
+        65
+      ],
+      "path": "M 0 0 C 30 -10 55 0 50 30 L 12 38 -8 14 Z",
+      "count": 28,
+      "influences": {
+        "physical": {
+          "friction": 0.3
+        },
+        "movement": {
+          "tractionMultiplier": 0.35
+        },
+        "water": {
+          "depth": 0.3,
+          "visual": "puddles"
+        }
+      }
+    },
+    {
+      "id": "train_yard",
+      "ref": "train",
+      "position": [
+        10,
+        0,
+        -90
+      ],
+      "rotation": [
+        0,
+        90,
+        0
+      ]
+    },
+    {
+      "id": "yard_supplies",
+      "ref": "supply_stack",
+      "position": [
+        8,
+        0,
+        -76
+      ]
+    },
+    {
+      "id": "station_house",
+      "ref": "weathered_house",
+      "position": [
+        -10,
+        0,
+        -75
+      ],
+      "rotation": [
+        0,
+        90,
+        0
+      ]
+    }
+  ]
+}

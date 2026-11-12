@@ -1,5 +1,13 @@
 # BattleWorks: Boomer and Rattler
 
+## Offline worlds and Studio selection
+
+Build: `node tools/build-world.js worlds/example.json --output build/worlds/example.json`.
+Validate without writing: `node tools/build-world.js worlds/example.json --validate`.
+Test offline tools: `node --test tests/world-compiler.test.js tests/asset-persistence.test.js`.
+
+See [world compiler documentation](docs/WORLD_COMPILER.md) for JSON definitions, SVG placement, transforms and overrides. [Studio world selection](docs/WORLD_SELECTOR.md) uses **ServerStorage → BattleWorksStudio → SelectedWorld** in Edit mode. The [single-tree asset test](docs/TREE_ASSET_TEST.md) can place a manually imported Kenney model using `tree_test`. Other symbolic worlds remain preview-only and fall back explicitly to the existing arena; no automatic importer or full world loader is implemented.
+
 **BW language reference:** [BW_LANGUAGE.md](docs/BW_LANGUAGE.md) — syntax, all commands, inputs/returns, CPU costs, buses, loops, scanners and examples.
 
 
@@ -163,12 +171,12 @@ The toolchain is pinned in `rokit.toml` to **Rojo 7.7.1**. With Rokit installed,
 
 ```bash
 rojo --version
-rojo build -o battleworks.rbxl
+node tools/build-place.js --output build/battleworks.rbxl
 ```
 
-Open Roblox Studio, choose **File → Open from File**, and select the generated `battleworks.rbxl` in this project directory. Press **Play (F5)** to spawn your tank. Use Play rather than Run: the tank belongs to a connected player. You can also build XML with `rojo build -o battleworks.rbxlx` and open that file the same way. No plugin is required to open either generated place.
+Open Roblox Studio, choose **File → Open from File**, and select the generated `build/battleworks.rbxl`. Press **Play (F5)** to spawn your tank. Use Play rather than Run: the tank belongs to a connected player. You can also build XML with `node tools/build-place.js --output build/battleworks.rbxlx` and open that file the same way. No plugin is required to open either generated place.
 
-For live source updates, install the matching Rojo Studio plugin, run `rojo serve`, and connect the plugin to `localhost:34872`. Rebuild or reconnect and restart Play after changing scripts. Changes made only in Studio are not automatically written back to source files.
+For live source updates, install the matching Rojo Studio plugin, run `rojo serve`, and connect the plugin to `localhost:34872`. Rebuild or reconnect and restart Play after changing scripts. Changes made only in Studio are not automatically written back to source files. Export imported Models once to `assets/roblox/*.rbxm` or `*.rbxmx`; the source directory is mounted at `ServerStorage/BattleWorksAssets`. Read [asset persistence](docs/ASSET_PERSISTENCE.md) before rebuilding a place containing unexported imports. The checked build fails on missing exports instead of silently generating an empty asset folder.
 
 ## Controls
 

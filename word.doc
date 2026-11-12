@@ -1,0 +1,4 @@
+node tools/build-world.js worlds/example.json --output build/worlds/example.json
+node tools/build-world.js worlds/example.json --validate
+node tools/register-worlds.js build/worlds
+

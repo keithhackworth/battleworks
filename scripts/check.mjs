@@ -35,7 +35,7 @@ try {
       ? await readFile('tests/fixtures/LegacyVehicleAssemblies.luau', 'utf8') : originalSource;
     const name = file.split('/').pop().replace('.luau', '');
     const parent = file.includes('/shared/') ? 'Shared' : 'Client';
-    bundle += `\nloaders[${JSON.stringify(name)}] = function()\nlocal script = { Parent = ${parent}, BWController = "BWController", LocalBattle = "LocalBattle", DirectionalScanner = "DirectionalScanner", ManualScanner = "ManualScanner", EnvironmentBuilder = "EnvironmentBuilder", PracticeTargets = "PracticeTargets", ProjectileSimulation = "ProjectileSimulation" }\n${source}\nend\n`;
+    bundle += `\nloaders[${JSON.stringify(name)}] = function()\nlocal script = { Parent = ${parent}, BWController = "BWController", LocalBattle = "LocalBattle", StudioWorldSelector = "StudioWorldSelector", StudioAssetPlacement = "StudioAssetPlacement", DirectionalScanner = "DirectionalScanner", ManualScanner = "ManualScanner", EnvironmentBuilder = "EnvironmentBuilder", PracticeTargets = "PracticeTargets", ProjectileSimulation = "ProjectileSimulation" }\n${source}\nend\n`;
   }
   bundle += '\nrequire = function(name)\nif name == "PlayerModule" then return { GetControls = function() return defaultControls end } end\nif cache[name] == nil then cache[name] = assert(loaders[name], "Unknown module " .. tostring(name))() end\nreturn cache[name]\nend\n';
   // Mock UI/event fixtures deliberately retain references. Isolate groups so
@@ -61,8 +61,12 @@ try {
     ['BWFunctions'],
     ['PhysicsForces', 'PhysicsBW'],
     ['IceWind'],
+    ['StudioWorldSelector', 'StudioAssetPlacement'],
   ];
   if (groupIndex === null) {
+    const worldTests = spawnSync(process.execPath, ['--test', 'tests/world-compiler.test.js', 'tests/asset-persistence.test.js'], { stdio: 'inherit' });
+    if (worldTests.error) throw worldTests.error;
+    if (worldTests.status !== 0) throw new Error('World compiler tests failed');
     state.destroy(); state = null;
     for (let i = 0; i < groups.length; i++) {
       const child = spawnSync(process.execPath, [process.argv[1], runtime, String(i)], { stdio: 'inherit' });
@@ -73,7 +77,13 @@ try {
     if (!group) throw new Error('Invalid test group');
     let tests = '';
     for (const suite of group) {
-      if (suite === 'SwappedWeapons' || suite === 'IceWind') {
+      if (suite === 'StudioAssetPlacement') {
+        const harness = await readFile('tests/ServerIntegration.spec.luau', 'utf8');
+        const marker = 'Vector3.one=';
+        if (!harness.includes(marker)) throw new Error('Transform harness marker changed');
+        tests += '\ndo\n' + harness.slice(0, harness.indexOf(marker));
+        tests += await readFile('tests/StudioAssetPlacement.spec.luau', 'utf8') + '\nend\n';
+      } else if (suite === 'SwappedWeapons' || suite === 'IceWind') {
         // Reuse the real server/transform setup, replacing only scenario assertions.
         const harness = await readFile('tests/ServerIntegration.spec.luau', 'utf8');
         const marker = ' local generation=snapshots[boomerId].generation';

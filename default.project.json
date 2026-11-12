@@ -47,6 +47,23 @@
       "$properties": {
         "ScreenOrientation": "LandscapeSensor"
       }
+    },
+    "ServerStorage": {
+      "$className": "ServerStorage",
+      "BattleWorksStudio": {
+        "$className": "Configuration",
+        "SelectedWorld": {
+          "$className": "StringValue"
+        },
+        "WorldCatalog": {
+          "$path": "worlds/studio-worlds.model.json"
+        }
+      },
+      "BattleWorksAssets": {
+        "$className": "Folder",
+        "$ignoreUnknownInstances": true,
+        "$path": "assets/roblox"
+      }
     }
   }
 }

@@ -1,0 +1,27 @@
+{
+  "version": 1,
+  "id": "tree_test",
+  "name": "Kenney Tree Test",
+  "seed": 1,
+  "definitionFiles": ["definitions/kenney.json"],
+  "instances": [
+    {
+      "id": "tree-large",
+      "ref": "tree_large",
+      "position": [0, 0, 0],
+      "rotation": [0, 0, 0],
+      "scale": 45,
+      "influences": {
+        "physical": {
+          "movable": false,
+          "destructible": true,
+          "hp": 150
+        },
+        "movement": {
+          "collision": "solid",
+          "traversable": false
+        }
+      }
+    }
+  ]
+}

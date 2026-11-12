@@ -8,7 +8,8 @@ local Environment = require(Shared.Environment)
 local EnvironmentBuilder = require(script.EnvironmentBuilder)
 local mapSize = Vector2.new(Config.ArenaLimit*2, Config.ArenaLimit*2)
 local weather=workspace:GetAttribute("ArenaWeather") or "IceWind"
-local environment = Environment.create(mapSize,weather)
+local environment
+local singleModelWorld=false
 local Command = require(Shared.InputCommand)
 local BWController = require(script.BWController)
 local ScannerConfig=require(Shared.ScannerConfig)
@@ -50,6 +51,19 @@ network.Parent = ReplicatedStorage
 local tanks, targets, battles = {}, {}, {}
 local arena = Instance.new("Folder")
 arena.Name = "Arena"; arena.Parent = workspace
+if RunService:IsStudio() then
+ local selection=require(script.StudioWorldSelector).start(RunService,game:GetService("ServerStorage"),arena)
+ singleModelWorld=selection.active.profile=="single-model"
+end
+-- The imported-asset smoke test has only ground/boundaries and its one model.
+-- Normal arena creation, including weather and terrain, is unchanged.
+if singleModelWorld then weather="Normal" end
+local function createEnvironment(size)
+ local data=Environment.create(size,weather)
+ if singleModelWorld then data.rocks={}; data.logs={}; data.trees={}; data.zones={} end
+ return data
+end
+environment=createEnvironment(mapSize)
 arena:SetAttribute("DebugCombat", false)
 arena:SetAttribute("Weather",weather)
 if environment.wind then
@@ -71,11 +85,17 @@ floor.CanTouch = false
 floor.CanQuery = true -- downward combat rays should still hit the ground
 floor.Material = Enum.Material.Grass
 EnvironmentBuilder.build(arena,environment,floor)
+if not singleModelWorld then
+ local stick=part("CenterStick",Vector3.new(10,1,1),Vector3.new(0,.5,0),Color3.fromRGB(125,79,40))
+ stick.Shape=Enum.PartType.Cylinder; stick.Material=Enum.Material.Wood
+ stick.CanCollide=false; stick.CanTouch=false; stick.CanQuery=false
+end
 local walls = {}
 for _, data in ipairs({ {Vector3.new(0, 3, -118), Vector3.new(240, 6, 4)}, {Vector3.new(0, 3, 118), Vector3.new(240, 6, 4)}, {Vector3.new(-118, 3, 0), Vector3.new(4, 6, 240)}, {Vector3.new(118, 3, 0), Vector3.new(4, 6, 240)} }) do
 	table.insert(walls, part("Boundary", data[2], data[1], Color3.fromRGB(57, 66, 73)))
 end
 local function buildTargets(size)
+ if singleModelWorld then return end
 	local count = math.clamp(math.floor((size.X-10)/9),1,5)
 	for i = 1, count do
 		local p = part("Target", Vector3.new(7, 7, 5), Vector3.new((i-(count+1)/2)*math.min(18,(size.X-10)/count), 3.5, -size.Y*65/230), Color3.fromRGB(210, 102, 60))
@@ -316,7 +336,7 @@ if RunService:IsStudio() then
 	redraw.OnServerEvent:Connect(function(player, size)
 		if not battles[player.UserId] or not ArenaLayout.validSize(size) or os.clock()-lastRedraw < 1 then return end
 		lastRedraw = os.clock(); mapSize = size
-		environment=Environment.create(size,weather); EnvironmentBuilder.build(arena,environment,floor)
+		environment=createEnvironment(size); EnvironmentBuilder.build(arena,environment,floor)
 		floor.Size = Vector3.new(size.X+10,1,size.Y+10)
 		walls[1].Size = Vector3.new(size.X+10,6,4); walls[1].Position = Vector3.new(0,3,-size.Y/2-3)
 		walls[2].Size = walls[1].Size; walls[2].Position = Vector3.new(0,3,size.Y/2+3)

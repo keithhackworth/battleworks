@@ -1,0 +1,502 @@
+{
+  "definitions": {
+    "wood_fence_section": {
+      "type": "model",
+      "asset": {
+        "selection": "weighted",
+        "items": [
+          {
+            "path": "fictional/kenney-style/fence_01.glb",
+            "weight": 5,
+            "rotation": [
+              0,
+              0,
+              0
+            ],
+            "scale": [
+              1,
+              1.03,
+              1
+            ]
+          },
+          {
+            "path": "fictional/kenney-style/fence_02.glb",
+            "weight": 5,
+            "rotation": [
+              0,
+              180,
+              0
+            ],
+            "scale": [
+              1,
+              1.06,
+              1
+            ]
+          },
+          {
+            "path": "fictional/kenney-style/fence_03.glb",
+            "weight": 5,
+            "rotation": [
+              0,
+              0,
+              0
+            ],
+            "scale": [
+              1,
+              1.0,
+              1
+            ]
+          },
+          {
+            "path": "fictional/kenney-style/fence_04.glb",
+            "weight": 5,
+            "rotation": [
+              0,
+              180,
+              0
+            ],
+            "scale": [
+              1,
+              1.03,
+              1
+            ]
+          },
+          {
+            "path": "fictional/kenney-style/fence_05.glb",
+            "weight": 5,
+            "rotation": [
+              0,
+              0,
+              0
+            ],
+            "scale": [
+              1,
+              1.06,
+              1
+            ]
+          },
+          {
+            "path": "fictional/kenney-style/fence_06.glb",
+            "weight": 5,
+            "rotation": [
+              0,
+              180,
+              0
+            ],
+            "scale": [
+              1,
+              1.0,
+              1
+            ]
+          },
+          {
+            "path": "fictional/kenney-style/fence_07.glb",
+            "weight": 1,
+            "rotation": [
+              0,
+              0,
+              0
+            ],
+            "scale": [
+              1,
+              1.03,
+              1
+            ]
+          },
+          {
+            "path": "fictional/kenney-style/fence_08.glb",
+            "weight": 1,
+            "rotation": [
+              0,
+              180,
+              0
+            ],
+            "scale": [
+              1,
+              1.06,
+              1
+            ]
+          }
+        ]
+      },
+      "influences": {
+        "physical": {
+          "mass": 70,
+          "movable": true,
+          "destructible": true,
+          "hp": 90
+        },
+        "movement": {
+          "collision": "solid",
+          "traversable": false
+        }
+      }
+    },
+    "wood_fence": {
+      "type": "path",
+      "path": "M -30 -24 H 30 V 24 H -30 Z",
+      "spacing": 6,
+      "overlap": 0.25,
+      "orientToPath": true,
+      "rotationJitter": [
+        0,
+        2,
+        0
+      ],
+      "item": {
+        "ref": "wood_fence_section"
+      },
+      "positionJitter": [
+        0.1,
+        0,
+        0.1
+      ]
+    },
+    "rock": {
+      "type": "model",
+      "asset": {
+        "selection": "random",
+        "items": [
+          {
+            "path": "fictional/terrain/rock_1.glb",
+            "scale": 1
+          },
+          {
+            "path": "fictional/terrain/rock_2.glb",
+            "scale": 1.2
+          },
+          {
+            "path": "fictional/terrain/rock_3.glb",
+            "scale": 0.8
+          }
+        ]
+      },
+      "influences": {
+        "physical": {
+          "mass": 500,
+          "movable": false,
+          "destructible": false
+        },
+        "movement": {
+          "collision": "solid",
+          "traversable": false
+        }
+      }
+    },
+    "rocky_terrain": {
+      "type": "region",
+      "path": "M 0 0 L 38 -6 48 24 25 38 -8 20 Z",
+      "count": 22,
+      "minSeparation": 3,
+      "randomRotation": true,
+      "scaleRange": [
+        0.65,
+        1.25
+      ],
+      "item": {
+        "ref": "rock"
+      },
+      "influences": {
+        "physical": {
+          "friction": 0.8
+        },
+        "movement": {
+          "tractionMultiplier": 0.7,
+          "speedMultiplier": 0.9
+        }
+      }
+    },
+    "building": {
+      "type": "model",
+      "asset": {
+        "selection": "single",
+        "items": [
+          {
+            "path": "fictional/village/house_plaster.glb"
+          }
+        ]
+      },
+      "influences": {
+        "physical": {
+          "mass": 1800,
+          "destructible": true,
+          "hp": 400,
+          "friction": 0.9
+        },
+        "movement": {
+          "collision": "solid",
+          "traversable": false
+        }
+      }
+    },
+    "planter": {
+      "type": "model",
+      "asset": "fictional/village/flower_box.glb",
+      "scale": 0.8,
+      "influences": {
+        "physical": {
+          "mass": 12,
+          "movable": true,
+          "destructible": true,
+          "hp": 25
+        }
+      }
+    },
+    "house": {
+      "type": "group",
+      "children": [
+        {
+          "id": "building",
+          "ref": "building"
+        },
+        {
+          "id": "front_flowers",
+          "ref": "planter",
+          "position": [
+            2,
+            0.5,
+            -5
+          ]
+        }
+      ]
+    },
+    "dirt_road_tile": {
+      "type": "model",
+      "asset": "fictional/terrain/dirt_road_tile.glb",
+      "influences": {
+        "physical": {
+          "movable": false,
+          "friction": 0.75,
+          "destructible": false
+        },
+        "movement": {
+          "collision": "none",
+          "traversable": true,
+          "tractionMultiplier": 0.85
+        }
+      }
+    },
+    "dirt_road": {
+      "type": "path",
+      "path": "M -36 0 C -18 -12 -10 14 0 0 S 24 -14 36 0 M 0 0 l 0 9 h 8 v 2",
+      "spacing": 5,
+      "overlap": 0.5,
+      "curveSamples": 64,
+      "item": {
+        "ref": "dirt_road_tile"
+      }
+    },
+    "village": {
+      "type": "group",
+      "children": [
+        {
+          "id": "house_north",
+          "ref": "house",
+          "position": [
+            -16,
+            0,
+            -12
+          ]
+        },
+        {
+          "id": "house_south",
+          "ref": "house",
+          "position": [
+            14,
+            0,
+            13
+          ],
+          "rotation": [
+            0,
+            180,
+            0
+          ],
+          "scale": 0.9
+        },
+        {
+          "id": "house_west",
+          "ref": "house",
+          "position": [
+            -20,
+            0,
+            13
+          ],
+          "rotation": [
+            0,
+            180,
+            0
+          ]
+        },
+        {
+          "id": "road",
+          "ref": "dirt_road"
+        },
+        {
+          "id": "north_fence",
+          "ref": "wood_fence",
+          "path": "M -30 -24 H 30 C 40 -24 40 -16 40 -10"
+        },
+        {
+          "id": "east_rocks",
+          "ref": "rocky_terrain",
+          "position": [
+            45,
+            0,
+            -10
+          ],
+          "count": 12,
+          "path": "M 0 0 L 24 -3 32 20 12 32 -5 18 Z"
+        }
+      ]
+    },
+    "locomotive": {
+      "type": "model",
+      "asset": "fictional/rail/toy_locomotive.glb",
+      "influences": {
+        "physical": {
+          "mass": 4000,
+          "movable": true,
+          "friction": 0.6,
+          "destructible": true,
+          "hp": 700
+        },
+        "movement": {
+          "collision": "solid",
+          "traversable": false
+        }
+      }
+    },
+    "cargo_car": {
+      "type": "group",
+      "children": [
+        {
+          "id": "frame",
+          "ref": "cargo_frame"
+        },
+        {
+          "id": "cargo",
+          "ref": "cargo_crate",
+          "position": [
+            0,
+            2,
+            0
+          ]
+        }
+      ]
+    },
+    "cargo_frame": {
+      "type": "model",
+      "asset": "fictional/rail/cargo_frame.glb",
+      "influences": {
+        "physical": {
+          "mass": 900,
+          "movable": true,
+          "destructible": true,
+          "hp": 250
+        }
+      }
+    },
+    "cargo_crate": {
+      "type": "model",
+      "asset": "fictional/rail/cargo_crate.glb",
+      "influences": {
+        "physical": {
+          "mass": 200,
+          "movable": true,
+          "destructible": true,
+          "hp": 80
+        }
+      }
+    },
+    "caboose": {
+      "type": "model",
+      "asset": "fictional/rail/caboose.glb",
+      "influences": {
+        "physical": {
+          "mass": 1200,
+          "movable": true,
+          "destructible": true,
+          "hp": 300
+        }
+      }
+    },
+    "train": {
+      "type": "group",
+      "children": [
+        {
+          "id": "engine",
+          "ref": "locomotive"
+        },
+        {
+          "id": "cars",
+          "ref": "cargo_car",
+          "position": [
+            0,
+            0,
+            -12
+          ],
+          "repeat": {
+            "count": 5,
+            "offset": [
+              0,
+              0,
+              -12
+            ]
+          }
+        },
+        {
+          "id": "caboose",
+          "ref": "caboose",
+          "position": [
+            0,
+            0,
+            -72
+          ]
+        }
+      ]
+    },
+    "supply_stack": {
+      "type": "repeat",
+      "count": 3,
+      "offset": [
+        3,
+        0,
+        0
+      ],
+      "item": {
+        "ref": "cargo_crate",
+        "rotation": [
+          0,
+          20,
+          0
+        ],
+        "scale": 0.7
+      }
+    },
+    "weathered_house": {
+      "ref": "house",
+      "children": [
+        {
+          "id": "building",
+          "ref": "building",
+          "asset": "fictional/village/house_weathered.glb",
+          "influences": {
+            "physical": {
+              "hp": 240
+            }
+          }
+        },
+        {
+          "id": "front_flowers",
+          "ref": "planter",
+          "position": [
+            2,
+            0.5,
+            -5
+          ],
+          "scale": 1.1
+        }
+      ]
+    }
+  }
+}
