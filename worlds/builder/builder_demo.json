@@ -1,0 +1,22 @@
+{
+  "schemaVersion": 2,
+  "id": "builder_demo",
+  "name": "Builder Demo",
+  "description": "A ready-to-edit arena using built-in assets; no GLB imports required.",
+  "settings": {
+    "width": 160,
+    "depth": 120,
+    "ground": {"material": "Sand", "color": [160, 145, 105]},
+    "boundary": true
+  },
+  "objects": [
+    {"id": "central_cover", "type": "builtin.block", "asset": "Builtin/BW_block", "position": [0, 0, 20], "rotation": [0, 0, 0], "scale": 1, "solid": true, "destructible": false, "hp": 100, "bounds": [8, 5, 8]},
+    {"id": "crate", "type": "builtin.crate", "asset": "Builtin/BW_crate", "position": [25, 0, -20], "rotation": [0, 20, 0], "scale": 1, "solid": true, "destructible": true, "hp": 100, "bounds": [5, 5, 5]},
+    {"id": "rock", "type": "builtin.rock", "asset": "Builtin/BW_rock", "position": [-30, 0, -25], "rotation": [0, 0, 0], "scale": 1, "solid": true, "destructible": false, "hp": 100, "bounds": [7, 4, 6]}
+  ],
+  "spawns": [
+    {"id": "boomer_spawn", "tank": "Boomer", "position": [-22, 0, 20], "heading": 90},
+    {"id": "rattler_spawn", "tank": "Rattler", "position": [22, 0, 20], "heading": 270}
+  ],
+  "gameplay": {}
+}

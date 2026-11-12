@@ -1,0 +1,27 @@
+local State=require("EditorState")
+local checks=0
+local function check(value,message)checks+=1;assert(value,message)end
+local doc={schemaVersion=2,id="test",name="Test",description="",settings={width=230,depth=230,ground={material="Grass",color={100,112,86}},boundary=true},objects={},spawns={{id="spawn_a",tank="Boomer",position={-22,0,34.5},heading=90},{id="spawn_b",tank="Rattler",position={22,0,34.5},heading=270}},gameplay={}}
+local item={id="builtin.block",defaultScale=1,solid=true,destructible=false,hp=100,size={8,5,8}}
+local s=State.new(doc)
+check(not s:dirty(),"newly opened document clean")
+local id=s:add(item,{1.4,0,-20.7})
+check(id=="object_1" and s.document.objects[1].position[1]==1 and s.document.objects[1].position[3]==-21,"place uses stable ID and grid snapping")
+check(#doc.objects==0,"editor state does not mutate source document")
+s:markSaved();check(not s:dirty(),"save baseline")
+s:move(3,2);check(s.document.objects[1].position[1]==4 and s:dirty(),"move selection")
+s:rotate(90);s:scale(2);check(s.document.objects[1].rotation[2]==90 and s.document.objects[1].scale==2,"rotation and uniform scale")
+s:undo();check(s.document.objects[1].scale==1,"undo scale as one action")
+s:redo();check(s.document.objects[1].scale==2,"redo scale")
+s:duplicate();check(#s.document.objects==2 and s.document.objects[2].id=="object_2","duplicate stable distinct ID")
+s:select(id,true);s:move(2,0);check(s.document.objects[1].position[1]==6 and s.document.objects[2].position[1]==7,"multi-selection move")
+s:delete();check(#s.document.objects==0,"multi-delete")
+s:undo();check(#s.document.objects==2,"multi-delete undo")
+s:select("spawn_a");s:rotate(45);check(s.document.spawns[1].heading==135,"spawn heading")
+check(not pcall(function()s:delete()end)and#s.document.spawns==2,"spawn deletion rejected atomically")
+local before=s:snapshot();s.document.spawns[1].position[1]=10;s:record(before);s:undo();check(s.document.spawns[1].position[1]==-22,"continuous drag recorded as one undo operation")
+s:markSaved();s:undo();check(s:dirty(),"undo after save marks dirty")
+s:redo();check(not s:dirty(),"redo back to saved state clears dirty flag")
+s.snap=false;s:select(id);s:move(.25,0);check(s.document.objects[1].position[1]%1==.25,"snap toggle")
+for _=1,130 do s:move(1,0)end;check(#s.past==100,"history bounded for large worlds")
+print(string.format("World builder state suite passed: %d assertions",checks))

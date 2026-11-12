@@ -1,0 +1,6 @@
+{
+  "name": "BattleWorksWorldBuilder",
+  "tree": {
+    "$path": "studio/world-builder"
+  }
+}

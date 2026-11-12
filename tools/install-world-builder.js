@@ -1,0 +1,6 @@
+#!/usr/bin/env node
+'use strict';
+const fs=require('node:fs/promises');const path=require('node:path');const os=require('node:os');const {spawnSync}=require('node:child_process');
+async function main(){const args=process.argv.slice(2);let dir;if(args.length===2&&args[0]==='--plugins-dir')dir=path.resolve(args[1]);else if(args.length)throw new Error('Usage: node tools/install-world-builder.js [--plugins-dir PATH]');else if(process.platform==='win32')dir=path.join(process.env.LOCALAPPDATA,'Roblox/Plugins');else if(process.platform==='darwin')dir=path.join(os.homedir(),'Documents/Roblox/Plugins');else throw new Error('Choose the folder shown by Studio Plugins → Plugins Folder: --plugins-dir PATH (use the mounted/forwarded Studio filesystem).');
+ const root=path.resolve(__dirname,'..');await require('./world-builder/catalog').generateBuiltins(root);await fs.mkdir(dir,{recursive:true});const file=path.join(dir,'BattleWorksWorldBuilder.rbxm');const p=spawnSync('rojo',['build',path.join(root,'world-builder.project.json'),'-o',file],{stdio:'inherit'});if(p.error)throw p.error;if(p.status)throw new Error('Plugin build failed');console.log(`Installed ${file}. Reload local plugins/restart Studio. Keep node tools/world-builder.js and Rojo running while editing.`);}
+main().catch(e=>{console.error(e.message);process.exitCode=1;});

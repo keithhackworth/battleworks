@@ -4,6 +4,7 @@ local Shared=game.ReplicatedStorage.Shared
 local Simulation=require(Shared.TankSimulation)
 local Effects=require(Shared.DamageEffects)
 local Components=require(Shared.VehicleComponents)
+local WorldSettings=require(Shared.WorldSettings)
 local Weapon=require(Shared.RattlerWeapon)
 local BW=require(script.Parent.BWController)
 local Battle={}
@@ -23,6 +24,7 @@ function Battle.resetTank(tank,size,index,reason)
  tank.bw=nil -- discard previous lifecycle command history and observation snapshots
 	local generation=(tank.state and tank.state.generation or -1)+1
 	local position,yaw=Battle.pose(size,index,tank.kind)
+ if tank.worldSettings then position,yaw=WorldSettings.spawn(tank.worldSettings,tank.kind,index,if tank.worldObjects then tank.worldObjects:obstacles() else {}) end
 	tank.spawn=position; tank.spawnYaw=yaw
 	tank.state=Simulation.new(position,tank.kind,tank.seed,tank.assembly)
  tank.state.bwRunning=false; tank.state.bwStatus="stopped"; tank.state.bwMessage=reason or "Battle reset."

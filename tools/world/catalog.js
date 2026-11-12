@@ -15,7 +15,7 @@ async function discoverWorlds(directory, bindings = {}) {
     const filename = path.resolve(directory, file);
     let manifest;
     try { manifest = JSON.parse(await fs.readFile(filename, 'utf8')); } catch (e) { throw new Error(`${filename}: ${e.message}`); }
-    if (!manifest || typeof manifest !== 'object' || manifest.version !== 1 || !Array.isArray(manifest.objects) || !manifest.objects.every(o => o && typeof o.id === 'string' && typeof o.asset === 'string' && /\.glb$/i.test(o.asset))) throw new Error(`${filename}: expected a compiled v1 world manifest`);
+    if (!manifest || typeof manifest !== 'object' || manifest.version !== 1 || !Array.isArray(manifest.objects) || !manifest.objects.every(o => o && typeof o.id === 'string' && typeof o.asset === 'string')) throw new Error(`${filename}: expected a compiled v1 world manifest`);
     const id = Object.hasOwn(manifest, 'id') ? manifest.id : path.basename(file, '.json'), name = manifest.name ?? id;
     if (typeof id !== 'string' || !/^[A-Za-z0-9_][A-Za-z0-9_.:-]*$/.test(id) || typeof name !== 'string' || !name.trim()) throw new Error(`${filename}: invalid world id/name`);
     if (ids.has(id)) throw new Error(`${filename}: duplicate/reserved world ID '${id}'`); ids.add(id);
@@ -25,6 +25,7 @@ async function discoverWorlds(directory, bindings = {}) {
       ? `Requires imported Models in ServerStorage/BattleWorksAssets: ${[...new Set(placements.map(p => p.model))].join(', ')}; unavailable assets fall back to the test arena.`
       : placementIssue(manifest, bindings),
       path.relative(path.resolve(__dirname, '../..'), filename).split(path.sep).join('/'), manifest.objects.length, assets);
+    if (manifest.builderSettings) record.Children.push(value('BuilderSettings', JSON.stringify(manifest.builderSettings)));
     const nodes=[];
     for (const placement of placements || []) {
       const fields = [

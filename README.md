@@ -791,3 +791,13 @@ On instruction stuck/timeout failure, best effort issues a neutral input tick, c
 This option does not disable source validation, the 180-second overall budget, Stop, destruction, respawn, selection, redraw or disconnect cancellation. Those remain terminal. Cooldown, heat, accuracy, projectile and movement mechanics are unchanged.
 
 Verification: all 43 sources compile and all existing suites pass. A new 108-assertion suite covers defaults/true/false for all command forms, keyword order and validation, skip continuation, strict failures, every instruction timeout including single/timed fire, pending-shot/input cleanup, continued weapon ownership, global safety and IDE warnings. Both default demonstrations still complete without skipped instructions on both tanks, including the production server tests. Both Rojo formats build and whitespace checks pass. Studio was not run; verify visible warnings and continuation by blocking a movement command, then compare `best_effort=false`. Nothing committed or pushed.
+
+## Visual World Builder
+
+See [World Builder setup and workflow](docs/WORLD_BUILDER.md) and the
+[persistent implementation/verification checklist](docs/WORLD_BUILDER_CHECKLIST.md).
+Install the local plugin once with `node tools/install-world-builder.js --plugins-dir PATH`,
+then start `node tools/world-builder.js --studio`. The plugin handles save,
+registration, selection and testing. **Builder Demo** uses only built-in models.
+Assets use [complete hierarchical paths](docs/ASSET_PATHS.md), not ambiguous basenames.
+Native Studio interaction still requires the documented acceptance checks.

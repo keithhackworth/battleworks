@@ -2,11 +2,11 @@
   "definitions": {
     "tree_large": {
       "type": "model",
-      "asset": "GLBs/suburban/tree-large.glb"
+      "asset": "tree-large"
     },
     "fence_section": {
       "type": "model",
-      "asset": "GLBs/forest/fence.glb"
+      "asset": "rope-fence"
     },
     "rope_fence": {
       "type": "path",

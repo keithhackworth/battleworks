@@ -100,3 +100,11 @@ test('a Model without PrimaryPart retains its authored world pivot', async t => 
  const output = path.join(f.directory, 'pivot.rbxlx'); await buildPlace({ ...f, output });
  assert.match(await fs.readFile(output, 'utf8'), /<OptionalCoordinateFrame name="WorldPivotData">\s*<CFrame>\s*<X>5<\/X>\s*<Y>6<\/Y>\s*<Z>7<\/Z>/);
 });
+
+test('Rojo preserves nested model folders with duplicate asset basenames',async t=>{
+ const f=await fixture(t);
+ for(const folder of ['Buildings/Houses','Structures/Fences']){await fs.mkdir(path.join(f.directory,'models',folder),{recursive:true});await fs.writeFile(path.join(f.directory,'models',folder,'Fence.rbxmx'),MODEL_XML);}
+ await fs.writeFile(f.bindingsFile,JSON.stringify({one:{source:'a.glb',model:'Buildings/Houses/Fence'},two:{source:'b.glb',model:'Structures/Fences/Fence'}}));
+ const result=await validateAssets(f);assert.equal(result.models,2);assert.equal(result.missing.length,0);
+ const output=path.join(f.directory,'nested.rbxlx');await buildPlace({...f,output});const xml=await fs.readFile(output,'utf8');assert.ok(xml.includes('Buildings'));assert.ok(xml.includes('Structures'));assert.ok(xml.includes('Houses'));assert.ok(xml.includes('Fences'));
+});

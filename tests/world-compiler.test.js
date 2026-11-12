@@ -178,7 +178,7 @@ test('invalid influences, assets, numeric properties and unknown keys fail valid
     { influences: { physical: { mass: -1 } } }, { influences: { physical: { movable: 'yes' } } }, { influences: { physical: { hp: -1 } } },
     { influences: { physical: { destructible: true, indestructible: true } } }, { influences: { movement: { tractionMultiplier: -1 } } },
     { influences: { water: 2 } }, { position: [1, 2] }, { scale: 0 }, { rotation: [0, Infinity, 0] }, { typo: 2 },
-    { asset: 'a.fbx' }, { asset: { selection: 'other', items: [{ path: 'a.glb' }] } },
+    { asset: '../escape' }, { asset: { selection: 'other', items: [{ path: 'a.glb' }] } },
     { asset: { selection: 'weighted', items: [{ path: 'a.glb', weight: 0 }] } }, { asset: { selection: 'weighted', items: [{ path: 'a.glb', weight: -1 }] } },
     { asset: { selection: 'random', items: [] } },
   ]) bad(world({ m: model(extra) }, []), /fixture.json/);
@@ -228,7 +228,7 @@ test('CLI builds/validates, reports counts, resolves files relative to world and
 test('external duplicate definitions and bad registry definitions identify their source files', async t => {
   const temp = await fs.mkdtemp(path.join(os.tmpdir(), 'bw-world-defs-')); t.after(() => fs.rm(temp, { recursive: true, force: true }));
   const source = path.join(temp, 'world.json'), registry = path.join(temp, 'assets.json');
-  await fs.writeFile(registry, JSON.stringify({ definitions: { bad: model({ asset: 'wrong.fbx' }) } }));
+  await fs.writeFile(registry, JSON.stringify({ definitions: { bad: model({ asset: '../wrong' }) } }));
   await fs.writeFile(source, JSON.stringify({ version: 1, definitionFiles: ['assets.json'], instances: [] }));
   await assert.rejects(compileFile(source), e => e instanceof WorldError && e.file === registry && e.id === 'bad' && e.property === 'asset');
   await fs.writeFile(registry, JSON.stringify({ definitions: { m: model() } }));
@@ -266,12 +266,14 @@ test('Studio catalog CLI and checked-in sample catalog match compiled manifests'
   assert.ifError(result.error); assert.equal(result.status, 0, result.stderr); assert.match(result.stdout, /1 built-in ready, 1 preview-only/);
   const expected = await discoverWorlds(temp); assert.equal(await fs.readFile(output, 'utf8'), serialize(expected));
   const sourceCatalog = JSON.parse(await fs.readFile(path.join(root, 'worlds/studio-worlds.model.json'), 'utf8'));
-  assert.equal(sourceCatalog.Children.length, 3);
+  assert.ok(sourceCatalog.Children.length >= 3);
+  assert.ok(sourceCatalog.Children.some(c=>c.Name==='builder_demo'));
   const village = sourceCatalog.Children.find(c => c.Name === 'village_battle'), fields = Object.fromEntries(village.Children.map(c => [c.Name, c.Properties.Value]));
   assert.equal(fields.WorldId, manifest.id); assert.equal(fields.DisplayName, manifest.name); assert.equal(fields.ObjectCount, manifest.objects.length);
   const project = JSON.parse(await fs.readFile(path.join(root, 'default.project.json'), 'utf8'));
   const selected = project.tree.ServerStorage.BattleWorksStudio.SelectedWorld;
-  assert.equal(selected.$className, 'StringValue'); assert.ok(!Object.hasOwn(selected.$properties || {}, 'Value'), 'Rojo does not own/reset the Studio-selected Value');
+  assert.equal(selected.$path, 'worlds/selected-world.model.json');
+  const setting=JSON.parse(await fs.readFile(path.join(root,selected.$path),'utf8'));assert.equal(setting.ClassName,'StringValue');
 });
 
 test('manifest identity defaults handle filenames with spaces; explicit null seed is invalid', async t => {
@@ -299,7 +301,7 @@ test('single-tree asset binding resolves logical ID and source path independentl
   const configured = JSON.parse(await fs.readFile(path.join(root, 'worlds/tree-test.json'), 'utf8')).instances[0];
   const manifest = await compileFile(path.join(root, 'worlds/tree-test.json'));
   manifest.objects = manifest.objects.filter(o => o.id === 'tree-large');
-  assert.equal(manifest.objects.length, 1); assert.equal(manifest.objects[0].asset, 'GLBs/suburban/tree-large.glb');
+  assert.equal(manifest.objects.length, 1); assert.equal(manifest.objects[0].asset, 'tree-large');
   const placement = studioPlacement(manifest, bindings);
   assert.equal(placement.id, 'tree-large'); assert.equal(placement.model, 'tree-large'); assert.equal(placement.scale, 45);
   close(placement.position, configured.position);
@@ -357,9 +359,9 @@ test('tree test compiles a curved closed fence and registers every native placem
   const { studioPlacements, placementIssue } = require('../tools/world/studio-placement');
   const bindings = JSON.parse(await fs.readFile(path.join(root,'worlds/roblox-assets.json'),'utf8'));
   const manifest = await compileFile(path.join(root,'worlds/tree-test.json'));
-  const panels = manifest.objects.filter(o=>o.asset==='GLBs/forest/fence.glb');
+  const panels = manifest.objects.filter(o=>o.asset==='rope-fence');
   assert.ok(panels.length>=8);
-  assert.equal(manifest.objects.filter(o=>o.asset.endsWith('tree-large.glb')).length,1);
+  assert.equal(manifest.objects.filter(o=>o.asset==='tree-large').length,1);
   assert.equal(new Set(panels.map(o=>o.id)).size,panels.length);
   assert.ok(new Set(panels.map(o=>o.transform[0].toFixed(4))).size>=6,'panels follow changing path tangents');
   assert.ok(panels.every(o=>Math.hypot(o.position[0],o.position[2])>45),'fence surrounds central tree');
@@ -384,7 +386,7 @@ test('tree test compiles a curved closed fence and registers every native placem
     assert.equal(entry.Children.find(e=>e.Name==='Placements').Children.length,placements.length);
   } finally { await fs.rm(dir,{recursive:true,force:true}); }
   const noFence={...bindings};delete noFence.fence_section;
-  assert.match(placementIssue(manifest,noFence),/rope-fence.*fence.glb.*no Roblox asset mapping/);
+  assert.match(placementIssue(manifest,noFence),/rope-fence.*no Roblox asset mapping/);
   assert.equal(studioPlacements(manifest,noFence),null,'missing binding rejects whole world');
 });
 

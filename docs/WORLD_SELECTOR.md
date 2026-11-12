@@ -46,3 +46,11 @@ The tree test now includes a curved fence using the `fence.glb` mapping. A world
 may register up to 512 native model placements. All required templates must exist;
 a missing template falls back to the default arena, without partial scenery.
 `assetScale` is compiled into each model's transform, not reapplied by Studio.
+
+## Visual authoring and explicit publication
+
+The World Builder now automates registration and writes repository-backed
+`SelectedWorld` for development. The separate `PublishedWorld` value is empty by
+default; an explicit Publish action opts non-Studio servers into that world using
+the same selector/placement path. Studio development selection does not change
+production selection. See [World Builder](WORLD_BUILDER.md) and [asset paths](ASSET_PATHS.md).

@@ -53,16 +53,22 @@
       "BattleWorksStudio": {
         "$className": "Configuration",
         "SelectedWorld": {
-          "$className": "StringValue"
+          "$path": "worlds/selected-world.model.json"
         },
         "WorldCatalog": {
           "$path": "worlds/studio-worlds.model.json"
+        },
+        "PublishedWorld": {
+          "$path": "worlds/published-world.model.json"
         }
       },
       "BattleWorksAssets": {
         "$className": "Folder",
         "$ignoreUnknownInstances": true,
-        "$path": "assets/roblox"
+        "$path": "assets/roblox",
+        "Builtin": {
+          "$path": "assets/builtin/catalog.model.json"
+        }
       }
     }
   }

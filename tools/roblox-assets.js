@@ -3,6 +3,8 @@
 const fs = require('node:fs/promises');
 const path = require('node:path');
 const os = require('node:os');
+const {validatePath}=require('./world/asset-path');
+const {nativeExports}=require('./world-builder/catalog');
 const { spawnSync } = require('node:child_process');
 const ROOT = path.resolve(__dirname, '..');
 function rojo(args) {
@@ -23,17 +25,13 @@ async function validateAssets(options = {}) {
   if (mount.$ignoreUnknownInstances !== true) throw new Error('Keep $ignoreUnknownInstances=true while existing Studio-only imports are being exported.');
   const directory = path.resolve(root, mount.$path);
   const bindings = JSON.parse(await fs.readFile(options.bindingsFile || path.join(root, 'worlds/roblox-assets.json'), 'utf8'));
-  const files = new Map();
-  for (const entry of await fs.readdir(directory, { withFileTypes: true })) {
-    if (!entry.isFile() || !/\.rbxmx?$/i.test(entry.name)) continue;
-    const name = entry.name.replace(/\.rbxmx?$/i, '');
-    if (files.has(name)) throw new Error(`Duplicate model export '${name}': keep one .rbxm OR .rbxmx file.`);
-    files.set(name, path.join(directory, entry.name));
-  }
+  const files = new Map((await nativeExports(directory)).map(entry=>[entry.path,entry.file]));
   const missing = [];
   for (const [id, binding] of Object.entries(bindings)) {
-    if (!binding || typeof binding.model !== 'string' || !binding.model.trim() || /[\\/:*?"<>|]/.test(binding.model) || ['.', '..'].includes(binding.model)) throw new Error(`Invalid model binding '${id}'.`);
-    if (!files.has(binding.model)) missing.push(`${id}: export the existing Studio Model '${binding.model}' to ${path.relative(root, directory)}/${binding.model}.rbxm (or .rbxmx)`);
+    if(!binding)throw new Error(`Invalid model binding '${id}'`);
+    try{validatePath(binding.path||binding.model);}catch(e){throw new Error(`Invalid model binding '${id}': ${e.message}`);}
+    const assetPath=binding.path||binding.model;
+    if (!files.has(assetPath)) missing.push(`${id}: export the existing Studio Model '${assetPath}' to ${path.relative(root, directory)}/${assetPath}.rbxm (or .rbxmx)`);
   }
   if (missing.length && !options.allowMissingAssets) throw new Error(`Persistent asset exports missing:\n${missing.join('\n')}\nKeep the existing Studio imports/place backup. Export and verify them before rebuilding. No output was replaced.`);
   const temporary = await fs.mkdtemp(path.join(os.tmpdir(), 'bw-assets-check-'));
@@ -44,10 +42,15 @@ async function validateAssets(options = {}) {
     const folder = child(child(map, 'ServerStorage') || {}, 'BattleWorksAssets');
     if (folder?.className !== 'Folder') throw new Error('Build is missing ServerStorage/BattleWorksAssets Folder.');
     for (const [name, file] of files) {
-      const model = child(folder, name);
+      let model=folder;for(const segment of name.split('/'))model=child(model||{},segment);
       if (model?.className !== 'Model' || !meshCount(model)) throw new Error(`${file}: export exactly the imported Model itself with MeshPart descendants, not the enclosing Folder or an empty model.`);
     }
-    for (const model of children(folder)) if (!files.has(model.name)) throw new Error(`Unexpected asset '${model.name}': keep native .rbxm/.rbxmx exports directly in ${directory}.`);
+    const walk=(parent,prefix='')=>{for(const node of children(parent)){
+      const full=prefix+node.name;
+      if(!prefix&&Object.hasOwn(mount,node.name))continue; // explicitly mounted built-ins
+      if(node.className==='Folder')walk(node,full+'/');
+      else if(!files.has(full))throw new Error(`Unexpected asset '${full}': export a native model at the same relative path inside ${directory}.`);
+    }};walk(folder);
     return { projectFile, directory, files: [...files.values()], models: files.size, missing };
   } finally { await fs.rm(temporary, { recursive: true, force: true }); }
 }

@@ -73,3 +73,17 @@ Native files preserve resource references and model properties; they do not make
 `node --test tests/asset-persistence.test.js` checks both native formats through the real Rojo executable, rebuilds after deleting generated outputs, and verifies mesh/texture/material IDs, hierarchy, `PrimaryPart`, pivot offsets, part transforms/sizes and model scale in built XML. It also checks source bytes remain unchanged, Git tracking exceptions, missing/corrupt/duplicate exports and prevention of destructive output replacement. This is native serialization validation, not a substitute for rendering the real exported tree in Studio.
 
 The existing loader and `tree_test` selection/placement remain unchanged. No runtime download/import system, physics profile, source GLB parser or replacement asset is added. The remaining one-time manual work is exporting the actual Studio models and visually verifying the first reconstructed build; after that normal builds are automated.
+
+## Hierarchical assets and the visual editor
+
+Native exports may now be nested. Keep the same relative folder path on disk and
+under `ServerStorage/BattleWorksAssets`; for example export
+`Buildings/Houses/Fence` to `assets/roblox/Buildings/Houses/Fence.rbxm`. Basenames
+need not be globally unique. Build checks walk recursively and resolve the full
+path; they never flatten or rename models. See [canonical paths](ASSET_PATHS.md).
+
+The [World Builder](WORLD_BUILDER.md) handles save, registration and selection.
+Its repository-backed selected/published settings persist across builds. The
+older instructions above to edit SelectedWorld manually are only a legacy
+fallback; the editor provides Select/Test buttons. First-time native export and
+asset permission/render verification are still Studio steps.

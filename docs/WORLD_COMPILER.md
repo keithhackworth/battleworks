@@ -124,3 +124,11 @@ spacing or separation distances. Local definition/instance and candidate scales
 remain additional multipliers. This allows Kenney assets to share one conversion
 without multiplying the entire arena layout or manually scaling every panel.
 The manifest already contains the final transform; loaders must not scale again.
+
+## Logical model paths
+
+New `asset` values use complete forward-slash Model paths relative to
+`ServerStorage/BattleWorksAssets`, such as `Structures/Fences/Fence`. Legacy
+symbolic GLB references remain supported. See [asset paths](ASSET_PATHS.md) for
+exact lookup, basename ambiguity, strict `assetBindings` validation, native folder
+layout, and export/import identity. Root-level existing assets are not moved.

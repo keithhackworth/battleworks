@@ -10,7 +10,8 @@ async function main() {
   let output = 'worlds/studio-worlds.model.json';
   if (args.length) { if (args.length !== 2 || args[0] !== '--output' || args[1].startsWith('--')) throw new Error('Expected --output FILE.model.json'); output = args[1]; }
   if (!output.endsWith('.model.json')) throw new Error('Studio catalog output must end in .model.json for Rojo');
-  const bindings = JSON.parse(await fs.readFile(path.join(__dirname, '../worlds/roblox-assets.json'), 'utf8'));
+  const catalogTools=require('./world-builder/catalog');
+  const bindings=catalogTools.bindingsFor(await catalogTools.catalog(path.resolve(__dirname,'..')));
   const catalog = await registerWorlds(directory, output, bindings);
   const count = status => catalog.Children.filter(c => c.Children.some(v => v.Name === 'Status' && v.Properties.Value === status)).length;
   console.log(`Registered ${catalog.Children.length} worlds: 1 built-in ready, ${count('preview-only')} preview-only, ${count('asset-dependent')} asset-dependent -> ${output}`);

@@ -3,6 +3,7 @@ const fs = require('node:fs/promises');
 const path = require('node:path');
 const { createHash } = require('node:crypto');
 const { flattenPath, sampleAt, contains } = require('./path');
+const {validatePath,resolveAsset}=require('./asset-path');
 const { identity, multiply, translation, trs, summarize } = require('./transform');
 const object = v => v !== null && typeof v === 'object' && !Array.isArray(v);
 const own = (v, k) => Object.hasOwn(v, k);
@@ -97,9 +98,9 @@ function compileWorld(world, registry = {}, options = {}) {
     }
   }
   function asset(a, id) {
-    function resource(p, prop) { if (typeof p !== 'string' || !p.trim() || !/\.glb$/i.test(p) || p.includes('\0')) fail(id, prop, 'expected a symbolic .glb resource path'); }
+    function resource(p, prop) { try { validatePath(p); } catch(error) { fail(id, prop, error.message); } }
     if (typeof a === 'string') { resource(a, 'asset'); return; }
-    if (!object(a)) fail(id, 'asset', 'expected a .glb path or selection object');
+    if (!object(a)) fail(id, 'asset', 'expected a logical asset path or selection object');
     keys(a, ['selection', 'items'], id, 'asset.');
     if (!['single', 'random', 'weighted'].includes(a.selection)) fail(id, 'asset.selection', 'expected single, random or weighted');
     if (!Array.isArray(a.items) || !a.items.length || a.items.length > 10000) fail(id, 'asset.items', 'expected 1..10,000 candidates');
@@ -249,7 +250,13 @@ function compileWorld(world, registry = {}, options = {}) {
     if (objects.length >= maxObjects) fail(id, 'objects', `output exceeds ${maxObjects} objects`);
     const summary = summarize(matrix);
     if (!summary.scale.every(n => Number.isFinite(n) && n > 0)) fail(id, 'scale', 'composed scale is degenerate or non-finite');
-    const item = { id, source: references.at(-1), asset: candidate.path, ...summary, influences: metadata };
+    let assetPath=candidate.path;
+    if(options.assetBindings){
+      let binding;try{binding=resolveAsset(assetPath,options.assetBindings);}catch(error){fail(id,'asset',error.message);}
+      if(!binding)fail(id,'asset',`Missing asset path '${assetPath}'`);
+      assetPath=binding.model;
+    }
+    const item = { id, source: references.at(-1), asset: assetPath, ...summary, influences: metadata };
     if (options.provenance !== false) item.provenance = { references, ...provenance, candidate: index };
     objects.push(item);
   }

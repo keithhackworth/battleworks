@@ -61,6 +61,359 @@
           "ClassName": "StringValue",
           "Name": "WorldId",
           "Properties": {
+            "Value": "builder_demo"
+          }
+        },
+        {
+          "ClassName": "StringValue",
+          "Name": "DisplayName",
+          "Properties": {
+            "Value": "Builder Demo"
+          }
+        },
+        {
+          "ClassName": "StringValue",
+          "Name": "Status",
+          "Properties": {
+            "Value": "asset-dependent"
+          }
+        },
+        {
+          "ClassName": "StringValue",
+          "Name": "Reason",
+          "Properties": {
+            "Value": "Requires imported Models in ServerStorage/BattleWorksAssets: Builtin/BW_block, Builtin/BW_crate, Builtin/BW_rock; unavailable assets fall back to the test arena."
+          }
+        },
+        {
+          "ClassName": "StringValue",
+          "Name": "ManifestPath",
+          "Properties": {
+            "Value": ""
+          }
+        },
+        {
+          "ClassName": "IntValue",
+          "Name": "ObjectCount",
+          "Properties": {
+            "Value": 3
+          }
+        },
+        {
+          "ClassName": "IntValue",
+          "Name": "AssetCount",
+          "Properties": {
+            "Value": 3
+          }
+        },
+        {
+          "ClassName": "StringValue",
+          "Name": "BuilderSettings",
+          "Properties": {
+            "Value": "{\"boundary\":true,\"depth\":120,\"ground\":{\"color\":[160,145,105],\"material\":\"Sand\"},\"spawns\":[{\"heading\":90,\"id\":\"boomer_spawn\",\"position\":[-22,0,20],\"tank\":\"Boomer\"},{\"heading\":270,\"id\":\"rattler_spawn\",\"position\":[22,0,20],\"tank\":\"Rattler\"}],\"width\":160,\"zones\":[]}"
+          }
+        },
+        {
+          "Children": [
+            {
+              "Children": [
+                {
+                  "ClassName": "StringValue",
+                  "Name": "InstanceId",
+                  "Properties": {
+                    "Value": "central_cover"
+                  }
+                },
+                {
+                  "ClassName": "StringValue",
+                  "Name": "AssetId",
+                  "Properties": {
+                    "Value": "builtin.block"
+                  }
+                },
+                {
+                  "ClassName": "StringValue",
+                  "Name": "Source",
+                  "Properties": {
+                    "Value": "builtin/block.glb"
+                  }
+                },
+                {
+                  "ClassName": "StringValue",
+                  "Name": "Template",
+                  "Properties": {
+                    "Value": "Builtin/BW_block"
+                  }
+                },
+                {
+                  "ClassName": "Vector3Value",
+                  "Name": "Position",
+                  "Properties": {
+                    "Value": [
+                      0,
+                      0,
+                      20
+                    ]
+                  }
+                },
+                {
+                  "ClassName": "Vector3Value",
+                  "Name": "Rotation",
+                  "Properties": {
+                    "Value": [
+                      0,
+                      0,
+                      0
+                    ]
+                  }
+                },
+                {
+                  "ClassName": "NumberValue",
+                  "Name": "Scale",
+                  "Properties": {
+                    "Value": 1
+                  }
+                },
+                {
+                  "ClassName": "BoolValue",
+                  "Name": "Solid",
+                  "Properties": {
+                    "Value": true
+                  }
+                },
+                {
+                  "ClassName": "BoolValue",
+                  "Name": "Destructible",
+                  "Properties": {
+                    "Value": false
+                  }
+                },
+                {
+                  "ClassName": "NumberValue",
+                  "Name": "Health",
+                  "Properties": {
+                    "Value": 100
+                  }
+                },
+                {
+                  "ClassName": "Vector3Value",
+                  "Name": "ColliderFractions",
+                  "Properties": {
+                    "Value": [
+                      1,
+                      1,
+                      1
+                    ]
+                  }
+                }
+              ],
+              "ClassName": "Configuration",
+              "Name": "item_0"
+            },
+            {
+              "Children": [
+                {
+                  "ClassName": "StringValue",
+                  "Name": "InstanceId",
+                  "Properties": {
+                    "Value": "crate"
+                  }
+                },
+                {
+                  "ClassName": "StringValue",
+                  "Name": "AssetId",
+                  "Properties": {
+                    "Value": "builtin.crate"
+                  }
+                },
+                {
+                  "ClassName": "StringValue",
+                  "Name": "Source",
+                  "Properties": {
+                    "Value": "builtin/crate.glb"
+                  }
+                },
+                {
+                  "ClassName": "StringValue",
+                  "Name": "Template",
+                  "Properties": {
+                    "Value": "Builtin/BW_crate"
+                  }
+                },
+                {
+                  "ClassName": "Vector3Value",
+                  "Name": "Position",
+                  "Properties": {
+                    "Value": [
+                      25,
+                      0,
+                      -20
+                    ]
+                  }
+                },
+                {
+                  "ClassName": "Vector3Value",
+                  "Name": "Rotation",
+                  "Properties": {
+                    "Value": [
+                      0,
+                      20,
+                      0
+                    ]
+                  }
+                },
+                {
+                  "ClassName": "NumberValue",
+                  "Name": "Scale",
+                  "Properties": {
+                    "Value": 1
+                  }
+                },
+                {
+                  "ClassName": "BoolValue",
+                  "Name": "Solid",
+                  "Properties": {
+                    "Value": true
+                  }
+                },
+                {
+                  "ClassName": "BoolValue",
+                  "Name": "Destructible",
+                  "Properties": {
+                    "Value": true
+                  }
+                },
+                {
+                  "ClassName": "NumberValue",
+                  "Name": "Health",
+                  "Properties": {
+                    "Value": 100
+                  }
+                },
+                {
+                  "ClassName": "Vector3Value",
+                  "Name": "ColliderFractions",
+                  "Properties": {
+                    "Value": [
+                      1,
+                      1,
+                      1
+                    ]
+                  }
+                }
+              ],
+              "ClassName": "Configuration",
+              "Name": "item_1"
+            },
+            {
+              "Children": [
+                {
+                  "ClassName": "StringValue",
+                  "Name": "InstanceId",
+                  "Properties": {
+                    "Value": "rock"
+                  }
+                },
+                {
+                  "ClassName": "StringValue",
+                  "Name": "AssetId",
+                  "Properties": {
+                    "Value": "builtin.rock"
+                  }
+                },
+                {
+                  "ClassName": "StringValue",
+                  "Name": "Source",
+                  "Properties": {
+                    "Value": "builtin/rock.glb"
+                  }
+                },
+                {
+                  "ClassName": "StringValue",
+                  "Name": "Template",
+                  "Properties": {
+                    "Value": "Builtin/BW_rock"
+                  }
+                },
+                {
+                  "ClassName": "Vector3Value",
+                  "Name": "Position",
+                  "Properties": {
+                    "Value": [
+                      -30,
+                      0,
+                      -25
+                    ]
+                  }
+                },
+                {
+                  "ClassName": "Vector3Value",
+                  "Name": "Rotation",
+                  "Properties": {
+                    "Value": [
+                      0,
+                      0,
+                      0
+                    ]
+                  }
+                },
+                {
+                  "ClassName": "NumberValue",
+                  "Name": "Scale",
+                  "Properties": {
+                    "Value": 1
+                  }
+                },
+                {
+                  "ClassName": "BoolValue",
+                  "Name": "Solid",
+                  "Properties": {
+                    "Value": true
+                  }
+                },
+                {
+                  "ClassName": "BoolValue",
+                  "Name": "Destructible",
+                  "Properties": {
+                    "Value": false
+                  }
+                },
+                {
+                  "ClassName": "NumberValue",
+                  "Name": "Health",
+                  "Properties": {
+                    "Value": 100
+                  }
+                },
+                {
+                  "ClassName": "Vector3Value",
+                  "Name": "ColliderFractions",
+                  "Properties": {
+                    "Value": [
+                      1,
+                      1,
+                      1
+                    ]
+                  }
+                }
+              ],
+              "ClassName": "Configuration",
+              "Name": "item_2"
+            }
+          ],
+          "ClassName": "Folder",
+          "Name": "Placements"
+        }
+      ],
+      "ClassName": "Configuration",
+      "Name": "builder_demo"
+    },
+    {
+      "Children": [
+        {
+          "ClassName": "StringValue",
+          "Name": "WorldId",
+          "Properties": {
             "Value": "tree_test"
           }
         },
@@ -89,7 +442,7 @@
           "ClassName": "StringValue",
           "Name": "ManifestPath",
           "Properties": {
-            "Value": "build/worlds/tree-test.json"
+            "Value": ""
           }
         },
         {
@@ -121,7 +474,7 @@
                   "ClassName": "StringValue",
                   "Name": "AssetId",
                   "Properties": {
-                    "Value": "fence_section"
+                    "Value": "asset.fence_section"
                   }
                 },
                 {
@@ -216,7 +569,7 @@
                   "ClassName": "StringValue",
                   "Name": "AssetId",
                   "Properties": {
-                    "Value": "fence_section"
+                    "Value": "asset.fence_section"
                   }
                 },
                 {
@@ -311,7 +664,7 @@
                   "ClassName": "StringValue",
                   "Name": "AssetId",
                   "Properties": {
-                    "Value": "fence_section"
+                    "Value": "asset.fence_section"
                   }
                 },
                 {
@@ -406,7 +759,7 @@
                   "ClassName": "StringValue",
                   "Name": "AssetId",
                   "Properties": {
-                    "Value": "fence_section"
+                    "Value": "asset.fence_section"
                   }
                 },
                 {
@@ -501,7 +854,7 @@
                   "ClassName": "StringValue",
                   "Name": "AssetId",
                   "Properties": {
-                    "Value": "fence_section"
+                    "Value": "asset.fence_section"
                   }
                 },
                 {
@@ -596,7 +949,7 @@
                   "ClassName": "StringValue",
                   "Name": "AssetId",
                   "Properties": {
-                    "Value": "fence_section"
+                    "Value": "asset.fence_section"
                   }
                 },
                 {
@@ -691,7 +1044,7 @@
                   "ClassName": "StringValue",
                   "Name": "AssetId",
                   "Properties": {
-                    "Value": "fence_section"
+                    "Value": "asset.fence_section"
                   }
                 },
                 {
@@ -786,7 +1139,7 @@
                   "ClassName": "StringValue",
                   "Name": "AssetId",
                   "Properties": {
-                    "Value": "fence_section"
+                    "Value": "asset.fence_section"
                   }
                 },
                 {
@@ -881,7 +1234,7 @@
                   "ClassName": "StringValue",
                   "Name": "AssetId",
                   "Properties": {
-                    "Value": "fence_section"
+                    "Value": "asset.fence_section"
                   }
                 },
                 {
@@ -976,7 +1329,7 @@
                   "ClassName": "StringValue",
                   "Name": "AssetId",
                   "Properties": {
-                    "Value": "fence_section"
+                    "Value": "asset.fence_section"
                   }
                 },
                 {
@@ -1071,7 +1424,7 @@
                   "ClassName": "StringValue",
                   "Name": "AssetId",
                   "Properties": {
-                    "Value": "fence_section"
+                    "Value": "asset.fence_section"
                   }
                 },
                 {
@@ -1166,7 +1519,7 @@
                   "ClassName": "StringValue",
                   "Name": "AssetId",
                   "Properties": {
-                    "Value": "fence_section"
+                    "Value": "asset.fence_section"
                   }
                 },
                 {
@@ -1261,7 +1614,7 @@
                   "ClassName": "StringValue",
                   "Name": "AssetId",
                   "Properties": {
-                    "Value": "fence_section"
+                    "Value": "asset.fence_section"
                   }
                 },
                 {
@@ -1356,7 +1709,7 @@
                   "ClassName": "StringValue",
                   "Name": "AssetId",
                   "Properties": {
-                    "Value": "fence_section"
+                    "Value": "asset.fence_section"
                   }
                 },
                 {
@@ -1451,7 +1804,7 @@
                   "ClassName": "StringValue",
                   "Name": "AssetId",
                   "Properties": {
-                    "Value": "fence_section"
+                    "Value": "asset.fence_section"
                   }
                 },
                 {
@@ -1546,7 +1899,7 @@
                   "ClassName": "StringValue",
                   "Name": "AssetId",
                   "Properties": {
-                    "Value": "fence_section"
+                    "Value": "asset.fence_section"
                   }
                 },
                 {
@@ -1641,7 +1994,7 @@
                   "ClassName": "StringValue",
                   "Name": "AssetId",
                   "Properties": {
-                    "Value": "fence_section"
+                    "Value": "asset.fence_section"
                   }
                 },
                 {
@@ -1736,7 +2089,7 @@
                   "ClassName": "StringValue",
                   "Name": "AssetId",
                   "Properties": {
-                    "Value": "fence_section"
+                    "Value": "asset.fence_section"
                   }
                 },
                 {
@@ -1831,7 +2184,7 @@
                   "ClassName": "StringValue",
                   "Name": "AssetId",
                   "Properties": {
-                    "Value": "fence_section"
+                    "Value": "asset.fence_section"
                   }
                 },
                 {
@@ -1926,7 +2279,7 @@
                   "ClassName": "StringValue",
                   "Name": "AssetId",
                   "Properties": {
-                    "Value": "fence_section"
+                    "Value": "asset.fence_section"
                   }
                 },
                 {
@@ -2021,7 +2374,7 @@
                   "ClassName": "StringValue",
                   "Name": "AssetId",
                   "Properties": {
-                    "Value": "fence_section"
+                    "Value": "asset.fence_section"
                   }
                 },
                 {
@@ -2116,7 +2469,7 @@
                   "ClassName": "StringValue",
                   "Name": "AssetId",
                   "Properties": {
-                    "Value": "fence_section"
+                    "Value": "asset.fence_section"
                   }
                 },
                 {
@@ -2211,7 +2564,7 @@
                   "ClassName": "StringValue",
                   "Name": "AssetId",
                   "Properties": {
-                    "Value": "fence_section"
+                    "Value": "asset.fence_section"
                   }
                 },
                 {
@@ -2306,7 +2659,7 @@
                   "ClassName": "StringValue",
                   "Name": "AssetId",
                   "Properties": {
-                    "Value": "fence_section"
+                    "Value": "asset.fence_section"
                   }
                 },
                 {
@@ -2401,7 +2754,7 @@
                   "ClassName": "StringValue",
                   "Name": "AssetId",
                   "Properties": {
-                    "Value": "fence_section"
+                    "Value": "asset.fence_section"
                   }
                 },
                 {
@@ -2496,7 +2849,7 @@
                   "ClassName": "StringValue",
                   "Name": "AssetId",
                   "Properties": {
-                    "Value": "fence_section"
+                    "Value": "asset.fence_section"
                   }
                 },
                 {
@@ -2591,7 +2944,7 @@
                   "ClassName": "StringValue",
                   "Name": "AssetId",
                   "Properties": {
-                    "Value": "tree_large"
+                    "Value": "asset.tree_large"
                   }
                 },
                 {
@@ -2715,7 +3068,7 @@
           "ClassName": "StringValue",
           "Name": "ManifestPath",
           "Properties": {
-            "Value": "build/worlds/example.json"
+            "Value": ""
           }
         },
         {

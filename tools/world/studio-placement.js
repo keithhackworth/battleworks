@@ -1,12 +1,6 @@
 'use strict';
 // Bounded imported placements with uniform scale and optional fixed collision/durability.
-function resolveAsset(resource, bindings) {
-  const match = Object.entries(bindings).find(([id, b]) => id === resource || b.source === resource);
-  if (!match) return null;
-  const [id, b] = match;
-  if (typeof b.source !== 'string' || typeof b.model !== 'string' || !b.model || b.model.includes('/')) throw new Error(`Invalid Roblox asset binding '${id}'`);
-  return { id, source: b.source, model: b.model, ...(b.collider ? { collider: b.collider } : {}) };
-}
+const { resolveAsset } = require('./asset-path');
 function interactionFor(influences = {}, binding) {
   const supported = { physical: ['movable', 'destructible', 'indestructible', 'hp'], movement: ['collision', 'traversable'] };
   for (const [category, values] of Object.entries(influences)) {
@@ -31,7 +25,7 @@ function interactionFor(influences = {}, binding) {
 }
 const MaxPlacements = 512;
 function placementIssue(manifest, bindings) {
-  if (!manifest.objects.length || manifest.objects.length > MaxPlacements) return `Imported worlds require 1–${MaxPlacements} model placements.`;
+  if ((!manifest.objects.length && !manifest.builderSettings) || manifest.objects.length > MaxPlacements) return `Imported worlds require 1–${MaxPlacements} model placements.`;
   const ids = new Set();
   for (const item of manifest.objects) {
     if (ids.has(item.id)) return `Duplicate imported placement '${item.id}'.`;
@@ -46,7 +40,8 @@ function studioPlacements(manifest, bindings) {
   return manifest.objects.map(item => studioPlacement({objects:[item]}, bindings));
 }
 function itemIssue(item, bindings) {
-  const binding = resolveAsset(item.asset, bindings);
+  let binding;
+  try { binding=resolveAsset(item.asset, bindings); } catch(error) { return error.message; }
   if (!binding) return `Resource '${item.asset}' has no Roblox asset mapping.`;
   const m = item.transform;
   if (!Array.isArray(m) || m.length !== 16 || !m.every(Number.isFinite)) return 'Invalid imported-model transform.';
@@ -70,7 +65,8 @@ function studioPlacement(manifest, bindings) {
   const z = Math.abs(cosine) > 1e-6 ? Math.atan2(-m[4], m[0]) : 0;
   // Equivalent Euler triples can contain 180-degree roll for upright yaw >90.
   const interaction = interactionFor(item.influences, binding);
-  const rotation = interaction ? [0, Math.atan2(m[8], m[0]) * 180 / Math.PI, 0] : [x, y, z].map(n => n * 180 / Math.PI);
+  const upright=Math.abs(m[1]/s)<1e-6 && Math.abs(m[9]/s)<1e-6 && m[5]/s>1-1e-6;
+  const rotation = (interaction || upright) ? [0, Math.atan2(m[8], m[0]) * 180 / Math.PI, 0] : [x, y, z].map(n => n * 180 / Math.PI);
   return { ...binding, id: item.id, assetId: binding.id, position: m.slice(12, 15), rotation, scale: s, interaction };
 }
 module.exports = { resolveAsset, studioPlacement, studioPlacements, placementIssue, interactionFor, MaxPlacements };

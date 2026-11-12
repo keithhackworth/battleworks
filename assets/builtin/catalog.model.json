@@ -1,0 +1,401 @@
+{
+  "ClassName": "Folder",
+  "Children": [
+    {
+      "Name": "BW_block",
+      "ClassName": "Model",
+      "Children": [
+        {
+          "Name": "Geometry",
+          "ClassName": "Part",
+          "Properties": {
+            "Size": [
+              8,
+              5,
+              8
+            ],
+            "Position": [
+              0,
+              2.5,
+              0
+            ],
+            "Shape": "Block",
+            "Material": "Slate",
+            "Color": [
+              0.45098039215686275,
+              0.4823529411764706,
+              0.49411764705882355
+            ],
+            "Anchored": true,
+            "CanCollide": false,
+            "CanQuery": false,
+            "CanTouch": false
+          }
+        }
+      ]
+    },
+    {
+      "Name": "BW_wall",
+      "ClassName": "Model",
+      "Children": [
+        {
+          "Name": "Geometry",
+          "ClassName": "Part",
+          "Properties": {
+            "Size": [
+              12,
+              6,
+              1
+            ],
+            "Position": [
+              0,
+              3,
+              0
+            ],
+            "Shape": "Block",
+            "Material": "Concrete",
+            "Color": [
+              0.6078431372549019,
+              0.6078431372549019,
+              0.5686274509803921
+            ],
+            "Anchored": true,
+            "CanCollide": false,
+            "CanQuery": false,
+            "CanTouch": false
+          }
+        }
+      ]
+    },
+    {
+      "Name": "BW_house",
+      "ClassName": "Model",
+      "Children": [
+        {
+          "Name": "Geometry",
+          "ClassName": "Part",
+          "Properties": {
+            "Size": [
+              14,
+              12,
+              12
+            ],
+            "Position": [
+              0,
+              6,
+              0
+            ],
+            "Shape": "Block",
+            "Material": "Brick",
+            "Color": [
+              0.6862745098039216,
+              0.43137254901960786,
+              0.29411764705882354
+            ],
+            "Anchored": true,
+            "CanCollide": false,
+            "CanQuery": false,
+            "CanTouch": false
+          }
+        }
+      ]
+    },
+    {
+      "Name": "BW_rock",
+      "ClassName": "Model",
+      "Children": [
+        {
+          "Name": "Geometry",
+          "ClassName": "Part",
+          "Properties": {
+            "Size": [
+              7,
+              4,
+              6
+            ],
+            "Position": [
+              0,
+              2,
+              0
+            ],
+            "Shape": "Ball",
+            "Material": "Slate",
+            "Color": [
+              0.43137254901960786,
+              0.47058823529411764,
+              0.49019607843137253
+            ],
+            "Anchored": true,
+            "CanCollide": false,
+            "CanQuery": false,
+            "CanTouch": false
+          }
+        }
+      ]
+    },
+    {
+      "Name": "BW_tree",
+      "ClassName": "Model",
+      "Children": [
+        {
+          "Name": "Geometry",
+          "ClassName": "Part",
+          "Properties": {
+            "Size": [
+              4,
+              12,
+              4
+            ],
+            "Position": [
+              0,
+              6,
+              0
+            ],
+            "Shape": "Block",
+            "Material": "Wood",
+            "Color": [
+              0.43137254901960786,
+              0.3137254901960784,
+              0.17647058823529413
+            ],
+            "Anchored": true,
+            "CanCollide": false,
+            "CanQuery": false,
+            "CanTouch": false
+          }
+        }
+      ]
+    },
+    {
+      "Name": "BW_road",
+      "ClassName": "Model",
+      "Children": [
+        {
+          "Name": "Geometry",
+          "ClassName": "Part",
+          "Properties": {
+            "Size": [
+              12,
+              0.08,
+              24
+            ],
+            "Position": [
+              0,
+              0.04,
+              0
+            ],
+            "Shape": "Block",
+            "Material": "Asphalt",
+            "Color": [
+              0.27450980392156865,
+              0.27450980392156865,
+              0.27450980392156865
+            ],
+            "Anchored": true,
+            "CanCollide": false,
+            "CanQuery": false,
+            "CanTouch": false
+          }
+        }
+      ]
+    },
+    {
+      "Name": "BW_bridge",
+      "ClassName": "Model",
+      "Children": [
+        {
+          "Name": "Geometry",
+          "ClassName": "Part",
+          "Properties": {
+            "Size": [
+              12,
+              0.2,
+              24
+            ],
+            "Position": [
+              0,
+              0.1,
+              0
+            ],
+            "Shape": "Block",
+            "Material": "WoodPlanks",
+            "Color": [
+              0.5686274509803921,
+              0.43137254901960786,
+              0.27450980392156865
+            ],
+            "Anchored": true,
+            "CanCollide": false,
+            "CanQuery": false,
+            "CanTouch": false
+          }
+        }
+      ]
+    },
+    {
+      "Name": "BW_grass",
+      "ClassName": "Model",
+      "Children": [
+        {
+          "Name": "Geometry",
+          "ClassName": "Part",
+          "Properties": {
+            "Size": [
+              18,
+              0.06,
+              18
+            ],
+            "Position": [
+              0,
+              0.03,
+              0
+            ],
+            "Shape": "Block",
+            "Material": "Grass",
+            "Color": [
+              0.37254901960784315,
+              0.5294117647058824,
+              0.2549019607843137
+            ],
+            "Anchored": true,
+            "CanCollide": false,
+            "CanQuery": false,
+            "CanTouch": false
+          }
+        }
+      ]
+    },
+    {
+      "Name": "BW_water",
+      "ClassName": "Model",
+      "Children": [
+        {
+          "Name": "Geometry",
+          "ClassName": "Part",
+          "Properties": {
+            "Size": [
+              18,
+              0.1,
+              18
+            ],
+            "Position": [
+              0,
+              0.05,
+              0
+            ],
+            "Shape": "Ball",
+            "Material": "Glass",
+            "Color": [
+              0.2627450980392157,
+              0.611764705882353,
+              0.7176470588235294
+            ],
+            "Anchored": true,
+            "CanCollide": false,
+            "CanQuery": false,
+            "CanTouch": false
+          }
+        }
+      ]
+    },
+    {
+      "Name": "BW_mud",
+      "ClassName": "Model",
+      "Children": [
+        {
+          "Name": "Geometry",
+          "ClassName": "Part",
+          "Properties": {
+            "Size": [
+              18,
+              0.08,
+              18
+            ],
+            "Position": [
+              0,
+              0.04,
+              0
+            ],
+            "Shape": "Ball",
+            "Material": "Mud",
+            "Color": [
+              0.403921568627451,
+              0.27450980392156865,
+              0.16862745098039217
+            ],
+            "Anchored": true,
+            "CanCollide": false,
+            "CanQuery": false,
+            "CanTouch": false
+          }
+        }
+      ]
+    },
+    {
+      "Name": "BW_crate",
+      "ClassName": "Model",
+      "Children": [
+        {
+          "Name": "Geometry",
+          "ClassName": "Part",
+          "Properties": {
+            "Size": [
+              5,
+              5,
+              5
+            ],
+            "Position": [
+              0,
+              2.5,
+              0
+            ],
+            "Shape": "Block",
+            "Material": "WoodPlanks",
+            "Color": [
+              0.6078431372549019,
+              0.45098039215686275,
+              0.2549019607843137
+            ],
+            "Anchored": true,
+            "CanCollide": false,
+            "CanQuery": false,
+            "CanTouch": false
+          }
+        }
+      ]
+    },
+    {
+      "Name": "BW_decoration",
+      "ClassName": "Model",
+      "Children": [
+        {
+          "Name": "Geometry",
+          "ClassName": "Part",
+          "Properties": {
+            "Size": [
+              3,
+              3,
+              3
+            ],
+            "Position": [
+              0,
+              1.5,
+              0
+            ],
+            "Shape": "Ball",
+            "Material": "SmoothPlastic",
+            "Color": [
+              0.8627450980392157,
+              0.7254901960784313,
+              0.3137254901960784
+            ],
+            "Anchored": true,
+            "CanCollide": false,
+            "CanQuery": false,
+            "CanTouch": false
+          }
+        }
+      ]
+    }
+  ]
+}

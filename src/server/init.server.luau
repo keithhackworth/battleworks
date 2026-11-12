@@ -11,6 +11,7 @@ local weather=workspace:GetAttribute("ArenaWeather") or "IceWind"
 local environment
 local singleModelWorld=false
 local worldObjects
+local worldSettings
 local Command = require(Shared.InputCommand)
 local BWController = require(script.BWController)
 local ScannerConfig=require(Shared.ScannerConfig)
@@ -50,12 +51,19 @@ local bwRuntimeState=remote("BWRuntimeState")
 local Hardware=require(Shared.BWChassis)
 network.Parent = ReplicatedStorage
 local tanks, targets, battles = {}, {}, {}
+local editorPreview=workspace:FindFirstChild("BattleWorksEditorPreview"); if editorPreview then editorPreview:Destroy() end
 local arena = Instance.new("Folder")
 arena.Name = "Arena"; arena.Parent = workspace
-if RunService:IsStudio() then
- local selection=require(script.StudioWorldSelector).start(RunService,game:GetService("ServerStorage"),arena)
+local storage=game:GetService("ServerStorage")
+local studioConfiguration=if storage then storage:FindFirstChild("BattleWorksStudio") else nil
+local publishedWorld=if studioConfiguration then studioConfiguration:FindFirstChild("PublishedWorld") else nil
+local productionWorld=if not RunService:IsStudio() and publishedWorld and publishedWorld:IsA("StringValue") and publishedWorld.Value~="" then publishedWorld.Value else nil
+if RunService:IsStudio() or productionWorld then
+ local selection=require(script.StudioWorldSelector).start(RunService,storage,arena,nil,productionWorld)
  singleModelWorld=selection.active.profile=="single-model"
  worldObjects=selection.objects
+ worldSettings=selection.active.settings
+ if worldSettings then mapSize=Vector2.new(worldSettings.width,worldSettings.depth) end
 end
 -- The imported-asset world uses ground/boundaries and registered model placements.
 -- Normal arena creation, including weather and terrain, is unchanged.
@@ -63,6 +71,7 @@ if singleModelWorld then weather="Normal" end
 local function createEnvironment(size)
  local data=Environment.create(size,weather)
  if singleModelWorld then data.rocks={}; data.logs={}; data.trees={}; data.zones={} end
+ if worldSettings then data.zones=table.clone(worldSettings.zones) end
  return data
 end
 environment=createEnvironment(mapSize)
@@ -87,6 +96,11 @@ floor.CanTouch = false
 floor.CanQuery = true -- downward combat rays should still hit the ground
 floor.Material = Enum.Material.Grass
 EnvironmentBuilder.build(arena,environment,floor)
+if worldSettings then
+ floor.Size=Vector3.new(mapSize.X+10,1,mapSize.Y+10)
+ floor.Material=Enum.Material[worldSettings.ground.material]
+ floor.Color=Color3.fromRGB(table.unpack(worldSettings.ground.color))
+end
 if not singleModelWorld then
  local stick=part("CenterStick",Vector3.new(10,1,1),Vector3.new(0,.5,0),Color3.fromRGB(125,79,40))
  stick.Shape=Enum.PartType.Cylinder; stick.Material=Enum.Material.Wood
@@ -95,6 +109,12 @@ end
 local walls = {}
 for _, data in ipairs({ {Vector3.new(0, 3, -118), Vector3.new(240, 6, 4)}, {Vector3.new(0, 3, 118), Vector3.new(240, 6, 4)}, {Vector3.new(-118, 3, 0), Vector3.new(4, 6, 240)}, {Vector3.new(118, 3, 0), Vector3.new(4, 6, 240)} }) do
 	table.insert(walls, part("Boundary", data[2], data[1], Color3.fromRGB(57, 66, 73)))
+end
+if worldSettings then
+ walls[1].Size=Vector3.new(mapSize.X+10,6,4); walls[1].Position=Vector3.new(0,3,-mapSize.Y/2-3)
+ walls[2].Size=walls[1].Size; walls[2].Position=Vector3.new(0,3,mapSize.Y/2+3)
+ walls[3].Size=Vector3.new(4,6,mapSize.Y+10); walls[3].Position=Vector3.new(-mapSize.X/2-3,3,0)
+ walls[4].Size=walls[3].Size; walls[4].Position=Vector3.new(mapSize.X/2+3,3,0)
 end
 local function buildTargets(size)
  if singleModelWorld then return end
@@ -170,6 +190,7 @@ local function addPlayer(player)
 		hitbox.Transparency=1; hitbox.CanCollide=false
 		hitbox:SetAttribute("OwnerId",player.UserId); hitbox:SetAttribute("TankId",id)
 		local tank={owner=player.UserId,playerName=player.Name,kind=kind,seed=(math.abs(player.UserId)+(if kind=="Rattler" then 7919 else 0))%2147483646+1,hitbox=hitbox,lastPacket=0}
+		tank.worldSettings=worldSettings; tank.worldObjects=worldObjects
 		Battle.resetTank(tank,mapSize,spawnCount,"Battle started.")
 		tanks[id]=tank; battle.tanks[id]=tank
 		tank.bwServices={
@@ -340,8 +361,9 @@ end
 resetBattle.OnServerEvent:Connect(function(player)
 	local battle=battles[player.UserId]
 	if not battle or os.clock()-(battle.lastReset or -math.huge)<0.5 then return end
-	battle.lastReset=os.clock(); reset(battle,"Battle reset.")
+	battle.lastReset=os.clock()
  if worldObjects then worldObjects:reset() end
+ reset(battle,"Battle reset.")
 end)
 -- Development redraw is server-authoritative and never exposed in published play.
 arena:SetAttribute("MapWidth", mapSize.X); arena:SetAttribute("MapDepth", mapSize.Y)
@@ -350,7 +372,7 @@ if RunService:IsStudio() then
 	local redraw = remote("RedrawMap")
 	local lastRedraw = -math.huge
 	redraw.OnServerEvent:Connect(function(player, size)
-		if not battles[player.UserId] or not ArenaLayout.validSize(size) or os.clock()-lastRedraw < 1 then return end
+		if worldSettings or not battles[player.UserId] or not ArenaLayout.validSize(size) or os.clock()-lastRedraw < 1 then return end
 		lastRedraw = os.clock(); mapSize = size
   if worldObjects then worldObjects:reset() end
 		environment=createEnvironment(size); EnvironmentBuilder.build(arena,environment,floor)
