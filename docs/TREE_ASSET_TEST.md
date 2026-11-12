@@ -64,17 +64,17 @@ It is applied by the offline compiler at each model leaf, exactly once; position
 path coordinates and spacing remain in world studs. Optional local `scale` still
 multiplies this conversion (for example `scale: 0.5` becomes 22.5).
 
-`worlds/definitions/kenney.json` defines `fence_section` using `fence.glb` and
-`curvy_fence` as a closed cubic path. The current path yields nine tangent-aligned
+`worlds/definitions/kenney.json` defines `fence_section` using `GLBs/forest/fence.glb` and
+`rope_fence` as a closed cubic path. The current path yields nine tangent-aligned
 panels around the tree, at 45-stud spacing. The panel's local X axis is assumed to
 run along its length (`item.rotation` corrects it by 90 degrees for the path).
 Adjust that rotation and spacing to your actual imported fence proportions; no
 asset dimensions are guessed from GLB bytes. Fence panels are decorative for now;
 the central tree retains its solid/destructible profile.
 
-Import `fence.glb` once as a Model named `fence` in
+Import `GLBs/forest/fence.glb` once as a Model named `rope-fence` in
 `ServerStorage/BattleWorksAssets`, then export that model to
-`assets/roblox/fence.rbxm` or `.rbxmx`, using the same persistence procedure as the
+`assets/roblox/rope-fence.rbxm` or `.rbxmx`, using the same persistence procedure as the
 tree. The asset registry maps the symbolic file to this reusable native template.
 No copying per panel is needed: the server clones it for all placements.
 

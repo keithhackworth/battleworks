@@ -34,7 +34,17 @@
     },
     {
       "id": "rope-fence",
-      "ref": "rope_fence"
+      "ref": "rope_fence",
+      "influences": {
+        "physical": {
+          "movable": false,
+          "destructible": false
+        },
+        "movement": {
+          "collision": "solid",
+          "traversable": false
+        }
+      }
     }
   ],
   "assetScale": 45

@@ -9,7 +9,12 @@
     }
   },
   "fence_section": {
-    "source": "fence.glb",
-    "model": "fence"
+    "source": "GLBs/forest/fence.glb",
+    "model": "rope-fence",
+    "collider": {
+      "widthFraction": 1,
+      "depthFraction": 1,
+      "heightFraction": 1
+    }
   }
 }

@@ -82,7 +82,7 @@
           "ClassName": "StringValue",
           "Name": "Reason",
           "Properties": {
-            "Value": "Requires imported Models in ServerStorage/BattleWorksAssets: fence, tree-large; unavailable assets fall back to the test arena."
+            "Value": "Requires imported Models in ServerStorage/BattleWorksAssets: rope-fence, tree-large; unavailable assets fall back to the test arena."
           }
         },
         {
@@ -96,7 +96,7 @@
           "ClassName": "IntValue",
           "Name": "ObjectCount",
           "Properties": {
-            "Value": 10
+            "Value": 27
           }
         },
         {
@@ -114,7 +114,7 @@
                   "ClassName": "StringValue",
                   "Name": "InstanceId",
                   "Properties": {
-                    "Value": "curvy-fence/segment_000"
+                    "Value": "rope-fence/segment_000"
                   }
                 },
                 {
@@ -128,14 +128,14 @@
                   "ClassName": "StringValue",
                   "Name": "Source",
                   "Properties": {
-                    "Value": "fence.glb"
+                    "Value": "GLBs/forest/fence.glb"
                   }
                 },
                 {
                   "ClassName": "StringValue",
                   "Name": "Template",
                   "Properties": {
-                    "Value": "fence"
+                    "Value": "rope-fence"
                   }
                 },
                 {
@@ -155,7 +155,7 @@
                   "Properties": {
                     "Value": [
                       0,
-                      36.942795944607695,
+                      36.94279594460768,
                       0
                     ]
                   }
@@ -164,7 +164,39 @@
                   "ClassName": "NumberValue",
                   "Name": "Scale",
                   "Properties": {
-                    "Value": 45
+                    "Value": 13.500000000000002
+                  }
+                },
+                {
+                  "ClassName": "BoolValue",
+                  "Name": "Solid",
+                  "Properties": {
+                    "Value": true
+                  }
+                },
+                {
+                  "ClassName": "BoolValue",
+                  "Name": "Destructible",
+                  "Properties": {
+                    "Value": false
+                  }
+                },
+                {
+                  "ClassName": "NumberValue",
+                  "Name": "Health",
+                  "Properties": {
+                    "Value": 100
+                  }
+                },
+                {
+                  "ClassName": "Vector3Value",
+                  "Name": "ColliderFractions",
+                  "Properties": {
+                    "Value": [
+                      1,
+                      1,
+                      1
+                    ]
                   }
                 }
               ],
@@ -177,7 +209,7 @@
                   "ClassName": "StringValue",
                   "Name": "InstanceId",
                   "Properties": {
-                    "Value": "curvy-fence/segment_001"
+                    "Value": "rope-fence/segment_001"
                   }
                 },
                 {
@@ -191,14 +223,204 @@
                   "ClassName": "StringValue",
                   "Name": "Source",
                   "Properties": {
-                    "Value": "fence.glb"
+                    "Value": "GLBs/forest/fence.glb"
                   }
                 },
                 {
                   "ClassName": "StringValue",
                   "Name": "Template",
                   "Properties": {
-                    "Value": "fence"
+                    "Value": "rope-fence"
+                  }
+                },
+                {
+                  "ClassName": "Vector3Value",
+                  "Name": "Position",
+                  "Properties": {
+                    "Value": [
+                      -37.15685130270023,
+                      0,
+                      -47.67121469819358
+                    ]
+                  }
+                },
+                {
+                  "ClassName": "Vector3Value",
+                  "Name": "Rotation",
+                  "Properties": {
+                    "Value": [
+                      0,
+                      24.850544240420128,
+                      0
+                    ]
+                  }
+                },
+                {
+                  "ClassName": "NumberValue",
+                  "Name": "Scale",
+                  "Properties": {
+                    "Value": 13.5
+                  }
+                },
+                {
+                  "ClassName": "BoolValue",
+                  "Name": "Solid",
+                  "Properties": {
+                    "Value": true
+                  }
+                },
+                {
+                  "ClassName": "BoolValue",
+                  "Name": "Destructible",
+                  "Properties": {
+                    "Value": false
+                  }
+                },
+                {
+                  "ClassName": "NumberValue",
+                  "Name": "Health",
+                  "Properties": {
+                    "Value": 100
+                  }
+                },
+                {
+                  "ClassName": "Vector3Value",
+                  "Name": "ColliderFractions",
+                  "Properties": {
+                    "Value": [
+                      1,
+                      1,
+                      1
+                    ]
+                  }
+                }
+              ],
+              "ClassName": "Configuration",
+              "Name": "item_1"
+            },
+            {
+              "Children": [
+                {
+                  "ClassName": "StringValue",
+                  "Name": "InstanceId",
+                  "Properties": {
+                    "Value": "rope-fence/segment_002"
+                  }
+                },
+                {
+                  "ClassName": "StringValue",
+                  "Name": "AssetId",
+                  "Properties": {
+                    "Value": "fence_section"
+                  }
+                },
+                {
+                  "ClassName": "StringValue",
+                  "Name": "Source",
+                  "Properties": {
+                    "Value": "GLBs/forest/fence.glb"
+                  }
+                },
+                {
+                  "ClassName": "StringValue",
+                  "Name": "Template",
+                  "Properties": {
+                    "Value": "rope-fence"
+                  }
+                },
+                {
+                  "ClassName": "Vector3Value",
+                  "Name": "Position",
+                  "Properties": {
+                    "Value": [
+                      -22.94325229936206,
+                      0,
+                      -52.39094525822621
+                    ]
+                  }
+                },
+                {
+                  "ClassName": "Vector3Value",
+                  "Name": "Rotation",
+                  "Properties": {
+                    "Value": [
+                      0,
+                      12.91501426878972,
+                      0
+                    ]
+                  }
+                },
+                {
+                  "ClassName": "NumberValue",
+                  "Name": "Scale",
+                  "Properties": {
+                    "Value": 13.499999999999998
+                  }
+                },
+                {
+                  "ClassName": "BoolValue",
+                  "Name": "Solid",
+                  "Properties": {
+                    "Value": true
+                  }
+                },
+                {
+                  "ClassName": "BoolValue",
+                  "Name": "Destructible",
+                  "Properties": {
+                    "Value": false
+                  }
+                },
+                {
+                  "ClassName": "NumberValue",
+                  "Name": "Health",
+                  "Properties": {
+                    "Value": 100
+                  }
+                },
+                {
+                  "ClassName": "Vector3Value",
+                  "Name": "ColliderFractions",
+                  "Properties": {
+                    "Value": [
+                      1,
+                      1,
+                      1
+                    ]
+                  }
+                }
+              ],
+              "ClassName": "Configuration",
+              "Name": "item_2"
+            },
+            {
+              "Children": [
+                {
+                  "ClassName": "StringValue",
+                  "Name": "InstanceId",
+                  "Properties": {
+                    "Value": "rope-fence/segment_003"
+                  }
+                },
+                {
+                  "ClassName": "StringValue",
+                  "Name": "AssetId",
+                  "Properties": {
+                    "Value": "fence_section"
+                  }
+                },
+                {
+                  "ClassName": "StringValue",
+                  "Name": "Source",
+                  "Properties": {
+                    "Value": "GLBs/forest/fence.glb"
+                  }
+                },
+                {
+                  "ClassName": "StringValue",
+                  "Name": "Template",
+                  "Properties": {
+                    "Value": "rope-fence"
                   }
                 },
                 {
@@ -227,12 +449,44 @@
                   "ClassName": "NumberValue",
                   "Name": "Scale",
                   "Properties": {
-                    "Value": 45
+                    "Value": 13.499999999999998
+                  }
+                },
+                {
+                  "ClassName": "BoolValue",
+                  "Name": "Solid",
+                  "Properties": {
+                    "Value": true
+                  }
+                },
+                {
+                  "ClassName": "BoolValue",
+                  "Name": "Destructible",
+                  "Properties": {
+                    "Value": false
+                  }
+                },
+                {
+                  "ClassName": "NumberValue",
+                  "Name": "Health",
+                  "Properties": {
+                    "Value": 100
+                  }
+                },
+                {
+                  "ClassName": "Vector3Value",
+                  "Name": "ColliderFractions",
+                  "Properties": {
+                    "Value": [
+                      1,
+                      1,
+                      1
+                    ]
                   }
                 }
               ],
               "ClassName": "Configuration",
-              "Name": "item_1"
+              "Name": "item_3"
             },
             {
               "Children": [
@@ -240,7 +494,7 @@
                   "ClassName": "StringValue",
                   "Name": "InstanceId",
                   "Properties": {
-                    "Value": "curvy-fence/segment_002"
+                    "Value": "rope-fence/segment_004"
                   }
                 },
                 {
@@ -254,14 +508,204 @@
                   "ClassName": "StringValue",
                   "Name": "Source",
                   "Properties": {
-                    "Value": "fence.glb"
+                    "Value": "GLBs/forest/fence.glb"
                   }
                 },
                 {
                   "ClassName": "StringValue",
                   "Name": "Template",
                   "Properties": {
-                    "Value": "fence"
+                    "Value": "rope-fence"
+                  }
+                },
+                {
+                  "ClassName": "Vector3Value",
+                  "Name": "Position",
+                  "Properties": {
+                    "Value": [
+                      6.852745892203554,
+                      0,
+                      -54.773965192955224
+                    ]
+                  }
+                },
+                {
+                  "ClassName": "Vector3Value",
+                  "Name": "Rotation",
+                  "Properties": {
+                    "Value": [
+                      0,
+                      -2.871113698846715,
+                      0
+                    ]
+                  }
+                },
+                {
+                  "ClassName": "NumberValue",
+                  "Name": "Scale",
+                  "Properties": {
+                    "Value": 13.500000000000002
+                  }
+                },
+                {
+                  "ClassName": "BoolValue",
+                  "Name": "Solid",
+                  "Properties": {
+                    "Value": true
+                  }
+                },
+                {
+                  "ClassName": "BoolValue",
+                  "Name": "Destructible",
+                  "Properties": {
+                    "Value": false
+                  }
+                },
+                {
+                  "ClassName": "NumberValue",
+                  "Name": "Health",
+                  "Properties": {
+                    "Value": 100
+                  }
+                },
+                {
+                  "ClassName": "Vector3Value",
+                  "Name": "ColliderFractions",
+                  "Properties": {
+                    "Value": [
+                      1,
+                      1,
+                      1
+                    ]
+                  }
+                }
+              ],
+              "ClassName": "Configuration",
+              "Name": "item_4"
+            },
+            {
+              "Children": [
+                {
+                  "ClassName": "StringValue",
+                  "Name": "InstanceId",
+                  "Properties": {
+                    "Value": "rope-fence/segment_005"
+                  }
+                },
+                {
+                  "ClassName": "StringValue",
+                  "Name": "AssetId",
+                  "Properties": {
+                    "Value": "fence_section"
+                  }
+                },
+                {
+                  "ClassName": "StringValue",
+                  "Name": "Source",
+                  "Properties": {
+                    "Value": "GLBs/forest/fence.glb"
+                  }
+                },
+                {
+                  "ClassName": "StringValue",
+                  "Name": "Template",
+                  "Properties": {
+                    "Value": "rope-fence"
+                  }
+                },
+                {
+                  "ClassName": "Vector3Value",
+                  "Name": "Position",
+                  "Properties": {
+                    "Value": [
+                      21.690623895242016,
+                      0,
+                      -52.67818094923987
+                    ]
+                  }
+                },
+                {
+                  "ClassName": "Vector3Value",
+                  "Name": "Rotation",
+                  "Properties": {
+                    "Value": [
+                      0,
+                      -12.91501426878972,
+                      0
+                    ]
+                  }
+                },
+                {
+                  "ClassName": "NumberValue",
+                  "Name": "Scale",
+                  "Properties": {
+                    "Value": 13.499999999999998
+                  }
+                },
+                {
+                  "ClassName": "BoolValue",
+                  "Name": "Solid",
+                  "Properties": {
+                    "Value": true
+                  }
+                },
+                {
+                  "ClassName": "BoolValue",
+                  "Name": "Destructible",
+                  "Properties": {
+                    "Value": false
+                  }
+                },
+                {
+                  "ClassName": "NumberValue",
+                  "Name": "Health",
+                  "Properties": {
+                    "Value": 100
+                  }
+                },
+                {
+                  "ClassName": "Vector3Value",
+                  "Name": "ColliderFractions",
+                  "Properties": {
+                    "Value": [
+                      1,
+                      1,
+                      1
+                    ]
+                  }
+                }
+              ],
+              "ClassName": "Configuration",
+              "Name": "item_5"
+            },
+            {
+              "Children": [
+                {
+                  "ClassName": "StringValue",
+                  "Name": "InstanceId",
+                  "Properties": {
+                    "Value": "rope-fence/segment_006"
+                  }
+                },
+                {
+                  "ClassName": "StringValue",
+                  "Name": "AssetId",
+                  "Properties": {
+                    "Value": "fence_section"
+                  }
+                },
+                {
+                  "ClassName": "StringValue",
+                  "Name": "Source",
+                  "Properties": {
+                    "Value": "GLBs/forest/fence.glb"
+                  }
+                },
+                {
+                  "ClassName": "StringValue",
+                  "Name": "Template",
+                  "Properties": {
+                    "Value": "rope-fence"
                   }
                 },
                 {
@@ -281,7 +725,7 @@
                   "Properties": {
                     "Value": [
                       0,
-                      -22.230702977346002,
+                      -22.23070297734599,
                       0
                     ]
                   }
@@ -290,12 +734,44 @@
                   "ClassName": "NumberValue",
                   "Name": "Scale",
                   "Properties": {
-                    "Value": 45
+                    "Value": 13.5
+                  }
+                },
+                {
+                  "ClassName": "BoolValue",
+                  "Name": "Solid",
+                  "Properties": {
+                    "Value": true
+                  }
+                },
+                {
+                  "ClassName": "BoolValue",
+                  "Name": "Destructible",
+                  "Properties": {
+                    "Value": false
+                  }
+                },
+                {
+                  "ClassName": "NumberValue",
+                  "Name": "Health",
+                  "Properties": {
+                    "Value": 100
+                  }
+                },
+                {
+                  "ClassName": "Vector3Value",
+                  "Name": "ColliderFractions",
+                  "Properties": {
+                    "Value": [
+                      1,
+                      1,
+                      1
+                    ]
                   }
                 }
               ],
               "ClassName": "Configuration",
-              "Name": "item_2"
+              "Name": "item_6"
             },
             {
               "Children": [
@@ -303,7 +779,7 @@
                   "ClassName": "StringValue",
                   "Name": "InstanceId",
                   "Properties": {
-                    "Value": "curvy-fence/segment_003"
+                    "Value": "rope-fence/segment_007"
                   }
                 },
                 {
@@ -317,14 +793,204 @@
                   "ClassName": "StringValue",
                   "Name": "Source",
                   "Properties": {
-                    "Value": "fence.glb"
+                    "Value": "GLBs/forest/fence.glb"
                   }
                 },
                 {
                   "ClassName": "StringValue",
                   "Name": "Template",
                   "Properties": {
-                    "Value": "fence"
+                    "Value": "rope-fence"
+                  }
+                },
+                {
+                  "ClassName": "Vector3Value",
+                  "Name": "Position",
+                  "Properties": {
+                    "Value": [
+                      48.972870689482086,
+                      0,
+                      -40.77239085991189
+                    ]
+                  }
+                },
+                {
+                  "ClassName": "Vector3Value",
+                  "Name": "Rotation",
+                  "Properties": {
+                    "Value": [
+                      0,
+                      -36.94279594460769,
+                      0
+                    ]
+                  }
+                },
+                {
+                  "ClassName": "NumberValue",
+                  "Name": "Scale",
+                  "Properties": {
+                    "Value": 13.500000000000002
+                  }
+                },
+                {
+                  "ClassName": "BoolValue",
+                  "Name": "Solid",
+                  "Properties": {
+                    "Value": true
+                  }
+                },
+                {
+                  "ClassName": "BoolValue",
+                  "Name": "Destructible",
+                  "Properties": {
+                    "Value": false
+                  }
+                },
+                {
+                  "ClassName": "NumberValue",
+                  "Name": "Health",
+                  "Properties": {
+                    "Value": 100
+                  }
+                },
+                {
+                  "ClassName": "Vector3Value",
+                  "Name": "ColliderFractions",
+                  "Properties": {
+                    "Value": [
+                      1,
+                      1,
+                      1
+                    ]
+                  }
+                }
+              ],
+              "ClassName": "Configuration",
+              "Name": "item_7"
+            },
+            {
+              "Children": [
+                {
+                  "ClassName": "StringValue",
+                  "Name": "InstanceId",
+                  "Properties": {
+                    "Value": "rope-fence/segment_008"
+                  }
+                },
+                {
+                  "ClassName": "StringValue",
+                  "Name": "AssetId",
+                  "Properties": {
+                    "Value": "fence_section"
+                  }
+                },
+                {
+                  "ClassName": "StringValue",
+                  "Name": "Source",
+                  "Properties": {
+                    "Value": "GLBs/forest/fence.glb"
+                  }
+                },
+                {
+                  "ClassName": "StringValue",
+                  "Name": "Template",
+                  "Properties": {
+                    "Value": "rope-fence"
+                  }
+                },
+                {
+                  "ClassName": "Vector3Value",
+                  "Name": "Position",
+                  "Properties": {
+                    "Value": [
+                      55.90643271311831,
+                      0,
+                      -27.64337248670351
+                    ]
+                  }
+                },
+                {
+                  "ClassName": "Vector3Value",
+                  "Name": "Rotation",
+                  "Properties": {
+                    "Value": [
+                      0,
+                      -68.71240592100061,
+                      0
+                    ]
+                  }
+                },
+                {
+                  "ClassName": "NumberValue",
+                  "Name": "Scale",
+                  "Properties": {
+                    "Value": 13.499999999999998
+                  }
+                },
+                {
+                  "ClassName": "BoolValue",
+                  "Name": "Solid",
+                  "Properties": {
+                    "Value": true
+                  }
+                },
+                {
+                  "ClassName": "BoolValue",
+                  "Name": "Destructible",
+                  "Properties": {
+                    "Value": false
+                  }
+                },
+                {
+                  "ClassName": "NumberValue",
+                  "Name": "Health",
+                  "Properties": {
+                    "Value": 100
+                  }
+                },
+                {
+                  "ClassName": "Vector3Value",
+                  "Name": "ColliderFractions",
+                  "Properties": {
+                    "Value": [
+                      1,
+                      1,
+                      1
+                    ]
+                  }
+                }
+              ],
+              "ClassName": "Configuration",
+              "Name": "item_8"
+            },
+            {
+              "Children": [
+                {
+                  "ClassName": "StringValue",
+                  "Name": "InstanceId",
+                  "Properties": {
+                    "Value": "rope-fence/segment_009"
+                  }
+                },
+                {
+                  "ClassName": "StringValue",
+                  "Name": "AssetId",
+                  "Properties": {
+                    "Value": "fence_section"
+                  }
+                },
+                {
+                  "ClassName": "StringValue",
+                  "Name": "Source",
+                  "Properties": {
+                    "Value": "GLBs/forest/fence.glb"
+                  }
+                },
+                {
+                  "ClassName": "StringValue",
+                  "Name": "Template",
+                  "Properties": {
+                    "Value": "rope-fence"
                   }
                 },
                 {
@@ -353,12 +1019,44 @@
                   "ClassName": "NumberValue",
                   "Name": "Scale",
                   "Properties": {
-                    "Value": 45
+                    "Value": 13.499999999999998
+                  }
+                },
+                {
+                  "ClassName": "BoolValue",
+                  "Name": "Solid",
+                  "Properties": {
+                    "Value": true
+                  }
+                },
+                {
+                  "ClassName": "BoolValue",
+                  "Name": "Destructible",
+                  "Properties": {
+                    "Value": false
+                  }
+                },
+                {
+                  "ClassName": "NumberValue",
+                  "Name": "Health",
+                  "Properties": {
+                    "Value": 100
+                  }
+                },
+                {
+                  "ClassName": "Vector3Value",
+                  "Name": "ColliderFractions",
+                  "Properties": {
+                    "Value": [
+                      1,
+                      1,
+                      1
+                    ]
                   }
                 }
               ],
               "ClassName": "Configuration",
-              "Name": "item_3"
+              "Name": "item_9"
             },
             {
               "Children": [
@@ -366,7 +1064,7 @@
                   "ClassName": "StringValue",
                   "Name": "InstanceId",
                   "Properties": {
-                    "Value": "curvy-fence/segment_004"
+                    "Value": "rope-fence/segment_010"
                   }
                 },
                 {
@@ -380,14 +1078,204 @@
                   "ClassName": "StringValue",
                   "Name": "Source",
                   "Properties": {
-                    "Value": "fence.glb"
+                    "Value": "GLBs/forest/fence.glb"
                   }
                 },
                 {
                   "ClassName": "StringValue",
                   "Name": "Template",
                   "Properties": {
-                    "Value": "fence"
+                    "Value": "rope-fence"
+                  }
+                },
+                {
+                  "ClassName": "Vector3Value",
+                  "Name": "Position",
+                  "Properties": {
+                    "Value": [
+                      60.64160889270223,
+                      0,
+                      1.7931439382987029
+                    ]
+                  }
+                },
+                {
+                  "ClassName": "Vector3Value",
+                  "Name": "Rotation",
+                  "Properties": {
+                    "Value": [
+                      0,
+                      -91.34602280917483,
+                      0
+                    ]
+                  }
+                },
+                {
+                  "ClassName": "NumberValue",
+                  "Name": "Scale",
+                  "Properties": {
+                    "Value": 13.499999999999998
+                  }
+                },
+                {
+                  "ClassName": "BoolValue",
+                  "Name": "Solid",
+                  "Properties": {
+                    "Value": true
+                  }
+                },
+                {
+                  "ClassName": "BoolValue",
+                  "Name": "Destructible",
+                  "Properties": {
+                    "Value": false
+                  }
+                },
+                {
+                  "ClassName": "NumberValue",
+                  "Name": "Health",
+                  "Properties": {
+                    "Value": 100
+                  }
+                },
+                {
+                  "ClassName": "Vector3Value",
+                  "Name": "ColliderFractions",
+                  "Properties": {
+                    "Value": [
+                      1,
+                      1,
+                      1
+                    ]
+                  }
+                }
+              ],
+              "ClassName": "Configuration",
+              "Name": "item_10"
+            },
+            {
+              "Children": [
+                {
+                  "ClassName": "StringValue",
+                  "Name": "InstanceId",
+                  "Properties": {
+                    "Value": "rope-fence/segment_011"
+                  }
+                },
+                {
+                  "ClassName": "StringValue",
+                  "Name": "AssetId",
+                  "Properties": {
+                    "Value": "fence_section"
+                  }
+                },
+                {
+                  "ClassName": "StringValue",
+                  "Name": "Source",
+                  "Properties": {
+                    "Value": "GLBs/forest/fence.glb"
+                  }
+                },
+                {
+                  "ClassName": "StringValue",
+                  "Name": "Template",
+                  "Properties": {
+                    "Value": "rope-fence"
+                  }
+                },
+                {
+                  "ClassName": "Vector3Value",
+                  "Name": "Position",
+                  "Properties": {
+                    "Value": [
+                      58.69901855407774,
+                      0,
+                      16.64182559328725
+                    ]
+                  }
+                },
+                {
+                  "ClassName": "Vector3Value",
+                  "Name": "Rotation",
+                  "Properties": {
+                    "Value": [
+                      0,
+                      -104.14960136453469,
+                      0
+                    ]
+                  }
+                },
+                {
+                  "ClassName": "NumberValue",
+                  "Name": "Scale",
+                  "Properties": {
+                    "Value": 13.499999999999998
+                  }
+                },
+                {
+                  "ClassName": "BoolValue",
+                  "Name": "Solid",
+                  "Properties": {
+                    "Value": true
+                  }
+                },
+                {
+                  "ClassName": "BoolValue",
+                  "Name": "Destructible",
+                  "Properties": {
+                    "Value": false
+                  }
+                },
+                {
+                  "ClassName": "NumberValue",
+                  "Name": "Health",
+                  "Properties": {
+                    "Value": 100
+                  }
+                },
+                {
+                  "ClassName": "Vector3Value",
+                  "Name": "ColliderFractions",
+                  "Properties": {
+                    "Value": [
+                      1,
+                      1,
+                      1
+                    ]
+                  }
+                }
+              ],
+              "ClassName": "Configuration",
+              "Name": "item_11"
+            },
+            {
+              "Children": [
+                {
+                  "ClassName": "StringValue",
+                  "Name": "InstanceId",
+                  "Properties": {
+                    "Value": "rope-fence/segment_012"
+                  }
+                },
+                {
+                  "ClassName": "StringValue",
+                  "Name": "AssetId",
+                  "Properties": {
+                    "Value": "fence_section"
+                  }
+                },
+                {
+                  "ClassName": "StringValue",
+                  "Name": "Source",
+                  "Properties": {
+                    "Value": "GLBs/forest/fence.glb"
+                  }
+                },
+                {
+                  "ClassName": "StringValue",
+                  "Name": "Template",
+                  "Properties": {
+                    "Value": "rope-fence"
                   }
                 },
                 {
@@ -406,9 +1294,9 @@
                   "Name": "Rotation",
                   "Properties": {
                     "Value": [
-                      -180,
-                      -64.51390913172293,
-                      -180
+                      0,
+                      -115.48609086827712,
+                      0
                     ]
                   }
                 },
@@ -416,12 +1304,44 @@
                   "ClassName": "NumberValue",
                   "Name": "Scale",
                   "Properties": {
-                    "Value": 45
+                    "Value": 13.499999999999998
+                  }
+                },
+                {
+                  "ClassName": "BoolValue",
+                  "Name": "Solid",
+                  "Properties": {
+                    "Value": true
+                  }
+                },
+                {
+                  "ClassName": "BoolValue",
+                  "Name": "Destructible",
+                  "Properties": {
+                    "Value": false
+                  }
+                },
+                {
+                  "ClassName": "NumberValue",
+                  "Name": "Health",
+                  "Properties": {
+                    "Value": 100
+                  }
+                },
+                {
+                  "ClassName": "Vector3Value",
+                  "Name": "ColliderFractions",
+                  "Properties": {
+                    "Value": [
+                      1,
+                      1,
+                      1
+                    ]
                   }
                 }
               ],
               "ClassName": "Configuration",
-              "Name": "item_4"
+              "Name": "item_12"
             },
             {
               "Children": [
@@ -429,7 +1349,7 @@
                   "ClassName": "StringValue",
                   "Name": "InstanceId",
                   "Properties": {
-                    "Value": "curvy-fence/segment_005"
+                    "Value": "rope-fence/segment_013"
                   }
                 },
                 {
@@ -443,14 +1363,204 @@
                   "ClassName": "StringValue",
                   "Name": "Source",
                   "Properties": {
-                    "Value": "fence.glb"
+                    "Value": "GLBs/forest/fence.glb"
                   }
                 },
                 {
                   "ClassName": "StringValue",
                   "Name": "Template",
                   "Properties": {
-                    "Value": "fence"
+                    "Value": "rope-fence"
+                  }
+                },
+                {
+                  "ClassName": "Vector3Value",
+                  "Name": "Position",
+                  "Properties": {
+                    "Value": [
+                      46.066625699697774,
+                      0,
+                      43.60698056456102
+                    ]
+                  }
+                },
+                {
+                  "ClassName": "Vector3Value",
+                  "Name": "Rotation",
+                  "Properties": {
+                    "Value": [
+                      0,
+                      -127.44103993969384,
+                      0
+                    ]
+                  }
+                },
+                {
+                  "ClassName": "NumberValue",
+                  "Name": "Scale",
+                  "Properties": {
+                    "Value": 13.500000000000002
+                  }
+                },
+                {
+                  "ClassName": "BoolValue",
+                  "Name": "Solid",
+                  "Properties": {
+                    "Value": true
+                  }
+                },
+                {
+                  "ClassName": "BoolValue",
+                  "Name": "Destructible",
+                  "Properties": {
+                    "Value": false
+                  }
+                },
+                {
+                  "ClassName": "NumberValue",
+                  "Name": "Health",
+                  "Properties": {
+                    "Value": 100
+                  }
+                },
+                {
+                  "ClassName": "Vector3Value",
+                  "Name": "ColliderFractions",
+                  "Properties": {
+                    "Value": [
+                      1,
+                      1,
+                      1
+                    ]
+                  }
+                }
+              ],
+              "ClassName": "Configuration",
+              "Name": "item_13"
+            },
+            {
+              "Children": [
+                {
+                  "ClassName": "StringValue",
+                  "Name": "InstanceId",
+                  "Properties": {
+                    "Value": "rope-fence/segment_014"
+                  }
+                },
+                {
+                  "ClassName": "StringValue",
+                  "Name": "AssetId",
+                  "Properties": {
+                    "Value": "fence_section"
+                  }
+                },
+                {
+                  "ClassName": "StringValue",
+                  "Name": "Source",
+                  "Properties": {
+                    "Value": "GLBs/forest/fence.glb"
+                  }
+                },
+                {
+                  "ClassName": "StringValue",
+                  "Name": "Template",
+                  "Properties": {
+                    "Value": "rope-fence"
+                  }
+                },
+                {
+                  "ClassName": "Vector3Value",
+                  "Name": "Position",
+                  "Properties": {
+                    "Value": [
+                      32.81202416023476,
+                      0,
+                      50.16377095099562
+                    ]
+                  }
+                },
+                {
+                  "ClassName": "Vector3Value",
+                  "Name": "Rotation",
+                  "Properties": {
+                    "Value": [
+                      0,
+                      -161.04861232940536,
+                      0
+                    ]
+                  }
+                },
+                {
+                  "ClassName": "NumberValue",
+                  "Name": "Scale",
+                  "Properties": {
+                    "Value": 13.500000000000002
+                  }
+                },
+                {
+                  "ClassName": "BoolValue",
+                  "Name": "Solid",
+                  "Properties": {
+                    "Value": true
+                  }
+                },
+                {
+                  "ClassName": "BoolValue",
+                  "Name": "Destructible",
+                  "Properties": {
+                    "Value": false
+                  }
+                },
+                {
+                  "ClassName": "NumberValue",
+                  "Name": "Health",
+                  "Properties": {
+                    "Value": 100
+                  }
+                },
+                {
+                  "ClassName": "Vector3Value",
+                  "Name": "ColliderFractions",
+                  "Properties": {
+                    "Value": [
+                      1,
+                      1,
+                      1
+                    ]
+                  }
+                }
+              ],
+              "ClassName": "Configuration",
+              "Name": "item_14"
+            },
+            {
+              "Children": [
+                {
+                  "ClassName": "StringValue",
+                  "Name": "InstanceId",
+                  "Properties": {
+                    "Value": "rope-fence/segment_015"
+                  }
+                },
+                {
+                  "ClassName": "StringValue",
+                  "Name": "AssetId",
+                  "Properties": {
+                    "Value": "fence_section"
+                  }
+                },
+                {
+                  "ClassName": "StringValue",
+                  "Name": "Source",
+                  "Properties": {
+                    "Value": "GLBs/forest/fence.glb"
+                  }
+                },
+                {
+                  "ClassName": "StringValue",
+                  "Name": "Template",
+                  "Properties": {
+                    "Value": "rope-fence"
                   }
                 },
                 {
@@ -469,9 +1579,9 @@
                   "Name": "Rotation",
                   "Properties": {
                     "Value": [
-                      -180,
-                      -10.127629414911782,
-                      -180
+                      0,
+                      -169.87237058508822,
+                      0
                     ]
                   }
                 },
@@ -479,12 +1589,44 @@
                   "ClassName": "NumberValue",
                   "Name": "Scale",
                   "Properties": {
-                    "Value": 45
+                    "Value": 13.5
+                  }
+                },
+                {
+                  "ClassName": "BoolValue",
+                  "Name": "Solid",
+                  "Properties": {
+                    "Value": true
+                  }
+                },
+                {
+                  "ClassName": "BoolValue",
+                  "Name": "Destructible",
+                  "Properties": {
+                    "Value": false
+                  }
+                },
+                {
+                  "ClassName": "NumberValue",
+                  "Name": "Health",
+                  "Properties": {
+                    "Value": 100
+                  }
+                },
+                {
+                  "ClassName": "Vector3Value",
+                  "Name": "ColliderFractions",
+                  "Properties": {
+                    "Value": [
+                      1,
+                      1,
+                      1
+                    ]
                   }
                 }
               ],
               "ClassName": "Configuration",
-              "Name": "item_5"
+              "Name": "item_15"
             },
             {
               "Children": [
@@ -492,7 +1634,7 @@
                   "ClassName": "StringValue",
                   "Name": "InstanceId",
                   "Properties": {
-                    "Value": "curvy-fence/segment_006"
+                    "Value": "rope-fence/segment_016"
                   }
                 },
                 {
@@ -506,14 +1648,204 @@
                   "ClassName": "StringValue",
                   "Name": "Source",
                   "Properties": {
-                    "Value": "fence.glb"
+                    "Value": "GLBs/forest/fence.glb"
                   }
                 },
                 {
                   "ClassName": "StringValue",
                   "Name": "Template",
                   "Properties": {
-                    "Value": "fence"
+                    "Value": "rope-fence"
+                  }
+                },
+                {
+                  "ClassName": "Vector3Value",
+                  "Name": "Position",
+                  "Properties": {
+                    "Value": [
+                      3.4476416774104184,
+                      0,
+                      55.66229870758492
+                    ]
+                  }
+                },
+                {
+                  "ClassName": "Vector3Value",
+                  "Name": "Rotation",
+                  "Properties": {
+                    "Value": [
+                      0,
+                      -179.30915128812708,
+                      0
+                    ]
+                  }
+                },
+                {
+                  "ClassName": "NumberValue",
+                  "Name": "Scale",
+                  "Properties": {
+                    "Value": 13.5
+                  }
+                },
+                {
+                  "ClassName": "BoolValue",
+                  "Name": "Solid",
+                  "Properties": {
+                    "Value": true
+                  }
+                },
+                {
+                  "ClassName": "BoolValue",
+                  "Name": "Destructible",
+                  "Properties": {
+                    "Value": false
+                  }
+                },
+                {
+                  "ClassName": "NumberValue",
+                  "Name": "Health",
+                  "Properties": {
+                    "Value": 100
+                  }
+                },
+                {
+                  "ClassName": "Vector3Value",
+                  "Name": "ColliderFractions",
+                  "Properties": {
+                    "Value": [
+                      1,
+                      1,
+                      1
+                    ]
+                  }
+                }
+              ],
+              "ClassName": "Configuration",
+              "Name": "item_16"
+            },
+            {
+              "Children": [
+                {
+                  "ClassName": "StringValue",
+                  "Name": "InstanceId",
+                  "Properties": {
+                    "Value": "rope-fence/segment_017"
+                  }
+                },
+                {
+                  "ClassName": "StringValue",
+                  "Name": "AssetId",
+                  "Properties": {
+                    "Value": "fence_section"
+                  }
+                },
+                {
+                  "ClassName": "StringValue",
+                  "Name": "Source",
+                  "Properties": {
+                    "Value": "GLBs/forest/fence.glb"
+                  }
+                },
+                {
+                  "ClassName": "StringValue",
+                  "Name": "Template",
+                  "Properties": {
+                    "Value": "rope-fence"
+                  }
+                },
+                {
+                  "ClassName": "Vector3Value",
+                  "Name": "Position",
+                  "Properties": {
+                    "Value": [
+                      -11.49659026939295,
+                      0,
+                      54.654561044607604
+                    ]
+                  }
+                },
+                {
+                  "ClassName": "Vector3Value",
+                  "Name": "Rotation",
+                  "Properties": {
+                    "Value": [
+                      0,
+                      170.4440629859079,
+                      0
+                    ]
+                  }
+                },
+                {
+                  "ClassName": "NumberValue",
+                  "Name": "Scale",
+                  "Properties": {
+                    "Value": 13.500000000000002
+                  }
+                },
+                {
+                  "ClassName": "BoolValue",
+                  "Name": "Solid",
+                  "Properties": {
+                    "Value": true
+                  }
+                },
+                {
+                  "ClassName": "BoolValue",
+                  "Name": "Destructible",
+                  "Properties": {
+                    "Value": false
+                  }
+                },
+                {
+                  "ClassName": "NumberValue",
+                  "Name": "Health",
+                  "Properties": {
+                    "Value": 100
+                  }
+                },
+                {
+                  "ClassName": "Vector3Value",
+                  "Name": "ColliderFractions",
+                  "Properties": {
+                    "Value": [
+                      1,
+                      1,
+                      1
+                    ]
+                  }
+                }
+              ],
+              "ClassName": "Configuration",
+              "Name": "item_17"
+            },
+            {
+              "Children": [
+                {
+                  "ClassName": "StringValue",
+                  "Name": "InstanceId",
+                  "Properties": {
+                    "Value": "rope-fence/segment_018"
+                  }
+                },
+                {
+                  "ClassName": "StringValue",
+                  "Name": "AssetId",
+                  "Properties": {
+                    "Value": "fence_section"
+                  }
+                },
+                {
+                  "ClassName": "StringValue",
+                  "Name": "Source",
+                  "Properties": {
+                    "Value": "GLBs/forest/fence.glb"
+                  }
+                },
+                {
+                  "ClassName": "StringValue",
+                  "Name": "Template",
+                  "Properties": {
+                    "Value": "rope-fence"
                   }
                 },
                 {
@@ -532,9 +1864,9 @@
                   "Name": "Rotation",
                   "Properties": {
                     "Value": [
-                      -180,
-                      20.68941850142781,
-                      -180
+                      0,
+                      159.3105814985722,
+                      0
                     ]
                   }
                 },
@@ -542,12 +1874,44 @@
                   "ClassName": "NumberValue",
                   "Name": "Scale",
                   "Properties": {
-                    "Value": 45
+                    "Value": 13.5
+                  }
+                },
+                {
+                  "ClassName": "BoolValue",
+                  "Name": "Solid",
+                  "Properties": {
+                    "Value": true
+                  }
+                },
+                {
+                  "ClassName": "BoolValue",
+                  "Name": "Destructible",
+                  "Properties": {
+                    "Value": false
+                  }
+                },
+                {
+                  "ClassName": "NumberValue",
+                  "Name": "Health",
+                  "Properties": {
+                    "Value": 100
+                  }
+                },
+                {
+                  "ClassName": "Vector3Value",
+                  "Name": "ColliderFractions",
+                  "Properties": {
+                    "Value": [
+                      1,
+                      1,
+                      1
+                    ]
                   }
                 }
               ],
               "ClassName": "Configuration",
-              "Name": "item_6"
+              "Name": "item_18"
             },
             {
               "Children": [
@@ -555,7 +1919,7 @@
                   "ClassName": "StringValue",
                   "Name": "InstanceId",
                   "Properties": {
-                    "Value": "curvy-fence/segment_007"
+                    "Value": "rope-fence/segment_019"
                   }
                 },
                 {
@@ -569,14 +1933,204 @@
                   "ClassName": "StringValue",
                   "Name": "Source",
                   "Properties": {
-                    "Value": "fence.glb"
+                    "Value": "GLBs/forest/fence.glb"
                   }
                 },
                 {
                   "ClassName": "StringValue",
                   "Name": "Template",
                   "Properties": {
-                    "Value": "fence"
+                    "Value": "rope-fence"
+                  }
+                },
+                {
+                  "ClassName": "Vector3Value",
+                  "Name": "Position",
+                  "Properties": {
+                    "Value": [
+                      -39.33284615627168,
+                      0,
+                      44.07003246094239
+                    ]
+                  }
+                },
+                {
+                  "ClassName": "Vector3Value",
+                  "Name": "Rotation",
+                  "Properties": {
+                    "Value": [
+                      0,
+                      147.43407466824638,
+                      0
+                    ]
+                  }
+                },
+                {
+                  "ClassName": "NumberValue",
+                  "Name": "Scale",
+                  "Properties": {
+                    "Value": 13.5
+                  }
+                },
+                {
+                  "ClassName": "BoolValue",
+                  "Name": "Solid",
+                  "Properties": {
+                    "Value": true
+                  }
+                },
+                {
+                  "ClassName": "BoolValue",
+                  "Name": "Destructible",
+                  "Properties": {
+                    "Value": false
+                  }
+                },
+                {
+                  "ClassName": "NumberValue",
+                  "Name": "Health",
+                  "Properties": {
+                    "Value": 100
+                  }
+                },
+                {
+                  "ClassName": "Vector3Value",
+                  "Name": "ColliderFractions",
+                  "Properties": {
+                    "Value": [
+                      1,
+                      1,
+                      1
+                    ]
+                  }
+                }
+              ],
+              "ClassName": "Configuration",
+              "Name": "item_19"
+            },
+            {
+              "Children": [
+                {
+                  "ClassName": "StringValue",
+                  "Name": "InstanceId",
+                  "Properties": {
+                    "Value": "rope-fence/segment_020"
+                  }
+                },
+                {
+                  "ClassName": "StringValue",
+                  "Name": "AssetId",
+                  "Properties": {
+                    "Value": "fence_section"
+                  }
+                },
+                {
+                  "ClassName": "StringValue",
+                  "Name": "Source",
+                  "Properties": {
+                    "Value": "GLBs/forest/fence.glb"
+                  }
+                },
+                {
+                  "ClassName": "StringValue",
+                  "Name": "Template",
+                  "Properties": {
+                    "Value": "rope-fence"
+                  }
+                },
+                {
+                  "ClassName": "Vector3Value",
+                  "Name": "Position",
+                  "Properties": {
+                    "Value": [
+                      -49.67774836806477,
+                      0,
+                      33.490237719658275
+                    ]
+                  }
+                },
+                {
+                  "ClassName": "Vector3Value",
+                  "Name": "Rotation",
+                  "Properties": {
+                    "Value": [
+                      0,
+                      123.31779305921619,
+                      0
+                    ]
+                  }
+                },
+                {
+                  "ClassName": "NumberValue",
+                  "Name": "Scale",
+                  "Properties": {
+                    "Value": 13.5
+                  }
+                },
+                {
+                  "ClassName": "BoolValue",
+                  "Name": "Solid",
+                  "Properties": {
+                    "Value": true
+                  }
+                },
+                {
+                  "ClassName": "BoolValue",
+                  "Name": "Destructible",
+                  "Properties": {
+                    "Value": false
+                  }
+                },
+                {
+                  "ClassName": "NumberValue",
+                  "Name": "Health",
+                  "Properties": {
+                    "Value": 100
+                  }
+                },
+                {
+                  "ClassName": "Vector3Value",
+                  "Name": "ColliderFractions",
+                  "Properties": {
+                    "Value": [
+                      1,
+                      1,
+                      1
+                    ]
+                  }
+                }
+              ],
+              "ClassName": "Configuration",
+              "Name": "item_20"
+            },
+            {
+              "Children": [
+                {
+                  "ClassName": "StringValue",
+                  "Name": "InstanceId",
+                  "Properties": {
+                    "Value": "rope-fence/segment_021"
+                  }
+                },
+                {
+                  "ClassName": "StringValue",
+                  "Name": "AssetId",
+                  "Properties": {
+                    "Value": "fence_section"
+                  }
+                },
+                {
+                  "ClassName": "StringValue",
+                  "Name": "Source",
+                  "Properties": {
+                    "Value": "GLBs/forest/fence.glb"
+                  }
+                },
+                {
+                  "ClassName": "StringValue",
+                  "Name": "Template",
+                  "Properties": {
+                    "Value": "rope-fence"
                   }
                 },
                 {
@@ -595,9 +2149,9 @@
                   "Name": "Rotation",
                   "Properties": {
                     "Value": [
-                      -180,
-                      70.15175851669647,
-                      -180
+                      0,
+                      109.84824148330351,
+                      0
                     ]
                   }
                 },
@@ -605,12 +2159,44 @@
                   "ClassName": "NumberValue",
                   "Name": "Scale",
                   "Properties": {
-                    "Value": 45.00000000000001
+                    "Value": 13.499999999999998
+                  }
+                },
+                {
+                  "ClassName": "BoolValue",
+                  "Name": "Solid",
+                  "Properties": {
+                    "Value": true
+                  }
+                },
+                {
+                  "ClassName": "BoolValue",
+                  "Name": "Destructible",
+                  "Properties": {
+                    "Value": false
+                  }
+                },
+                {
+                  "ClassName": "NumberValue",
+                  "Name": "Health",
+                  "Properties": {
+                    "Value": 100
+                  }
+                },
+                {
+                  "ClassName": "Vector3Value",
+                  "Name": "ColliderFractions",
+                  "Properties": {
+                    "Value": [
+                      1,
+                      1,
+                      1
+                    ]
                   }
                 }
               ],
               "ClassName": "Configuration",
-              "Name": "item_7"
+              "Name": "item_21"
             },
             {
               "Children": [
@@ -618,7 +2204,7 @@
                   "ClassName": "StringValue",
                   "Name": "InstanceId",
                   "Properties": {
-                    "Value": "curvy-fence/segment_008"
+                    "Value": "rope-fence/segment_022"
                   }
                 },
                 {
@@ -632,14 +2218,204 @@
                   "ClassName": "StringValue",
                   "Name": "Source",
                   "Properties": {
-                    "Value": "fence.glb"
+                    "Value": "GLBs/forest/fence.glb"
                   }
                 },
                 {
                   "ClassName": "StringValue",
                   "Name": "Template",
                   "Properties": {
-                    "Value": "fence"
+                    "Value": "rope-fence"
+                  }
+                },
+                {
+                  "ClassName": "Vector3Value",
+                  "Name": "Position",
+                  "Properties": {
+                    "Value": [
+                      -60.115111290682044,
+                      0,
+                      5.6267816246178075
+                    ]
+                  }
+                },
+                {
+                  "ClassName": "Vector3Value",
+                  "Name": "Rotation",
+                  "Properties": {
+                    "Value": [
+                      0,
+                      98.3255691726327,
+                      0
+                    ]
+                  }
+                },
+                {
+                  "ClassName": "NumberValue",
+                  "Name": "Scale",
+                  "Properties": {
+                    "Value": 13.499999999999998
+                  }
+                },
+                {
+                  "ClassName": "BoolValue",
+                  "Name": "Solid",
+                  "Properties": {
+                    "Value": true
+                  }
+                },
+                {
+                  "ClassName": "BoolValue",
+                  "Name": "Destructible",
+                  "Properties": {
+                    "Value": false
+                  }
+                },
+                {
+                  "ClassName": "NumberValue",
+                  "Name": "Health",
+                  "Properties": {
+                    "Value": 100
+                  }
+                },
+                {
+                  "ClassName": "Vector3Value",
+                  "Name": "ColliderFractions",
+                  "Properties": {
+                    "Value": [
+                      1,
+                      1,
+                      1
+                    ]
+                  }
+                }
+              ],
+              "ClassName": "Configuration",
+              "Name": "item_22"
+            },
+            {
+              "Children": [
+                {
+                  "ClassName": "StringValue",
+                  "Name": "InstanceId",
+                  "Properties": {
+                    "Value": "rope-fence/segment_023"
+                  }
+                },
+                {
+                  "ClassName": "StringValue",
+                  "Name": "AssetId",
+                  "Properties": {
+                    "Value": "fence_section"
+                  }
+                },
+                {
+                  "ClassName": "StringValue",
+                  "Name": "Source",
+                  "Properties": {
+                    "Value": "GLBs/forest/fence.glb"
+                  }
+                },
+                {
+                  "ClassName": "StringValue",
+                  "Name": "Template",
+                  "Properties": {
+                    "Value": "rope-fence"
+                  }
+                },
+                {
+                  "ClassName": "Vector3Value",
+                  "Name": "Position",
+                  "Properties": {
+                    "Value": [
+                      -60.37113057363831,
+                      0,
+                      -9.336850106823729
+                    ]
+                  }
+                },
+                {
+                  "ClassName": "Vector3Value",
+                  "Name": "Rotation",
+                  "Properties": {
+                    "Value": [
+                      0,
+                      84.74569257350201,
+                      0
+                    ]
+                  }
+                },
+                {
+                  "ClassName": "NumberValue",
+                  "Name": "Scale",
+                  "Properties": {
+                    "Value": 13.499999999999998
+                  }
+                },
+                {
+                  "ClassName": "BoolValue",
+                  "Name": "Solid",
+                  "Properties": {
+                    "Value": true
+                  }
+                },
+                {
+                  "ClassName": "BoolValue",
+                  "Name": "Destructible",
+                  "Properties": {
+                    "Value": false
+                  }
+                },
+                {
+                  "ClassName": "NumberValue",
+                  "Name": "Health",
+                  "Properties": {
+                    "Value": 100
+                  }
+                },
+                {
+                  "ClassName": "Vector3Value",
+                  "Name": "ColliderFractions",
+                  "Properties": {
+                    "Value": [
+                      1,
+                      1,
+                      1
+                    ]
+                  }
+                }
+              ],
+              "ClassName": "Configuration",
+              "Name": "item_23"
+            },
+            {
+              "Children": [
+                {
+                  "ClassName": "StringValue",
+                  "Name": "InstanceId",
+                  "Properties": {
+                    "Value": "rope-fence/segment_024"
+                  }
+                },
+                {
+                  "ClassName": "StringValue",
+                  "Name": "AssetId",
+                  "Properties": {
+                    "Value": "fence_section"
+                  }
+                },
+                {
+                  "ClassName": "StringValue",
+                  "Name": "Source",
+                  "Properties": {
+                    "Value": "GLBs/forest/fence.glb"
+                  }
+                },
+                {
+                  "ClassName": "StringValue",
+                  "Name": "Template",
+                  "Properties": {
+                    "Value": "rope-fence"
                   }
                 },
                 {
@@ -659,7 +2435,7 @@
                   "Properties": {
                     "Value": [
                       0,
-                      71.90098486625311,
+                      71.90098486625308,
                       0
                     ]
                   }
@@ -668,12 +2444,139 @@
                   "ClassName": "NumberValue",
                   "Name": "Scale",
                   "Properties": {
-                    "Value": 44.99999999999999
+                    "Value": 13.5
+                  }
+                },
+                {
+                  "ClassName": "BoolValue",
+                  "Name": "Solid",
+                  "Properties": {
+                    "Value": true
+                  }
+                },
+                {
+                  "ClassName": "BoolValue",
+                  "Name": "Destructible",
+                  "Properties": {
+                    "Value": false
+                  }
+                },
+                {
+                  "ClassName": "NumberValue",
+                  "Name": "Health",
+                  "Properties": {
+                    "Value": 100
+                  }
+                },
+                {
+                  "ClassName": "Vector3Value",
+                  "Name": "ColliderFractions",
+                  "Properties": {
+                    "Value": [
+                      1,
+                      1,
+                      1
+                    ]
                   }
                 }
               ],
               "ClassName": "Configuration",
-              "Name": "item_8"
+              "Name": "item_24"
+            },
+            {
+              "Children": [
+                {
+                  "ClassName": "StringValue",
+                  "Name": "InstanceId",
+                  "Properties": {
+                    "Value": "rope-fence/segment_025"
+                  }
+                },
+                {
+                  "ClassName": "StringValue",
+                  "Name": "AssetId",
+                  "Properties": {
+                    "Value": "fence_section"
+                  }
+                },
+                {
+                  "ClassName": "StringValue",
+                  "Name": "Source",
+                  "Properties": {
+                    "Value": "GLBs/forest/fence.glb"
+                  }
+                },
+                {
+                  "ClassName": "StringValue",
+                  "Name": "Template",
+                  "Properties": {
+                    "Value": "rope-fence"
+                  }
+                },
+                {
+                  "ClassName": "Vector3Value",
+                  "Name": "Position",
+                  "Properties": {
+                    "Value": [
+                      -51.31970484205927,
+                      0,
+                      -37.71538942206969
+                    ]
+                  }
+                },
+                {
+                  "ClassName": "Vector3Value",
+                  "Name": "Rotation",
+                  "Properties": {
+                    "Value": [
+                      0,
+                      59.98713030655106,
+                      0
+                    ]
+                  }
+                },
+                {
+                  "ClassName": "NumberValue",
+                  "Name": "Scale",
+                  "Properties": {
+                    "Value": 13.5
+                  }
+                },
+                {
+                  "ClassName": "BoolValue",
+                  "Name": "Solid",
+                  "Properties": {
+                    "Value": true
+                  }
+                },
+                {
+                  "ClassName": "BoolValue",
+                  "Name": "Destructible",
+                  "Properties": {
+                    "Value": false
+                  }
+                },
+                {
+                  "ClassName": "NumberValue",
+                  "Name": "Health",
+                  "Properties": {
+                    "Value": 100
+                  }
+                },
+                {
+                  "ClassName": "Vector3Value",
+                  "Name": "ColliderFractions",
+                  "Properties": {
+                    "Value": [
+                      1,
+                      1,
+                      1
+                    ]
+                  }
+                }
+              ],
+              "ClassName": "Configuration",
+              "Name": "item_25"
             },
             {
               "Children": [
@@ -768,7 +2671,7 @@
                 }
               ],
               "ClassName": "Configuration",
-              "Name": "item_9"
+              "Name": "item_26"
             }
           ],
           "ClassName": "Folder",

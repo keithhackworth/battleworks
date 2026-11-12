@@ -357,7 +357,7 @@ test('tree test compiles a curved closed fence and registers every native placem
   const { studioPlacements, placementIssue } = require('../tools/world/studio-placement');
   const bindings = JSON.parse(await fs.readFile(path.join(root,'worlds/roblox-assets.json'),'utf8'));
   const manifest = await compileFile(path.join(root,'worlds/tree-test.json'));
-  const panels = manifest.objects.filter(o=>o.asset==='fence.glb');
+  const panels = manifest.objects.filter(o=>o.asset==='GLBs/forest/fence.glb');
   assert.ok(panels.length>=8);
   assert.equal(manifest.objects.filter(o=>o.asset.endsWith('tree-large.glb')).length,1);
   assert.equal(new Set(panels.map(o=>o.id)).size,panels.length);
@@ -366,8 +366,14 @@ test('tree test compiles a curved closed fence and registers every native placem
   assert.equal(placementIssue(manifest,bindings),null);
   const placements=studioPlacements(manifest,bindings);
   assert.equal(placements.length,manifest.objects.length);
-  assert.ok(placements.every(p=>Math.abs(p.scale-45)<1e-8),'tree and panels inherit world assetScale');
-  assert.equal(placements.filter(p=>p.model==='fence').length,panels.length);
+  const definitions=JSON.parse(await fs.readFile(path.join(root,'worlds/definitions/kenney.json'),'utf8')).definitions;
+  const panelScale=45*(definitions.rope_fence.item.scale ?? 1);
+  assert.ok(placements.every(p=>Math.abs(p.scale-(p.model==='rope-fence'?panelScale:45))<1e-8),'world assetScale composes with configured panel multiplier');
+  const panel=placements.find(p=>p.model==='rope-fence');
+  assert.equal(panel.interaction.solid,true,'fence blocks tanks');
+  assert.equal(panel.interaction.destructible,false,'fence remains indestructible as configured');
+  assert.deepEqual(panel.interaction.collider,{widthFraction:1,depthFraction:1,heightFraction:1});
+  assert.equal(placements.filter(p=>p.model==='rope-fence').length,panels.length);
   const { discoverWorlds }=require('../tools/world/catalog');
   const dir=await fs.mkdtemp(path.join(require('node:os').tmpdir(),'bw-fence-'));
   try {
@@ -378,7 +384,7 @@ test('tree test compiles a curved closed fence and registers every native placem
     assert.equal(entry.Children.find(e=>e.Name==='Placements').Children.length,placements.length);
   } finally { await fs.rm(dir,{recursive:true,force:true}); }
   const noFence={...bindings};delete noFence.fence_section;
-  assert.match(placementIssue(manifest,noFence),/curvy-fence.*fence.glb.*no Roblox asset mapping/);
+  assert.match(placementIssue(manifest,noFence),/rope-fence.*fence.glb.*no Roblox asset mapping/);
   assert.equal(studioPlacements(manifest,noFence),null,'missing binding rejects whole world');
 });
 

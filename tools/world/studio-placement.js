@@ -26,7 +26,7 @@ function interactionFor(influences = {}, binding) {
   const destructible = p.destructible === true || p.indestructible === false;
   if (!solid && !destructible) return null;
   const collider = binding.collider;
-  if (!collider || ['widthFraction', 'depthFraction', 'heightFraction'].some(k => typeof collider[k] !== 'number' || !Number.isFinite(collider[k]) || collider[k] <= 0 || collider[k] > 1)) throw new Error(`Asset '${binding.id}' requires collider width/depth/height fractions in (0,1].`);
+  if (!collider || ['widthFraction', 'depthFraction', 'heightFraction'].some(k => typeof collider[k] !== 'number' || !Number.isFinite(collider[k]) || collider[k] <= 0 || collider[k] > 1)) throw new Error(`Asset '${binding.id}' requires collider width/depth/height fractions in (0,1]. Set collider on its entry in worlds/roblox-assets.json, not in world influences or model definitions.`);
   return { solid, destructible, hp, collider };
 }
 const MaxPlacements = 512;

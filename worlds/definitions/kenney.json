@@ -8,13 +8,14 @@
       "type": "model",
       "asset": "GLBs/forest/fence.glb"
     },
-    "rope-fence": {
+    "rope_fence": {
       "type": "path",
       "path": "M -50 -40 C -25 -60 25 -60 50 -40 C 65 -15 65 20 45 45 C 15 60 -20 60 -45 40 C -65 15 -65 -15 -50 -40 Z",
-      "spacing": 45,
+      "spacing": 15,
       "orientToPath": true,
       "item": {
-        "ref": "rope-fence",
+        "ref": "fence_section",
+        "scale": 0.3,
         "rotation": [
           0,
           90,
