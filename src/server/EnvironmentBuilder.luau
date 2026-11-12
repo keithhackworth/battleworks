@@ -6,6 +6,7 @@ local function part(parent,name,size,frame,color,material,shape,query)
 	p.Anchored=true; p.CanCollide=false; p.CanTouch=false; p.CanQuery=query or false
 	p.TopSurface=Enum.SurfaceType.Smooth; p.BottomSurface=Enum.SurfaceType.Smooth
 	if shape then p.Shape=shape end
+	if query then p:SetAttribute("ScannerType","object") end
 	p.Parent=parent
 	return p
 end

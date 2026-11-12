@@ -1,6 +1,15 @@
 {
   "tree_large": {
     "source": "GLBs/suburban/tree-large.glb",
-    "model": "tree-large"
+    "model": "tree-large",
+    "collider": {
+      "widthFraction": 0.18,
+      "depthFraction": 0.18,
+      "heightFraction": 0.45
+    }
+  },
+  "fence_section": {
+    "source": "fence.glb",
+    "model": "fence"
   }
 }

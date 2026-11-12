@@ -295,6 +295,8 @@ do
  check(lens.Color[2]>200 and lens.Color[3]>200,"friendly scan uses distinct cyan indication")
  state.scanVisual={serial=4,angle=90,kind="wall",proximity=1,remaining=1.2}; renderer:update(state,1/60)
  check(lens.Color[1]==165 and lens.Color[2]==169,"wall scan gives subtle neutral indication")
+ state.scanVisual={serial=40,angle=90,kind="object",proximity=1,remaining=1.2}; renderer:update(state,1/60)
+ check(lens.Color[1]==255 and lens.Color[2]==220 and lens.Color[3]==35 and lens.Material==Enum.Material.Neon,"object detection flashes yellow rather than enemy red")
  state.scanVisual={serial=5,angle=90,kind="none",proximity=0,remaining=1.2}; renderer:update(state,1/60)
  check(lens.Color[3]==220,"empty completed scan gives blue search pulse")
  for _=1,100 do renderer:update(state,1/60) end

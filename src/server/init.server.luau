@@ -10,6 +10,7 @@ local mapSize = Vector2.new(Config.ArenaLimit*2, Config.ArenaLimit*2)
 local weather=workspace:GetAttribute("ArenaWeather") or "IceWind"
 local environment
 local singleModelWorld=false
+local worldObjects
 local Command = require(Shared.InputCommand)
 local BWController = require(script.BWController)
 local ScannerConfig=require(Shared.ScannerConfig)
@@ -54,8 +55,9 @@ arena.Name = "Arena"; arena.Parent = workspace
 if RunService:IsStudio() then
  local selection=require(script.StudioWorldSelector).start(RunService,game:GetService("ServerStorage"),arena)
  singleModelWorld=selection.active.profile=="single-model"
+ worldObjects=selection.objects
 end
--- The imported-asset smoke test has only ground/boundaries and its one model.
+-- The imported-asset world uses ground/boundaries and registered model placements.
 -- Normal arena creation, including weather and terrain, is unchanged.
 if singleModelWorld then weather="Normal" end
 local function createEnvironment(size)
@@ -131,7 +133,7 @@ local function publishScan(tank,angle,observation,manual)
 	local values=observation.value
     -- Show the strongest completed observation; a nearby wall must not mask a
     -- visible enemy elsewhere in this same cone.
-    local priority=if values.type=="tank" then (if values.relation=="enemy" then 4 else 3) elseif values.type=="wall" then 2 else 1
+    local priority=if values.type=="tank" then (if values.relation=="enemy" then 4 else 3) elseif (values.type=="wall" or values.type=="object") then 2 else 1
     for _,detection in values.detections or {} do
         local rank=if detection.type=="tank" then (if detection.relation=="enemy" then 4 else 3) else 2
         if rank>priority then values=detection; priority=rank end
@@ -296,6 +298,19 @@ local function updateShells(now)
 		poseShell(shell)
 		if hit then
 			local _, before, after = PracticeTargets.impact(hit,targets,now,shell.damage)
+   if worldObjects then
+    local record,_,_,destroyed=worldObjects:impact(hit,shell.damage,shell)
+    if destroyed then
+     -- Lightweight wood-chip burst, never a physics Explosion or damage source.
+     for index=1,8 do
+      local angle=index*math.pi/4
+      local chip=shellPart(shellFolder,"WoodChip",Vector3.new(.45,.3,1.2),Color3.fromRGB(157,103,53))
+      chip.Material=Enum.Material.Wood
+      chip.CFrame=CFrame.new(record.proxy.CFrame.Position+Vector3.new(math.cos(angle)*2,index%3,math.sin(angle)*2))*CFrame.Angles(angle,angle,0)
+      Debris:AddItem(chip,.5); worldObjects:trackEffect(chip)
+     end
+    end
+   end
 			for _, other in tanks do
 				if other.hitbox == hit.Instance then
 					local battle=battles[other.owner]
@@ -326,6 +341,7 @@ resetBattle.OnServerEvent:Connect(function(player)
 	local battle=battles[player.UserId]
 	if not battle or os.clock()-(battle.lastReset or -math.huge)<0.5 then return end
 	battle.lastReset=os.clock(); reset(battle,"Battle reset.")
+ if worldObjects then worldObjects:reset() end
 end)
 -- Development redraw is server-authoritative and never exposed in published play.
 arena:SetAttribute("MapWidth", mapSize.X); arena:SetAttribute("MapDepth", mapSize.Y)
@@ -336,6 +352,7 @@ if RunService:IsStudio() then
 	redraw.OnServerEvent:Connect(function(player, size)
 		if not battles[player.UserId] or not ArenaLayout.validSize(size) or os.clock()-lastRedraw < 1 then return end
 		lastRedraw = os.clock(); mapSize = size
+  if worldObjects then worldObjects:reset() end
 		environment=createEnvironment(size); EnvironmentBuilder.build(arena,environment,floor)
 		floor.Size = Vector3.new(size.X+10,1,size.Y+10)
 		walls[1].Size = Vector3.new(size.X+10,6,4); walls[1].Position = Vector3.new(0,3,-size.Y/2-3)
@@ -393,6 +410,7 @@ RunService.Heartbeat:Connect(function(dt)
 		-- to the same completed simulation timestamp, regardless of table order.
         local contactBodies={}
         local contactObstacles=table.clone(VehicleContacts.obstacles(environment,mapSize))
+        if worldObjects then for _,body in worldObjects:obstacles() do table.insert(contactObstacles,body) end end
         for p,target in targets do
             if target.health>0 then table.insert(contactObstacles,VehicleContacts.box(target.collisionId,p.Position,p.Size.X/2,p.Size.Z/2,-p.Size.Y/2,p.Size.Y/2)) end
         end

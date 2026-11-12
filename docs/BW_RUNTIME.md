@@ -428,3 +428,16 @@ The physics extension preserves BW syntax, CPU/device allocation, asynchronous q
 The server still uses its 60Hz fixed step. It predicts all tank poses, then resolves dynamic pairs and authoritative static cover in stable-ID order before committing all hitboxes and movement telemetry. Existing scanner observations occur before movement, as before; weapon recoil is applied at release after contact resolution and affects subsequent integration. Contact substeps do not advance BW or weapon/scanner clocks. Manual input and BW input feed the same `TankSimulation` path. No workspace physics ownership or client-supplied force results are introduced.
 
 See [PHYSICS_FORCES_IMPLEMENTATION.md](PHYSICS_FORCES_IMPLEMENTATION.md) for the concrete state, surface/force interfaces, compatibility choices and tests. Native Studio behavior is not established by mocked tests/builds.
+
+
+### Scenery scanner classification
+
+The authoritative geometry allowlist now distinguishes `object` from structural
+`wall` hits. Imported trunk proxies carry `WorldObjectId`; generated rocks/logs/
+trees and practice targets carry `ScannerType="object"`. Scanner snapshots expose
+`object_id` and `name` for those hits, including nearest-hit convenience fields.
+No extra scan is performed for identification. Ordinary untagged cover remains
+`wall`; cosmetics stay excluded. All visibility checks and per-sensor cooldowns
+are unchanged. Manual and BW observations flash yellow for objects, retaining
+higher priority for detected tanks. Public light events contain no object IDs,
+exact ranges or hidden positions.

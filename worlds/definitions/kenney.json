@@ -3,6 +3,24 @@
     "tree_large": {
       "type": "model",
       "asset": "GLBs/suburban/tree-large.glb"
+    },
+    "fence_section": {
+      "type": "model",
+      "asset": "GLBs/forest/fence.glb"
+    },
+    "rope-fence": {
+      "type": "path",
+      "path": "M -50 -40 C -25 -60 25 -60 50 -40 C 65 -15 65 20 45 45 C 15 60 -20 60 -45 40 C -65 15 -65 -15 -50 -40 Z",
+      "spacing": 45,
+      "orientToPath": true,
+      "item": {
+        "ref": "rope-fence",
+        "rotation": [
+          0,
+          90,
+          0
+        ]
+      }
     }
   }
 }

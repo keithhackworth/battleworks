@@ -1,6 +1,6 @@
 # Studio world selection
 
-The selector chooses a server-wide world at **Studio startup only**. It adds no player UI/remotes and ignores the development setting outside Studio. It supports the existing built-in arena plus the narrow [single imported tree test](TREE_ASSET_TEST.md). Other compiled worlds remain **preview-only**; no placeholder models are created.
+The selector chooses a server-wide world at **Studio startup only**. It adds no player UI/remotes and ignores the development setting outside Studio. It supports the existing built-in arena plus the [tree and curved-fence test](TREE_ASSET_TEST.md). Other compiled worlds remain **preview-only**; no placeholder models are created.
 
 ## Build, discover and sync
 
@@ -10,7 +10,7 @@ node tools/register-worlds.js build/worlds --output worlds/studio-worlds.model.j
 rojo serve
 ```
 
-The registrar discovers compiled `*.json` manifests, checks IDs/names and gathers resource/object counts. `worlds/roblox-assets.json` binds logical IDs/source paths to manually imported models. A supported single-model manifest embeds one placement configuration in the catalog; it becomes available only when the named model can actually be cloned. It writes a small Rojo JSON model catalog (not the scenery itself). Existing IDs must be unique; `default` is reserved. `worlds/studio-worlds.model.json` is checked in so a fresh Rojo build already lists the built-in arena, Village Battle and the asset-dependent Kenney Tree Test, even before regenerating outputs. Rebuild the catalog when adding/removing/changing manifests. Registry/CLI failures do not replace a valid catalog with partial results.
+The registrar discovers compiled `*.json` manifests, checks IDs/names and gathers resource/object counts. `worlds/roblox-assets.json` binds logical IDs/source paths to manually imported models. A supported manifest embeds placement configurations in the catalog; it becomes available only when every named model can be cloned. It writes a small Rojo JSON model catalog (not the scenery itself). Existing IDs must be unique; `default` is reserved. `worlds/studio-worlds.model.json` is checked in so a fresh Rojo build already lists the built-in arena, Village Battle and the asset-dependent Kenney Tree Test, even before regenerating outputs. Rebuild the catalog when adding/removing/changing manifests. Registry/CLI failures do not replace a valid catalog with partial results.
 
 ## Choose without changing Luau source
 
@@ -35,8 +35,14 @@ game.ServerStorage.BattleWorksStudio.SelectedWorld.Value = "default"
 
 Startup logs list names/IDs and availability, then report the active name/ID. `Workspace.Arena` carries `WorldId`, `WorldName`, `RequestedWorldId`, `WorldSelectionStatus` and `WorldSelectionReason` in Studio. Every player uses this single server selection.
 
-Choosing Village Battle logs its missing Roblox GLB mappings/loader and explicitly falls back to **Default Test Arena [default]**. An unknown ID, missing config or unavailable catalog entry also uses the existing arena. A catalog `ready` label cannot enable arbitrary scenery loading; only registered `asset-dependent` single-model placements are attempted. The requested Edit-mode value is retained, so diagnostics are repeatable next session rather than silently resetting your setting.
+Choosing Village Battle logs its missing Roblox GLB mappings/loader and explicitly falls back to **Default Test Arena [default]**. An unknown ID, missing config or unavailable catalog entry also uses the existing arena. A catalog `ready` label cannot enable arbitrary scenery loading; only registered `asset-dependent` native-model placements are attempted. The requested Edit-mode value is retained, so diagnostics are repeatable next session rather than silently resetting your setting.
 
-The existing environment builder creates the default arena. The opt-in tree test uses the same ground/boundaries with generated scenery/targets omitted and places one decorative imported clone. Tank spawning, battle reset, map resizing, networking, combat and server simulation remain unchanged. The per-player BW hardware panel is not used for global Edit-mode configuration. Production startup does not read Studio selection, log it or set development world attributes.
+The existing environment builder creates the default arena. The opt-in tree test uses the same ground/boundaries with generated scenery/targets omitted and places imported clones with optional fixed collision and durability ([profile](IMPORTED_OBJECTS.md)). Tank spawning, battle reset, map resizing, networking, combat and server simulation remain unchanged. The per-player BW hardware panel is not used for global Edit-mode configuration. Production startup does not read Studio selection, log it or set development world attributes.
 
 Files: `tools/register-worlds.js`, `tools/world/catalog.js`, generated `worlds/studio-worlds.model.json`, `default.project.json`, `src/server/StudioWorldSelector.luau`, `src/server/StudioAssetPlacement.luau`, and the Studio-only startup hook in `src/server/init.server.luau`. Tests cover offline discovery/registration and default, unavailable, malformed, unknown, repeated-session and production-ignore selection behavior. GLB import is manual; no full multi-object world loader is included. See TREE_ASSET_TEST.md for exact import and selection steps.
+
+
+The tree test now includes a curved fence using the `fence.glb` mapping. A world
+may register up to 512 native model placements. All required templates must exist;
+a missing template falls back to the default arena, without partial scenery.
+`assetScale` is compiled into each model's transform, not reapplied by Studio.

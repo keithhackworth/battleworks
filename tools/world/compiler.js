@@ -198,9 +198,10 @@ function compileWorld(world, registry = {}, options = {}) {
   // JSON safety is checked before merging, including imported and unused entries.
   json(world, '<world>', 'world'); json(registry, '<registry>', 'definitions');
   if (!object(world)) fail('<world>', 'world', 'expected a JSON object');
-  keys(world, ['version', 'id', 'name', 'seed', 'definitionFiles', 'definitions', 'instances'], '<world>');
+  keys(world, ['version', 'id', 'name', 'seed', 'definitionFiles', 'definitions', 'instances', 'assetScale'], '<world>');
   if (own(world, 'id')) name(world.id, '<world>', 'id');
   if (own(world, 'name') && (typeof world.name !== 'string' || !world.name.trim())) fail('<world>', 'name', 'expected a nonempty display name');
+  if (own(world, 'assetScale') && (typeof world.assetScale !== 'number' || !Number.isFinite(world.assetScale) || world.assetScale <= 0)) fail('<world>', 'assetScale', 'expected a finite positive uniform scale');
   if (world.version !== 1) fail('<world>', 'version', 'expected version 1');
   if (!(typeof seed === 'string' || (typeof seed === 'number' && Number.isSafeInteger(seed)))) fail('<world>', 'seed', 'expected a string or safe integer');
   if (!object(registry) || (own(world, 'definitions') && !object(world.definitions))) fail('<registry>', 'definitions', 'expected an object keyed by definition ID');
@@ -243,7 +244,7 @@ function compileWorld(world, registry = {}, options = {}) {
       }
       candidate = items[index];
     }
-    const matrix = multiply(parent, trs([0, 0, 0], candidate.rotation, candidate.scale));
+    const matrix = multiply(multiply(parent, trs([0, 0, 0], candidate.rotation, candidate.scale)), trs([0,0,0], [0,0,0], world.assetScale ?? 1));
     if (!matrix.every(Number.isFinite)) fail(id, 'transform', 'composed transform is non-finite');
     if (objects.length >= maxObjects) fail(id, 'objects', `output exceeds ${maxObjects} objects`);
     const summary = summarize(matrix);

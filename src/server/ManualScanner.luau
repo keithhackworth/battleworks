@@ -4,7 +4,7 @@ local Components=require(game.ReplicatedStorage.Shared.VehicleComponents)
 local Geometry=require(game.ReplicatedStorage.Shared.ScannerGeometry)
 local Manual={}
 local function priority(event)
-	return if event.kind=="tank" then (if event.affiliation=="enemy" then 4 else 3) elseif event.kind=="wall" then 2 else 1
+	return if event.kind=="tank" then (if event.affiliation=="enemy" then 4 else 3) elseif (event.kind=="wall" or event.kind=="object") then 2 else 1
 end
 function Manual.record(tank,angle,event)
 	local state=tank.state

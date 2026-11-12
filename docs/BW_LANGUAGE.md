@@ -587,15 +587,28 @@ The numbers above illustrate the shape; they are not a guaranteed reading.
 | `range` | Effective range in studs; currently defaults to 150. |
 | `count` | Number of visible detections. |
 | `detections` | Immutable zero-based array, sorted nearest first. |
-| `detections[i].type` | `"tank"` or `"wall"` (solid obstacle). |
+| `detections[i].type` | `"tank"`, `"object"` (tree, rock, log, practice target), or `"wall"` (structural cover). |
 | `.distance` | 3D range from scanner origin to observed visible surface. |
 | `.relative_direction` | Actual chassis-relative bearing to that surface, measured at acquisition. |
 | `.world_direction` | World compass bearing to the same surface: north 0°, east 90°, south 180°, west 270°. |
-| `.player` | Unique `owner.tank#id` tank identity, or null for walls. |
+| `.player` | Unique `owner.tank#id` tank identity, or null for objects/walls. |
 | `.relation` | `"enemy"` / `"teammate"` for tanks, otherwise null. |
 | `.point` | Immutable world-space visible surface position `{x, y, z}`. |
 
-Top-level `type`, `distance`, `relative_direction`, `world_direction`, `player`, `relation` and `point` are conveniences describing the nearest detection. Empty scans are successful with `count=0`, `detections=[]` and null nearest-object fields.
+Objects also expose `object_id` (identifier) and `name` (display name). These fields are null for tanks/walls. Imported objects use their world instance ID; built-in scenery uses its scene path and position. These are observation identifiers, not access to hidden game state. Destroyed/nonqueryable objects are not returned. Objects obey the same range, cone and occlusion rules as tanks and walls.
+
+```python
+scan = Scanner(position=0)
+if scan.status == "success" and scan.count > 0:
+    hit = scan.detections[0]
+    if hit.type == "object":
+        print(hit.name)
+        print(hit.object_id)
+```
+
+Sensor colors: objects yellow, enemy tanks red, teammates cyan, walls neutral, empty scans blue. If one scan sees several types, tank warnings take precedence over objects/walls.
+
+Top-level `type`, `distance`, `relative_direction`, `world_direction`, `player`, `relation`, `point`, `object_id` and `name` are conveniences describing the nearest detection. Empty scans are successful with `count=0`, `detections=[]` and null nearest-object fields.
 
 The origin is authoritative tank position + 2.5 studs world Y. The cone is 15° total, ±7.5°. Fixed sensor mounts are 45° apart, so eight simultaneous fixed scans still leave gaps between cones. An object between cones can be missed even within range; nearby is not the same as inside a cone. All visible tanks and obstacles found within the cone/range compete, with occluded objects excluded. Multiple hits on the same object are consolidated. Objects need not have their centers inside the cone if part of their physical body is visible.
 

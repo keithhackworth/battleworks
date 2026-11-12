@@ -5,6 +5,17 @@ local Components=require(Shared.VehicleComponents)
 local Geometry=require(Shared.ScannerGeometry)
 local Value=require(Shared.BWValue)
 local Scanner={}
+-- Only queryable, server-allowlisted geometry reaches classification. Metadata
+-- distinguishes scenery from structural walls without exposing occluded objects.
+local function objectInfo(part)
+ local id=part:GetAttribute("WorldObjectId") or part:GetAttribute("ScannerObjectId")
+ if id~=nil or part:GetAttribute("ScannerType")=="object" then
+  local p=part.CFrame.Position
+  local identity=id or (part:GetFullName()..string.format("/%.17g/%.17g/%.17g",p.X,p.Y,p.Z))
+  return "object",identity,part:GetAttribute("ScannerObjectName") or part.Name
+ end
+ return "wall",nil,nil
+end
 Scanner.__index=Scanner
 -- Stable record IDs distinguish multiple tanks of the same type and owner.
 function Scanner.identity(record)
@@ -69,7 +80,9 @@ function Scanner:execute(source,angle,time,hardware)
  local keys={}; for _,candidate in ordered do keys[candidate.part]=candidate.key end
  local function keyFor(part)
   local record=records[part]
-  return if record and record.state.health>0 then "tank/"..tostring(record.id) else "wall/"..(keys[part] or part:GetFullName())
+  if record and record.state.health>0 then return "tank/"..tostring(record.id) end
+  local kind,id=objectInfo(part)
+  return kind.."/"..(id or keys[part] or part:GetFullName())
  end
  for i,candidate in ordered do
   if i>Config.MaxCandidates then return nil,"scannerBusy" end
@@ -98,7 +111,9 @@ function Scanner:execute(source,angle,time,hardware)
  for _,entry in found do
   local hit=entry.hit; local record=records[hit.Instance]; local tank=record and record.state.health>0
   local affiliation=if tank then (if source.teamId~=nil and source.teamId==record.teamId then "teammate" else "enemy") else nil
-  table.insert(detections,Value.dictionary({type=if tank then "tank" else "wall",distance=entry.distance,
+  local kind,objectId,objectName=objectInfo(hit.Instance)
+  table.insert(detections,Value.dictionary({type=if tank then "tank" else kind,distance=entry.distance,
+   object_id=if not tank and objectId then objectId else Value.Null,name=if not tank and objectName then objectName else Value.Null,
    relative_direction=Geometry.bearing(yaw,hit.Position-origin),world_direction=Geometry.worldBearing(hit.Position-origin),player=if tank then Scanner.identity(record) else Value.Null,relation=affiliation or Value.Null,
    point=Value.dictionary({x=hit.Position.X,y=hit.Position.Y,z=hit.Position.Z},true)},true))
  end
@@ -107,7 +122,8 @@ function Scanner:execute(source,angle,time,hardware)
  -- the authoritative complete visible-object list, zero-indexed in BW.
  local result=Value.result(nil,{sensor=angle,timestamp=time,range=range,count=#detections,detections=Value.array(detections),
   type=nearest.type or Value.Null,distance=nearest.distance or Value.Null,relative_direction=nearest.relative_direction or Value.Null,world_direction=nearest.world_direction or Value.Null,
-  player=nearest.player or Value.Null,relation=nearest.relation or Value.Null,point=nearest.point or Value.Null})
+  player=nearest.player or Value.Null,relation=nearest.relation or Value.Null,point=nearest.point or Value.Null,
+  object_id=nearest.object_id or Value.Null,name=nearest.name or Value.Null})
 	self.completed+=1; self.lastRaycasts=casts
 	return Value.observation(result,time,origin,yaw)
 end

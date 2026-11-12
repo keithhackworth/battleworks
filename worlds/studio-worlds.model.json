@@ -75,14 +75,14 @@
           "ClassName": "StringValue",
           "Name": "Status",
           "Properties": {
-            "Value": "preview-only"
+            "Value": "asset-dependent"
           }
         },
         {
           "ClassName": "StringValue",
           "Name": "Reason",
           "Properties": {
-            "Value": "1 symbolic GLB resources have no Roblox asset mapping or supported placement. Only a single mapped model with uniform scale is supported."
+            "Value": "Requires imported Models in ServerStorage/BattleWorksAssets: fence, tree-large; unavailable assets fall back to the test arena."
           }
         },
         {
@@ -96,15 +96,683 @@
           "ClassName": "IntValue",
           "Name": "ObjectCount",
           "Properties": {
-            "Value": 1
+            "Value": 10
           }
         },
         {
           "ClassName": "IntValue",
           "Name": "AssetCount",
           "Properties": {
-            "Value": 1
+            "Value": 2
           }
+        },
+        {
+          "Children": [
+            {
+              "Children": [
+                {
+                  "ClassName": "StringValue",
+                  "Name": "InstanceId",
+                  "Properties": {
+                    "Value": "curvy-fence/segment_000"
+                  }
+                },
+                {
+                  "ClassName": "StringValue",
+                  "Name": "AssetId",
+                  "Properties": {
+                    "Value": "fence_section"
+                  }
+                },
+                {
+                  "ClassName": "StringValue",
+                  "Name": "Source",
+                  "Properties": {
+                    "Value": "fence.glb"
+                  }
+                },
+                {
+                  "ClassName": "StringValue",
+                  "Name": "Template",
+                  "Properties": {
+                    "Value": "fence"
+                  }
+                },
+                {
+                  "ClassName": "Vector3Value",
+                  "Name": "Position",
+                  "Properties": {
+                    "Value": [
+                      -50,
+                      0,
+                      -40
+                    ]
+                  }
+                },
+                {
+                  "ClassName": "Vector3Value",
+                  "Name": "Rotation",
+                  "Properties": {
+                    "Value": [
+                      0,
+                      36.942795944607695,
+                      0
+                    ]
+                  }
+                },
+                {
+                  "ClassName": "NumberValue",
+                  "Name": "Scale",
+                  "Properties": {
+                    "Value": 45
+                  }
+                }
+              ],
+              "ClassName": "Configuration",
+              "Name": "item_0"
+            },
+            {
+              "Children": [
+                {
+                  "ClassName": "StringValue",
+                  "Name": "InstanceId",
+                  "Properties": {
+                    "Value": "curvy-fence/segment_001"
+                  }
+                },
+                {
+                  "ClassName": "StringValue",
+                  "Name": "AssetId",
+                  "Properties": {
+                    "Value": "fence_section"
+                  }
+                },
+                {
+                  "ClassName": "StringValue",
+                  "Name": "Source",
+                  "Properties": {
+                    "Value": "fence.glb"
+                  }
+                },
+                {
+                  "ClassName": "StringValue",
+                  "Name": "Template",
+                  "Properties": {
+                    "Value": "fence"
+                  }
+                },
+                {
+                  "ClassName": "Vector3Value",
+                  "Name": "Position",
+                  "Properties": {
+                    "Value": [
+                      -8.133747672100295,
+                      0,
+                      -54.67196053477319
+                    ]
+                  }
+                },
+                {
+                  "ClassName": "Vector3Value",
+                  "Name": "Rotation",
+                  "Properties": {
+                    "Value": [
+                      0,
+                      4.803067289702398,
+                      0
+                    ]
+                  }
+                },
+                {
+                  "ClassName": "NumberValue",
+                  "Name": "Scale",
+                  "Properties": {
+                    "Value": 45
+                  }
+                }
+              ],
+              "ClassName": "Configuration",
+              "Name": "item_1"
+            },
+            {
+              "Children": [
+                {
+                  "ClassName": "StringValue",
+                  "Name": "InstanceId",
+                  "Properties": {
+                    "Value": "curvy-fence/segment_002"
+                  }
+                },
+                {
+                  "ClassName": "StringValue",
+                  "Name": "AssetId",
+                  "Properties": {
+                    "Value": "fence_section"
+                  }
+                },
+                {
+                  "ClassName": "StringValue",
+                  "Name": "Source",
+                  "Properties": {
+                    "Value": "fence.glb"
+                  }
+                },
+                {
+                  "ClassName": "StringValue",
+                  "Name": "Template",
+                  "Properties": {
+                    "Value": "fence"
+                  }
+                },
+                {
+                  "ClassName": "Vector3Value",
+                  "Name": "Position",
+                  "Properties": {
+                    "Value": [
+                      35.977621798526656,
+                      0,
+                      -48.18126211691237
+                    ]
+                  }
+                },
+                {
+                  "ClassName": "Vector3Value",
+                  "Name": "Rotation",
+                  "Properties": {
+                    "Value": [
+                      0,
+                      -22.230702977346002,
+                      0
+                    ]
+                  }
+                },
+                {
+                  "ClassName": "NumberValue",
+                  "Name": "Scale",
+                  "Properties": {
+                    "Value": 45
+                  }
+                }
+              ],
+              "ClassName": "Configuration",
+              "Name": "item_2"
+            },
+            {
+              "Children": [
+                {
+                  "ClassName": "StringValue",
+                  "Name": "InstanceId",
+                  "Properties": {
+                    "Value": "curvy-fence/segment_003"
+                  }
+                },
+                {
+                  "ClassName": "StringValue",
+                  "Name": "AssetId",
+                  "Properties": {
+                    "Value": "fence_section"
+                  }
+                },
+                {
+                  "ClassName": "StringValue",
+                  "Name": "Source",
+                  "Properties": {
+                    "Value": "fence.glb"
+                  }
+                },
+                {
+                  "ClassName": "StringValue",
+                  "Name": "Template",
+                  "Properties": {
+                    "Value": "fence"
+                  }
+                },
+                {
+                  "ClassName": "Vector3Value",
+                  "Name": "Position",
+                  "Properties": {
+                    "Value": [
+                      59.68667873817819,
+                      0,
+                      -13.152219376488013
+                    ]
+                  }
+                },
+                {
+                  "ClassName": "Vector3Value",
+                  "Name": "Rotation",
+                  "Properties": {
+                    "Value": [
+                      0,
+                      -81.07639521102661,
+                      0
+                    ]
+                  }
+                },
+                {
+                  "ClassName": "NumberValue",
+                  "Name": "Scale",
+                  "Properties": {
+                    "Value": 45
+                  }
+                }
+              ],
+              "ClassName": "Configuration",
+              "Name": "item_3"
+            },
+            {
+              "Children": [
+                {
+                  "ClassName": "StringValue",
+                  "Name": "InstanceId",
+                  "Properties": {
+                    "Value": "curvy-fence/segment_004"
+                  }
+                },
+                {
+                  "ClassName": "StringValue",
+                  "Name": "AssetId",
+                  "Properties": {
+                    "Value": "fence_section"
+                  }
+                },
+                {
+                  "ClassName": "StringValue",
+                  "Name": "Source",
+                  "Properties": {
+                    "Value": "fence.glb"
+                  }
+                },
+                {
+                  "ClassName": "StringValue",
+                  "Name": "Template",
+                  "Properties": {
+                    "Value": "fence"
+                  }
+                },
+                {
+                  "ClassName": "Vector3Value",
+                  "Name": "Position",
+                  "Properties": {
+                    "Value": [
+                      53.80328227312227,
+                      0,
+                      30.79148739226538
+                    ]
+                  }
+                },
+                {
+                  "ClassName": "Vector3Value",
+                  "Name": "Rotation",
+                  "Properties": {
+                    "Value": [
+                      -180,
+                      -64.51390913172293,
+                      -180
+                    ]
+                  }
+                },
+                {
+                  "ClassName": "NumberValue",
+                  "Name": "Scale",
+                  "Properties": {
+                    "Value": 45
+                  }
+                }
+              ],
+              "ClassName": "Configuration",
+              "Name": "item_4"
+            },
+            {
+              "Children": [
+                {
+                  "ClassName": "StringValue",
+                  "Name": "InstanceId",
+                  "Properties": {
+                    "Value": "curvy-fence/segment_005"
+                  }
+                },
+                {
+                  "ClassName": "StringValue",
+                  "Name": "AssetId",
+                  "Properties": {
+                    "Value": "fence_section"
+                  }
+                },
+                {
+                  "ClassName": "StringValue",
+                  "Name": "Source",
+                  "Properties": {
+                    "Value": "fence.glb"
+                  }
+                },
+                {
+                  "ClassName": "StringValue",
+                  "Name": "Template",
+                  "Properties": {
+                    "Value": "fence"
+                  }
+                },
+                {
+                  "ClassName": "Vector3Value",
+                  "Name": "Position",
+                  "Properties": {
+                    "Value": [
+                      18.345624319376526,
+                      0,
+                      54.07280166004759
+                    ]
+                  }
+                },
+                {
+                  "ClassName": "Vector3Value",
+                  "Name": "Rotation",
+                  "Properties": {
+                    "Value": [
+                      -180,
+                      -10.127629414911782,
+                      -180
+                    ]
+                  }
+                },
+                {
+                  "ClassName": "NumberValue",
+                  "Name": "Scale",
+                  "Properties": {
+                    "Value": 45
+                  }
+                }
+              ],
+              "ClassName": "Configuration",
+              "Name": "item_5"
+            },
+            {
+              "Children": [
+                {
+                  "ClassName": "StringValue",
+                  "Name": "InstanceId",
+                  "Properties": {
+                    "Value": "curvy-fence/segment_006"
+                  }
+                },
+                {
+                  "ClassName": "StringValue",
+                  "Name": "AssetId",
+                  "Properties": {
+                    "Value": "fence_section"
+                  }
+                },
+                {
+                  "ClassName": "StringValue",
+                  "Name": "Source",
+                  "Properties": {
+                    "Value": "fence.glb"
+                  }
+                },
+                {
+                  "ClassName": "StringValue",
+                  "Name": "Template",
+                  "Properties": {
+                    "Value": "fence"
+                  }
+                },
+                {
+                  "ClassName": "Vector3Value",
+                  "Name": "Position",
+                  "Properties": {
+                    "Value": [
+                      -25.968879856021445,
+                      0,
+                      50.81469782914478
+                    ]
+                  }
+                },
+                {
+                  "ClassName": "Vector3Value",
+                  "Name": "Rotation",
+                  "Properties": {
+                    "Value": [
+                      -180,
+                      20.68941850142781,
+                      -180
+                    ]
+                  }
+                },
+                {
+                  "ClassName": "NumberValue",
+                  "Name": "Scale",
+                  "Properties": {
+                    "Value": 45
+                  }
+                }
+              ],
+              "ClassName": "Configuration",
+              "Name": "item_6"
+            },
+            {
+              "Children": [
+                {
+                  "ClassName": "StringValue",
+                  "Name": "InstanceId",
+                  "Properties": {
+                    "Value": "curvy-fence/segment_007"
+                  }
+                },
+                {
+                  "ClassName": "StringValue",
+                  "Name": "AssetId",
+                  "Properties": {
+                    "Value": "fence_section"
+                  }
+                },
+                {
+                  "ClassName": "StringValue",
+                  "Name": "Source",
+                  "Properties": {
+                    "Value": "fence.glb"
+                  }
+                },
+                {
+                  "ClassName": "StringValue",
+                  "Name": "Template",
+                  "Properties": {
+                    "Value": "fence"
+                  }
+                },
+                {
+                  "ClassName": "Vector3Value",
+                  "Name": "Position",
+                  "Properties": {
+                    "Value": [
+                      -56.447753000783315,
+                      0,
+                      20.137346212653483
+                    ]
+                  }
+                },
+                {
+                  "ClassName": "Vector3Value",
+                  "Name": "Rotation",
+                  "Properties": {
+                    "Value": [
+                      -180,
+                      70.15175851669647,
+                      -180
+                    ]
+                  }
+                },
+                {
+                  "ClassName": "NumberValue",
+                  "Name": "Scale",
+                  "Properties": {
+                    "Value": 45.00000000000001
+                  }
+                }
+              ],
+              "ClassName": "Configuration",
+              "Name": "item_7"
+            },
+            {
+              "Children": [
+                {
+                  "ClassName": "StringValue",
+                  "Name": "InstanceId",
+                  "Properties": {
+                    "Value": "curvy-fence/segment_008"
+                  }
+                },
+                {
+                  "ClassName": "StringValue",
+                  "Name": "AssetId",
+                  "Properties": {
+                    "Value": "fence_section"
+                  }
+                },
+                {
+                  "ClassName": "StringValue",
+                  "Name": "Source",
+                  "Properties": {
+                    "Value": "fence.glb"
+                  }
+                },
+                {
+                  "ClassName": "StringValue",
+                  "Name": "Template",
+                  "Properties": {
+                    "Value": "fence"
+                  }
+                },
+                {
+                  "ClassName": "Vector3Value",
+                  "Name": "Position",
+                  "Properties": {
+                    "Value": [
+                      -57.308407470836215,
+                      0,
+                      -23.989381782636965
+                    ]
+                  }
+                },
+                {
+                  "ClassName": "Vector3Value",
+                  "Name": "Rotation",
+                  "Properties": {
+                    "Value": [
+                      0,
+                      71.90098486625311,
+                      0
+                    ]
+                  }
+                },
+                {
+                  "ClassName": "NumberValue",
+                  "Name": "Scale",
+                  "Properties": {
+                    "Value": 44.99999999999999
+                  }
+                }
+              ],
+              "ClassName": "Configuration",
+              "Name": "item_8"
+            },
+            {
+              "Children": [
+                {
+                  "ClassName": "StringValue",
+                  "Name": "InstanceId",
+                  "Properties": {
+                    "Value": "tree-large"
+                  }
+                },
+                {
+                  "ClassName": "StringValue",
+                  "Name": "AssetId",
+                  "Properties": {
+                    "Value": "tree_large"
+                  }
+                },
+                {
+                  "ClassName": "StringValue",
+                  "Name": "Source",
+                  "Properties": {
+                    "Value": "GLBs/suburban/tree-large.glb"
+                  }
+                },
+                {
+                  "ClassName": "StringValue",
+                  "Name": "Template",
+                  "Properties": {
+                    "Value": "tree-large"
+                  }
+                },
+                {
+                  "ClassName": "Vector3Value",
+                  "Name": "Position",
+                  "Properties": {
+                    "Value": [
+                      0,
+                      0,
+                      0
+                    ]
+                  }
+                },
+                {
+                  "ClassName": "Vector3Value",
+                  "Name": "Rotation",
+                  "Properties": {
+                    "Value": [
+                      0,
+                      0,
+                      0
+                    ]
+                  }
+                },
+                {
+                  "ClassName": "NumberValue",
+                  "Name": "Scale",
+                  "Properties": {
+                    "Value": 45
+                  }
+                },
+                {
+                  "ClassName": "BoolValue",
+                  "Name": "Solid",
+                  "Properties": {
+                    "Value": true
+                  }
+                },
+                {
+                  "ClassName": "BoolValue",
+                  "Name": "Destructible",
+                  "Properties": {
+                    "Value": true
+                  }
+                },
+                {
+                  "ClassName": "NumberValue",
+                  "Name": "Health",
+                  "Properties": {
+                    "Value": 150
+                  }
+                },
+                {
+                  "ClassName": "Vector3Value",
+                  "Name": "ColliderFractions",
+                  "Properties": {
+                    "Value": [
+                      0.18,
+                      0.45,
+                      0.18
+                    ]
+                  }
+                }
+              ],
+              "ClassName": "Configuration",
+              "Name": "item_9"
+            }
+          ],
+          "ClassName": "Folder",
+          "Name": "Placements"
         }
       ],
       "ClassName": "Configuration",
@@ -137,7 +805,7 @@
           "ClassName": "StringValue",
           "Name": "Reason",
           "Properties": {
-            "Value": "18 symbolic GLB resources have no Roblox asset mapping or supported placement. Only a single mapped model with uniform scale is supported."
+            "Value": "Object 'station_house/building': Resource 'fictional/village/house_weathered.glb' has no Roblox asset mapping."
           }
         },
         {

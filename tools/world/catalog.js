@@ -2,7 +2,7 @@
 const fs = require('node:fs/promises');
 const path = require('node:path');
 const { serialize } = require('./compiler');
-const { studioPlacement } = require('./studio-placement');
+const { studioPlacements, placementIssue } = require('./studio-placement');
 const value = (name, text) => ({ Name: name, ClassName: 'StringValue', Properties: { Value: text } });
 function entry(id, name, status, reason, source, objects, assets) {
   return { Name: id, ClassName: 'Configuration', Children: [value('WorldId', id), value('DisplayName', name), value('Status', status), value('Reason', reason), value('ManifestPath', source),
@@ -20,17 +20,30 @@ async function discoverWorlds(directory, bindings = {}) {
     if (typeof id !== 'string' || !/^[A-Za-z0-9_][A-Za-z0-9_.:-]*$/.test(id) || typeof name !== 'string' || !name.trim()) throw new Error(`${filename}: invalid world id/name`);
     if (ids.has(id)) throw new Error(`${filename}: duplicate/reserved world ID '${id}'`); ids.add(id);
     const assets = new Set(manifest.objects.map(o => o.asset)).size;
-    const placement = studioPlacement(manifest, bindings);
-    const record = entry(id, name, placement ? 'asset-dependent' : 'preview-only', placement
-      ? `Requires imported Model ServerStorage/BattleWorksAssets/${placement.model} from ${placement.source}; unavailable assets fall back to the test arena.`
-      : `${assets} symbolic GLB resources have no Roblox asset mapping or supported placement. Only a single mapped model with uniform scale is supported.`,
+    const placements = studioPlacements(manifest, bindings);
+    const record = entry(id, name, placements ? 'asset-dependent' : 'preview-only', placements
+      ? `Requires imported Models in ServerStorage/BattleWorksAssets: ${[...new Set(placements.map(p => p.model))].join(', ')}; unavailable assets fall back to the test arena.`
+      : placementIssue(manifest, bindings),
       path.relative(path.resolve(__dirname, '../..'), filename).split(path.sep).join('/'), manifest.objects.length, assets);
-    if (placement) record.Children.push({ Name: 'Placement', ClassName: 'Configuration', Children: [
+    const nodes=[];
+    for (const placement of placements || []) {
+      const fields = [
       value('InstanceId', placement.id), value('AssetId', placement.assetId), value('Source', placement.source), value('Template', placement.model),
       { Name: 'Position', ClassName: 'Vector3Value', Properties: { Value: placement.position } },
       { Name: 'Rotation', ClassName: 'Vector3Value', Properties: { Value: placement.rotation } },
       { Name: 'Scale', ClassName: 'NumberValue', Properties: { Value: placement.scale } },
-    ] });
+      ];
+      if (placement.interaction) {
+        const v = placement.interaction;
+        fields.push({ Name: 'Solid', ClassName: 'BoolValue', Properties: { Value: v.solid } },
+          { Name: 'Destructible', ClassName: 'BoolValue', Properties: { Value: v.destructible } },
+          { Name: 'Health', ClassName: 'NumberValue', Properties: { Value: v.hp } },
+          { Name: 'ColliderFractions', ClassName: 'Vector3Value', Properties: { Value: [v.collider.widthFraction, v.collider.heightFraction, v.collider.depthFraction] } });
+      }
+      nodes.push({ Name: `item_${nodes.length}`, ClassName: 'Configuration', Children: fields });
+    }
+    if (nodes.length===1) record.Children.push({...nodes[0],Name:'Placement'});
+    else if (nodes.length) record.Children.push({Name:'Placements',ClassName:'Folder',Children:nodes});
     worlds.push(record);
   }
   worlds.sort((a, b) => a.Name < b.Name ? -1 : a.Name > b.Name ? 1 : 0);

@@ -112,3 +112,15 @@ Safety bounds: 64 levels of reference/JSON nesting, 100,000 output objects, 200,
 To add real assets later, replace symbolic paths with your resource catalog paths and retain sensible pivots, units, forward axis and corrections. Compilation still will not open or import those resources. A separate integration milestone should map paths to approved Roblox assets and implement a small server-authoritative manifest loader. The compiler itself implements no editor, runtime world loading, collision/pushing/damage calculations, GLB conversion, terrain meshes, train motion or animation. The separate Studio-only single-model smoke test is documented in TREE_ASSET_TEST.md.
 
 See [WORLD_SELECTOR.md](WORLD_SELECTOR.md) for the Studio-only catalog/selection milestone.
+
+
+## World-wide asset units
+
+Optional world-level `"assetScale": 45` converts model assets to the game's stud
+scale. It defaults to 1 and must be finite and positive. It multiplies every
+model's resolved scale once, including models inside groups, repeats, regions
+and paths. It does **not** multiply world positions, group offsets, SVG geometry,
+spacing or separation distances. Local definition/instance and candidate scales
+remain additional multipliers. This allows Kenney assets to share one conversion
+without multiplying the entire arena layout or manually scaling every panel.
+The manifest already contains the final transform; loaders must not scale again.

@@ -385,4 +385,48 @@ do
  add("between-cones",G.direction(0,22.5)*40+Vector3.new(0,2.5,0),Vector3.new(2,4,2),true)
  for position=0,7 do check(assert(service:execute(source,position*45,1)).value.count==0,"empty scan between narrow cones is not a cooldown failure") end
 end
+-- Same-named generated props are distinct objects, not collapsed into one hit.
+do
+ local scanner,source,add=setup()
+ for _,angle in {-5,5} do
+  local rock=add("Rock",G.direction(0,angle)*40+Vector3.new(0,2.5,0),Vector3.new(1,3,1))
+  rock:SetAttribute("ScannerType","object")
+ end
+ local scan=assert(scanner:execute(source,0,1)).value
+ check(scan.count==2 and scan.detections[1].object_id~=scan.detections[2].object_id,"same-named props retain separate detections")
+end
+-- Scenery is a first-class BW observation; walls keep their existing contract.
+do
+ local scanner,source,add=setup()
+ local tree=add("WorldObstacleHitbox",Vector3.new(0,2.5,-30),Vector3.new(3,8,3))
+ tree:SetAttribute("WorldObjectId","tree-large")
+ tree:SetAttribute("ScannerObjectName","Large Tree")
+ local scan=assert(scanner:execute(source,0,1)).value
+ check(scan.type=="object" and scan.count==1 and scan.detections[1].type=="object","imported trunk classified as object")
+ check(scan.object_id=="tree-large" and scan.name=="Large Tree" and scan.player==Values.Null and scan.relation==Values.Null,"object identity without invented player or affiliation")
+ check(not pcall(function() scan.detections[1].name="changed" end),"object observations remain immutable")
+ local Concurrent=require("BWExecution"); local Hardware=require("BWChassis")
+ local printed={}
+ local code='scan = Scanner(0)\nif scan.status == "success" and scan.count > 0:\n    hit = scan.detections[0]\n    if hit.type == "object":\n        print(hit.object_id)\n        print(hit.name)'
+ local runtime=Concurrent.new(assert(Parser.parse(code)),source.state,{scan=function(angle,performance,time,hardware) return scanner:execute(source,angle,time+2,hardware) end,onPrint=function(v) table.insert(printed,v) end},Hardware.forTank("Boomer"))
+ for _=1,120 do runtime:step(source.state,1/60); if runtime.status~="running" then break end end
+ check(runtime.status=="completed" and #printed==2,"BW branches on actual acquired object result and prints identifying fields")
+ tree.CanQuery=false
+ check(assert(scanner:execute(source,0,5)).value.count==0,"destroyed/nonqueryable objects disappear from radar")
+end
+do
+ local scanner,source,add=setup()
+ local rock=add("Rock",Vector3.new(0,2.5,-25),Vector3.new(20,10,2))
+ rock:SetAttribute("ScannerType","object")
+ add("hidden-tank",Vector3.new(0,2.5,-45),Vector3.new(2,3,2),true)
+ local scan=assert(scanner:execute(source,0,1)).value
+ check(scan.count==1 and scan.type=="object" and scan.name=="Rock","scenery blocks hidden tanks and identifies generated cover")
+ rock.CanQuery=false
+ local wall=add("Wall",Vector3.new(0,2.5,-15),Vector3.new(20,10,2))
+ check(assert(scanner:execute(source,0,2)).value.type=="wall","unmarked structural cover remains a wall")
+ local Manual=require("ManualScanner")
+ Manual.record(source,0,{serial=1,angle=0,kind="object",proximity=.5,remaining=2})
+ Manual.record(source,15,{serial=2,angle=15,kind="none",proximity=0,remaining=2})
+ check(source.state.scanManual["1"].kind=="object","manual object warning survives neighboring empty cone")
+end
 print(string.format("Directional scanner/value/runtime suite passed: %d assertions",count))

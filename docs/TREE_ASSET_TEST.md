@@ -1,6 +1,6 @@
-# One-tree Studio asset test
+# Tree and curved-fence Studio asset test
 
-This milestone extends the existing Studio world selector, not a second world loader. It places **one** cloned imported model, with uniform scale and degree rotation, centered horizontally at X=0/Z=0 with its bounding-box bottom on Y=0. No GLB bytes are parsed by BattleWorks.
+This milestone extends the existing Studio world selector, not a second world loader. It places the central tree and a curved ring of repeated fence panels, with uniform scale and degree rotation. Each clone is grounded independently. No GLB bytes are parsed by BattleWorks.
 
 ## Prepare the world (already generated in this checkout)
 
@@ -27,7 +27,7 @@ Reference: [Roblox Importer](https://create.roblox.com/docs/studio/importer). Ma
 
 ## Select and play
 
-Set `ServerStorage → BattleWorksStudio → SelectedWorld.Value` to **`tree_test`** in Edit mode, then press Play. Output should report **Active world: Kenney Tree Test [tree_test]**. Inspect `Workspace.Arena.WorldScenery.tree-large`: it is the single placed clone; the reusable template stays in ServerStorage.
+Set `ServerStorage → BattleWorksStudio → SelectedWorld.Value` to **`tree_test`** in Edit mode, then press Play. Output should report **Active world: Kenney Tree Test [tree_test]**. Inspect `Workspace.Arena.WorldScenery.tree-large`: it is the central tree clone; its reusable template stays in ServerStorage. The fence panels are siblings in WorldScenery.
 
 The test keeps the floor, boundaries, tanks, controls, networking and combat simulation. It omits generated rocks/logs/trees, terrain patches, wind/ice and practice targets. Reset Battle and map redraw do not duplicate the placed tree. Choose `default` to restore the complete existing test arena. A missing/unusable template reports the expected import path and uses that full default arena; no substitute model is created. Production ignores these Studio selections as before.
 
@@ -51,6 +51,35 @@ Edit `worlds/tree-test.json`, then rerun the two Node commands above and sync Ro
 
 ## Deliberate limits and verification
 
-Only one mapped model per world, uniform positive scale, and no influence profiles are supported by this thin Studio placement path. Multi-object worlds, shear/nonuniform scales and unmapped resources stay preview-only. No asset browser, general scenery loader, importer API, physics profiles or destructibility is added. The placed tree is anchored and noncolliding/nonqueryable, so it does not introduce new gameplay obstacles or intercept shots/scans.
+Up to 512 mapped model placements per world and uniform positive scale are supported. Shear/nonuniform scales and unmapped resources stay preview-only. Fixed trunk collision and weapon durability are now supported through the narrow [imported-object profile](IMPORTED_OBJECTS.md). The mesh remains cosmetic; a server-owned trunk proxy handles contacts, projectile hits and scanner occlusion. Pushing/tipping and general physics profiles are not implemented.
 
 Automated coverage: source/logical asset resolution, one-object registration, transform extraction, bounds grounding with offset pivots/rotations, relative uniform scaling, template immutability, single-clone lifecycle, selector activation and missing/invalid asset fallback. Model operations are numerical doubles, not proof of native mesh rendering. **Still manual:** actual GLB import/materials, visual size/base contact, Edit-mode save/Play persistence and live tank controls in Studio.
+
+
+## Curved fence and world asset scale
+
+`worlds/tree-test.json` now sets `"assetScale": 45` once for all model assets.
+The central tree and panels inherit that scale without per-object scale entries.
+It is applied by the offline compiler at each model leaf, exactly once; positions,
+path coordinates and spacing remain in world studs. Optional local `scale` still
+multiplies this conversion (for example `scale: 0.5` becomes 22.5).
+
+`worlds/definitions/kenney.json` defines `fence_section` using `fence.glb` and
+`curvy_fence` as a closed cubic path. The current path yields nine tangent-aligned
+panels around the tree, at 45-stud spacing. The panel's local X axis is assumed to
+run along its length (`item.rotation` corrects it by 90 degrees for the path).
+Adjust that rotation and spacing to your actual imported fence proportions; no
+asset dimensions are guessed from GLB bytes. Fence panels are decorative for now;
+the central tree retains its solid/destructible profile.
+
+Import `fence.glb` once as a Model named `fence` in
+`ServerStorage/BattleWorksAssets`, then export that model to
+`assets/roblox/fence.rbxm` or `.rbxmx`, using the same persistence procedure as the
+tree. The asset registry maps the symbolic file to this reusable native template.
+No copying per panel is needed: the server clones it for all placements.
+
+The existing selector reads the generated `Placements` folder; legacy single
+`Placement` entries still work. Placement is staged before activating the world.
+If either required model is missing or any placement fails, startup uses the
+default arena with a diagnostic, rather than displaying a partial fence/world.
+Validate the fence's scale, joins and orientation visually in Studio after import.

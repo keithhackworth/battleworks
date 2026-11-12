@@ -78,5 +78,43 @@ local missingStorage=node("Folder","ServerStorage",nil,{config})
 local fallbackArena=container("Arena")
 selected=require("StudioWorldSelector").start({IsStudio=function() return true end},missingStorage,fallbackArena,function() end)
 check(selected.active.id=="default" and not fallbackArena:FindFirstChild("WorldScenery"),"missing import does not activate an empty test world")
+-- Decode the generated interaction values through the actual startup path.
+for _,v in {node("BoolValue","Solid",true),node("BoolValue","Destructible",true),node("NumberValue","Health",150),node("Vector3Value","ColliderFractions",Vector3.new(.18,.45,.18))} do table.insert(values,v) end
+selected=require("StudioWorldSelector").start({IsStudio=function() return true end},storage,arena,function() end)
+local object=selected.objects.records["tree-large"]
+check(selected.active.id=="tree_test" and object and object.health==150 and object.solid,"catalog interaction values create authoritative object on startup")
+check(#selected.objects:obstacles()==1 and object.proxy.CanQuery,"startup wires blocking and projectile queries")
+selected.objects:impact({Instance=object.proxy},150,{})
+check(object.destroyed and #selected.objects:obstacles()==0,"selected imported model accepts fatal damage")
+selected.objects:reset()
+check(object.health==150 and object.proxy.CanQuery,"selected imported model resets without reimport")
+-- Multiple native placements share one scenery folder; a missing later asset
+-- leaves the previous scene intact instead of silently dropping the tree.
+local fence=table.clone(template); fence.Name="fence"; table.insert(assets.children,fence)
+local treeSpec={id="tree-large",template="tree-large",source=spec.source,position=Vector3.zero,rotation=Vector3.zero,scale=4}
+local fenceSpec={id="curvy-fence/segment_000",template="fence",source="fence.glb",position=Vector3.new(50,0,0),rotation=Vector3.new(0,70,0),scale=8}
+local models,err=Placement.placeMany(assets,{treeSpec,fenceSpec},arena)
+check(models and #models==2,err or "multi-model placement succeeds")
+check(models[1].Parent==models[2].Parent and models[1].Parent.Parent==arena,"tree and fence coexist under one scene")
+local box,size=models[2]:GetBoundingBox()
+check(math.abs(box.Position.X-50)<1e-6 and math.abs(box.Position.Y-size.Y/2)<1e-6,"fence panel grounds independently at its path location")
+local preserved=models[1].Parent
+local missingSpec=table.clone(fenceSpec); missingSpec.template="absent"
+local rejected,message=Placement.placeMany(assets,{treeSpec,missingSpec},arena)
+check(not rejected and message:find("fence.glb",1,true) and not preserved.destroyed,"missing panel fails atomically and diagnoses its asset")
+local duplicate=Placement.placeMany(assets,{treeSpec,treeSpec},arena)
+check(not duplicate and not preserved.destroyed,"duplicate IDs cannot replace live world")
+-- Generated Placements folder is decoded by the existing selector.
+local function fields(p)
+ return {node("StringValue","InstanceId",p.id),node("StringValue","Source",p.source),node("StringValue","Template",p.template),node("Vector3Value","Position",p.position),node("Vector3Value","Rotation",p.rotation),node("NumberValue","Scale",p.scale)}
+end
+record.children={node("StringValue","WorldId","tree_test"),node("StringValue","Status","asset-dependent"),node("Folder","Placements",nil,{node("Configuration","item_0",nil,values),node("Configuration","item_1",nil,fields(fenceSpec))})}
+selected=require("StudioWorldSelector").start({IsStudio=function() return true end},storage,arena,function() end)
+check(selected.active.id=="tree_test" and selected.objects.records["tree-large"].solid,"selector activates multi-placement world retaining tree interactions")
+local latest=clones[#clones]; local prior=clones[#clones-1]
+check(latest.Parent==prior.Parent and not latest.Parent.destroyed,"selector retains all generated clones")
+record.children[3].children[2].children[3].Value="absent"
+local fallback=require("StudioWorldSelector").start({IsStudio=function() return true end},storage,container("NewArena"),function() end)
+check(fallback.active.id=="default" and next(fallback.objects.records)==nil,"missing panel gives default arena with no partial interactive records")
 Instance.new=originalFactory; CFrame.new=saveNew; CFrame.Angles=saveAngles; CFrame.lookAt=saveLookAt
 print(string.format("Studio native-model placement suite passed: %d assertions",count))

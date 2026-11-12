@@ -23,6 +23,7 @@ function Targets.sync(part, target, now)
 	end
 end
 function Targets.new(part)
+	part:SetAttribute("ScannerType","object")
 	local target = { health = Targets.Health, resetAt = 0, flashUntil = 0 }
 	part.Color = orange
 	Targets.sync(part, target, 0)

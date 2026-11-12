@@ -298,17 +298,98 @@ test('single-tree asset binding resolves logical ID and source path independentl
   assert.equal(resolveAsset('missing.glb', bindings), null);
   const configured = JSON.parse(await fs.readFile(path.join(root, 'worlds/tree-test.json'), 'utf8')).instances[0];
   const manifest = await compileFile(path.join(root, 'worlds/tree-test.json'));
+  manifest.objects = manifest.objects.filter(o => o.id === 'tree-large');
   assert.equal(manifest.objects.length, 1); assert.equal(manifest.objects[0].asset, 'GLBs/suburban/tree-large.glb');
   const placement = studioPlacement(manifest, bindings);
-  assert.equal(placement.id, 'tree-large'); assert.equal(placement.model, 'tree-large'); assert.equal(placement.scale, configured.scale);
+  assert.equal(placement.id, 'tree-large'); assert.equal(placement.model, 'tree-large'); assert.equal(placement.scale, 45);
   close(placement.position, configured.position);
   close(trs(placement.position, placement.rotation, placement.scale), manifest.objects[0].transform);
   assert.equal(studioPlacement(manifest, {}), null);
   for (const angles of [[10, 35, 20], [0, 90, 0], [20, -90, 10]]) {
-    const changed = structuredClone(manifest); changed.objects[0].transform = trs([2, 0, -3], angles, 2);
+    const changed = structuredClone(manifest); changed.objects[0].influences = {}; changed.objects[0].transform = trs([2, 0, -3], angles, 2);
     const p = studioPlacement(changed, bindings);
     close(trs(p.position, p.rotation, p.scale), changed.objects[0].transform);
   }
   const nonuniform = structuredClone(manifest); nonuniform.objects[0].transform = trs([0, 0, 0], [0, 0, 0], [1, 2, 1]);
   assert.equal(studioPlacement(nonuniform, bindings), null, 'unsupported nonuniform model placement remains preview-only');
+});
+
+
+test('imported tree supports fixed solid durability and precise unsupported-profile diagnostics', async () => {
+  const { studioPlacement, placementIssue, interactionFor } = require('../tools/world/studio-placement');
+  const bindings = JSON.parse(await fs.readFile(path.join(root, 'worlds/roblox-assets.json'), 'utf8'));
+  const manifest = await compileFile(path.join(root, 'worlds/tree-test.json'));
+  manifest.objects = manifest.objects.filter(o => o.id === 'tree-large');
+  const p = studioPlacement(manifest, bindings);
+  assert.equal(p.interaction.solid, true);
+  assert.equal(p.interaction.destructible, true);
+  assert.equal(p.interaction.hp, 150);
+  assert.equal(placementIssue(manifest, bindings), null);
+  const binding = { id: 'tree', collider: bindings.tree_large.collider };
+  assert.equal(interactionFor({physical:{indestructible:true,hp:0},movement:{collision:'solid'}},binding).destructible,false);
+  assert.equal(interactionFor({},binding),null);
+  for (const [influences,pattern] of [
+    [{physical:{movable:true}},/pushing and tipping/],
+    [{physical:{mass:100}},/physical.mass/],
+    [{movement:{tractionMultiplier:0.7}},/movement.tractionMultiplier/],
+    [{physical:{destructible:true,indestructible:true}},/Conflicting/],
+    [{movement:{collision:'solid',traversable:true}},/contradicts/],
+    [{physical:{hp:-1}},/nonnegative/],
+  ]) {
+    const m = structuredClone(manifest); m.objects[0].influences = influences;
+    assert.match(placementIssue(m,bindings),pattern);
+    assert.equal(studioPlacement(m,bindings),null);
+  }
+  assert.throws(()=>interactionFor({movement:{collision:'solid'}},{id:'missing'}),/requires collider/);
+  assert.match(placementIssue(manifest,{}),/no Roblox asset mapping/);
+  const { trs } = require('../tools/world/transform');
+  for (const yaw of [90,135,180,270]) {
+    const m = structuredClone(manifest); m.objects[0].transform = trs([0,0,0],[0,yaw,0],45);
+    const q = studioPlacement(m,bindings);
+    close(trs(q.position,q.rotation,q.scale),m.objects[0].transform);
+  }
+  const tilted = structuredClone(manifest); tilted.objects[0].transform=trs([0,0,0],[10,0,0],45);
+  assert.match(placementIssue(tilted,bindings),/upright/);
+});
+
+
+test('tree test compiles a curved closed fence and registers every native placement', async () => {
+  const { studioPlacements, placementIssue } = require('../tools/world/studio-placement');
+  const bindings = JSON.parse(await fs.readFile(path.join(root,'worlds/roblox-assets.json'),'utf8'));
+  const manifest = await compileFile(path.join(root,'worlds/tree-test.json'));
+  const panels = manifest.objects.filter(o=>o.asset==='fence.glb');
+  assert.ok(panels.length>=8);
+  assert.equal(manifest.objects.filter(o=>o.asset.endsWith('tree-large.glb')).length,1);
+  assert.equal(new Set(panels.map(o=>o.id)).size,panels.length);
+  assert.ok(new Set(panels.map(o=>o.transform[0].toFixed(4))).size>=6,'panels follow changing path tangents');
+  assert.ok(panels.every(o=>Math.hypot(o.position[0],o.position[2])>45),'fence surrounds central tree');
+  assert.equal(placementIssue(manifest,bindings),null);
+  const placements=studioPlacements(manifest,bindings);
+  assert.equal(placements.length,manifest.objects.length);
+  assert.ok(placements.every(p=>Math.abs(p.scale-45)<1e-8),'tree and panels inherit world assetScale');
+  assert.equal(placements.filter(p=>p.model==='fence').length,panels.length);
+  const { discoverWorlds }=require('../tools/world/catalog');
+  const dir=await fs.mkdtemp(path.join(require('node:os').tmpdir(),'bw-fence-'));
+  try {
+    await fs.writeFile(path.join(dir,'tree.json'),JSON.stringify(manifest));
+    const catalog=await discoverWorlds(dir,bindings);
+    const entry=catalog.Children.find(e=>e.Name==='tree_test');
+    assert.equal(entry.Children.find(e=>e.Name==='Status').Properties.Value,'asset-dependent');
+    assert.equal(entry.Children.find(e=>e.Name==='Placements').Children.length,placements.length);
+  } finally { await fs.rm(dir,{recursive:true,force:true}); }
+  const noFence={...bindings};delete noFence.fence_section;
+  assert.match(placementIssue(manifest,noFence),/curvy-fence.*fence.glb.*no Roblox asset mapping/);
+  assert.equal(studioPlacements(manifest,noFence),null,'missing binding rejects whole world');
+});
+
+
+test('world assetScale sizes models exactly once without scaling layout or path spacing', () => {
+  const w=world({m:model(),g:{type:'group',position:[20,0,0],children:[{id:'child',ref:'m',position:[3,0,0],scale:2}]},p:{type:'path',path:'M0 0 L20 0',spacing:10,item:{ref:'m'}}},[{id:'g',ref:'g'},{id:'p',ref:'p'}]);
+  const original=compile(w); w.assetScale=45; const scaled=compile(w);
+  assert.equal(scaled.objects.length,original.objects.length);
+  for (let i=0;i<scaled.objects.length;i++) {
+    close(scaled.objects[i].position,original.objects[i].position);
+    close(scaled.objects[i].scale,original.objects[i].scale.map(n=>n*45));
+  }
+  for (const n of [0,-1,'45',null,Infinity]) {w.assetScale=n;assert.throws(()=>compile(w),/assetScale/);}
 });

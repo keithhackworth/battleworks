@@ -42,7 +42,7 @@ function Handbook.commands()
   "Submit a weapon operation. A timed command holds the normal trigger for that duration, respecting reload, preparation, heat and cooldown. It does not guarantee a hit or bypass restrictions. CPU cost is paid once per submission, not per bullet. The thread continues while the weapon works.",accepted,"weapon")
  add("Scanner","Scanner(angle, best_effort=true)\nScanner(position=index, best_effort=true)","Scanner",
   "Choose ONE input: angle in degrees (0, 45, 90, 135, 180, 225, 270 or 315, normalized modulo 360), OR position=index with an integer 0..7. Positions map 0->0 degrees, 1->45, 2->90, 3->135, 4->180, 5->225, 6->270, 7->315. Scanner(position=4) equals Scanner(180). Expressions are allowed. Do not provide both angle and position. 0 degrees is chassis-forward, 90 right, 180 back, 270 left.",
-  "Submit to that physical sensor, then suspend ONLY this thread until it acquires a snapshot. Other threads and devices continue. Queue rejection returns immediately. Finds all visible tanks/walls in the cone, nearest first; cannot see through walls or tanks. Each sensor has its own queue and cooldown. Every completed sensor retains its own light event, so simultaneous scans cannot overwrite other lenses.",
+  "Submit to that physical sensor, then suspend ONLY this thread until it acquires a snapshot. Other threads and devices continue. Queue rejection returns immediately. Finds all visible tanks, objects and walls in the cone, nearest first; cannot see through walls or tanks. Each sensor has its own queue and cooldown. Every completed sensor retains its own light event, so simultaneous scans cannot overwrite other lenses.",
   'Success: {status: "success", reason: null, sensor, timestamp, range, count, detections}. detections is an immutable zero-indexed array of immutable dictionaries. Empty space is success with count=0 and an empty list. Failure: {status: "fail", reason: code, sensor}. See Radar tab for every field.',"sensor0 ... sensor315")
  add("print","print(value)","print",
   "One value: number, string, boolean, null, array or dictionary; expressions are allowed. No best_effort argument.",
@@ -191,15 +191,17 @@ count: number of visible detections.
 detections: immutable nearest-first array. Access its first entry with detections[0], not [1].
 
 EACH DETECTION
-.type: "tank" or "wall" (solid obstacle).
+.type: "tank", "object" (tree, rock, log or practice target), or "wall" (structural cover).
+.object_id and .name: object identifier and display name; null for other detection types.
 .distance: 3D studs from scanner origin to visible surface.
 .relative_direction: precise chassis-relative bearing to the observed surface, not necessarily the requested angle.
 .world_direction: world compass bearing to that SAME observed surface: 0 north, 90 east, 180 south, 270 west. Use directly in to= heading commands. Both bearings are captured at acquisition, even while the chassis is turning.
-.player: unique owner.tank#id identity for tanks; null for walls. Unowned tanks use a stable AI/tank ID.
-.relation: "enemy" or "teammate" for tanks; null for walls.
+.player: unique owner.tank#id identity for tanks; null for objects/walls. Unowned tanks use a stable AI/tank ID.
+.relation: "enemy" or "teammate" for tanks; null for objects/walls.
 .point: immutable {x, y, z} in WORLD coordinates of the visible hit surface, not necessarily the target center.
 
-All entries belong to the same acquisition. The origin is tank position + %g studs world Y. The nearest entry is also exposed through top-level type, distance, relative_direction, world_direction, player, relation and point for existing programs. If nothing is visible, those convenience fields are null and count=0.
+Object sensor flashes are yellow; enemy tanks are red, teammates cyan, and walls neutral.
+All entries belong to the same acquisition. The origin is tank position + %g studs world Y. The nearest entry is also exposed through top-level type, distance, relative_direction, world_direction, player, relation, point, object_id and name for existing programs. If nothing is visible, those convenience fields are null and count=0.
 
 Walls/tanks occlude objects behind them. Smoke, cosmetic parts, your own tank and projectiles are ignored. A partially visible physical body can be detected inside the cone. The bounded geometry safety budget may return scannerBusy; it never silently reports a partial successful list. No velocity, prediction or automatic aiming is supplied.
 

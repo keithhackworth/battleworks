@@ -18,7 +18,7 @@ function Visual.build(renderer,detail)
 	end
 end
 local function priority(event)
-	return if event.kind=="tank" then (if event.affiliation=="enemy" then 4 else 3) elseif event.kind=="wall" then 2 else 1
+	return if event.kind=="tank" then (if event.affiliation=="enemy" then 4 else 3) elseif (event.kind=="wall" or event.kind=="object") then 2 else 1
 end
 function Visual.update(renderer,state,dt)
 	renderer.sensorClock=(renderer.sensorClock or 0)+dt
@@ -62,6 +62,7 @@ function Visual.update(renderer,state,dt)
 			local jolt=Config.MaxTremble*proximity^2*fade*noise
 			lens.CFrame=lens.CFrame*CFrame.new(jolt,jolt*0.7,0)*CFrame.Angles(jolt,0,-jolt)
 		elseif reading.kind=="tank" then lens.Color=Color3.fromRGB(77-27*fade,120+90*fade,136+94*fade)
+		elseif reading.kind=="object" then lens.Color=Color3.fromRGB(77+178*fade,120+100*fade,136-101*fade)
 		elseif reading.kind=="wall" then lens.Color=Color3.fromRGB(77+88*fade,120+49*fade,136+39*fade)
 		else lens.Color=Color3.fromRGB(77+18*fade,120+(30+math.sin(renderer.sensorClock*15)*30)*fade,136+84*fade) end
 	end
