@@ -60,6 +60,9 @@
         },
         "PublishedWorld": {
           "$path": "worlds/published-world.model.json"
+        },
+        "EditorAssetCatalog": {
+          "$path": "assets/editor-catalog.model.json"
         }
       },
       "BattleWorksAssets": {

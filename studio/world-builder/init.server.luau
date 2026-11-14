@@ -7,10 +7,16 @@ local UIS=game:GetService("UserInputService")
 local Storage=game:GetService("ServerStorage")
 local Studio=game:GetService("StudioService")
 local CoreGui=game:GetService("CoreGui")
+-- Local plugins load in every open place, including blank/edit DataModels.
+-- Check all game dependencies before requiring modules that access Shared.
+local shared=game:GetService("ReplicatedStorage"):FindFirstChild("Shared")
+local server=game:GetService("ServerScriptService"):FindFirstChild("Server")
+if not shared or not shared:FindFirstChild("AssetPaths") or not shared:FindFirstChild("WorldEditorState") or not shared:FindFirstChild("ModelPlacement") or not server or not server:FindFirstChild("StudioAssetPlacement") then
+ warn("BattleWorks legacy World Builder: open a synced BattleWorks place, then reload this plugin. The in-game World Editor does not require the plugin.")
+ return
+end
 local State=require(script.EditorState)
 local Preview=require(script.Preview)
-local server=game:GetService("ServerScriptService"):WaitForChild("Server",10)
-if not server or not server:FindFirstChild("StudioAssetPlacement") then warn("BattleWorks World Builder: open a synced BattleWorks place first."); return end
 local preview=Preview.new(require(server.StudioAssetPlacement),Storage)
 local toolbar=plugin:CreateToolbar("BattleWorks")
 local toggle=toolbar:CreateButton("WorldBuilder","Create and edit BattleWorks worlds","","World Builder")
@@ -242,7 +248,7 @@ local solid=field(panel,"Collision: true / false","true");local destructible=fie
 local function boolean(box)assert(box.Text=="true" or box.Text=="false","Enter true or false");return box.Text=="true"end
 button(panel,"Apply properties to selection",function()
  local s=active();assert(next(s.selection),"Select an object")
- s:change(function()for id in s.selection do local o,spawn=s:find(id);o.position={number(px,"X"),0,number(pz,"Z")};if spawn then o.heading=number(yaw,"heading",-360000,360000) else o.rotation={0,number(yaw,"yaw",-360000,360000),0};o.scale=number(scale,"scale",.001,1000);o.solid=boolean(solid);o.destructible=boolean(destructible);o.hp=number(hp,"health",1,100000)end end end)
+ s:change(function()for id in s.selection do local o,spawn=s:find(id);o.position={number(px,"X"),if spawn then 0 else o.position[2],number(pz,"Z")};if spawn then o.heading=number(yaw,"heading",-360000,360000) else o.rotation={o.rotation[1],number(yaw,"yaw",-360000,360000),o.rotation[3]};o.scale=number(scale,"scale",.001,1000);o.solid=boolean(solid);o.destructible=boolean(destructible);o.hp=number(hp,"health",1,100000)end end end)
  redraw();remember()
 end)
 section("World settings — flat ground")

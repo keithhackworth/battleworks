@@ -1,5 +1,7 @@
 # BattleWorks world builder
 
+**The in-game proof of concept is now the primary visual authoring entry:** choose Main Menu → World Editor. It needs neither the Studio plugin nor the local bridge for editing. See [in-game workflow and limitations](IN_GAME_WORLD_BUILDER.md). The plugin workflow below remains supported for legacy authoring, registration and publishing.
+
 ## Architecture decision
 
 The editor is a local Roblox Studio plugin, packaged using a separate Rojo project.

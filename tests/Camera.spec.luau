@@ -557,10 +557,11 @@ local live = Battlefield.new(Instance.new("PlayerGui"))
 check(live.testPanel==nil,"normal clients get no developer UI")
 local liveRedraw = false; live.redrawMap = function() liveRedraw = true end
 check(not live:requestMapRedraw() and not liveRedraw, "published client cannot request development redraw")
-check(not live:setActualMapSize(Vector2.new(50,50)), "published client cannot apply development arena dimensions")
+check(live:setActualMapSize(Vector2.new(50,50)), "published camera accepts authoritative saved-world dimensions")
+check(not live:setActualMapSize(Vector2.new(0,math.huge)), "published camera rejects invalid arena metadata")
 check(not live:setMapSizeOverride(Vector2.new(100,100)) and live.mapSizeOverride==nil,"normal clients reject dimension overrides")
 live:update(devCamera,1/60,devState)
-check(live.layout.map.size==defaults.MapSize,"normal clients retain actual map configuration")
+check(live.layout.map.size.X==50 and live.layout.map.size.Y==50,"published camera frames the current server world")
 live:destroy(); game.GetService=savedGetService
 -- Minimum-fit selection stays monotonic and never exceeds the hard distance cap.
 do

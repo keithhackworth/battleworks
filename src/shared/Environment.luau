@@ -3,6 +3,7 @@ local DefaultFootprint=require(script.Parent.ComponentCatalog)["chassis.standard
 local Environment = {}
 local Surface=require(script.Parent.SurfacePhysics)
 local Motion=require(script.Parent.VehicleMotion)
+local WorldGeometry=require(script.Parent.WorldObjectGeometry)
 -- Gentle crosswind exceeds passive rolling resistance, not powered ice grip.
 Environment.IceWind=table.freeze({direction=Vector3.new(1,0,-0.35).Unit,maxForce=1.2,driftSpeed=1.5})
 Environment.WindyIce=table.freeze({staticFriction=Surface.Profiles.Ice.staticFriction,kineticFriction=Surface.Profiles.Ice.kineticFriction,resistance=Surface.Profiles.Ice.resistance,passiveGrip=0.15})
@@ -69,8 +70,9 @@ function Environment.create(size,weather)
  end
 	return data
 end
-function Environment.sample(data,x,z)
+function Environment.sample(data,x,z,maxHeight)
 	local height,kind,speed=0,if data.weather=="IceWind" then "Ice" else "Grass",1
+ local supportingSurface
 	for _,zone in data.zones do
 		if inside(zone,x,z) and data.weather~="IceWind" then kind=zone.kind; speed=zone.speed end
 	end
@@ -84,7 +86,11 @@ function Environment.sample(data,x,z)
 			height=math.max(height,log.radius*math.sqrt(1-q*q)); kind="Log"
 		end
 	end
-	return height,kind,speed
+ if data.worldObjects and maxHeight then
+  local h,surface=data.worldObjects:support(x,z,maxHeight)
+  if h and h>=height then height=h;kind="Structure";speed=1;supportingSurface=surface end
+ end
+	return height,kind,speed,supportingSurface
 end
 function Environment.blocked(data,x,z,radius)
 	for _,tree in data.trees do
@@ -97,11 +103,41 @@ function Environment.pose(data,position,yaw,footprint)
  local length,width=shape.ContactLength,shape.ContactWidth
 	local x,z=position.X,position.Z
 	local s,c=math.sin(yaw),math.cos(yaw)
-	local center,kind,speed=Environment.sample(data,x,z)
-	local front=Environment.sample(data,x-s*length/2,z-c*length/2)
-	local rear=Environment.sample(data,x+s*length/2,z+c*length/2)
-	local right=Environment.sample(data,x+c*width/2,z-s*width/2)
-	local left=Environment.sample(data,x-c*width/2,z+s*width/2)
+ local maxHeight=position.Y+WorldGeometry.MaxStep
+ local points={{x,z},{x-s*length/2,z-c*length/2},{x+s*length/2,z+c*length/2},{x+c*width/2,z-s*width/2},{x-c*width/2,z+s*width/2}}
+ local heights,surfaces={},{}
+ local kind,speed
+ for i,point in points do
+  local h,k,v,surface=Environment.sample(data,point[1],point[2],maxHeight)
+  heights[i]=h;surfaces[i]=surface
+  if i==1 then kind=k;speed=v end
+ end
+ -- The step limit selects a reachable surface, not a maximum height for
+ -- every point along that same slope. Feet ahead on an incline can naturally
+ -- be more than one step above the chassis center.
+ local reference=surfaces[1]
+ if not reference then
+  local best=heights[1]
+  for i=2,5 do
+   if surfaces[i] then
+    local projected=WorldGeometry.planeHeight(surfaces[i],x,z)
+    if projected and projected>=best and projected<=maxHeight+.001 then reference=surfaces[i];best=projected end
+   end
+  end
+ end
+ if reference then
+  kind="Structure";speed=1
+  for i,point in points do
+   local projected=WorldGeometry.planeHeight(reference,point[1],point[2])
+   local h,_,_,surface=Environment.sample(data,point[1],point[2],math.max(maxHeight,projected+WorldGeometry.MaxStep))
+   -- A real contact under another part of the footprint can support a track
+   -- over a narrow board edge or short join. Once all contacts leave, no
+   -- reference survives and ordinary gravity resumes. Overhead structures
+   -- cannot become references without first passing the original step limit.
+   heights[i]=if surface then h else math.max(h,projected)
+  end
+ end
+ local center,front,rear,right,left=table.unpack(heights)
 	return math.max(center,(front+rear+right+left)/4), math.atan2(front-rear,length),
 		math.atan2(right-left,width),kind,speed
 end

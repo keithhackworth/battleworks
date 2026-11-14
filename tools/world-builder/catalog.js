@@ -10,7 +10,7 @@ const builtins=[
  ['rock','Round rock','Rocks & obstacles',[7,4,6],'Ball','Slate',[110,120,125],true,false],
  ['tree','Simple tree','Trees & vegetation',[4,12,4],'Block','Wood',[110,80,45],true,true],
  ['road','Road section','Bridges & roads',[12,.08,24],'Block','Asphalt',[70,70,70],false,false],
- ['bridge','Bridge decoration (flat ground)','Bridges & roads',[12,.2,24],'Block','WoodPlanks',[145,110,70],false,false],
+ ['bridge','Bridge / ramp deck','Bridges & roads',[12,.2,24],'Block','WoodPlanks',[145,110,70],true,false],
  ['grass','Grass patch','Terrain & ground',[18,.06,18],'Block','Grass',[95,135,65],false,false],
  ['water','Shallow water (slowdown)','Water & hazards',[18,.1,18],'Ball','Glass',[67,156,183],false,false],
  ['mud','Mud (slowdown)','Water & hazards',[18,.08,18],'Ball','Mud',[103,70,43],false,false],

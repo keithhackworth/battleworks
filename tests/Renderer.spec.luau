@@ -106,6 +106,15 @@ rs.bodyPitch=0; rs.bodyRoll=0; rs.aimRecoilYaw=0.06; rs.aimRecoilPitch=-0.03
 rattler:resetPose(rs); rattler:update(rs,1/60)
 local _,physicalDirection=Sim.shotPose(rs)
 check((rattler.muzzleFrame.LookVector-physicalDirection).Magnitude<1e-6,"visible barrel and authoritative direction use the same recoil pose")
+rs.position=Vector3.new(0,12,0);rs.groundHeight=12;rs.lift=0;rs.verticalSpeed=0
+rs.bodyPitch=0;rs.bodyRoll=0;rs.aimRecoilYaw=0;rs.aimRecoilPitch=0
+rattler:resetPose(rs);rattler:update(rs,1/60)
+check(math.abs(rattler.muzzleFrame.LookVector.Y)<1e-6,"grounded bridge Gatling visibly keeps normal aim")
+rs.position=Vector3.new(0,18,0);rs.lift=6
+rattler:resetPose(rs);rattler:update(rs,1/60)
+local _,bridgeAim=Sim.shotPose(rs)
+check(bridgeAim.Y<0 and (rattler.muzzleFrame.LookVector-bridgeAim).Magnitude<1e-6,"airborne bridge barrel matches support-relative authoritative aim")
+rs.groundHeight=nil;rs.position=Vector3.new(0,10,0);rs.lift=10
 local beforeSpoke=named(rattler,"WheelSpoke")[1].CFrame.Position
 rs.speed=10; rs.steeringAngle=0.4
 for _=1,20 do rattler:update(rs,1/60) end

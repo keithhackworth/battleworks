@@ -27,6 +27,10 @@ function Simulation.turretAngles(state)
 	return state.turretYaw+(state.aimRecoilYaw or 0),
 		math.clamp((state.turretPitch or 0)+(state.aimRecoilPitch or 0),turret.MinPitch,turret.MaxPitch)
 end
+-- One authoritative flight decision shared by barrel pose and shell launch.
+function Simulation.projectileFlight(state)
+ return Recoil.airborne(state),state.groundHeight or state.groundPlaneY or 0
+end
 -- World-space barrel direction after chassis pitch/roll and actual turret aim.
 function Simulation.shotPose(state)
 	local yaw,pitch = Simulation.turretAngles(state)
@@ -41,8 +45,9 @@ function Simulation.shotPose(state)
 	local pivot=state.position+Vector3.new(0,vehicle.Turret.MuzzleHeight+(state.bounce or 0),0)
 	local actual=Vector3.new(c*x+s*z,y,-s*x+c*z).Unit
 	local weapon=vehicle.Weapon
-	if weapon.Trajectory then
-		actual=Trajectory.launchDirection(pivot,actual,(state.groundPlaneY or 0)+Config.MuzzleHeight,weapon.MuzzleOffset,weapon.Trajectory)
+ local airborne,ground=Simulation.projectileFlight(state)
+	if weapon.Trajectory and airborne then
+		actual=Trajectory.launchDirection(pivot,actual,ground+Config.MuzzleHeight,weapon.MuzzleOffset,weapon.Trajectory)
 	end
 	return pivot,actual
 end
@@ -76,7 +81,7 @@ function Simulation.moveBody(state,command,dt,mapSize,environment,deferContacts)
  end
  if state.position.Y>support+0.001 then state.lift=math.max(state.lift or 0,state.position.Y-support) end
  local airborne=Recoil.airborne(state)
- local speedScale=if environment then select(3,Environment.sample(environment,state.position.X,state.position.Z)) else 1
+ local speedScale=if environment then select(3,Environment.sample(environment,state.position.X,state.position.Z,state.position.Y+1.5)) else 1
  local static,kinetic,resistance,passiveGrip=Surface.contact(environment and environment.physicsSurfaces,state.position,state.yaw,c.Chassis)
  if not airborne then Drive.ground(state,command,dt,speedScale,static,kinetic,resistance,passiveGrip) end
  -- No traction, steering, coasting or ground damping is applied in the air.
@@ -88,7 +93,7 @@ function Simulation.moveBody(state,command,dt,mapSize,environment,deferContacts)
  end
  local x,z=state.position.X,state.position.Z
  local ground,pitch,roll,kind=0,0,0,"Grass"
- if environment then ground,pitch,roll,kind=Environment.pose(environment,Vector3.new(x,0,z),state.yaw,c.Chassis) end
+ if environment then ground,pitch,roll,kind=Environment.pose(environment,state.position,state.yaw,c.Chassis) end
  ground+=(state.groundPlaneY or 0)
  state.position=Vector3.new(x,state.position.Y,z)
  state.groundPitch=pitch; state.groundRoll=roll; state.surface=kind

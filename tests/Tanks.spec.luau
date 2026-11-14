@@ -186,8 +186,8 @@ do
   local yaw,pitch=Simulation.turretAngles(tank)
   local _,direction=Simulation.shotPose(tank)
   check((direction-previous).Magnitude>1e-5,"every bullet kicks turret to a new actual direction")
-  local expected=require("ProjectileTrajectory").launchDirection(tank.position+Vector3.new(0,Config.MuzzleHeight,0),Simulation.forward(yaw,pitch),Config.MuzzleHeight,Definitions.Rattler.Weapon.MuzzleOffset,Definitions.Rattler.Weapon.Trajectory)
-  check((direction-expected).Magnitude<1e-6,"shot follows weapon-constrained actual displaced barrel")
+  local expected=Simulation.forward(yaw,pitch) -- grounded shots keep the real displaced barrel aim
+  check((direction-expected).Magnitude<1e-6,"grounded shot follows actual displaced barrel without forced descent")
   check(tank.turretYaw==originalTarget,"cursor target remains separate from recoil direction")
   check(math.abs(tank.aimRecoilYaw)<=Definitions.Rattler.Aim.MaxYaw and math.abs(tank.aimRecoilPitch)<=Definitions.Rattler.Aim.MaxPitch,"turret kicks remain bounded")
   negative=negative or tank.aimRecoilYaw<0; positive=positive or tank.aimRecoilYaw>0

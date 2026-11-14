@@ -23,11 +23,7 @@ end
 function Preview:pose(id,entry)
  local model=self.models[id]; if not model then return end
  if entry.tank then model:PivotTo(CFrame.new(entry.position[1],.12,entry.position[3])*CFrame.Angles(0,math.rad(-entry.heading),0)); return end
- model:ScaleTo(self.templates[id]*entry.scale)
- model:PivotTo(CFrame.Angles(0,math.rad(entry.rotation[2]),0))
- local bounds,size=model:GetBoundingBox()
- local half=(math.abs(bounds.RightVector.Y)*size.X+math.abs(bounds.UpVector.Y)*size.Y+math.abs(bounds.LookVector.Y)*size.Z)/2
- model:PivotTo(CFrame.new(entry.position[1]-bounds.Position.X,-(bounds.Position.Y-half),entry.position[3]-bounds.Position.Z)*model:GetPivot())
+ self.placement.pose(model,self.templates[id],{position=Vector3.new(table.unpack(entry.position)),rotation=Vector3.new(table.unpack(entry.rotation)),scale=entry.scale})
 end
 function Preview:object(entry,item)
  local template=self:template(item); if not template then return nil,"Missing imported model: "..item.model end

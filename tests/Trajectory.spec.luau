@@ -40,7 +40,7 @@ for _,degrees in {35,40} do
  check(math.abs((d-c).Magnitude-0.0001)<1e-7,"curve distance parameter preserves normal speed")
 end
 for _,altitude in {0,0.1,1,3,6,24} do
- local state=Sim.new(Vector3.new(0,altitude,0),"Rattler")
+ local state=Sim.new(Vector3.new(0,altitude,0),"Rattler");state.lift=altitude
  local pivot,direction=Sim.shotPose(state)
  local shell=Projectiles.launch(empty,pivot,direction,{},tuning)
  check(shell.position.Y>=Config.MuzzleHeight-1e-5,"low-altitude barrel never places muzzle below standard plane")
@@ -62,7 +62,7 @@ do
  Projectiles.step(empty,shell,0.1)
  check(near(shell.position.Y,2) and near(shell.direction.Y,0),"already-low projectile fires horizontally at its current height")
  local floorY=17
- local raised=Sim.new(Vector3.new(0,floorY+24,0),"Rattler"); raised.groundPlaneY=floorY
+ local raised=Sim.new(Vector3.new(0,floorY+24,0),"Rattler"); raised.groundPlaneY=floorY;raised.lift=24
  local pivot,direction=Sim.shotPose(raised)
  local shell=Projectiles.launch(empty,pivot,direction,{},tuning,floorY)
  Projectiles.step(empty,shell,2)
@@ -96,7 +96,7 @@ local function worldFor(objects)
  }
 end
 local function launched(world)
- local state=Sim.new(Vector3.new(0,24,0),"Rattler")
+ local state=Sim.new(Vector3.new(0,24,0),"Rattler");state.lift=24
  local origin,direction=Sim.shotPose(state)
  return Projectiles.launch(world,origin,direction,{},tuning)
 end
@@ -136,4 +136,72 @@ local straight=Projectiles.launch(empty,Vector3.new(0,20,0),Vector3.new(0,0.2,-1
 local before=straight.position
 Projectiles.step(empty,straight,0.1)
 check(not straight.trajectory and straight.position.Y>before.Y,"ground-tank projectiles retain their original straight pitched flight")
+-- Airborne gating and authoritative platform-relative leveling.
+do
+ local Objects=require("WorldObjects")
+ local G=require("WorldObjectGeometry")
+ local objects=Objects.new()
+ local function platform(id,top,z,depth)
+  local record={solid=true,destroyed=false,proxy={Parent=true},geometry=G.from({0,top-.2,z},{0,0,0},{30,.2,depth},1)}
+  objects.records[id]=record;return record
+ end
+ local deck=platform("bridge",12,-35,100)
+ local bridgePart={position=Vector3.new(0,11.9,-35),size=Vector3.new(30,.2,100)}
+ local enemy={position=Vector3.new(0,14.5,-45),size=Vector3.new(8,5,10)}
+ local bridgeWorld=worldFor({bridgePart,enemy})
+ local standing=Sim.new(Vector3.new(0,12,0),"Rattler")
+ standing.groundHeight=12;standing.groundPlaneY=0;standing.lift=0;standing.grounded=true
+ local pivot,aim=Sim.shotPose(standing)
+ local airborne,ground=Sim.projectileFlight(standing)
+ check(not airborne and ground==12 and near(aim.Y,0),"grounded Gatling on bridge does not acquire forced downward aim")
+ local normal=Projectiles.launch(bridgeWorld,pivot,aim,{},tuning,ground,{airborne=airborne,findGround=function()error("grounded shots must not run magic leveling")end})
+ check(not normal.trajectory,"grounded Gatling fires a straight projectile")
+ local targetHit
+ for _=1,120 do targetHit=Projectiles.step(bridgeWorld,normal,1/60);if targetHit then break end end
+ check(targetHit and targetHit.Instance==enemy,"normal grounded bridge shot hits tank on bridge rather than floor/deck")
+ standing.turretPitch=.15
+ local _,up=Sim.shotPose(standing)
+ check(up.Y>0,"grounded Gatling preserves player barrel elevation")
+ local hopping=Sim.new(Vector3.new(0,18,0),"Rattler")
+ hopping.groundHeight=12;hopping.groundPlaneY=0;hopping.lift=6
+ pivot,aim=Sim.shotPose(hopping);airborne,ground=Sim.projectileFlight(hopping)
+ check(airborne and aim.Y<0,"airborne Gatling retains descending shot pose")
+ local find=function(origin,direction,range,radius,baseline)return objects:projectileGround(origin,direction,range,radius,baseline)end
+ local airborneShell=Projectiles.launch(bridgeWorld,pivot,aim,{},tuning,ground,{airborne=airborne,findGround=find})
+ check(airborneShell.trajectory and near(airborneShell.trajectory.levelHeight,12+Config.MuzzleHeight),"airborne curve levels at bridge-relative muzzle height, not global floor")
+ for _=1,120 do targetHit=Projectiles.step(bridgeWorld,airborneShell,1/60);if targetHit then break end end
+ check(targetHit and targetHit.Instance==enemy and near(airborneShell.direction.Y,0),"hopping bridge shot clears its deck and hits bridge opponent after leveling")
+ -- The first actually approaching upper face takes precedence over ground.
+ objects=Objects.new()
+ local far=platform("far",8,-30,16)
+ local nearPlatform=platform("near",12,-20,14)
+ local origin=Vector3.new(0,24,0);local direction=Vector3.new(0,-math.sin(math.rad(35)),-math.cos(math.rad(35)))
+ check(near(objects:projectileGround(origin,direction,100,.1,0),12),"descending flight chooses first upper face along heading")
+ local shell=Projectiles.launch(empty,origin,direction,{},tuning,0,{airborne=true,findGround=find})
+ check(near(shell.trajectory.levelHeight,12+Config.MuzzleHeight),"server upper-face query feeds the existing trajectory curve")
+ local raisedTarget={position=Vector3.new(0,14.5,-32),size=Vector3.new(8,5,10)}
+ local raisedFloor={position=Vector3.new(0,11.9,-20),size=Vector3.new(30,.2,14)}
+ local encounterWorld=worldFor({raisedFloor,raisedTarget})
+ local encounter=Projectiles.launch(encounterWorld,origin,direction,{},tuning,0,{airborne=true,findGround=find})
+ for _=1,120 do targetHit=Projectiles.step(encounterWorld,encounter,1/60);if targetHit then break end end
+ check(targetHit and targetHit.Instance==raisedTarget,"shot encountering a raised platform levels above it and hits its opponent")
+ nearPlatform.destroyed=true
+ check(near(objects:projectileGround(origin,direction,100,.1,0),8),"destroyed platform cannot supply a leveling height")
+ nearPlatform.destroyed=false;nearPlatform.solid=false
+ check(near(objects:projectileGround(origin,direction,100,.1,0),8),"decorative non-solid surface cannot redirect airborne rounds")
+ nearPlatform.solid=true;nearPlatform.proxy.Parent=nil
+ check(near(objects:projectileGround(origin,direction,100,.1,0),8),"removed platform cannot supply a leveling height")
+ check(not objects:projectileGround(origin,Vector3.new(0,0,-1),100,.1,0),"horizontal rounds do not retarget platform levels")
+ check(not objects:projectileGround(origin,direction,2,.1,0),"platform query stays within remaining projectile range")
+ check(not objects:projectileGround(origin,direction,100,.1,15),"lower floor cannot drag a bridge-relative shot downward")
+ local overhead=platform("overhead",30,0,100)
+ far.solid=false
+ check(not objects:projectileGround(origin,direction,100,.1,0),"upper faces above projectile are not mistaken for nearby landing levels")
+ -- Side cover still wins its real swept collision; no curvature skips damage/hits.
+ far.solid=true
+ local cover={position=Vector3.new(0,18,-7),size=Vector3.new(10,40,.1)}
+ local obstructed,blocked=Projectiles.launch(worldFor({cover}),origin,direction,{},tuning,0,{airborne=true,findGround=find})
+ if not blocked then blocked=Projectiles.step(worldFor({cover}),obstructed,1) end
+ check(blocked and blocked.Instance==cover,"platform assistance still collides with real blocking cover")
+end
 print(string.format("Two-stage trajectory suite passed: %d assertions",count))

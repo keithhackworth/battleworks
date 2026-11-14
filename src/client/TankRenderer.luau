@@ -236,6 +236,7 @@ function Renderer:update(state, dt)
   local pose=self.shotState
   pose.position=self.position; pose.yaw=self.yaw; pose.turretYaw=self.turretYaw; pose.turretPitch=self.turretPitch
   pose.bodyPitch=self.bodyPitch; pose.bodyRoll=self.bodyRoll; pose.bounce=self.bounce; pose.groundPlaneY=state.groundPlaneY
+  pose.groundHeight=state.groundHeight;pose.lift=state.lift;pose.verticalSpeed=state.verticalSpeed
   local pivot,direction=Simulation.shotPose(pose)
   barrel=CFrame.lookAt(pivot,pivot+direction,turret.UpVector)*CFrame.new(0,0,self.recoil*0.8)
  end

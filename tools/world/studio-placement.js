@@ -51,8 +51,7 @@ function itemIssue(item, bindings) {
   const det = m[0] * (m[5] * m[10] - m[9] * m[6]) - m[4] * (m[1] * m[10] - m[9] * m[2]) + m[8] * (m[1] * m[6] - m[5] * m[2]);
   if (det <= 0) return 'Imported-model placement does not support reflected transforms.';
   try {
-    const interaction = interactionFor(item.influences, binding);
-    if (interaction && (Math.abs(m[1] / s) > 1e-6 || Math.abs(m[9] / s) > 1e-6 || m[5] / s < 1 - 1e-6)) return 'Interactive imported models must be upright (yaw rotation only).';
+    interactionFor(item.influences, binding);
   } catch (error) { return error.message; }
   return null;
 }
@@ -66,7 +65,7 @@ function studioPlacement(manifest, bindings) {
   // Equivalent Euler triples can contain 180-degree roll for upright yaw >90.
   const interaction = interactionFor(item.influences, binding);
   const upright=Math.abs(m[1]/s)<1e-6 && Math.abs(m[9]/s)<1e-6 && m[5]/s>1-1e-6;
-  const rotation = (interaction || upright) ? [0, Math.atan2(m[8], m[0]) * 180 / Math.PI, 0] : [x, y, z].map(n => n * 180 / Math.PI);
+  const rotation = upright ? [0, Math.atan2(m[8], m[0]) * 180 / Math.PI, 0] : [x, y, z].map(n => n * 180 / Math.PI);
   return { ...binding, id: item.id, assetId: binding.id, position: m.slice(12, 15), rotation, scale: s, interaction };
 }
 module.exports = { resolveAsset, studioPlacement, studioPlacements, placementIssue, interactionFor, MaxPlacements };

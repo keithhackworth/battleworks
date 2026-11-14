@@ -10,7 +10,7 @@ test('builder catalog has stable reusable types and sensible tree/fence behavior
 test('document serializes deterministically and compiles into existing v1 placement manifests',()=>{const d=fresh();d.objects=[object(),object({id:'a',position:[30,0,-20]})];const built=compileDocument(d,items);assert.equal(built.manifest.objects.length,2);assert.equal(built.manifest.objects[0].id,'a');assert.deepEqual(built.document.objects[0].bounds,[8,5,8]);assert.equal(serialize(built),serialize(compileDocument(JSON.parse(serialize(d)),items)));assert.equal(built.manifest.builderSettings.width,230);assert.equal(built.manifest.builderSettings.spawns.length,2);});
 test('empty world remains playable and retains ground, bounds and spawns',async t=>{const store=await fixture(t),result=await store.save(fresh('empty','Empty'),true);assert.equal(result.catalog.Children.find(e=>e.Name==='empty').Children.find(e=>e.Name==='Status').Properties.Value,'asset-dependent');const record=result.catalog.Children.find(e=>e.Name==='empty');assert.ok(record.Children.find(e=>e.Name==='BuilderSettings'));assert.deepEqual(await store.get('empty'),result.document);});
 test('invalid data errors identify properties, unknown types and spawn collisions',()=>{
- const cases=[['version',d=>d.schemaVersion=99,/schemaVersion/],['coordinate',d=>d.objects=[object({position:[NaN,0,0]})],/position/],['missing type',d=>d.objects=[object({type:'unknown'})],/unknown catalog/],['duplicate',d=>d.objects=[object(),object()],/duplicate/],['ground',d=>d.settings.ground.material='Lava',/material/],['bounds',d=>d.settings.width=2,/width/],['elevation',d=>d.objects=[object({position:[0,4,-25]})],/flat-ground/],['spawn',d=>d.spawns[0].position=[0,0,-25],/intersects/],['missing spawn',d=>d.spawns=[],/two|exactly/],['outside',d=>d.objects=[object({position:[120,0,0]})],/outside/],['edge',d=>d.objects=[object({position:[113,0,0]})],/footprint/],['unknown field',d=>d.objects=[object({script:'run'})],/unsupported/]];
+ const cases=[['version',d=>d.schemaVersion=99,/schemaVersion/],['coordinate',d=>d.objects=[object({position:[NaN,0,0]})],/position/],['missing type',d=>d.objects=[object({type:'unknown'})],/unknown catalog/],['duplicate',d=>d.objects=[object(),object()],/duplicate/],['ground',d=>d.settings.ground.material='Lava',/material/],['bounds',d=>d.settings.width=2,/width/],['elevation',d=>d.objects=[object({position:[0,Infinity,-25]})],/position/],['spawn',d=>d.spawns[0].position=[0,0,-25],/intersects/],['missing spawn',d=>d.spawns=[],/two|exactly/],['outside',d=>d.objects=[object({position:[120,0,0]})],/outside/],['edge',d=>d.objects=[object({position:[113,0,0]})],/footprint/],['unknown field',d=>d.objects=[object({script:'run'})],/unsupported/]];
  for(const [name,mutate,pattern]of cases){const d=fresh();d.objects=[object()];mutate(d);assert.throws(()=>validate(d,items),pattern,name);}
 });
 test('unknown collision capabilities and missing model dimensions are explicit errors',()=>{const native={id:'asset.unknown',source:'u.glb',model:'u',size:null,collider:null};const d=fresh();d.objects=[object({type:native.id})];assert.throws(()=>validate(d,[...items,native]),/no collider/);d.objects[0].solid=false;assert.throws(()=>validate(d,[...items,native]),/measured/);});
@@ -34,3 +34,23 @@ test('Studio catalog discovery registers complete model paths without merging du
 test('duplicate/import creation cannot silently overwrite an existing world',async t=>{const store=await fixture(t);await store.save(fresh('existing','Original'));await assert.rejects(store.save(fresh('existing','Replacement'),false,true),/already exists/);assert.equal((await store.get('existing')).name,'Original');});
 
 test('migration accepts upright decorative yaw beyond 90 degrees without inventing roll',()=>{const d=fresh('old');d.objects=[object({solid:false,rotation:[0,270,0]})];const {manifest}=compileDocument(d,items);const migrated=migrate(manifest,items,'old_edit');assert.ok(Math.abs((migrated.objects[0].rotation[1]+360)%360-270)<1e-6);assert.equal(validate(migrated,items).objects[0].asset,'Builtin/BW_block');});
+test('elevated tilted worlds retain all three axes through compile, native placement and migration',()=>{
+ const {studioPlacements}=require('../tools/world/studio-placement');const {bindingsFor}=require('../tools/world-builder/catalog');const {trs}=require('../tools/world/transform');
+ for(const rotation of [[15,37,-12],[0,270,20],[45,90,0],[-25,135,15]]) {
+  const d=fresh('raised_world');d.objects=[object({position:[-30,8,-40],rotation})];
+  const result=compileDocument(d,items),p=studioPlacements(result.manifest,bindingsFor(items))[0];
+  const expected=trs(d.objects[0].position,rotation,1),actual=trs(p.position,p.rotation,p.scale);
+  actual.forEach((n,i)=>assert.ok(Math.abs(n-expected[i])<1e-7));
+  const edited=migrate(result.manifest,items,'raised_copy');assert.equal(edited.objects[0].position[1],8);assert.equal(validate(edited,items).objects[0].asset,'Builtin/BW_block');
+ }
+});
+test('tilted full footprints and elevated spawn clearance are validated in 3D',()=>{
+ const d=fresh();d.objects=[object({position:[-22,8,34.5]})];assert.equal(validate(d,items).objects[0].position[1],8);
+ d.objects[0].position[1]=2;assert.throws(()=>validate(d,items),/spawn.*intersects/);
+ d.objects=[object({position:[110,0,-20],rotation:[0,0,60],bounds:[1,20,1]})];assert.throws(()=>validate(d,items),/footprint/);
+ d.objects=[object({position:[0,1999,0]})];assert.throws(()=>validate(d,items),/height/);
+});
+test('water and mud region behavior stays explicitly on the ground',()=>{
+ const d=fresh();d.objects=[object({type:'builtin.water',position:[0,2,-25],solid:false})];assert.throws(()=>validate(d,items),/water\/mud.*ground/);
+ d.objects[0].position[1]=0;d.objects[0].rotation=[15,0,0];assert.throws(()=>validate(d,items),/water\/mud.*ground/);
+});

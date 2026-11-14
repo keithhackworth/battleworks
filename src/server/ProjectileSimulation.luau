@@ -2,7 +2,7 @@
 local Config = require(game.ReplicatedStorage.Shared.TankConfig)
 local Trajectory = require(game.ReplicatedStorage.Shared.ProjectileTrajectory)
 local Projectiles = {}
-function Projectiles.new(origin, direction, exclusions, tuning, groundY)
+function Projectiles.new(origin, direction, exclusions, tuning, groundY, flight)
 	tuning = tuning or Config
 	local ray = RaycastParams.new()
 	ray.FilterType = Enum.RaycastFilterType.Exclude
@@ -14,7 +14,7 @@ function Projectiles.new(origin, direction, exclusions, tuning, groundY)
 	overlap.RespectCanCollide = false
 	local shell = { position = origin, direction = direction.Unit, remaining = tuning.Range, speed = tuning.ShellSpeed, radius = tuning.ShellRadius, damage = tuning.Damage, muzzleOffset = tuning.MuzzleOffset,
 		ray = ray, overlap = overlap, done = false }
-	if tuning.Trajectory then
+	if tuning.Trajectory and (not flight or flight.airborne) then
 		shell.trajectory=Trajectory.new(origin,direction,(groundY or 0)+Config.MuzzleHeight,tuning.Trajectory)
 		shell.pathDistance=0
 		shell.position,shell.direction=Trajectory.sample(shell.trajectory,0)
@@ -92,15 +92,21 @@ function Projectiles.step(world, shell, dt)
 	if shell.remaining <= 1e-6 then shell.done = true end
 	return nil
 end
-function Projectiles.launch(world, pivot, direction, exclusions, tuning, groundY)
-	local shell = Projectiles.new(pivot,direction,exclusions,tuning,groundY)
+function Projectiles.launch(world, pivot, direction, exclusions, tuning, groundY, flight)
+	local shell = Projectiles.new(pivot,direction,exclusions,tuning,groundY,flight)
 	-- The barrel itself is straight: sweep it before enabling free-flight curves.
 	shell.trajectory=nil; shell.direction=direction.Unit
 	-- Sweep the barrel length once for obstruction safety, then launch at its
 	-- tip. Keep total range measured from pivot, as before this visual change.
 	local blocked = Projectiles.step(world,shell,shell.muzzleOffset / shell.speed)
-	if tuning and tuning.Trajectory and not shell.done then
-		shell.trajectory=Trajectory.new(shell.position,direction,(groundY or 0)+Config.MuzzleHeight,tuning.Trajectory)
+	if tuning and tuning.Trajectory and (not flight or flight.airborne) and not shell.done then
+  -- Resolve the first approaching walkable top, never a target/player hit claim.
+  -- Barrel obstruction has already been swept and is never bypassed.
+  local levelGround=groundY or 0
+  if flight and flight.findGround then
+   levelGround=flight.findGround(shell.position,direction,shell.remaining,shell.radius,levelGround) or levelGround
+  end
+		shell.trajectory=Trajectory.new(shell.position,direction,levelGround+Config.MuzzleHeight,tuning.Trajectory)
 		shell.pathDistance=0
 		shell.position,shell.direction=Trajectory.sample(shell.trajectory,0)
 	end

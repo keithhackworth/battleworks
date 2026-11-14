@@ -1,10 +1,13 @@
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
+local function startup(stage) if RunService:IsStudio() then print("[BattleWorks startup/server] "..stage) end end
+startup("server started")
 local Shared = ReplicatedStorage:WaitForChild("Shared")
 local Config = require(Shared.TankConfig)
 local ArenaLayout = require(Shared.ArenaLayout)
 local Environment = require(Shared.Environment)
+local WorldSettings = require(Shared.WorldSettings)
 local EnvironmentBuilder = require(script.EnvironmentBuilder)
 local mapSize = Vector2.new(Config.ArenaLimit*2, Config.ArenaLimit*2)
 local weather=workspace:GetAttribute("ArenaWeather") or "IceWind"
@@ -45,17 +48,27 @@ local prepareShot = remote("PrepareShot")
 local selectTank = remote("SelectTank")
 local bwRun,bwStop = remote("BWRun"),remote("BWStop")
 local resetBattle = remote("ResetBattle")
+local battleSession = remote("BattleSession")
+local sessions = {}
+local playerWorlds
 local bwOutput=remote("BWOutput")
 local bwHardware=remote("BWHardware")
 local bwRuntimeState=remote("BWRuntimeState")
 local Hardware=require(Shared.BWChassis)
 network.Parent = ReplicatedStorage
 local tanks, targets, battles = {}, {}, {}
+local shells = {}
 local editorPreview=workspace:FindFirstChild("BattleWorksEditorPreview"); if editorPreview then editorPreview:Destroy() end
 local arena = Instance.new("Folder")
 arena.Name = "Arena"; arena.Parent = workspace
 local storage=game:GetService("ServerStorage")
 local studioConfiguration=if storage then storage:FindFirstChild("BattleWorksStudio") else nil
+local editorMetadata=if studioConfiguration then studioConfiguration:FindFirstChild("EditorAssetCatalog") else nil
+if editorMetadata then
+ startup("publishing editor asset library")
+ local ok,reason=pcall(function() require(script.EditorAssetCatalog).publish(storage,ReplicatedStorage,editorMetadata,game:GetService("HttpService")) end)
+ if ok then startup("editor asset library ready") else warn("BattleWorks editor library unavailable: "..tostring(reason)) end
+end
 local publishedWorld=if studioConfiguration then studioConfiguration:FindFirstChild("PublishedWorld") else nil
 local productionWorld=if not RunService:IsStudio() and publishedWorld and publishedWorld:IsA("StringValue") and publishedWorld.Value~="" then publishedWorld.Value else nil
 if RunService:IsStudio() or productionWorld then
@@ -72,6 +85,7 @@ local function createEnvironment(size)
  local data=Environment.create(size,weather)
  if singleModelWorld then data.rocks={}; data.logs={}; data.trees={}; data.zones={} end
  if worldSettings then data.zones=table.clone(worldSettings.zones) end
+ data.worldObjects=worldObjects
  return data
 end
 environment=createEnvironment(mapSize)
@@ -174,6 +188,55 @@ local function publishScan(tank,angle,observation,manual)
     end
 end
 local spawnCount = 0
+-- Existing tank collections and selection survive joining the shared battle. Studio regression
+-- fixtures can explicitly retain isolated pairs; published battles cannot.
+local soloFixture=RunService:IsStudio() and workspace:GetAttribute("SoloTankPairs")==true
+local multiplayer=false
+local function findSpawn(tank)
+ local bodies=table.clone(VehicleContacts.obstacles(environment,mapSize))
+ if worldObjects then for _,body in worldObjects:obstacles() do table.insert(bodies,body) end end
+ for p,target in targets do if target.health>0 then table.insert(bodies,VehicleContacts.box("spawn-target",p.Position,p.Size.X/2,p.Size.Z/2,-p.Size.Y/2,p.Size.Y/2)) end end
+ for _,other in tanks do
+  if other~=tank and not other.state.waitingForSpawn then table.insert(bodies,VehicleContacts.body("spawn-tank",other.state,Components.get(other.state).Chassis)) end
+ end
+ local preferred,yaw=Battle.pose(mapSize,tank.spawnIndex,tank.kind)
+ if worldSettings then
+  -- Use authored headings/anchors, then the same bounded fallback search.
+  for _,spawn in worldSettings.spawns do
+   if spawn.tank==tank.kind then preferred=Vector3.new(table.unpack(spawn.position)); yaw=-math.rad(spawn.heading) end
+  end
+  local ok,position,heading=pcall(WorldSettings.spawn,worldSettings,tank.kind,tank.spawnIndex,bodies)
+  if ok then preferred,yaw=position,heading end
+ end
+ local function clear(p)
+  if math.abs(p.X)>mapSize.X/2-7 or math.abs(p.Z)>mapSize.Y/2-7 then return false end
+  for _,body in bodies do if not body.plane and WorldSettings.blocked(p,body,7) then return false end end
+  return true
+ end
+ if clear(preferred) then return preferred,yaw end
+ for z=-mapSize.Y/2+7,mapSize.Y/2-7,14 do
+  for x=-mapSize.X/2+7,mapSize.X/2-7,14 do
+   local p=Vector3.new(x,0,z)
+   if clear(p) then return p,yaw end
+  end
+ end
+ return nil
+end
+local function removeTank(id,tank)
+ for i=#shells,1,-1 do if shells[i].owner==id then shells[i].model:Destroy(); table.remove(shells,i) end end
+ BWController.stop(tank,"Tank removed.")
+ tank.hitbox:Destroy(); tanks[id]=nil
+end
+local function enterMultiplayer()
+ multiplayer=true
+ for _,battle in battles do
+  battle.multiplayer=true; battle.winner=nil
+  for _,tank in battle.tanks do
+   tank.findSpawn=findSpawn
+   if tank.state.health<=0 and not tank.respawnAt then tank.respawnAt=simulationTime+3 end
+  end
+ end
+end
 local function owned(player,id)
 	if id~=nil and type(id)~="string" then return nil end
 	local battle=battles[player.UserId]
@@ -181,8 +244,13 @@ local function owned(player,id)
 end
 local function addPlayer(player)
 	if battles[player.UserId] then return end
-	spawnCount+=1
+	if not soloFixture and next(battles) then enterMultiplayer() end
+ spawnCount=1
+ local used={}
+ for _,existing in battles do used[existing.index]=true end
+ while used[spawnCount] do spawnCount+=1 end
 	local battle=Battle.new(player.UserId,spawnCount); battles[player.UserId]=battle
+ battle.multiplayer=multiplayer
 	for _,kind in {"Boomer","Rattler"} do
 		local id=Battle.id(player.UserId,kind)
 		local size=Components.get(kind).Chassis.Hitbox
@@ -191,7 +259,17 @@ local function addPlayer(player)
 		hitbox:SetAttribute("OwnerId",player.UserId); hitbox:SetAttribute("TankId",id)
 		local tank={owner=player.UserId,playerName=player.Name,kind=kind,seed=(math.abs(player.UserId)+(if kind=="Rattler" then 7919 else 0))%2147483646+1,hitbox=hitbox,lastPacket=0}
 		tank.worldSettings=worldSettings; tank.worldObjects=worldObjects
-		Battle.resetTank(tank,mapSize,spawnCount,"Battle started.")
+  tank.spawnIndex=spawnCount; tank.findSpawn=if multiplayer then findSpawn else nil
+		if not Battle.resetTank(tank,mapSize,spawnCount,"Battle started.") then
+   -- A full authored map leaves the player waiting for a free spawn, with no
+   -- targetable or controllable body. Retry through the normal respawn path.
+   tank.findSpawn=function() return Battle.pose(mapSize,spawnCount,tank.kind) end
+   Battle.resetTank(tank,mapSize,spawnCount,"Waiting for a safe spawn.")
+   tank.findSpawn=findSpawn; tank.state.health=0; tank.hitbox.CanQuery=false
+   tank.state.waitingForSpawn=true
+   tank.respawnAt=simulationTime+3
+  end
+        tank.state.generation=sessions[player.UserId].generation
 		tanks[id]=tank; battle.tanks[id]=tank
 		tank.bwServices={
 			getClock=function() return simulationTime end,
@@ -222,14 +300,51 @@ local function addPlayer(player)
 		}
 	end
 end
-Players.PlayerAdded:Connect(addPlayer)
+-- Presence in the experience is separate from participation in a battle.
+local function registerPlayer(player)
+ if not sessions[player.UserId] then sessions[player.UserId]={lastRequest=0,lastEnter=-math.huge,generation=0} end
+ if playerWorlds then playerWorlds:register(player) end
+end
+local function leaveBattle(player)
+ local battle=battles[player.UserId]
+ if not battle then return end
+ local session=sessions[player.UserId]
+ for id,tank in battle.tanks do
+  if session then session.generation=math.max(session.generation,tank.state.generation+1) end
+  removeTank(id,tank)
+ end
+ battles[player.UserId]=nil
+ if not next(battles) then multiplayer=false end
+end
+Players.PlayerAdded:Connect(registerPlayer)
 Players.PlayerRemoving:Connect(function(player)
-	local battle=battles[player.UserId]
-	if not battle then return end
-	for id,tank in battle.tanks do BWController.stop(tank,"Player disconnected."); tank.hitbox:Destroy(); tanks[id]=nil end
-	battles[player.UserId]=nil
+ leaveBattle(player)
+ sessions[player.UserId]=nil
+ if playerWorlds then playerWorlds:remove(player) end
 end)
-for _, player in Players:GetPlayers() do addPlayer(player) end
+for _,player in Players:GetPlayers() do registerPlayer(player) end
+battleSession.OnServerEvent:Connect(function(player,action,requestId)
+ local session=sessions[player.UserId]
+ if not session or (action~="Enter" and action~="Leave") or type(requestId)~="number"
+  or requestId~=requestId or requestId%1~=0 or requestId<1 or requestId>1000000000 or requestId<=session.lastRequest then return end
+ session.lastRequest=requestId
+ if action=="Leave" then
+  leaveBattle(player)
+ elseif not battles[player.UserId] then
+  if playerWorlds and not playerWorlds:canEnter(player) then
+   battleSession:FireClient(player,requestId,false,"Your saved world is not ready. Return to World Editor and try Play again.")
+   return
+  end
+  local now=os.clock()
+  if now-session.lastEnter<1 then
+   battleSession:FireClient(player,requestId,false,"Please wait a moment before entering again.")
+   return
+  end
+  session.lastEnter=now
+  addPlayer(player)
+ end
+ battleSession:FireClient(player,requestId,battles[player.UserId]~=nil)
+end)
 input.OnServerEvent:Connect(function(player,value,id)
 	local battle=battles[player.UserId]
 	local tank=owned(player,id)
@@ -244,7 +359,8 @@ input.OnServerEvent:Connect(function(player,value,id)
 end)
 selectTank.OnServerEvent:Connect(function(player,kind)
 	local battle=battles[player.UserId]
-	if battle then Battle.select(battle,kind) end
+	if not battle or (kind~="Boomer" and kind~="Rattler") then return end
+ Battle.select(battle,kind)
 end)
 local function acceptBWRequest(tank,id)
 	if type(id)~="number" or id~=id or id%1~=0 or id<1 or id>1000000000 or id<=(tank.lastBWRequest or 0) then return false end
@@ -275,7 +391,6 @@ bwHardware.OnServerEvent:Connect(function(player,configuration,id)
 end)
 local shellFolder = Instance.new("Folder")
 shellFolder.Name = "ArtilleryShells"; shellFolder.Parent = workspace
-local shells = {}
 local function shellPart(parent, name, size, color, shape)
 	local p = Instance.new("Part")
 	p.Name = name; p.Size = size; p.Color = color; p.Shape = shape
@@ -293,7 +408,11 @@ local function launchShell(id, tank, origin, direction, deferEffects)
 	-- Spawn at the muzzle after checking the pivot-to-tip path for cover.
 	tank.state.weaponShotSerial=(tank.state.weaponShotSerial or 0)+1
 	local tuning = Components.get(tank.state).Weapon
-	local shell, blocked = Projectiles.launch(workspace,origin,direction,{tank.hitbox,shellFolder},tuning,floor.Position.Y+floor.Size.Y/2)
+ local airborne,ground=Simulation.projectileFlight(tank.state)
+ local flight={airborne=airborne,findGround=if worldObjects then function(position,heading,range,radius,baseline)
+  return worldObjects:projectileGround(position,heading,range,radius,baseline)
+ end else nil}
+	local shell, blocked = Projectiles.launch(workspace,origin,direction,{tank.hitbox,shellFolder},tuning,ground,flight)
 	local small = Components.get(tank.state).Weapon.Operation=="Heat"
 	shell.pendingHit = blocked
 	shell.owner = id
@@ -335,7 +454,9 @@ local function updateShells(now)
 			for _, other in tanks do
 				if other.hitbox == hit.Instance then
 					local battle=battles[other.owner]
-					Battle.damage(battle,other,tanks[shell.owner],shell.damage,shell.weaponType,hit.Position)
+					if Battle.damage(battle,other,tanks[shell.owner],shell.damage,shell.weaponType,hit.Position) and multiplayer and other.state.health<=0 then
+                        other.respawnAt=simulationTime+3
+                    end
 				end
 			end
 			if arena:GetAttribute("DebugCombat") then
@@ -362,6 +483,7 @@ resetBattle.OnServerEvent:Connect(function(player)
 	local battle=battles[player.UserId]
 	if not battle or os.clock()-(battle.lastReset or -math.huge)<0.5 then return end
 	battle.lastReset=os.clock()
+ if battle.multiplayer then return end
  if worldObjects then worldObjects:reset() end
  reset(battle,"Battle reset.")
 end)
@@ -391,6 +513,70 @@ if RunService:IsStudio() then
 		arena:SetAttribute("MapRevision", arena:GetAttribute("MapRevision")+1)
 	end)
 end
+-- Player worlds are installed only into an empty battlefield. Published launches
+-- use a fresh reserved server; Studio uses this same path without teleporting.
+local function installPlayerWorld(player,document,specs,settings)
+ assert(sessions[player.UserId] and not next(battles),"The battlefield is busy. Leave combat on every Studio client before testing a world.")
+ local candidate=require(script.WorldObjects).new()
+ local staging=Instance.new("Folder")
+ local ok,reason=pcall(function()
+  local models,err=require(Shared.ModelPlacement).placeMany(storage:FindFirstChild("BattleWorksAssets"),specs,staging,function(model,spec) candidate:add(model,spec) end)
+  assert(models,err);WorldSettings.checkSpawns(settings,candidate:obstacles())
+ end)
+ if not ok then staging:Destroy();error(reason) end
+ -- Everything below is synchronous, after native assets and spawns validate.
+ local scenery=staging:FindFirstChild("WorldScenery")
+ local old=arena:FindFirstChild("WorldScenery");if old then old:Destroy() end
+ scenery.Parent=arena;staging:Destroy()
+ for p in targets do p:Destroy() end;table.clear(targets)
+ local stick=arena:FindFirstChild("CenterStick");if stick then stick:Destroy() end
+ worldObjects=candidate;worldSettings=settings;singleModelWorld=true;weather="Normal"
+ mapSize=Vector2.new(settings.width,settings.depth)
+ environment=createEnvironment(mapSize);EnvironmentBuilder.build(arena,environment,floor)
+ floor.Size=Vector3.new(mapSize.X+10,1,mapSize.Y+10)
+ floor.Material=Enum.Material[settings.ground.material];floor.Color=Color3.fromRGB(table.unpack(settings.ground.color))
+ walls[1].Size=Vector3.new(mapSize.X+10,6,4);walls[1].Position=Vector3.new(0,3,-mapSize.Y/2-3)
+ walls[2].Size=walls[1].Size;walls[2].Position=Vector3.new(0,3,mapSize.Y/2+3)
+ walls[3].Size=Vector3.new(4,6,mapSize.Y+10);walls[3].Position=Vector3.new(-mapSize.X/2-3,3,0)
+ walls[4].Size=walls[3].Size;walls[4].Position=Vector3.new(mapSize.X/2+3,3,0)
+ arena:SetAttribute("Weather",weather);arena:SetAttribute("WorldId",document.id)
+ arena:SetAttribute("WorldName","Player world")
+ arena:SetAttribute("MapWidth",mapSize.X);arena:SetAttribute("MapDepth",mapSize.Y)
+ arena:SetAttribute("MapRevision",arena:GetAttribute("MapRevision")+1)
+end
+if editorMetadata then
+ local worldRemote=Instance.new("RemoteFunction");worldRemote.Name="PlayerWorlds";worldRemote.Parent=network
+ local ok,reason=pcall(function()
+  local http=game:GetService("HttpService")
+  local library=ReplicatedStorage:FindFirstChild("BattleWorksEditorAssets")
+  assert(library,"Editor asset library unavailable")
+  local studio=RunService:IsStudio()
+  local teleport=if not studio then game:GetService("TeleportService") else nil
+  playerWorlds=require(script.PlayerWorldService).new({
+   studio=studio,reserved=not studio and game.PrivateServerId~="" and game.PrivateServerOwnerId==0,
+   placeId=game.PlaceId,http=http,items=http:JSONDecode(library:FindFirstChild("Catalog").Value),assets=storage:FindFirstChild("BattleWorksAssets"),
+   dataStore=if not studio then game:GetService("DataStoreService"):GetDataStore("BattleWorksPlayerWorlds_v1") else nil,
+   isPresent=function(player) return sessions[player.UserId]~=nil end,
+   inBattle=function(player) return battles[player.UserId]~=nil end,
+   install=installPlayerWorld,
+   teleport=function(player,data)
+    local options=Instance.new("TeleportOptions");options.ReservedServerId=http:GenerateGUID(false);options:SetTeleportData(data)
+    teleport:TeleportAsync(game.PlaceId,{player},options)
+   end,
+  })
+  for _,player in Players:GetPlayers() do playerWorlds:register(player) end
+  if teleport then teleport.TeleportInitFailed:Connect(function(player,_,message)
+   -- The client remains in its editor; an event reports asynchronous failures.
+   battleSession:FireClient(player,0,false,"World launch failed: "..tostring(message)..". Your saved world is safe; try Play again.")
+  end) end
+ end)
+ if not ok then warn("BattleWorks saved worlds unavailable: "..tostring(reason)) end
+ worldRemote.OnServerInvoke=function(player,action,payload)
+  if not playerWorlds then return {ok=false,message="Saved worlds are unavailable in this place build."} end
+  return playerWorlds:request(player,action,payload)
+ end
+end
+startup("arena and battle services ready")
 local accumulator, snapshotClock = 0, 0
 RunService.Heartbeat:Connect(function(dt)
 	accumulator += math.min(dt, 0.1)
@@ -399,7 +585,10 @@ RunService.Heartbeat:Connect(function(dt)
 		local now = os.clock()
 		for p, target in targets do PracticeTargets.update(p, target, now, tanks) end
 		for id, tank in tanks do
-			DamageEffects.step(tank.effects,tank.state,Config.Step)
+			if tank.respawnAt and simulationTime>=tank.respawnAt then
+                if not Battle.resetTank(tank,mapSize,battles[tank.owner].index,"Respawned.") then tank.respawnAt=simulationTime+1 end
+            end
+            DamageEffects.step(tank.effects,tank.state,Config.Step)
 			BWController.applyHardware(tank)
             local visual=tank.state.scanVisual
 			if visual then visual.remaining=math.max(0,visual.remaining-Config.Step); if visual.remaining==0 then tank.state.scanVisual=nil end end
@@ -439,8 +628,10 @@ RunService.Heartbeat:Connect(function(dt)
 		for id,tank in tanks do
 			local command=tank.tickCommand
 			tank.state.groundPlaneY=floor.Position.Y+floor.Size.Y/2
-			Simulation.step(tank.state, command, Config.Step, mapSize, environment,true)
-            table.insert(contactBodies,VehicleContacts.body(id,tank.state,Components.get(tank.state).Chassis))
+            if not tank.state.waitingForSpawn then
+                Simulation.step(tank.state, command, Config.Step, mapSize, environment,true)
+                table.insert(contactBodies,VehicleContacts.body(id,tank.state,Components.get(tank.state).Chassis))
+            end
         end
         VehicleContacts.solve(contactBodies,contactObstacles,Config.Step)
         for _,record in contactBodies do
@@ -504,7 +695,7 @@ RunService.Heartbeat:Connect(function(dt)
             end
         end
         local battleStates={}
-		for owner,battle in battles do battleStates[tostring(owner)]={selected=battle.selected,winner=battle.winner} end
+		for owner,battle in battles do battleStates[tostring(owner)]={selected=battle.selected,winner=battle.winner,multiplayer=battle.multiplayer} end
 		snapshot:FireAllClients(states,battleStates)
 	end
 end)

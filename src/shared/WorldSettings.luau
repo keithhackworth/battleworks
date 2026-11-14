@@ -33,6 +33,7 @@ end
 function Settings.blocked(position,body,radius)
  radius=radius or 6
  local p=body.state.position; local yaw=body.state.yaw or 0
+ if body.bottom and body.top and (p.Y+body.bottom>=position.Y+6 or p.Y+body.top<=position.Y) then return false end
  local dx,dz=position.X-p.X,position.Z-p.Z; local c,s=math.cos(yaw),math.sin(yaw)
  return math.abs(c*dx-s*dz)<body.halfX+radius and math.abs(s*dx+c*dz)<body.halfZ+radius
 end

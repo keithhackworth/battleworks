@@ -46,13 +46,19 @@ local Instance = {}
 function Instance.new(class)
 	local object = { ClassName = class, AbsoluteSize = Vector2.new(640, 320), AbsolutePosition = Vector2.zero,
 		InputBegan = signal(), Activated = signal(), ChildAdded = signal(), children = {}, properties = {}, Enabled = true }
+ if class=="TextBox" then object.FocusLost=signal() end
+ if class=="TextButton" then
+  object.MouseEnter=signal(); object.MouseLeave=signal(); object.SelectionGained=signal(); object.SelectionLost=signal()
+ end
 	function object:GetAttribute(key) return (self.attributes or {})[key] end
 	function object:SetAttribute(key, value) self.attributes = self.attributes or {}; self.attributes[key] = value end
 	function object:GetPropertyChangedSignal(key)
 		if not self.properties[key] then self.properties[key] = signal() end
 		return self.properties[key]
 	end
-	function object:Emit(count) self.emitted=(self.emitted or 0)+count end
+	function object:GetAttributes() return table.clone(self.attributes or {}) end
+ function object:GetAttributeChangedSignal(key) return self:GetPropertyChangedSignal("attribute:"..key) end
+ function object:Emit(count) self.emitted=(self.emitted or 0)+count end
 	function object:Clear() self.clearCalls=(self.clearCalls or 0)+1 end
 	function object:ReleaseFocus() self.releasedFocus=true end
 	function object:IsA(name) return self.ClassName == name end

@@ -73,6 +73,7 @@ do
  players.GetPlayerByUserId=function(_,id) return if id==101 then first elseif id==102 then second else nil end
  local heartbeat=signal()
  local shots,prepared,snapshots,battleStates,privateOutputs,privateRuntime={}, {}, {}, {}, {}, {}
+ local sessionReadings={}
  local ideProbe
  local oldFactory=Instance.new
  Instance.new=function(class)
@@ -84,6 +85,7 @@ do
    p.OnServerEvent=signal()
    p.FireClient=function(self,recipient,...)
    local args={...}
+   if self.Name=="BattleSession" then table.insert(sessionReadings,{recipient=recipient,args=args}) end
    if ideProbe and recipient==first then
     if self.Name=="BWOutput" then ideProbe:receiveOutput(table.unpack(args)) end
     if self.Name=="BWRuntimeState" then ideProbe:receiveRuntime(table.unpack(args)) end
@@ -124,9 +126,13 @@ do
  end
  game.ReplicatedStorage.WaitForChild=function(self,name) return self[name] end
  workspace:SetAttribute("ArenaWeather","Normal") -- historical handling/combat baseline
+ workspace:SetAttribute("SoloTankPairs",true) -- explicit historical solo fixture
  require("ServerEntrypoint")
  local network
  for _,p in created do if p.Name=="TankNetwork" and not p.destroyed then network=p end end
+ local session=network:FindFirstChild("BattleSession")
+ session.OnServerEvent:Fire(first,"Enter",1)
+ session.OnServerEvent:Fire(second,"Enter",1)
  local input=network:FindFirstChild("Input")
  local select=network:FindFirstChild("SelectTank")
  local bwRun,bwStop=network:FindFirstChild("BWRun"),network:FindFirstChild("BWStop")

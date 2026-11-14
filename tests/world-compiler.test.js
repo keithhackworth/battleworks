@@ -351,7 +351,8 @@ test('imported tree supports fixed solid durability and precise unsupported-prof
     close(trs(q.position,q.rotation,q.scale),m.objects[0].transform);
   }
   const tilted = structuredClone(manifest); tilted.objects[0].transform=trs([0,0,0],[10,0,0],45);
-  assert.match(placementIssue(tilted,bindings),/upright/);
+  assert.equal(placementIssue(tilted,bindings),null);
+  assert.ok(Math.abs(studioPlacement(tilted,bindings).rotation[0]-10)<1e-6);
 });
 
 

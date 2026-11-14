@@ -1,5 +1,11 @@
 # BattleWorks: Boomer and Rattler
 
+**In-game World Builder:** Main Menu → World Editor now opens a private desktop authoring scene with a hierarchical 3D asset palette, drag placement, transform anchors, properties, undo/redo and v2 JSON export. Move objects vertically with the green Y handle; Tilt X/Z and height/pitch/roll fields support ramps and raised bridge decks. **My Worlds / Save & Play** saves layouts privately and launches them without commands; Studio uses clearly labeled session-only saves, while published play uses Roblox storage and a separate reserved battle server. See [workflow, limitations and native validation](docs/IN_GAME_WORLD_BUILDER.md).
+
+**Application shell:** start at Main Menu, choose **Play BattleWorks → Enter Battle**, and return using **Main Menu** in the battle HUD (or Xbox B outside text entry). The menu uses a static local battlefield view; no replay or background battle runs. See [shell architecture and Studio checklist](docs/APPLICATION_SHELL.md).
+
+**Multiplayer Milestone 1:** players share the authoritative battle, retain their owned tank collections, damage one another and respawn automatically. See [multiplayer behavior and Studio acceptance](docs/MULTIPLAYER_MILESTONE_1.md).
+
 ## Offline worlds and Studio selection
 
 Build: `node tools/build-world.js worlds/example.json --output build/worlds/example.json`.

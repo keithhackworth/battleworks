@@ -1,4 +1,4 @@
--- Lifecycle/ownership for a player's local two-tank test. Movement and weapons
+-- Lifecycle/ownership for solo testing and shared multiplayer. Movement and weapons
 -- remain in the same authoritative simulation used by manual and BW controls.
 local Shared=game.ReplicatedStorage.Shared
 local Simulation=require(Shared.TankSimulation)
@@ -20,12 +20,19 @@ function Battle.pose(size,index,kind)
 	return Vector3.new(if kind=="Boomer" then -x else x,0,z),if kind=="Boomer" then -math.pi/2 else math.pi/2
 end
 function Battle.resetTank(tank,size,index,reason)
+ local spawnPosition,spawnYaw
+ if tank.findSpawn then
+  spawnPosition,spawnYaw=tank.findSpawn(tank)
+  if not spawnPosition then return false end
+ end
 	BW.stop(tank,reason)
  tank.bw=nil -- discard previous lifecycle command history and observation snapshots
 	local generation=(tank.state and tank.state.generation or -1)+1
 	local position,yaw=Battle.pose(size,index,tank.kind)
- if tank.worldSettings then position,yaw=WorldSettings.spawn(tank.worldSettings,tank.kind,index,if tank.worldObjects then tank.worldObjects:obstacles() else {}) end
-	tank.spawn=position; tank.spawnYaw=yaw
+ if tank.worldSettings and not spawnPosition then position,yaw=WorldSettings.spawn(tank.worldSettings,tank.kind,index,if tank.worldObjects then tank.worldObjects:obstacles() else {}) end
+	if spawnPosition then position,yaw=spawnPosition,spawnYaw end
+ tank.respawnAt=nil
+ tank.spawn=position; tank.spawnYaw=yaw
 	tank.state=Simulation.new(position,tank.kind,tank.seed,tank.assembly)
  tank.state.bwRunning=false; tank.state.bwStatus="stopped"; tank.state.bwMessage=reason or "Battle reset."
  tank.state.bwIndex=0; tank.state.bwCount=0; tank.state.bwLine=0; tank.state.bwInstruction=""
@@ -39,6 +46,7 @@ function Battle.resetTank(tank,size,index,reason)
 	local size=Components.get(tank.state).Chassis.Hitbox
  tank.hitbox.Size=Vector3.new(size.X,size.Y,size.Z)
 	tank.hitbox.CanQuery=true
+ return true
 end
 function Battle.select(battle,kind)
 	local id=Battle.id(battle.owner,kind)
@@ -51,8 +59,8 @@ function Battle.select(battle,kind)
 	return true
 end
 function Battle.damage(battle,victim,source,damage,weaponType,position)
-	-- The local pair fights each other. Other players' pairs are separate tests.
-	if not source or source==victim or source.owner~=victim.owner or victim.state.health<=0 then return false end
+	-- Damage is called only from authoritative projectile impacts.
+	if not source or source==victim or (source.owner~=victim.owner and not battle.multiplayer) or victim.state.health<=0 or type(damage)~="number" or damage~=damage or damage<=0 or damage==math.huge then return false end
 	if not victim.effects then victim.effects=Effects.new(victim.state) end
 	local applied=math.min(victim.state.health,damage)
 	victim.state.health=math.max(0,victim.state.health-applied)
@@ -60,7 +68,7 @@ function Battle.damage(battle,victim,source,damage,weaponType,position)
 	if victim.state.health==0 then
 		BW.stop(victim,"Tank destroyed."); BW.clearInputs(victim)
 		victim.hitbox.CanQuery=false; victim.state.scanVisual=nil; victim.state.scanBW=nil; victim.state.scanManual=nil; victim.state.manualScannerActive=false
-		battle.winner=if source.state.health>0 then source.kind else "Draw"
+		if not battle.multiplayer then battle.winner=if source.state.health>0 then source.kind else "Draw" end
 	end
 	return true
 end

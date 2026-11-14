@@ -1,6 +1,7 @@
 -- Deterministic planar rigid contacts for the existing scripted simulation.
 -- Records are generic body+box geometry; no tank names, Instances or tasks.
 local Motion=require(script.Parent.VehicleMotion)
+local WorldGeometry=require(script.Parent.WorldObjectGeometry)
 local C={Skin=0.0001,Iterations=10,MaxEvents=12,MaxSubsteps=16,Friction=0.15}
 local function dot(x,z,a,b) return x*a+z*b end
 local function axes(r) local c,s=math.cos(r.state.yaw),math.sin(r.state.yaw); return c,-s,s,c end
@@ -9,6 +10,7 @@ local function extent(r,x,z)
  return math.abs(dot(ax,az,x,z))*r.halfX+math.abs(dot(bx,bz,x,z))*r.halfZ
 end
 local function vertical(a,b)
+ if b.surface and WorldGeometry.canTraverse(b.surface,a.state.position,a.halfX+a.halfZ,a.state) then return false end
  local ay=a.state.position.Y; local by=b.state.position.Y
  return ay+a.top>by+b.bottom+C.Skin and by+b.top>ay+a.bottom+C.Skin
 end

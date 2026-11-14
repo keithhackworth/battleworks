@@ -46,7 +46,6 @@ function Battlefield:requestMapRedraw()
 	return true
 end
 function Battlefield:setActualMapSize(size)
-	if not game:GetService("RunService"):IsStudio() then return false end
 	if typeof(size) ~= "Vector2" then return false end
 	for _, value in {size.X,size.Y} do
 		if value ~= value or value < 25 or value > 2000 or value % 1 ~= 0 then return false end
