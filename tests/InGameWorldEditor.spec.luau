@@ -71,6 +71,16 @@ for _,rotation in {{0,90,0},{0,270,0},{20,90,15},{-25,89.999,30}} do
  end
  check(math.abs(dot(normals[1],normals[2]))<1e-6 and math.abs(dot(normals[1],normals[3]))<1e-6 and math.abs(dot(normals[2],normals[3]))<1e-6,"three rotation planes remain distinct at 90-degree yaw")
 end
+for _,distance in {20,210,1600} do
+ local pitch=Math.cameraPitch(-1,0,distance)
+ check(math.abs(math.sin(pitch)*distance-1.5)<1e-5,"minimum pitch reaches eye level at any zoom distance")
+ check(Math.cameraPitch(2,0,distance)<math.pi/2,"top-down orbit avoids camera up-vector singularity")
+end
+check(Math.cameraPitch(-.1,20,100)<0,"raised viewpoint can look upward while remaining above floor")
+local panFrame={RightVector=Vector3.new(1,0,0),UpVector=Vector3.new(0,1,0)}
+local pan=Math.cameraPan(panFrame,Vector2.new(1280,720),Vector2.new(50,25),100,48)
+check(pan.X<0 and pan.Y>0 and pan.Z==0,"panning follows the screen plane, independent of terrain ray")
+check((Math.cameraPan(panFrame,Vector2.new(1280,720),Vector2.new(50,25),200,48)-pan*2).Magnitude<1e-5,"pan speed scales with visible distance")
 local fakeFrame={Position=Vector3.new(0,20,0),VectorToWorldSpace=function(_,v)return Vector3.new(v.X,-1,v.Y)end}
 local origin,direction=Math.ray(fakeFrame,Vector2.new(800,400),Vector2.new(400,200),48)
 local hit=Math.ground(origin,direction)

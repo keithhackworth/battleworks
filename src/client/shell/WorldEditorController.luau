@@ -7,6 +7,7 @@ local Scene=require(script.Parent.WorldEditorScene)
 local UIS=game:GetService("UserInputService")
 local Run=game:GetService("RunService")
 local Http=game:GetService("HttpService")
+local Actions=game:GetService("ContextActionService")
 local Controller={};Controller.__index=Controller
 function Controller.new(context)
  if not context.editorAssets and context.getEditorAssets then context.editorAssets=context.getEditorAssets() end
@@ -167,7 +168,7 @@ function Controller:place(point)
 end
 function Controller:cancel()
  if self.gesture then self.state:restore(self.gesture.before);self.gesture=nil;if self.scene then self.scene:sync(self.state.document,self.catalog) end end
- self.placing=nil;self.paletteDrag=nil;self.orbit=nil;self.pan=nil
+ self.placing=nil;self.paletteDrag=nil;self:stopCamera()
  if self.scene then self.scene:clearGhost() end
 end
 function Controller:finishGesture(cancel)
@@ -177,13 +178,40 @@ function Controller:finishGesture(cancel)
  if cancel or not ok then self.state:restore(g.before) else self.state:record(g.before) end
  self:refresh();self.view:message(if cancel then "Transform canceled." elseif ok then "Transform applied." else tostring(err))
 end
+function Controller:stopCamera()
+ local drag=self.cameraDrag
+ if drag then UIS.MouseBehavior=drag.behavior;UIS.MouseIconEnabled=drag.icon end
+ self.cameraDrag=nil;self.cameraDelta=Vector2.zero
+end
+function Controller:beginCamera(input)
+ if self.cameraDrag then return self.cameraDrag.button==input.UserInputType end
+ if not self.active or not self.scene or self.paused or UIS:GetFocusedTextBox() or self.view:isModal() or not self.view:isScene(self:mousePosition()) then return false end
+ local button=input.UserInputType
+ if button~=Enum.UserInputType.MouseButton2 and button~=Enum.UserInputType.MouseButton3 then return false end
+ if self.gesture then self:finishGesture(true) end
+ self.cameraDrag={button=button,behavior=UIS.MouseBehavior,icon=UIS.MouseIconEnabled}
+ self.cameraDelta=Vector2.zero
+ UIS.MouseBehavior=Enum.MouseBehavior.LockCurrentPosition;UIS.MouseIconEnabled=false
+ return true
+end
+function Controller:cameraAction(_,state,input)
+ if state==Enum.UserInputState.End or state==Enum.UserInputState.Cancel then
+  if self.cameraDrag and self.cameraDrag.button==input.UserInputType then self:stopCamera();return Enum.ContextActionResult.Sink end
+ elseif state==Enum.UserInputState.Begin then
+  if self:beginCamera(input) then return Enum.ContextActionResult.Sink end
+ elseif self.cameraDrag and self.cameraDrag.button==input.UserInputType then return Enum.ContextActionResult.Sink end
+ return Enum.ContextActionResult.Pass
+end
 function Controller:begin(input,processed)
  if self.paused or UIS:GetFocusedTextBox() or self.view:isModal() then return end
+ if self.cameraDrag then return end
+ if input.UserInputType==Enum.UserInputType.MouseButton2 or input.UserInputType==Enum.UserInputType.MouseButton3 then
+  if not processed then self:beginCamera(input) end
+  return
+ end
  local point,origin,direction,mouse=self:pointer()
- if not point or not self.view:isScene(mouse) then return end
+ if not origin or not direction or not self.view:isScene(mouse) then return end
  if processed then return end
- if input.UserInputType==Enum.UserInputType.MouseButton2 then self.orbit={last=mouse};return end
- if input.UserInputType==Enum.UserInputType.MouseButton3 then self.pan={point=point,focus=self.focus};return end
  if processed or input.UserInputType~=Enum.UserInputType.MouseButton1 then return end
  if self.placing then self:place(point);return end
  local id,handle=self.scene:pick(origin,direction,mouse-self.view.viewport.AbsolutePosition,self.view.viewport.AbsoluteSize)
@@ -198,10 +226,11 @@ function Controller:begin(input,processed)
  elseif not id and not handle then self.state.selection={};self:refresh() end
 end
 function Controller:key(input,processed)
- if processed or UIS:GetFocusedTextBox() or self.view:isModal() then return end
+ if self.paused or processed or UIS:GetFocusedTextBox() or self.view:isModal() then return end
  self.keys[input.KeyCode]=true
  local control=UIS:IsKeyDown(Enum.KeyCode.LeftControl) or UIS:IsKeyDown(Enum.KeyCode.RightControl) or UIS:IsKeyDown(Enum.KeyCode.LeftMeta) or UIS:IsKeyDown(Enum.KeyCode.RightMeta)
  local shift=UIS:IsKeyDown(Enum.KeyCode.LeftShift) or UIS:IsKeyDown(Enum.KeyCode.RightShift)
+ if input.KeyCode==Enum.KeyCode.Q and self.cameraDrag then return end
  if input.KeyCode==Enum.KeyCode.Escape or input.KeyCode==Enum.KeyCode.Q then self:cancel();self:refresh()
  elseif control and input.KeyCode==Enum.KeyCode.Z then self:history(shift)
  elseif control and input.KeyCode==Enum.KeyCode.Y then self:history(true)
@@ -215,16 +244,28 @@ end
 function Controller:step(dt)
  local scene=self.scene;if not scene then return end
  local mouse=self:mousePosition()
- if self.orbit then local delta=mouse-self.orbit.last;self.yaw-=delta.X*.006;self.pitch=math.clamp(self.pitch+delta.Y*.004,.35,1.45);self.orbit.last=mouse end
- if not UIS:GetFocusedTextBox() and not self.gesture and not self.placing and not self.view:isModal() then
+ if self.cameraDrag then
+  UIS.MouseBehavior=Enum.MouseBehavior.LockCurrentPosition
+  local delta=self.cameraDelta;self.cameraDelta=Vector2.zero
+  local shift=UIS:IsKeyDown(Enum.KeyCode.LeftShift) or UIS:IsKeyDown(Enum.KeyCode.RightShift)
+  if self.cameraDrag.button==Enum.UserInputType.MouseButton3 or shift then
+   self.focus+=Math.cameraPan(scene.camera.CFrame,self.view.viewport.AbsoluteSize,delta,self.distance,scene.camera.FieldOfView)
+   self.focus=Vector3.new(self.focus.X,math.max(0,self.focus.Y),self.focus.Z)
+  else self.yaw-=delta.X*.006;self.pitch+=delta.Y*.004 end
+ end
+ if not self.paused and not UIS:GetFocusedTextBox() and not self.gesture and (not self.placing or self.cameraDrag) and not self.view:isModal() then
   local forward=(if self.keys[Enum.KeyCode.W] then 1 else 0)-(if self.keys[Enum.KeyCode.S] then 1 else 0)
   local right=(if self.keys[Enum.KeyCode.D] then 1 else 0)-(if self.keys[Enum.KeyCode.A] then 1 else 0)
   if UIS:IsKeyDown(Enum.KeyCode.LeftControl) or UIS:IsKeyDown(Enum.KeyCode.RightControl) then forward=0;right=0 end
   self.focus+=(Vector3.new(-math.sin(self.yaw),0,-math.cos(self.yaw))*forward+Vector3.new(math.cos(self.yaw),0,-math.sin(self.yaw))*right)*self.distance*math.min(dt,.1)*.6
+  if self.cameraDrag then
+   local vertical=(if self.keys[Enum.KeyCode.E] then 1 else 0)-(if self.keys[Enum.KeyCode.Q] then 1 else 0)
+   self.focus=Vector3.new(self.focus.X,math.max(0,self.focus.Y+vertical*self.distance*math.min(dt,.1)*.6),self.focus.Z)
+  end
  end
+ self.pitch=Math.cameraPitch(self.pitch,self.focus.Y,self.distance)
  scene.camera.CFrame=CFrame.lookAt(self.focus+Vector3.new(math.sin(self.yaw)*math.cos(self.pitch),math.sin(self.pitch),math.cos(self.yaw)*math.cos(self.pitch))*self.distance,self.focus)
  local point,origin,direction=self:pointer()
- if self.pan and point then self.focus+=self.pan.point-point end
  if self.gesture then
   local g=self.gesture;local entry=self.state:find(g.id)
   local drag=Math.dragPoint(g.kind,g.base,origin,direction,scene.camera.CFrame,g.pivot)
@@ -265,15 +306,18 @@ function Controller:enter()
  else self.view:message("Asset library unavailable. Rebuild/sync the place with its editor catalog; no live battle objects will be edited.") end
  self:browse()
  local function connect(event,fn) table.insert(self.runtime,event:Connect(fn)) end
+ Actions:BindActionAtPriority("BattleWorksEditorCamera",function(...)return self:cameraAction(...)end,false,3000,Enum.UserInputType.MouseButton2,Enum.UserInputType.MouseButton3)
+ -- Viewport-local delivery also works when UI marks the global event processed.
+ connect(self.view.viewport.InputBegan,function(input) self:beginCamera(input) end)
  connect(UIS.InputBegan,function(input,processed)
   if input.UserInputType==Enum.UserInputType.Keyboard then self:key(input,processed) elseif self.scene then self:begin(input,processed) end
  end)
  connect(UIS.InputEnded,function(input)
   self.keys[input.KeyCode]=nil
-  if input.UserInputType==Enum.UserInputType.MouseButton2 then self.orbit=nil end
-  if input.UserInputType==Enum.UserInputType.MouseButton3 then self.pan=nil end
+  if self.cameraDrag and self.cameraDrag.button==input.UserInputType then self:stopCamera() end
   if input.UserInputType==Enum.UserInputType.MouseButton1 then
    local point,_,_,mouse=self:pointer()
+   if self.cameraDrag then self.paletteDrag=nil;return end
    if self.paused then self:cancel();return end
    if self.paletteDrag then
     local start=self.paletteDrag;self.paletteDrag=nil
@@ -282,9 +326,13 @@ function Controller:enter()
   end
  end)
  connect(UIS.InputChanged,function(input)
-  if input.UserInputType==Enum.UserInputType.MouseWheel and not self.view:isModal() and self.view:isScene(self:mousePosition()) then self.distance=math.clamp(self.distance*math.exp(-input.Position.Z*.12),20,1600) end
+  if self.cameraDrag and input.UserInputType==Enum.UserInputType.MouseMovement then
+   self.cameraDelta+=Vector2.new(input.Delta.X,input.Delta.Y)
+  end
+  if input.UserInputType==Enum.UserInputType.MouseWheel and not self.paused and not UIS:GetFocusedTextBox() and not self.view:isModal() and self.view:isScene(self:mousePosition()) then self.distance=math.clamp(self.distance*math.exp(-input.Position.Z*.12),20,1600) end
  end)
  connect(UIS.WindowFocusReleased,function() self:cancel();self.keys={};self:refresh() end)
+ connect(UIS.TextBoxFocused,function() self:stopCamera();self.keys={} end)
  local gui=game:GetService("GuiService")
  connect(gui.MenuOpened,function() self.paused=true;self:cancel();self.keys={} end)
  connect(gui.MenuClosed,function() self.paused=false end)
@@ -293,6 +341,7 @@ end
 function Controller:exit()
  self.library:hide()
  self:cancel();self.active=false;self.frame.Visible=false;self.keys={}
+ Actions:UnbindAction("BattleWorksEditorCamera")
  for _,connection in self.runtime do connection:Disconnect() end;self.runtime={}
  local focused=UIS:GetFocusedTextBox();if focused then focused:ReleaseFocus() end
  if self.scene then self.scene:destroy();self.scene=nil end

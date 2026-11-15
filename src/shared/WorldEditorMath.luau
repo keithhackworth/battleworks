@@ -28,6 +28,15 @@ end
 -- AbsolutePosition uses core-safe GUI coordinates; GetMouseLocation does not.
 -- GetInsetArea(None).Min is the fullscreen origin in that GUI coordinate space.
 function Math.guiPoint(screenPoint,screenOrigin) return screenPoint+screenOrigin end
+function Math.cameraPitch(pitch,focusY,distance)
+ -- Reach eye level without putting the private camera beneath the base floor.
+ local minimum=math.asin(math.clamp((1.5-focusY)/distance,-.999,.999))
+ return math.clamp(pitch,minimum,1.5)
+end
+function Math.cameraPan(frame,size,delta,distance,fov)
+ local scale=2*distance*math.tan(math.rad(fov)/2)/math.max(size.Y,1)
+ return (frame.RightVector*(-delta.X)+frame.UpVector*delta.Y)*scale
+end
 function Math.project(frame,size,point,fov)
  if size.X<1 or size.Y<1 then return nil end
  local p=frame:PointToObjectSpace(point)

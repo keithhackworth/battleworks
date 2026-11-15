@@ -61,8 +61,11 @@ check(template and not template:FindFirstChild("MustNotExecute") and not templat
 check(not sourcePart.Anchored and not sourceScript.destroyed,"source gameplay templates are unchanged")
 local oldService=game.GetService
 local stepping=signal()
+local cameraBindings={}
+local actions={BindActionAtPriority=function(_,name,callback,_,priority,...)cameraBindings[name]={callback=callback,priority=priority,inputs={...}}end,UnbindAction=function(_,name)cameraBindings[name]=nil end}
+UIS.MouseBehavior=Enum.MouseBehavior.Default;UIS.MouseIconEnabled=true
 local run={RenderStepped=stepping,IsStudio=function()return true end}
-game.GetService=function(self,name)if name=="HttpService"then return http elseif name=="RunService"then return run end;return oldService(self,name)end
+game.GetService=function(self,name)if name=="HttpService"then return http elseif name=="RunService"then return run elseif name=="ContextActionService"then return actions end;return oldService(self,name)end
 local mouse=Vector2.new(400,200)
 UIS.GetMouseLocation=function()return mouse end;UIS.IsKeyDown=function()return false end
 local worldBefore=#workspace:GetChildren();local cameraBefore=workspace.CurrentCamera
@@ -306,6 +309,90 @@ task.spawn=savedSpawn;controller:enter()
 controller.library.request=function()return {ok=false,message="Storage unavailable"}end
 controller.library:open(controller.state.document)
 check(controller.library.status.Text:find("Storage unavailable",1,true) and not controller.library.busy,"service errors leave library usable with clear feedback")
+-- Camera capture uses movement deltas, including a locked cursor and a
+-- viewport-owned event whose global counterpart was marked processed.
+controller.library:hide();controller.view.overlay.Visible=false
+controller:frameWorld();controller:step(1/60)
+local cameraAction=cameraBindings.BattleWorksEditorCamera
+check(cameraAction and cameraAction.priority==3000,"editor installs a scoped camera action above default camera priority")
+local savedPointer=controller.pointer
+controller.pointer=function()return nil,Vector3.new(0,2,0),Vector3.new(0,.1,-1).Unit,mouse end
+local rightClick={UserInputType=Enum.UserInputType.MouseButton2,KeyCode=Enum.KeyCode.Unknown}
+controller:begin(rightClick,true)
+check(not controller.cameraDrag,"processed global right click alone cannot claim unrelated UI input")
+controller.view.viewport.InputBegan:Fire(rightClick)
+check(controller.cameraDrag and UIS.MouseBehavior==Enum.MouseBehavior.LockCurrentPosition and not UIS.MouseIconEnabled,"viewport-owned right click captures camera without requiring terrain ray hit")
+local yawBefore=controller.yaw;local absoluteMouse=mouse
+local historyBefore=#controller.state.past;local objectsBefore=#controller.state.document.objects
+UIS.InputChanged:Fire({UserInputType=Enum.UserInputType.MouseMovement,Delta=Vector3.new(80,-600,0)})
+controller:step(1/60)
+check(mouse==absoluteMouse and controller.yaw~=yawBefore,"locked cursor still orbits using raw relative movement")
+check(controller.scene.camera.CFrame.Position.Y>=1.49 and controller.scene.camera.CFrame.Position.Y<1.51 and controller.pitch<.02,"right drag reaches eye level without moving below floor")
+check(workspace.CurrentCamera==cameraBefore and #controller.state.past==historyBefore and #controller.state.document.objects==objectsBefore,"camera changes neither gameplay camera nor world document/history")
+local beforeYaw=controller.yaw
+controller:step(1/60);check(controller.yaw==beforeYaw,"one movement delta is consumed once rather than repeated every frame")
+UIS.IsKeyDown=function(_,key)return key==Enum.KeyCode.LeftShift end
+local beforeFocus=controller.focus
+UIS.InputChanged:Fire({UserInputType=Enum.UserInputType.MouseMovement,Delta=Vector3.new(40,20,0)})
+controller:step(1/60)
+check((controller.focus-beforeFocus).Magnitude>1 and controller.yaw==beforeYaw,"Shift+right drag pans at eye level even when terrain ray misses")
+UIS.IsKeyDown=function()return false end
+local beforeHeight=controller.focus.Y
+controller.placing=controller.catalog.byPath["Trees/Oak"]
+local armedItem=controller.placing
+controller:key({KeyCode=Enum.KeyCode.E},false);controller:step(1/60);controller.keys[Enum.KeyCode.E]=nil
+check(controller.focus.Y>beforeHeight,"E raises viewpoint while camera is captured")
+controller:key({KeyCode=Enum.KeyCode.Q},false);controller:step(1/60);controller.keys[Enum.KeyCode.Q]=nil
+check(controller.cameraDrag~=nil and controller.focus.Y<=beforeHeight+.01,"Q lowers viewpoint while dragging instead of canceling camera")
+check(controller.placing==armedItem,"camera navigation preserves an armed asset without placing it")
+controller.placing=nil
+check(cameraAction.callback("BattleWorksEditorCamera",Enum.UserInputState.End,rightClick)==Enum.ContextActionResult.Sink and not controller.cameraDrag,"camera action owns release and clears capture")
+check(UIS.MouseBehavior==Enum.MouseBehavior.Default and UIS.MouseIconEnabled,"right-button release restores cursor and mouse behavior")
+local middle={UserInputType=Enum.UserInputType.MouseButton3,KeyCode=Enum.KeyCode.Unknown}
+check(cameraAction.callback("BattleWorksEditorCamera",Enum.UserInputState.Begin,middle)==Enum.ContextActionResult.Sink,"middle-button pan captured by editor action")
+beforeFocus=controller.focus
+UIS.InputChanged:Fire({UserInputType=Enum.UserInputType.MouseMovement,Delta=Vector3.new(30,0,0)})
+controller:step(1/60)
+check((controller.focus-beforeFocus).Magnitude>1,"middle drag pans without relying on a ground-plane intersection")
+UIS.InputEnded:Fire(middle)
+check(not controller.cameraDrag and UIS.MouseBehavior==Enum.MouseBehavior.Default,"global mouse release also safely unlocks camera")
+controller.view.isScene=function()return false end
+check(cameraAction.callback("BattleWorksEditorCamera",Enum.UserInputState.Begin,rightClick)==Enum.ContextActionResult.Pass and not controller.cameraDrag,"palette/panel clicks are not captured by camera action")
+controller.view.isScene=function()return true end
+controller.view.overlay.Visible=true
+check(not controller:beginCamera(rightClick),"JSON modal blocks camera capture")
+controller.view.overlay.Visible=false
+UIS.focusedTextBox=controller.view.name
+check(not controller:beginCamera(rightClick),"text entry blocks camera capture")
+UIS.focusedTextBox=nil
+controller:beginCamera(rightClick);GuiService.MenuOpened:Fire()
+check(not controller.cameraDrag and controller.paused and UIS.MouseIconEnabled,"Roblox menu releases cursor capture")
+local distanceBefore=controller.distance
+UIS.InputChanged:Fire({UserInputType=Enum.UserInputType.MouseWheel,Position=Vector3.new(0,0,1)})
+check(controller.distance==distanceBefore,"wheel does not zoom behind Roblox menu")
+GuiService.MenuClosed:Fire();controller:beginCamera(rightClick);UIS.WindowFocusReleased:Fire()
+check(not controller.cameraDrag and UIS.MouseBehavior==Enum.MouseBehavior.Default,"focus loss cancels camera capture")
+controller:beginCamera(rightClick);UIS.TextBoxFocused:Fire()
+check(not controller.cameraDrag,"focusing text input releases camera capture")
+controller:beginCamera(rightClick);cameraAction.callback("BattleWorksEditorCamera",Enum.UserInputState.Cancel,rightClick)
+check(not controller.cameraDrag,"cancelled input restores camera state")
+local originalPick=controller.scene.pick
+controller.scene.pick=function()return first.id end
+controller.state.selection={}
+controller:begin({UserInputType=Enum.UserInputType.MouseButton1,KeyCode=Enum.KeyCode.Unknown},false)
+check(controller:selected() and controller:selected().id==first.id,"eye-level object selection works even when ray has no floor intersection")
+controller.scene.pick=originalPick
+UIS.MouseBehavior=Enum.MouseBehavior.LockCenter;UIS.MouseIconEnabled=false
+controller:beginCamera(rightClick);controller:stopCamera()
+check(UIS.MouseBehavior==Enum.MouseBehavior.LockCenter and not UIS.MouseIconEnabled,"camera release restores a pre-existing non-default mouse mode/icon")
+UIS.MouseBehavior=Enum.MouseBehavior.Default;UIS.MouseIconEnabled=true
+controller.pointer=savedPointer;controller:beginCamera(rightClick);controller:exit()
+check(not cameraBindings.BattleWorksEditorCamera and not controller.cameraDrag and UIS.MouseBehavior==Enum.MouseBehavior.Default,"editor exit unbinds camera action and restores mouse state")
+local exitedYaw=controller.yaw
+UIS.InputChanged:Fire({UserInputType=Enum.UserInputType.MouseMovement,Delta=Vector3.new(100,100,0)})
+check(controller.yaw==exitedYaw,"late mouse events cannot move an exited editor")
+controller:enter();check(cameraBindings.BattleWorksEditorCamera~=nil,"re-entry creates one fresh camera binding")
 controller:destroy()
+check(cameraBindings.BattleWorksEditorCamera==nil,"destroy removes camera binding")
 Instance.new=baseFactory;game.GetService=oldService
 print(string.format("In-game editor production catalog/scene/controller passed: %d assertions",count))

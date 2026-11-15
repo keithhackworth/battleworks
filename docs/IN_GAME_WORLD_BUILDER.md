@@ -32,14 +32,16 @@ compiler/export pipeline. It never edits the running arena.
 5. Grid snapping starts **OFF**. Toggle it and choose 0.1–50 studs when useful.
    Rotation snaps to 15° when grid snapping is enabled. The visual grid shows
    bounded major lines on fine grids; snapping still uses the exact entered size.
-6. Right-drag orbits, middle-drag pans, WASD pans, and the wheel zooms. **F** or
+6. Right-drag orbits down to eye level; Shift+right-drag or middle-drag pans
+   in the screen plane. WASD moves across the scene, E/Q raises/lowers the
+   viewpoint while a camera drag is held, and the wheel zooms. **F** or
    Frame world resets the camera. Use a desktop window around 1280 × 720 or larger.
 
 Shortcuts: **1** Move, **2** Rotate, **3** Scale;
 **Ctrl/Cmd+D** duplicate; **Delete/Backspace** delete; **Ctrl/Cmd+Z** undo;
 **Ctrl/Cmd+Y** or **Ctrl/Cmd+Shift+Z** redo; **G** toggle snapping.
 Shortcuts yield to focused text fields. Roblox's own Escape menu is preserved;
-Q is an alternative cancel key. Opening CoreGui or losing window focus cancels
+Q is an alternative cancel key when not holding a camera drag. Opening CoreGui or losing window focus cancels
 an active gesture. Every complete drag is one undo action, not one action per frame.
 
 The current format supports uniform scaling only. Stretch remains removed.
@@ -409,3 +411,35 @@ All 34 Luau groups were run, with no Rojo builds. Native validation: after Rojo
 sync and restarting Play, yaw a board to 90°, alternate Tilt X / Tilt Z / Yaw Y,
 and verify each ring follows the object and rotates about its own axis. Test
 snapping, undo/redo and Save/Open afterward.
+
+### Editor camera input and eye-level inspection
+
+The editor now captures right/middle mouse input only over its viewport, through
+a scoped high-priority camera action with viewport-local input delivery. It uses
+relative MouseMovement deltas while the cursor is locked, so orbiting does not
+freeze when GetMouseLocation stays constant. Starting orbit/pan no longer needs
+a successful ground-ray hit; neither does picking a visible raised object.
+
+Controls: RMB orbit, Shift+RMB or middle drag screen-plane pan, WASD horizontal
+movement, E/Q vertical movement while dragging, wheel zoom, F reset. Orbit can
+reach eye level (camera floor clearance 1.5 studs), including at different zoom
+levels; it can look upward at a raised focus. Panning uses the camera right/up
+basis and viewport/FOV scale, so it remains useful at the horizon. Camera movement
+can continue with an armed placement without placing or modifying an object.
+The editor continues to own a private viewport camera, never Workspace.CurrentCamera.
+
+Mouse behavior/icon are restored on release, input cancel, focus loss, Roblox
+menu opening, text focus, editor exit and destruction. Panels/modals/text fields
+do not start camera capture; wheel zoom yields to the Roblox menu and text input.
+The scoped camera action is unbound on exit. No native GUI auto-focus was added.
+
+Regression suites: document/math130, runtime104, covering locked-cursor movement,
+processed viewport delivery, no ground hit, eye-level pitch, pan and vertical
+navigation, all release paths, no stale callbacks and unchanged document/history
+and gameplay camera. All 35 Luau groups are run without Rojo builds. After live
+Rojo sync, restart Play and validate RMB/Shift+RMB/middle dragging on Windows,
+low-angle object selection, zoom/F reset, Escape/CoreGui, alt-tab and returning to
+battle. CLI mocks do not establish native input delivery or visual camera feel.
+
+Roblox input references: [UserInputService](https://create.roblox.com/docs/reference/engine/classes/UserInputService),
+[context action priorities](https://create.roblox.com/docs/reference/engine/enums/ContextActionPriority).
