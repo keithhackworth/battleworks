@@ -8,6 +8,13 @@ function G.axes(rotation)
  return Vector3.new(cy*cz,cx*sz+sx*sy*cz,sx*sz-cx*sy*cz),
   Vector3.new(-cy*sz,cx*cz-sx*sy*sz,sx*cz+cx*sy*sz),Vector3.new(sy,-sx*cy,cx*cy)
 end
+function G.rotation(right,up,back)
+ local cy=math.sqrt(back.Y*back.Y+back.Z*back.Z)
+ local y=math.atan2(back.X,cy)
+ local x=if cy>1e-6 then math.atan2(-back.Y,back.Z) else math.atan2(up.Z,up.Y)
+ local z=if cy>1e-6 then math.atan2(-up.X,right.X) else 0
+ return {math.deg(x)%360,math.deg(y)%360,math.deg(z)%360}
+end
 function G.extents(box)
  local r,u,b,s=box.right,box.up,box.back,box.size/2
  return Vector3.new(math.abs(r.X)*s.X+math.abs(u.X)*s.Y+math.abs(b.X)*s.Z,

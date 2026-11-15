@@ -118,4 +118,11 @@ local u,v=Math.rotationBasis(localBase,"RotatePitch")
 local center=Vector3.new(table.unpack(localBase.position))
 gimbalExport.objects[1].rotation=Math.transform(localBase,"RotatePitch",center+u*10,center+v*10,false,1,center).rotation
 print("EDITOR_EXPORT",json({document=Document.export(gimbalExport,catalog),items={a,b}}))
+local Snap=require("WorldEditorSnap")
+local fittedExport=State.copy(gimbalExport)
+local source=fittedExport.objects[1]
+local pin=Snap.pin("A",{point={5,18,-45},normal={0,1,0}},1)
+fittedExport.objects[1]=Snap.fit(source,"B",{point={20,25,-35}},pin)
+check(fittedExport.objects[1].asset=="Trees/Oak","auto-fit retains hierarchical catalog reference")
+print("EDITOR_EXPORT",json({document=Document.export(fittedExport,catalog),items={a,b}}))
 print(string.format("In-game editor document/history/math passed: %d assertions",count))

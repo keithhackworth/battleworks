@@ -88,6 +88,7 @@ try {
     ['WorldElevation'],
     ['HttpWorldStore'],
     ['RestoredLoadouts'],
+    ['WorldEditorSnap'],
   ];
   if (groupIndex === null) {
     const worldTests = spawnSync(process.execPath, ['--test', 'tests/world-compiler.test.js', 'tests/asset-persistence.test.js', 'tests/world-builder.test.js', 'tests/asset-paths.test.js', 'tests/ingame-editor.test.js'], { stdio: 'inherit' });

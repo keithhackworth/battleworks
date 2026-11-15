@@ -13,14 +13,14 @@ local function equal(a,b)
 end
 State.copy=copy
 function State.new(document)
- return setmetatable({document=copy(document),saved=copy(document),selection={},past={},future={},grid=1,snap=true,limit=100},State)
+ return setmetatable({document=copy(document),saved=copy(document),selection={},pins={},past={},future={},grid=1,snap=true,limit=100},State)
 end
 function State:dirty() return not equal(self.document,self.saved) end
 function State:markSaved(document) self.document=copy(document or self.document); self.saved=copy(self.document) end
-function State:snapshot() return {document=copy(self.document),selection=copy(self.selection)} end
-function State:restore(snapshot) self.document=copy(snapshot.document); self.selection=copy(snapshot.selection) end
+function State:snapshot() return {document=copy(self.document),selection=copy(self.selection),pins=copy(self.pins)} end
+function State:restore(snapshot) self.document=copy(snapshot.document); self.selection=copy(snapshot.selection);self.pins=copy(snapshot.pins or {}) end
 function State:record(before)
- if equal(before.document,self.document) then return false end
+ if equal(before.document,self.document) and equal(before.pins or {},self.pins) then return false end
  table.insert(self.past,before); if #self.past>self.limit then table.remove(self.past,1) end
  table.clear(self.future); return true
 end
@@ -61,7 +61,7 @@ end
 function State:delete()
  self:change(function()
   for id in self.selection do local _,spawn=self:find(id); assert(not spawn,"Tank spawns cannot be deleted; move them instead") end
-  for i=#self.document.objects,1,-1 do if self.selection[self.document.objects[i].id] then table.remove(self.document.objects,i) end end
+  for i=#self.document.objects,1,-1 do if self.selection[self.document.objects[i].id] then self.pins[self.document.objects[i].id]=nil;table.remove(self.document.objects,i) end end
   self.selection={}
  end)
 end

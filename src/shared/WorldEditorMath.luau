@@ -19,11 +19,7 @@ local function rotateLocal(rotation,axis,angle)
  -- Convert the composed frame back to the existing Rx * Ry * Rz schema.
  -- atan2 avoids asin precision loss close to +/-90deg; singular frames have
  -- multiple equivalent Euler triples, so use roll=0 at that boundary.
- local cy=math.sqrt(back.Y*back.Y+back.Z*back.Z)
- local y=math.atan2(back.X,cy)
- local x=if cy>1e-6 then math.atan2(-back.Y,back.Z) else math.atan2(up.Z,up.Y)
- local z=if cy>1e-6 then math.atan2(-up.X,right.X) else 0
- return {math.deg(x)%360,math.deg(y)%360,math.deg(z)%360}
+ return Geometry.rotation(right,up,back)
 end
 -- AbsolutePosition uses core-safe GUI coordinates; GetMouseLocation does not.
 -- GetInsetArea(None).Min is the fullscreen origin in that GUI coordinate space.
@@ -84,7 +80,7 @@ function Math.transform(base,kind,startPoint,point,snap,grid,pivot)
   delta=if snap then math.round(delta/15)*15 else delta
   if math.abs(delta)>1e-8 then copy.rotation=rotateLocal(base.rotation,axis,math.rad(delta)) end
  elseif kind=="Scale" then
-  local center=Vector3.new(table.unpack(base.position))
+  local center=pivot or Vector3.new(table.unpack(base.position))
   local old=math.max(.01,(startPoint-center).Magnitude)
   copy.scale=math.clamp(base.scale*(point-center).Magnitude/old,.001,1000)
  end

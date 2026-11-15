@@ -392,6 +392,56 @@ local exitedYaw=controller.yaw
 UIS.InputChanged:Fire({UserInputType=Enum.UserInputType.MouseMovement,Delta=Vector3.new(100,100,0)})
 check(controller.yaw==exitedYaw,"late mouse events cannot move an exited editor")
 controller:enter();check(cameraBindings.BattleWorksEditorCamera~=nil,"re-entry creates one fresh camera binding")
+-- Exercise production snapping transactions, including cancel and refit.
+local Snap=require("WorldEditorSnap")
+controller.scene.camera.CFrame=CFrame.lookAt(Vector3.new(0,60,100),Vector3.zero)
+controller.state:select(first.id);controller.snapSide=-1;controller.edgeSnap=true;controller:refresh()
+local selected=controller:selected()
+check(controller.scene.snapEnds.A.CanQuery and controller.scene.snapEnds.B.CanQuery,"snap endpoints are pickable only in private editor scene")
+local endpointPixel=Math.project(controller.scene.camera.CFrame,controller.view.viewport.AbsoluteSize,controller.scene.snapEnds.A.CFrame.Position,controller.scene.camera.FieldOfView)
+local _,snapHandle=controller.scene:pick(Vector3.new(0,60,100),Vector3.new(0,-1,0),endpointPixel,controller.view.viewport.AbsoluteSize)
+check(snapHandle=="SnapA","endpoint pixel picking takes priority over model body")
+controller:pinHere("A")
+local pinned=State.copy(controller.state.pins[first.id])
+check(pinned and pinned.side==-1,"pin action records selected corner contact")
+controller:pinHere("B")
+check(controller.state.pins[first.id].endpoint=="A","choosing another fixed end cannot silently break existing pin")
+local previousPose=State.copy(selected)
+controller:beginSnap("B",selected)
+local target={point={35,10,-25},normal={0,1,0},kind="edge",targetId=second.id}
+local fitted=Snap.fit(selected,"B",target,pinned)
+selected.position=fitted.position;selected.rotation=fitted.rotation;selected.scale=fitted.scale
+controller.snapPreview={endpoint="B",target=target,valid=true,side=-1}
+controller:finishGesture(false)
+check(controller.state.pins[first.id].second~=nil,"fitting commits both endpoint contacts")
+local ends=Snap.ends(controller:selected(),-1)
+check((ends.A-Vector3.new(table.unpack(pinned.point))).Magnitude<1e-5 and (ends.B-Vector3.new(table.unpack(target.point))).Magnitude<1e-5,"controller fit preserves fixed contact and reaches target")
+controller:history(false)
+check(not controller.state.pins[first.id].second and controller:selected().scale==previousPose.scale,"undo restores pose and single pin together")
+controller:history(true)
+check(controller.state.pins[first.id].second~=nil,"redo restores fitted endpoints")
+controller:beginSnap("B",controller:selected());controller:finishGesture(true)
+check(controller.state.pins[first.id].second~=nil,"cancel refit restores previous second contact")
+controller:beginSnap("B",controller:selected());controller:finishGesture(false)
+check(controller.state.pins[first.id].second~=nil,"missing snap target rolls back refit")
+controller:perform(function()controller.state.pins[first.id]=nil end,"Released")
+check(controller.state.pins[first.id]==nil,"release unlocks transforms")
+controller:history(false);check(controller.state.pins[first.id].second~=nil,"release pins is undoable")
+local oldPointer=controller.pointer;local oldTarget=controller.scene.snapTarget
+controller.pointer=function()return Vector3.zero,Vector3.new(0,60,0),Vector3.new(0,-1,0),Vector2.zero end
+controller.view.isScene=function()return true end
+controller.scene.snapTarget=function()return target end
+controller:beginSnap("B",controller:selected());controller:step(.016)
+check(controller.snapPreview and controller.snapPreview.valid,"production drag step computes a valid fit preview")
+controller:finishGesture(false)
+check(controller.state.pins[first.id].second~=nil,"production drag preview commits")
+controller:beginSnap("B",controller:selected())
+controller.scene.snapTarget=function()return {point={10000,0,0},kind="ground"} end
+controller:step(.016)
+check(controller.snapPreview and not controller.snapPreview.valid,"invalid world-boundary fit displays rejection")
+controller:finishGesture(false)
+check(controller.state.pins[first.id].second~=nil,"invalid fit leaves previous contacts intact")
+controller.pointer=oldPointer;controller.scene.snapTarget=oldTarget
 controller:destroy()
 check(cameraBindings.BattleWorksEditorCamera==nil,"destroy removes camera binding")
 Instance.new=baseFactory;game.GetService=oldService

@@ -2,6 +2,7 @@ local Shared=game.ReplicatedStorage.Shared
 local Placement=require(Shared.ModelPlacement)
 local Paths=require(Shared.AssetPaths)
 local Math=require(Shared.WorldEditorMath)
+local Snap=require(Shared.WorldEditorSnap)
 local Scene={};Scene.__index=Scene
 local function part(parent,name,size,frame,color,transparency)
  local p=Instance.new("Part");p.Name=name;p.Anchored=true;p.CanCollide=false;p.CanTouch=false;p.CanQuery=false
@@ -12,7 +13,13 @@ function Scene.new(viewport,assets,document)
  local camera=Instance.new("Camera");camera.FieldOfView=48;camera.FieldOfViewMode=Enum.FieldOfViewMode.Vertical;camera.Parent=viewport;viewport.CurrentCamera=camera
  local root=Instance.new("Folder");root.Name="Objects";root.Parent=world
  local gizmos=Instance.new("Folder");gizmos.Name="Anchors";gizmos.Parent=world
- local self=setmetatable({world=world,camera=camera,root=root,gizmos=gizmos,models={},assets=assets,document=document,mode="Move",wire={}},Scene)
+ local snapGizmos=Instance.new("Folder");snapGizmos.Name="SnapHandles";snapGizmos.Parent=world
+ local self=setmetatable({world=world,camera=camera,root=root,gizmos=gizmos,snapGizmos=snapGizmos,models={},assets=assets,document=document,mode="Move",wire={},snapEnds={},snapLabels={},viewport=viewport},Scene)
+ for _,endpoint in {"A","B"} do
+  local p=part(snapGizmos,"Snap"..endpoint,Vector3.new(2,2,2),CFrame.new(),if endpoint=="A" then Color3.fromRGB(80,215,255) else Color3.fromRGB(255,183,92),1)
+  p.Shape=Enum.PartType.Ball;p.Material=Enum.Material.Neon;p:SetAttribute("EditorHandle","Snap"..endpoint);self.snapEnds[endpoint]=p
+  local label=Instance.new("TextLabel");label.Name="SnapLabel"..endpoint;label.Text=endpoint;label.Size=UDim2.fromOffset(24,24);label.BackgroundTransparency=1;label.TextColor3=p.Color;label.TextSize=18;label.Font=Enum.Font.GothamBold;label.TextStrokeTransparency=.2;label.Visible=false;label.ZIndex=4;label.Parent=viewport;self.snapLabels[endpoint]=label
+ end
  local s=document.settings
  self.floor=part(world,"EditorGround",Vector3.new(s.width,1,s.depth),CFrame.new(0,-.5,0),Color3.fromRGB(table.unpack(s.ground.color)));self.floor.Material=Enum.Material[s.ground.material];self.floor.CanQuery=true
  for _,spawn in document.spawns do
@@ -42,6 +49,7 @@ function Scene:sync(document,catalog)
    local item=catalog.byPath[entry.asset];local model,err=self:make(entry,item)
    assert(model,err);record={model=model,scale=self:template(item):GetScale()};self.models[entry.id]=record
   end
+  record.entry=entry
   if record.x~=entry.position[1] or record.y~=entry.position[2] or record.z~=entry.position[3] or record.pitch~=entry.rotation[1] or record.yaw~=entry.rotation[2] or record.roll~=entry.rotation[3] or record.objectScale~=entry.scale then
    Placement.pose(record.model,record.scale,{position=Vector3.new(table.unpack(entry.position)),rotation=Vector3.new(table.unpack(entry.rotation)),scale=entry.scale})
    record.x=entry.position[1];record.y=entry.position[2];record.z=entry.position[3];record.pitch=entry.rotation[1];record.yaw=entry.rotation[2];record.roll=entry.rotation[3];record.objectScale=entry.scale
@@ -83,8 +91,22 @@ function Scene:selection(id,distance)
  local record=id and self.models[id]
  local size=math.clamp(distance*.012,1,3)
  for _,p in self.gizmos:GetChildren() do p.Transparency=if record then 0 else 1;p.CanQuery=record~=nil end
+ for endpoint,p in self.snapEnds do p.Transparency=1;p.CanQuery=false;self.snapLabels[endpoint].Visible=false end
  if not record then for _,p in self.wire do p.Transparency=1 end;return end
- local box,bounds=record.model:GetBoundingBox();local center=box.Position
+ local pin=self.snapPins and self.snapPins[id]
+ if self.snapEnabled or pin then
+  local ends=Snap.ends(record.entry,if pin then pin.side else self.snapSide)
+  for endpoint,p in self.snapEnds do
+   local pinned=pin and (pin.endpoint==endpoint or (pin.second and pin.second.endpoint==endpoint))
+   p.Color=if pinned then Color3.fromRGB(100,245,145) elseif endpoint=="A" then Color3.fromRGB(80,215,255) else Color3.fromRGB(255,183,92)
+   p.Transparency=0;p.CanQuery=true;p.Size=Vector3.new(size*1.3,size*1.3,size*1.3);p.CFrame=CFrame.new(ends[endpoint])
+   local pixel=Math.project(self.camera.CFrame,self.viewport.AbsoluteSize,ends[endpoint],self.camera.FieldOfView)
+   local label=self.snapLabels[endpoint];label.Visible=pixel~=nil
+   if pixel then label.Position=UDim2.fromOffset(pixel.X-12,pixel.Y-26);label.TextColor3=p.Color end
+  end
+ end
+ local box,bounds=record.model:GetBoundingBox()
+ local center=if pin and not pin.second and (self.mode=="Rotate" or self.mode=="Scale") then Vector3.new(table.unpack(pin.point)) else box.Position
  local reach=math.max(bounds.X,bounds.Y,bounds.Z)/2+size*2
  for code,p in self.anchors do
   p.Size=Vector3.new(size,size,size)
@@ -114,6 +136,41 @@ function Scene:selection(id,distance)
   end end
  end
 end
+function Scene:setSnap(enabled,pins,side)self.snapEnabled=enabled;self.snapPins=pins;self.snapSide=side or 0 end
+function Scene:snapTarget(origin,direction,ignore,previous)
+ local include={self.floor}
+ for id,record in self.models do if id~=ignore then table.insert(include,record.model) end end
+ local params=RaycastParams.new();params.FilterType=Enum.RaycastFilterType.Include;params.FilterDescendantsInstances=include;params.RespectCanCollide=false
+ local hit=self.world:Raycast(origin,direction*5000,params)
+ if not hit then return nil end
+ if hit.Instance==self.floor then return {point={hit.Position.X,0,hit.Position.Z},normal={0,1,0},targetId="ground",kind="ground"} end
+ local p=hit.Instance
+ while p and p~=self.world do
+  local id=p:GetAttribute("EditorObjectId")
+  if id then local record=self.models[id];return record and Snap.target(record.entry,hit.Position,Snap.Radius,previous) end
+  p=p.Parent
+ end
+end
+function Scene:snapFeedback(target,valid)
+ if not target then
+  if self.snapContact then self.snapContact.Transparency=1;self.snapEdge.Transparency=1 end
+  return
+ end
+ if not self.snapFeedbackFolder then
+  local folder=Instance.new("Folder");folder.Name="SnapPreview";folder.Parent=self.world;self.snapFeedbackFolder=folder
+  self.snapContact=part(folder,"SnapContact",Vector3.new(.6,.6,.6),CFrame.new(),Color3.fromRGB(100,245,145))
+  self.snapContact.Shape=Enum.PartType.Ball;self.snapContact.Material=Enum.Material.Neon
+  self.snapEdge=part(folder,"SnapEdge",Vector3.new(.14,.14,1),CFrame.new(),self.snapContact.Color,1);self.snapEdge.Material=Enum.Material.Neon
+ end
+ local color=if valid then Color3.fromRGB(100,245,145) else Color3.fromRGB(245,90,75)
+ local point=Vector3.new(table.unpack(target.point))
+ self.snapContact.CFrame=CFrame.new(point);self.snapContact.Color=color;self.snapContact.Transparency=0
+ self.snapEdge.Transparency=1
+ if target.edge then
+  local a,b=Vector3.new(table.unpack(target.edge[1])),Vector3.new(table.unpack(target.edge[2]))
+  if (b-a).Magnitude>.001 then self.snapEdge.Size=Vector3.new(.14,.14,(b-a).Magnitude);self.snapEdge.CFrame=CFrame.lookAt((a+b)/2,b);self.snapEdge.Color=color;self.snapEdge.Transparency=0 end
+ end
+end
 function Scene:grid(enabled,step)
  if self.gridFolder then self.gridFolder:Destroy();self.gridFolder=nil end
  if not enabled then return end
@@ -133,7 +190,9 @@ function Scene:pick(origin,direction,pixel,viewportSize)
  -- should not lose to the object's mesh or require a pixel-perfect click.
  if pixel and viewportSize then
   local chosen,best,bestDepth=nil,math.huge,math.huge
-  for code,p in self.anchors do
+  local pickable=table.clone(self.anchors)
+  for endpoint,p in self.snapEnds do pickable["Snap"..endpoint]=p end
+  for code,p in pickable do
    if p.CanQuery and p.Transparency<1 then
     local at,depth=Math.project(self.camera.CFrame,viewportSize,p.CFrame.Position,self.camera.FieldOfView)
     if at and at.X>=0 and at.Y>=0 and at.X<=viewportSize.X and at.Y<=viewportSize.Y then
@@ -147,7 +206,7 @@ function Scene:pick(origin,direction,pixel,viewportSize)
  end
  local params=RaycastParams.new();params.FilterType=Enum.RaycastFilterType.Include;params.RespectCanCollide=false
  -- Test gizmos separately so the model body cannot steal an anchor click.
- params.FilterDescendantsInstances={self.gizmos}
+ params.FilterDescendantsInstances={self.gizmos,self.snapGizmos}
  local hit=self.world:Raycast(origin,direction*5000,params)
  if hit then
   local handle=hit.Instance:GetAttribute("EditorHandle")
@@ -159,5 +218,5 @@ function Scene:pick(origin,direction,pixel,viewportSize)
  local p=hit.Instance
  while p and p~=self.world do local id=p:GetAttribute("EditorObjectId");if id then return id end;p=p.Parent end
 end
-function Scene:destroy() self.world:Destroy();self.camera:Destroy() end
+function Scene:destroy() self.world:Destroy();self.camera:Destroy();for _,label in self.snapLabels do label:Destroy() end end
 return Scene

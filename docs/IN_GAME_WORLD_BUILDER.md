@@ -443,3 +443,50 @@ battle. CLI mocks do not establish native input delivery or visual camera feel.
 
 Roblox input references: [UserInputService](https://create.roblox.com/docs/reference/engine/classes/UserInputService),
 [context action priorities](https://create.roblox.com/docs/reference/engine/enums/ContextActionPriority).
+
+## Edge snapping and bridge fitting
+
+Enable **Edge snap** in the left panel and select a board. A/B mark the ends of
+its longest local horizontal dimension. **Contact** switches between the middle
+of each top end edge and the left/right pair of top corners. Drag A or B onto
+another object's highlighted top edge/corner (or top face/ground) and release.
+This translates the object and pins that endpoint. Alternatively, **Pin A here**
+or **Pin B here** holds its current position without moving it.
+
+With one end pinned, Rotate and Scale use that contact as their pivot. Drag the
+other endpoint to the second platform or ground: the board changes orientation
+and scale to meet both contacts exactly. The first contact stays fixed. Green
+feedback indicates a valid fit; red indicates a world-boundary, spawn-clearance,
+scale or other existing validation failure. Release with no valid target or press
+Escape to restore the previous pose. Each completed gesture is one undo step;
+undo/redo includes pins. Normal Move/Rotate/Scale gestures can also magnetize nearby
+end edges/corners within two studs when Edge snap is enabled. Grid snapping remains
+independent and optional; exact contacts take precedence over grid alignment.
+
+Both fitted ends lock ordinary transformations. Drag the free endpoint again to
+refit, or use **Release pins** before moving/resizing freely. The fixed endpoint
+cannot be dragged or replaced until released. Duplicates start unpinned.
+
+Auto-fit uses the existing **uniform scale**: width and thickness change along
+with length. There is no stretch handle, new world schema, or asset pipeline.
+Contacts use oriented visual bounding boxes, so irregular meshes or assets with
+smaller registered colliders may not make a seamless drivable bridge. Prefer solid
+box boards with full-size colliders. Existing driving support handles slopes up
+to 45 degrees; snapping does not guarantee that a steep fitted ramp is drivable.
+Ground contacts align the top surface at Y=0, allowing the underside below ground.
+
+Pins are temporary, world-space editor references, not runtime welds or linked
+constraints. Moving/deleting a target does not move the fitted bridge. Saving,
+exporting and reopening retain the final position/rotation/uniform scale and full
+hierarchical asset reference, but do not persist pin metadata. Editor geometry,
+feedback and camera remain in the private WorldModel, isolated from active battles.
+
+After Rojo sync, restart Play. Native Studio validation: place two uneven solid
+platforms and a board; try edge-center and corner contacts, pin the first end,
+rotate with each local axis and fit the second end. Check both contact markers
+remain flush, undo/redo, Escape, invalid boundary/spawn fits, release, duplicate,
+save/reopen, and drive across the saved bridge. Verify eye-level camera picking
+and that exiting to menu/battle removes editor feedback. CLI tests validate math,
+controller transactions and export through the existing compiler; native viewport
+rendering, mouse delivery and tank traversal still require Studio. No Rojo builds
+are needed for this change.

@@ -70,6 +70,13 @@ function View.new(context)
  for index,axis in {"Pitch","Yaw","Roll"} do
   self.rotationAxes[axis]=button(rotations,axis,({Pitch="Tilt X",Yaw="Yaw Y",Roll="Tilt Z"})[axis],UDim2.fromOffset(60,28),UDim2.fromOffset(8+(index-1)*65,28))
  end
+ local magnets=make("Frame",frame,{Name="EdgeSnapping",Position=UDim2.fromOffset(12,268),Size=UDim2.fromOffset(208,208),BackgroundColor3=Color3.fromRGB(23,35,39),BorderSizePixel=0,Active=true});self.magnets=magnets
+ self.edgeSnap=button(magnets,"EdgeSnap","Edge snap: OFF",UDim2.fromOffset(192,28),UDim2.fromOffset(8,8))
+ self.pinA=button(magnets,"PinA","Pin A here",UDim2.fromOffset(92,28),UDim2.fromOffset(8,42));self.pinA.TextColor3=Color3.fromRGB(80,215,255)
+ self.pinB=button(magnets,"PinB","Pin B here",UDim2.fromOffset(92,28),UDim2.fromOffset(108,42));self.pinB.TextColor3=Color3.fromRGB(255,183,92)
+ self.releasePin=button(magnets,"ReleasePin","Release pin(s)",UDim2.fromOffset(192,28),UDim2.fromOffset(8,76))
+ self.snapContact=button(magnets,"SnapContactMode","Contact: edge center",UDim2.fromOffset(192,28),UDim2.fromOffset(8,110))
+ self.pinStatus=text(magnets,"PinStatus","Enable snapping, select a board, then drag end A or B onto a top edge.",58);self.pinStatus.Position=UDim2.fromOffset(8,144);self.pinStatus.Size=UDim2.new(1,-16,0,58);self.pinStatus.TextSize=11
  self.status=text(frame,"EditorStatus","Loading native asset library…",30);self.status.Position=UDim2.new(0,12,1,-72);self.status.Size=UDim2.new(1,-344,0,30);self.status.BackgroundTransparency=.1;self.status.BackgroundColor3=Color3.fromRGB(19,30,35)
  self.hint=text(frame,"EditorHints","RMB orbit • Shift+RMB / middle drag pan • WASD move • E/Q height while dragging • Wheel zoom • F reset",30);self.hint.Position=UDim2.new(0,12,1,-36);self.hint.Size=UDim2.new(1,-344,0,30)
  local overlay=make("Frame",frame,{Name="ExportOverlay",Position=UDim2.fromScale(.08,.12),Size=UDim2.fromScale(.84,.76),BackgroundColor3=Color3.fromRGB(17,28,33),Visible=false,Active=true,ZIndex=10});self.overlay=overlay
@@ -87,7 +94,7 @@ function View:on(event,callback) table.insert(self.connections,event:Connect(cal
 function View:message(message) self.status.Text=tostring(message):gsub("^.-:%d+:%s*","") end
 function View:isModal() return self.overlay.Visible or (self.library and self.library.frame.Visible) end
 function View:isScene(point)
- return self.frame.Visible and not self:isModal() and not rectContains(self.worlds,point) and not rectContains(self.rotationPanel,point) and rectContains(self.viewport,point) and not rectContains(self.toolbar,point) and not rectContains(self.palette,point) and not rectContains(self.properties,point) and not rectContains(self.options,point) and not rectContains(self.status,point) and not rectContains(self.hint,point)
+ return self.frame.Visible and not self:isModal() and not rectContains(self.worlds,point) and not rectContains(self.rotationPanel,point) and not rectContains(self.magnets,point) and rectContains(self.viewport,point) and not rectContains(self.toolbar,point) and not rectContains(self.palette,point) and not rectContains(self.properties,point) and not rectContains(self.options,point) and not rectContains(self.status,point) and not rectContains(self.hint,point)
 end
 function View:thumbnail(parent,item,assets)
  local templates=assets and assets:FindFirstChild("Templates")
