@@ -344,13 +344,23 @@ See [VEHICLE_COMPONENTS.md](VEHICLE_COMPONENTS.md) for catalog IDs, assembly/res
 BWController applies hardware allocation exactly once to state performance factors. Its existing development-tier selector installs the matching registered computer profile; component base ratings remain unscaled. No mass multiplier or duplicate propulsion modifier is introduced. Destruction/reset create a fresh state/profile binding and new pipelines. Model identifiers remain for visuals, identity and lifecycle checks, not for selecting movement or weapon mechanics. Full component tables are retained privately in a weak-key state registry; public snapshots include maxHealth, current physical velocity and motion diagnostics; full resolved component tables remain private.
 
 
-## Current weapon-swap test loadouts
+## Current restored tank loadouts
 
-VehicleAssemblies now installs weapon.gatling on Boomer and weapon.cannon on Rattler. Gun behavior is not inferred from body identity. The Gatling's Recoil.Kind=Jackhammer selects the shared inertial recoil overlay even on tracks, so ground momentum/landing remains synchronized between hops. Without that gun, wheeled Rattler still drives normally but no longer hops or rattles on firing. Default weapon attributes/rates are unchanged; existing bus allocations still scale actual operation.
+VehicleAssemblies installs weapon.cannon and mobility.tracks on Boomer, and
+weapon.gatling and mobility.wheels on Rattler. This restores the original weapons
+and wheels/track assignments. The independently installed engines remain Boomer
+Hyper P35 and Rattler Stride 3.0. Computers and bus allocations are unchanged.
 
-A small public weaponId descriptor selects client gun construction and effects independently of hull/turret/wheel art. Shot/preparation events identify their carrier and installed gun; cannon preparation no longer hardcodes Boomer. Renderer firing, cannon bulge, Gatling rotation, rocking, landing dust and muzzle effects use weapon metadata. HUD heat/reload displays use weapon operation. Body colors, tracks/wheels and computer tiers are preserved. The registry rebuilds a renderer if the weapon descriptor changes.
+Gun behavior remains component-driven: Gatling hops/rattles/heat limits and
+platform-aware airborne trajectories follow the gun; cannon preparation/swell,
+reload, turret kick and muzzle effects follow the cannon. Client weaponId
+snapshots select gun art/effects independently of body identity. No runtime,
+physics, damage, input or networking rewrite accompanies the restored defaults.
 
-Regression infrastructure retains explicit historical assembly fixtures for existing physics/weapon baseline scenarios (groups0–13), without substituting simulation code. Separate groups14–15 load the actual live assemblies: production server + renderer swap tests and all13 documentation programs on both current tank simulations. Thus historical timing assertions remain meaningful while current swapped gameplay is verified independently. Native Studio visual/play validation is still pending.
+The runner retains historical timing fixtures for groups0–13 and the former
+swapped loadout as an explicit group14 fixture. RestoredLoadouts and subsequent
+live scenarios exercise current production assemblies without substitution.
+All 35 Luau groups pass; no Rojo builds were run.
 
 
 ## Source editor transactions

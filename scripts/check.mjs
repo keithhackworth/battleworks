@@ -38,12 +38,15 @@ try {
   }
   for (const [file, originalSource] of sources) {
     // Preserve historical weapon baselines as explicit assembly data, without
-    // changing production simulation modules. Group14 tests the real live swap.
+    // changing production simulation modules. Group14 preserves an explicit swap
+    // fixture; RestoredLoadouts and subsequent groups exercise live defaults.
     const source = file.endsWith('/VehicleAssemblies.luau') && groupIndex !== null && groupIndex < 14
-      ? await readFile('tests/fixtures/LegacyVehicleAssemblies.luau', 'utf8') : originalSource;
+      ? await readFile('tests/fixtures/LegacyVehicleAssemblies.luau', 'utf8')
+      : file.endsWith('/VehicleAssemblies.luau') && groupIndex === 14
+        ? await readFile('tests/fixtures/SwappedVehicleAssemblies.luau', 'utf8') : originalSource;
     const name = file.split('/').pop().replace('.luau', '');
     const parent = file.includes('/shell/') ? 'Shell' : file.includes('/shared/') ? 'Shared' : 'Client';
-    bundle += `\nloaders[${JSON.stringify(name)}] = function()\nlocal script = { Parent = ${parent}, BWController = "BWController", LocalBattle = "LocalBattle", StudioWorldSelector = "StudioWorldSelector", StudioAssetPlacement = "StudioAssetPlacement", WorldObjects = "WorldObjects", DirectionalScanner = "DirectionalScanner", ManualScanner = "ManualScanner", EnvironmentBuilder = "EnvironmentBuilder", PlayerWorldService = "PlayerWorldService", EditorAssetCatalog = "EditorAssetCatalog", PracticeTargets = "PracticeTargets", ProjectileSimulation = "ProjectileSimulation" }\n${source}\nend\n`;
+    bundle += `\nloaders[${JSON.stringify(name)}] = function()\nlocal script = { Parent = ${parent}, BWController = "BWController", LocalBattle = "LocalBattle", StudioWorldSelector = "StudioWorldSelector", StudioAssetPlacement = "StudioAssetPlacement", WorldObjects = "WorldObjects", DirectionalScanner = "DirectionalScanner", ManualScanner = "ManualScanner", EnvironmentBuilder = "EnvironmentBuilder", PlayerWorldStorage = "PlayerWorldStorage", PlayerWorldService = "PlayerWorldService", EditorAssetCatalog = "EditorAssetCatalog", PracticeTargets = "PracticeTargets", ProjectileSimulation = "ProjectileSimulation" }\n${source}\nend\n`;
   }
   bundle += `\nloaders.EditorState=function()\n${await readFile('studio/world-builder/EditorState.luau','utf8')}\nend\n`;
   bundle += '\nrequire = function(name)\nif name == "PlayerModule" then return { GetControls = function() return defaultControls end } end\nif cache[name] == nil then cache[name] = assert(loaders[name], "Unknown module " .. tostring(name))() end\nreturn cache[name]\nend\n';
@@ -83,6 +86,8 @@ try {
     ['PlayerWorldServerIntegration'],
     ['PlayerWorldPublishedIntegration'],
     ['WorldElevation'],
+    ['HttpWorldStore'],
+    ['RestoredLoadouts'],
   ];
   if (groupIndex === null) {
     const worldTests = spawnSync(process.execPath, ['--test', 'tests/world-compiler.test.js', 'tests/asset-persistence.test.js', 'tests/world-builder.test.js', 'tests/asset-paths.test.js', 'tests/ingame-editor.test.js'], { stdio: 'inherit' });
@@ -125,7 +130,7 @@ try {
         setup=setup.replace(' require("ServerEntrypoint")',(await readFile('tests/BuilderIntegrationSetup.luau','utf8'))+((suite==='PlayerWorldServerIntegration'||suite==='PlayerWorldPublishedIntegration')?'\n'+await readFile('tests/PlayerWorldIntegrationSetup.luau','utf8'):'')+'\n require("ServerEntrypoint")');
         tests+='\ndo\nlocal builderCatalog='+lua(catalog)+'\nlocal builderItems='+lua(items)+'\nlocal builderSettings='+lua(manifest.builderSettings)+'\nlocal builderPublished='+String(published)+'\n'+setup;
         tests+=await readFile('tests/'+((suite==='PlayerWorldServerIntegration'||suite==='PlayerWorldPublishedIntegration')?suite:'BuilderServerIntegration')+'.spec.luau','utf8')+'\nend\n';
-      } else if (suite === 'SwappedWeapons' || suite === 'IceWind' || suite === 'Multiplayer' || suite === 'ShellServerIntegration') {
+      } else if (suite === 'SwappedWeapons' || suite === 'RestoredLoadouts' || suite === 'IceWind' || suite === 'Multiplayer' || suite === 'ShellServerIntegration') {
         // Reuse the real server/transform setup, replacing only scenario assertions.
         const harness = await readFile('tests/ServerIntegration.spec.luau', 'utf8');
         const marker = ' local generation=snapshots[boomerId].generation';

@@ -38,6 +38,39 @@ local rotated=Math.transform(base,"Rotate",Vector3.new(x+10,0,z),Vector3.new(x,0
 check(rotated.rotation[2]==270,"rotation follows Roblox yaw orientation")
 local scaled=Math.transform(base,"Scale",Vector3.new(x+10,0,z),Vector3.new(x+15,0,z),false,1)
 check(scaled.scale==1.5 and scaled.position[1]==x and scaled.position[3]==z,"scale anchor preserves object position and uniform proportions")
+-- At Euler yaw=90 the previous component-edit rings collapsed onto X.
+local Geometry=require("WorldObjectGeometry")
+local function dot(a,b)return a.X*b.X+a.Y*b.Y+a.Z*b.Z end
+for _,rotation in {{0,90,0},{0,270,0},{20,90,15},{-25,89.999,30}} do
+ local object={position={3,8,-7},rotation=rotation,scale=1}
+ local right,up,back=Geometry.axes(rotation)
+ local axes={{"RotatePitch",right},{"Rotate",up},{"RotateRoll",back}}
+ local normals={}
+ for _,spec in axes do
+  local u,v,n=Math.rotationBasis(object,spec[1]);table.insert(normals,n)
+  check((n-spec[2]).Magnitude<1e-6,"rotation handle follows selected object's local axis after yaw")
+  local pivot=Vector3.new(3,8,-7)
+  local angle=math.rad(30)
+  local transformed=Math.transform(object,spec[1],pivot+u*10,pivot+(u*math.cos(angle)+v*math.sin(angle))*10,false,1,pivot)
+  local actual={Geometry.axes(transformed.rotation)}
+  local sign=if spec[1]=="Rotate" then -1 else 1
+  local c,sine=math.cos(angle),math.sin(angle)*sign
+  local function expected(q)
+   local cross=Vector3.new(n.Y*q.Z-n.Z*q.Y,n.Z*q.X-n.X*q.Z,n.X*q.Y-n.Y*q.X)
+   return q*c+cross*sine+n*(dot(n,q)*(1-c))
+  end
+  for axis,q in {right,up,back} do check((actual[axis]-expected(q)).Magnitude<1e-5,"local-axis drag composes orientation correctly through Euler singularities") end
+  check(transformed.position[2]==8 and transformed.scale==1,"rotation preserves height and uniform scale")
+  local zero=Math.transform(object,spec[1],pivot+u,pivot+u,false,1,pivot)
+  check(zero.rotation[1]==rotation[1] and zero.rotation[2]==rotation[2] and zero.rotation[3]==rotation[3],"zero drag never rewrites Euler angles at gimbal boundary")
+  local snapped=Math.transform(object,spec[1],pivot+u*10,pivot+(u*math.cos(math.rad(22))+v*math.sin(math.rad(22)))*10,true,1,pivot)
+  local sr,su,sb=Geometry.axes(snapped.rotation)
+  local changed=if spec[1]=="RotatePitch" then su else sr
+  local original=if spec[1]=="RotatePitch" then up else right
+  check(math.abs(dot(changed,original)-math.cos(math.rad(15)))<1e-5,"snapping applies 15 degrees around local axis at yaw=90")
+ end
+ check(math.abs(dot(normals[1],normals[2]))<1e-6 and math.abs(dot(normals[1],normals[3]))<1e-6 and math.abs(dot(normals[2],normals[3]))<1e-6,"three rotation planes remain distinct at 90-degree yaw")
+end
 local fakeFrame={Position=Vector3.new(0,20,0),VectorToWorldSpace=function(_,v)return Vector3.new(v.X,-1,v.Y)end}
 local origin,direction=Math.ray(fakeFrame,Vector2.new(800,400),Vector2.new(400,200),48)
 local hit=Math.ground(origin,direction)
@@ -69,4 +102,10 @@ local function json(v)
  for k,n in v do table.insert(result,json(k)..":"..json(n)) end;return "{"..table.concat(result,",").."}"
 end
 print("EDITOR_EXPORT",json({document=Document.export(s.document,catalog),items={a,b}}))
+local gimbalExport=Document.export(s.document,catalog)
+local localBase={position=gimbalExport.objects[1].position,rotation={0,90,0},scale=gimbalExport.objects[1].scale}
+local u,v=Math.rotationBasis(localBase,"RotatePitch")
+local center=Vector3.new(table.unpack(localBase.position))
+gimbalExport.objects[1].rotation=Math.transform(localBase,"RotatePitch",center+u*10,center+v*10,false,1,center).rotation
+print("EDITOR_EXPORT",json({document=Document.export(gimbalExport,catalog),items={a,b}}))
 print(string.format("In-game editor document/history/math passed: %d assertions",count))

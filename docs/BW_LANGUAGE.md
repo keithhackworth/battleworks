@@ -517,7 +517,7 @@ Rotate clockwise. The specified direction is honored for absolute targets; it is
 
 Timed firing holds the tank's normal trigger for the duration, respecting reload, preparation, firing rate, heat and overheat cooldown. Submission costs ticks once, not per bullet.
 
-At full performance the cannon (currently mounted on Rattler) prepares for 0.20 seconds and has a 0.65-second firing interval. The Gatling (currently mounted on Boomer) has a 0.10-second shot interval; sustained fire stops after at most 3 seconds, followed by a mandatory 2-second cooldown. Bus allocation can lengthen preparation/firing intervals. Neither BW nor bus allocation increases projectile speed or bypasses weapon rules.
+At full performance the cannon (currently mounted on Boomer) prepares for 0.20 seconds and has a 0.65-second firing interval. The Gatling (currently mounted on Rattler) has a 0.10-second shot interval; sustained fire stops after at most 3 seconds, followed by a mandatory 2-second cooldown. Bus allocation can lengthen preparation/firing intervals. Neither BW nor bus allocation increases projectile speed or bypasses weapon rules.
 
 ## Scanner command
 
@@ -940,7 +940,7 @@ Vehicle assemblies install independently configured chassis, drivetrain, mobilit
 
 There is no new upgrade UI. See [VEHICLE_COMPONENTS.md](VEHICLE_COMPONENTS.md) for the technical catalog/assembly reference and server-side configuration examples. The flat-ground motion extension uses chassis mass/yaw inertia, contact traction and world momentum; see PHYSICS_FORCES_IMPLEMENTATION.md.
 
-Current test loadouts intentionally swap guns: **Boomer = Gatling**, **Rattler = cannon**. Recoil/jackhammer movement, turret kicks, heat limits, trajectory, damage and visual effects follow the installed weapon. Chassis/mobility/computer/bus allocations stay unchanged, so the Gatling on Boomer's shared20% weapon allocation fires more slowly than on Rattler's former dedicated weapon bus.
+Default loadouts are restored: **Boomer = cannon + tracks**, **Rattler = Gatling + four wheels**. Recoil/jackhammer movement, turret kicks, heat limits, platform-aware airborne trajectory, damage and visual effects follow the installed weapon. Current engine upgrades, computers and bus allocations remain installed; existing allocations still scale effective firing rates.
 
 
 ## User-defined functions

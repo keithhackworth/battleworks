@@ -66,18 +66,19 @@ function View.new(context)
  self.worlds=button(frame,"SavedWorlds","My Worlds / Save & Play",UDim2.fromOffset(208,36),UDim2.fromOffset(12,150));self.worlds.BackgroundColor3=Color3.fromRGB(121,89,37)
  self.rotationAxes={}
  local rotations=make("Frame",frame,{Name="RotationAxes",Position=UDim2.fromOffset(12,194),Size=UDim2.fromOffset(208,64),BackgroundColor3=Color3.fromRGB(23,35,39),BorderSizePixel=0,Active=true});self.rotationPanel=rotations
- local axisTitle=text(rotations,"AxisTitle","ROTATION AXIS",24);axisTitle.Position=UDim2.fromOffset(8,2)
+ local axisTitle=text(rotations,"AxisTitle","LOCAL ROTATION AXIS",24);axisTitle.Position=UDim2.fromOffset(8,2)
  for index,axis in {"Pitch","Yaw","Roll"} do
   self.rotationAxes[axis]=button(rotations,axis,({Pitch="Tilt X",Yaw="Yaw Y",Roll="Tilt Z"})[axis],UDim2.fromOffset(60,28),UDim2.fromOffset(8+(index-1)*65,28))
  end
  self.status=text(frame,"EditorStatus","Loading native asset library…",30);self.status.Position=UDim2.new(0,12,1,-72);self.status.Size=UDim2.new(1,-344,0,30);self.status.BackgroundTransparency=.1;self.status.BackgroundColor3=Color3.fromRGB(19,30,35)
  self.hint=text(frame,"EditorHints","Click / drag to place • Esc cancels • Right drag orbits • WASD pans • Wheel zooms",30);self.hint.Position=UDim2.new(0,12,1,-36);self.hint.Size=UDim2.new(1,-344,0,30)
  local overlay=make("Frame",frame,{Name="ExportOverlay",Position=UDim2.fromScale(.08,.12),Size=UDim2.fromScale(.84,.76),BackgroundColor3=Color3.fromRGB(17,28,33),Visible=false,Active=true,ZIndex=10});self.overlay=overlay
- local exportTitle=text(overlay,"ExportTitle","EXPORT WORLD  /  authoring schema v2",32);exportTitle.Position=UDim2.fromOffset(16,8);exportTitle.ZIndex=11
+ local exportTitle=text(overlay,"ExportTitle","WORLD JSON  /  export or paste a backup to import",32);exportTitle.Position=UDim2.fromOffset(16,8);exportTitle.ZIndex=11
  self.name=make("TextBox",overlay,{Name="WorldName",Text="My BattleWorks World",PlaceholderText="World name",ClearTextOnFocus=false,Position=UDim2.fromOffset(16,48),Size=UDim2.new(.5,-24,0,30),TextColor3=ink,BackgroundColor3=Color3.fromRGB(43,61,66),Font=Enum.Font.Gotham,TextSize=14,ZIndex=11})
  self.worldId=make("TextBox",overlay,{Name="WorldId",Text="ingame_world",PlaceholderText="World ID",ClearTextOnFocus=false,Position=UDim2.new(.5,8,0,48),Size=UDim2.new(.5,-24,0,30),TextColor3=ink,BackgroundColor3=Color3.fromRGB(43,61,66),Font=Enum.Font.Code,TextSize=14,ZIndex=11})
  self.json=make("TextBox",overlay,{Name="ExportJSON",Position=UDim2.fromOffset(16,124),Size=UDim2.new(1,-32,1,-172),Text="",ClearTextOnFocus=false,MultiLine=true,TextEditable=true,TextWrapped=true,TextXAlignment=Enum.TextXAlignment.Left,TextYAlignment=Enum.TextYAlignment.Top,TextColor3=ink,BackgroundColor3=Color3.fromRGB(27,40,46),Font=Enum.Font.Code,TextSize=12,ZIndex=11})
  self.generate=button(overlay,"GenerateJSON","Generate / Select JSON",UDim2.fromOffset(208,30),UDim2.fromOffset(16,86));self.generate.ZIndex=11
+ self.import=button(overlay,"ImportJSON","Import JSON (replaces draft)",UDim2.fromOffset(226,30),UDim2.fromOffset(232,86));self.import.ZIndex=11
  self.closeExport=button(overlay,"CloseExport","Close",UDim2.fromOffset(72,30),UDim2.new(1,-88,1,-38));self.closeExport.ZIndex=11
  self.closeExport.Activated:Connect(function() overlay.Visible=false end)
  return self

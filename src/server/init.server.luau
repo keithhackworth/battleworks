@@ -555,7 +555,7 @@ if editorMetadata then
   playerWorlds=require(script.PlayerWorldService).new({
    studio=studio,reserved=not studio and game.PrivateServerId~="" and game.PrivateServerOwnerId==0,
    placeId=game.PlaceId,http=http,items=http:JSONDecode(library:FindFirstChild("Catalog").Value),assets=storage:FindFirstChild("BattleWorksAssets"),
-   dataStore=if not studio then game:GetService("DataStoreService"):GetDataStore("BattleWorksPlayerWorlds_v1") else nil,
+   store=require(script.PlayerWorldStorage).create(http,studioConfiguration,studio),
    isPresent=function(player) return sessions[player.UserId]~=nil end,
    inBattle=function(player) return battles[player.UserId]~=nil end,
    install=installPlayerWorld,

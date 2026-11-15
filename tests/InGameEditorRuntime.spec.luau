@@ -43,8 +43,12 @@ local sourceScript=node("Script","MustNotExecute",oak)
 local storage=Instance.new("Folder");source.Parent=storage
 local a={id="asset.oak",name="Oak",model="Trees/Oak",defaultScale=1,solid=true,destructible=true,hp=150,collider={widthFraction=.3,depthFraction=.3,heightFraction=.5}}
 local missing=State.copy(a);missing.id="asset.absent";missing.model="Trees/Missing"
-local published,lastExport
-local http={JSONDecode=function(_,raw)return State.copy(if raw=="catalog" then published else {a,missing})end,JSONEncode=function(_,value)
+local published,lastExport,importedDocument
+local http={JSONDecode=function(_,raw)
+ if raw=="backup_json" then return State.copy(importedDocument) end
+ if raw=="malformed_json" then error("Invalid JSON") end
+ return State.copy(if raw=="catalog" then published else {a,missing})
+end,JSONEncode=function(_,value)
  if value.schemaVersion then lastExport=State.copy(value);return "{\"schemaVersion\":2}" end
  published=State.copy(value);return "catalog"
 end}
@@ -207,6 +211,41 @@ local tilted=controller.state:find(first.id).rotation[1]
 check(tilted>1 and controller.scene.models[first.id].pitch==tilted,"pitch ring applies a 3D tilt and refreshes native placement")
 controller:history(false);check(controller.state:find(first.id).rotation[1]==0 and controller.state:find(first.id).position[2]==raised,"undo tilt preserves raised height")
 controller:history(true);check(controller.state:find(first.id).rotation[1]==tilted,"redo restores tilted transform")
+-- Exercise actual buttons, ring geometry, projection, picking and drags at
+-- exactly 90deg yaw; previously local X/Z rings collapsed onto the same axis.
+local Geometry=require("WorldObjectGeometry")
+local savedRotation=State.copy(controller.state:find(first.id).rotation)
+for _,axis in {"Pitch","Roll","Yaw"} do
+ controller:perform(function()controller.state:find(first.id).rotation={0,90,0}end,"Yaw regression setup")
+ controller.view.rotationAxes[axis].Activated:Fire()
+ local base={rotation={0,90,0}}
+ local expectedRight,expectedUp,expectedBack=Geometry.axes(base.rotation)
+ local normal=if axis=="Pitch" then expectedRight elseif axis=="Roll" then expectedBack else expectedUp
+ local record=controller.scene.models[first.id];local center=record.model:GetBoundingBox().Position
+ -- Switching axes updates visible anchor positions immediately, before a tick.
+ local prefix=if axis=="Pitch" then "RotatePitch" elseif axis=="Roll" then "RotateRoll" else "Rotate"
+ local a=controller.scene.anchors[prefix.."1"].CFrame.Position
+ local b=controller.scene.anchors[prefix.."3"].CFrame.Position
+ local function dot(a,b)return a.X*b.X+a.Y*b.Y+a.Z*b.Z end
+ check(math.abs(dot(a-center,normal))<1e-5 and (a-center).Magnitude>1,"axis button immediately places its ring in rotated local plane")
+ local initialPixel=Math.project(controller.scene.camera.CFrame,controller.view.viewport.AbsoluteSize,a,controller.scene.camera.FieldOfView)
+ local finalPixel=Math.project(controller.scene.camera.CFrame,controller.view.viewport.AbsoluteSize,b,controller.scene.camera.FieldOfView)
+ mouse=controller.view.viewport.AbsolutePosition+initialPixel-GuiService.fullRect.Min
+ controller:begin(click,false)
+ check(controller.gesture and controller.gesture.kind==prefix,"yaw=90 ring picks correct local axis from its rendered position")
+ mouse=controller.view.viewport.AbsolutePosition+finalPixel-GuiService.fullRect.Min
+ controller:step(1/60);controller:finishGesture(false)
+ local rotation=State.copy(controller.state:find(first.id).rotation)
+ local r,u,bk=Geometry.axes(rotation)
+ local invariant=if axis=="Pitch" then r elseif axis=="Roll" then bk else u
+ check((invariant-normal).Magnitude<1e-5 and (r-expectedRight).Magnitude+(u-expectedUp).Magnitude+(bk-expectedBack).Magnitude>.1,"ring turns about selected local axis instead of yaw or another component")
+ controller:history(false)
+ check(controller.state:find(first.id).rotation[2]==90,"undo restores original yaw=90 orientation")
+ controller:history(true)
+ local restoredRight,restoredUp,restoredBack=Geometry.axes(controller.state:find(first.id).rotation)
+ check((restoredRight-r).Magnitude+(restoredUp-u).Magnitude+(restoredBack-bk).Magnitude<1e-5,"redo restores composed local-axis orientation")
+end
+controller:perform(function()controller.state:find(first.id).rotation=savedRotation end,"Restore test pose")
 controller.view.fields.roll.Text="-10";controller.view.fields.roll.FocusLost:Fire()
 check(controller.state:find(first.id).rotation[3]==-10 and controller.scene.models[first.id].roll==-10,"roll inspector updates third rotation axis")
 controller.view.rotationAxes.Roll.Activated:Fire()
@@ -215,6 +254,15 @@ controller.view.worldId.Text="bad id";controller:export()
 check(controller.state.document.id=="ingame_world" and controller.view.json.Text:find("blocked",1,true),"invalid export metadata cannot poison future editing")
 controller.view.worldId.Text="oak_test";controller:export()
 check(lastExport.schemaVersion==2 and lastExport.objects[1].asset=="Trees/Oak" and lastExport.objects[1].hp==225,"export UI emits existing authoring schema and original hierarchical asset/influences")
+importedDocument=State.copy(controller.state.document);importedDocument.id="backup_world";importedDocument.name="Backup world";importedDocument.settings.width=260;importedDocument.objects[1].position[2]=12
+local previousScene=controller.scene
+controller.view.json.Text="backup_json";controller.view.import.Activated:Fire()
+check(controller.state.document.id=="backup_world" and controller.state.document.objects[1].position[2]==12,"JSON backup restores current draft and raised transforms")
+check(previousScene.world.destroyed and controller.scene.floor.Size.X==260 and controller.view.viewport.CurrentCamera==controller.scene.camera,"import rebuilds private scene and dimensions without leaking prior scene")
+check(controller.state.document.objects[1].asset=="Trees/Oak" and controller.state.document.objects[1].rotation[3]==-10,"import preserves hierarchical identity and tilt")
+local currentState=controller.state
+controller.view.json.Text="malformed_json";controller.view.import.Activated:Fire()
+check(controller.state==currentState and controller.view.status.Text:find("Import blocked",1,true),"malformed backup leaves current world intact")
 controller.view.back.Activated:Fire();check(menu==1,"editor exposes explicit main-menu return")
 local countBefore=#controller.state.document.objects;local private=controller.scene.world
 controller:exit();UIS.InputBegan:Fire({UserInputType=Enum.UserInputType.Keyboard,KeyCode=Enum.KeyCode.Delete},false);stepping:Fire(1/60)

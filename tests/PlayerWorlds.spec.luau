@@ -102,4 +102,11 @@ check(not forged:request(bob,"Bootstrap").launch and not forged:canEnter(bob),"s
 failRead=true;local broken=Service.new(options(false,false))
 check(not broken:request(alice,"List").ok,"storage outage is an explicit RPC failure")
 failRead=false;os.clock=previousClock
+store.kind="Http"
+local durableOptions=options(true,false);durableOptions.store=store
+local durableStudio=Service.new(durableOptions)
+local listed=durableStudio:request(alice,"List")
+check(listed.ok and listed.temporary==false and listed.storage=="Http","Studio mode with HTTP backend reports durable saves")
+durableStudio:remove(alice)
+check(#store:list(101)==10,"disconnect from HTTP-backed Studio never deletes saved worlds")
 print(string.format("Player world validation, persistence and isolation passed: %d assertions",count))

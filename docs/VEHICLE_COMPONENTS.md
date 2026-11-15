@@ -2,7 +2,15 @@
 
 ## Current installed weapons
 
-The live assemblies now install **weapon.gatling on Boomer** and **weapon.cannon on Rattler**. Bodies, turrets, computers and bus allocations stay unchanged. Mobility has subsequently been swapped: Boomer installs mobility.wheels; Rattler installs mobility.tracks. Propulsion components remain independently installed (Boomer drive.hyper_p35, Rattler drive.car). Rendering and wheel/tread animations follow installed mobility rather than the model name. Jackhammer physics and cosmetic firing personality belong to the weapon; a tracked vehicle carrying that gun also hops/rattles. The cannon carries its windup, swell, reload, turret kick and muzzle burst onto the wheeled vehicle. The pre-migration notes and original baseline verification below describe the historical loadouts, not this intentional test swap.
+The live assemblies restore **weapon.cannon + mobility.tracks on Boomer** and
+**weapon.gatling + mobility.wheels on Rattler**. Boomer has the cannon, track belts
+and orange palette; Rattler has the six-barrel Gatling, four tires and green palette.
+Current engine upgrades remain independent: Boomer keeps drive.hyper_p35 and
+Rattler keeps drive.car. Chassis, turret, sensor, computers and bus allocations
+are unchanged. The newer Gatling hopping/heat/airborne platform-leveling behavior
+follows the gun back to Rattler. The component system still supports other weapon
+and mobility combinations; the former swapped configuration is retained only as
+an explicit test fixture, not live gameplay.
 
 Weapon `Properties.Visual` selects Kind, Swelling and cosmetic Recoil. Physical `Recoil.Kind=Jackhammer` is independent of mobility and selects the shared recoil overlay. The renderer now composes body/turret art separately from mounted gun art and receives a compact weaponId descriptor; full custom component profiles remain private. Event/HUD effects follow the descriptor. TankConfig and the default heat-weapon helper are canonical cannon/Gatling compatibility defaults, not aliases for whichever tank currently carries a gun.
 
@@ -127,3 +135,17 @@ Surface fields are map data, independent of the visual `Environment.zones` list 
 See [PHYSICS_FORCES_IMPLEMENTATION.md](PHYSICS_FORCES_IMPLEMENTATION.md) for APIs, region construction, overlap rules, contact solver limits and intentional differences. The default arena retains its existing surface settings; ice regions are opt-in map configuration in this phase.
 
 The IceWind test preset uses optional surface `passiveGrip=0.15` (default1 on existing profiles) to request lower idle ground resistance while retaining full powered contact grip. Wind maxForce1.2 remains below powered Ice kinetic traction2.7, allowing escape from downwind walls while parked tanks still drift. This field blends/samples with surface coefficients and is independent of drivetrain speed/CPU/bus allocation.
+
+
+## Restored live defaults (2026-11-15)
+
+RestoredLoadouts exercises actual VehicleAssemblies through production server
+callbacks and renderer factories: cannon preparation, rapid Gatling/hops/heat,
+track pivot versus wheeled steering, Hyper P35 rating, reset and BW firing/stop.
+It adds 1111 assertions. The prior swap suite remains an explicit fixture (1518)
+to preserve cross-component coverage; legacy timing groups keep their original
+fixtures. Multiplayer tests derive lethal hit counts and retaliation damage from
+installed weapon descriptors and pass with restored defaults (1875 assertions).
+All 35 Luau groups pass; no Rojo builds. Native acceptance: after Rojo sync,
+restart Play and inspect both tanks, selection/reset, manual/BW fire, steering,
+and platform shooting. World saves and server ownership are unaffected.

@@ -63,7 +63,7 @@ function Library:fetch(epoch)
    end)
   end)
  end
- self.status.Text=(if result.temporary then "STUDIO: saves last only until you stop Play. " else "Saved privately to your Roblox account. ").."Open a save before updating it. Opening replaces your draft. Change World ID for a separate save."
+ self.status.Text=(if result.temporary then "STUDIO: saves last only until you stop Play. " elseif result.storage=="Http" then "Saved privately to the BattleWorks world service. " else "Saved privately to your Roblox account. ").."Open a save before updating it. Opening replaces your draft. Change World ID for a separate save."
 end
 function Library:open(document)
  self.epoch+=1;self.busy=false;self.document=document
@@ -79,7 +79,7 @@ function Library:saveWorld(play)
   if not self:current(epoch) then return end
   self.revisions[copy.id]=saved.revision
   self.document.id=copy.id;self.document.name=copy.name
-  self.status.Text=(if saved.temporary then "STUDIO SESSION ONLY • " else "Saved to your account • ").."revision "..saved.revision
+  self.status.Text=(if saved.temporary then "STUDIO SESSION ONLY • " elseif saved.storage=="Http" then "Saved to world service • " else "Saved to your account • ").."revision "..saved.revision
   if play then
    self.status.Text..=" • launching your world…"
    local result=self:call("Play",{id=copy.id,revision=saved.revision})

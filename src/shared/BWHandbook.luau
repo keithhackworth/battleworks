@@ -168,9 +168,9 @@ steer_right(20) sets steering: wheel angle for wheels, relative tread intent for
  add("weapon","Weapons","Firing and weapon timing",renderCommands(commands,{"fire"})..string.format([[
 
 CURRENT FULL-PERFORMANCE TIMING
-Cannon (currently Rattler): %g seconds cannon preparation and %g seconds firing interval. Lower allocation divides these durations by effective performance. It still swells, recoils and releases a shell along the actual barrel direction.
+Cannon (currently Boomer): %g seconds cannon preparation and %g seconds firing interval. Lower allocation divides these durations by effective performance. It still swells, recoils and releases a shell along the actual barrel direction.
 
-Gatling (currently Boomer): %g seconds firing interval, at most %g seconds continuous fire, then %g seconds mandatory overheat cooldown. Lower allocation lengthens the shot interval; it does not increase projectile speed or bypass heat. Releasing and tapping does not reset accumulated heat.
+Gatling (currently Rattler): %g seconds firing interval, at most %g seconds continuous fire, then %g seconds mandatory overheat cooldown. Lower allocation lengthens the shot interval; it does not increase projectile speed or bypass heat. Releasing and tapping does not reset accumulated heat.
 
 fire(2) holds the trigger for 2 simulated seconds; it does not mean two shots. Preparation/cooldown can delay activation, and active commands have bounded safety timeouts. Neither tank's recoil, movement or weapon mechanics is replaced by BW.]],Catalog["weapon.cannon"].Properties.FireWindup,Catalog["weapon.cannon"].Properties.Cooldown,Catalog["weapon.gatling"].Properties.Cooldown,Catalog["weapon.gatling"].Properties.MaxBurst,Catalog["weapon.gatling"].Properties.OverheatCooldown))
  add("radar","Radar","Scanner input, timing and all returned fields",renderCommands(commands,{"Scanner"})..string.format([[

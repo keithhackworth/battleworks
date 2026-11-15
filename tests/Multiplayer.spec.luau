@@ -38,21 +38,23 @@ advance(60)
 check((snapshots["101"].position-stopped).Magnitude<0.01,"stale input expires and vehicle stops")
 local boxes={}
 for _,p in created do if p.Name=="TankHitbox" and not p.destroyed then boxes[p:GetAttribute("TankId")]=p end end
+local attackerWeapon=require("VehicleComponents").get(snapshots["101"]).Weapon
+local neededHits=math.ceil(snapshots["102"].health/attackerWeapon.Damage)
 local hits=0
 workspace.Spherecast=function(_,origin,radius,delta,params)
- if params.FilterDescendantsInstances[1]==boxes["101"] and hits<17 then
+ if params.FilterDescendantsInstances[1]==boxes["101"] and hits<neededHits then
   hits+=1
   return {Instance=boxes["102"],Position=origin+delta.Unit*.01,Distance=.01}
  end
 end
-bwRun.OnServerEvent:Fire(first,"fire(8)",2,"101")
+bwRun.OnServerEvent:Fire(first,"fire(10)",2,"101")
 local dead=false
-for _=1,550 do
+for _=1,1800 do
  advance(1)
  if snapshots["102"].health<=0 then dead=true; break end
 end
-check(dead and hits==17,"server projectile damage destroys another player's tank")
-check(not boxes["102"].CanQuery and snapshots["102"].fatalWeapon=="Gatling","wreck and damage attribution replicated")
+check(dead and hits==neededHits,"server projectile damage destroys another player's tank")
+check(not boxes["102"].CanQuery and snapshots["102"].fatalWeapon==attackerWeapon.WeaponType,"wreck and damage attribution replicated")
 local generation=snapshots["102"].generation
 reset.OnServerEvent:Fire(second); advance(5)
 check(snapshots["102"].health==0,"reset cannot bypass respawn delay")
@@ -81,7 +83,7 @@ workspace.Spherecast=function(_,origin,radius,delta,params)
  end
 end
 bwRun.OnServerEvent:Fire(second,"fire()",1,"102:Rattler"); advance(80)
-check(retaliated and snapshots["101:Rattler"].health==75,"second player damages first player through authoritative cannon impact")
+check(retaliated and snapshots["101:Rattler"].health==100-require("VehicleComponents").get(snapshots["102:Rattler"]).Weapon.Damage,"second player damages first player with its installed weapon")
 local third={UserId=103,Name="Late"}
 Settings.blocked=function() return true end
 players.PlayerAdded:Fire(third); session.OnServerEvent:Fire(third,"Enter",1); advance(5)
@@ -95,7 +97,7 @@ check(not snapshots["103"].waitingForSpawn and snapshots["103"].health==100 and 
 check(snapshots["103"] and snapshots["101"] and snapshots["102"],"late join snapshot includes running battle")
 for _,id in {"101","102"} do check((snapshots["103"].position-snapshots[id].position).Magnitude>=14,"late join avoids existing tanks") end
 workspace.Spherecast=function() return nil end
-bwRun.OnServerEvent:Fire(first,"fire(8)",3,"101"); advance(3)
+bwRun.OnServerEvent:Fire(first,"fire(8)",3,"101"); advance(90)
 local inFlight={}
 for _,p in created do if p.Name=="Shell_101" and not p.destroyed then table.insert(inFlight,p) end end
 check(#inFlight>0,"disconnect fixture has live server projectiles")

@@ -1,0 +1,12 @@
+  1. Enable Allow HTTP Requests in Studio’s Security settings.
+  2. Add Local Secret BattleWorksStudioWorlds using the private Studio key (/
+     tmp/battleworks-http-credentials/Studio-key.txt), domain groupboard.app.
+
+  3. Let Rojo sync, restart Play, import your backup JSON, and click Save.
+
+  For published servers, configure BattleWorksLiveWorlds using the private live
+  key (/tmp/battleworks-http-credentials/Live-key.txt).
+
+Full setup guide (docs/HTTP_WORLD_STORAGE.md)
+
+

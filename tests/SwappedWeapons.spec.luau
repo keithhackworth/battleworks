@@ -1,4 +1,5 @@
- -- Continuation of the shared production server fixture (live assemblies).
+ -- Former swapped loadout explicitly injected by the runner to retain modularity coverage.
+ -- RestoredLoadouts exercises current live assemblies with no substitution.
  local Components=require("VehicleComponents")
  local Catalog=require("ComponentCatalog")
  local Assemblies=require("VehicleAssemblies")
@@ -156,4 +157,4 @@ with thread(2):
 end -- server fixture
 CFrame.new,CFrame.Angles,CFrame.lookAt=saveNew,saveAngles,saveLookAt
 Instance.new,game.GetService=saveInstance,saveService
-print(string.format("Live swapped-weapon integration passed: %d assertions",count))
+print(string.format("Explicit swapped-loadout integration passed: %d assertions",count))

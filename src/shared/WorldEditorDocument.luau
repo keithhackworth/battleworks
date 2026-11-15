@@ -43,7 +43,7 @@ end
 function Document.export(doc,catalog)
  assert(doc.schemaVersion==2 and #doc.objects<=512,"Invalid authoring document")
  assert(doc.id:match("^[a-zA-Z][a-zA-Z0-9_-]*$") and doc.id~="default" and #doc.id<=64,"Invalid world ID")
- assert(type(doc.name)=="string" and #doc.name>0 and #doc.name<=100,"World name must contain 1–100 characters")
+ assert(type(doc.name)=="string" and doc.name:find("%S") and #doc.name<=100,"World name must contain 1–100 characters")
  local ids={}
  for _,spawn in doc.spawns do ids[spawn.id]=true end
  for _,o in doc.objects do assert(not ids[o.id],"Duplicate object ID");ids[o.id]=true;Document.checkEntry(doc,catalog,o) end

@@ -123,7 +123,7 @@ end
 function Visual.update(renderer,state,part,anchors,dt)
 	local maximum=state.maxHealth or 100
 	local hp=math.clamp(state.health,0,maximum)
-	renderer.healthLabel.Text=string.format("%s  %d/%d%s",if renderer.tankType=="Boomer" then "Bullet Boomer" else "Rattler",hp,maximum,if hp==0 then " • KO" else "")
+	renderer.healthLabel.Text=string.format("%s  %d/%d%s",renderer.tankType,hp,maximum,if hp==0 then " • KO" else "")
 	renderer.healthBar.Size=UDim2.fromScale(hp/maximum,1)
 	renderer.healthBar.BackgroundColor3=if hp/maximum>0.3 then Color3.fromRGB(99,218,77) else Color3.fromRGB(244,69,37)
 	if hp==0 then

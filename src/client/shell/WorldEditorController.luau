@@ -14,9 +14,7 @@ function Controller.new(context)
  local self=setmetatable({context=context,view=view,frame=view.frame,buttons=view.buttons,state=State.new(Document.fresh()),catalog=Document.catalog({}),prefix="",page=1,mode="Move",runtime={},keys={},yaw=.55,pitch=1,distance=210,focus=Vector3.zero},Controller)
  self.state.snap=false
  self.library=require(script.Parent.WorldLibrary).new(view.frame,context.worldRequest,function(document)
-  self:cancel();self.state=State.new(document);self.state.snap=false
-  view.name.Text=document.name;view.worldId.Text=document.id
-  self:frameWorld();self:refresh();self:updateGrid()
+  self:replaceDocument(document)
   return self.state.document
  end,function() if self.active then context.join() end end)
  view.library=self.library
@@ -52,8 +50,40 @@ function Controller.new(context)
   view.overlay.Visible=true;self:export()
  end)
  action(view.generate.Activated,function() self:export() end)
+ action(view.import.Activated,function() self:import() end)
  action(view.worlds.Activated,function() self:cancel();self.library:open(self.state.document) end)
  return self
+end
+function Controller:replaceDocument(document)
+ self:cancel()
+ local candidate
+ local ok,reason=pcall(function()
+  candidate=Scene.new(self.view.viewport,self.context.editorAssets,document)
+  candidate:sync(document,self.catalog)
+ end)
+ if not ok then
+  if candidate then candidate:destroy() end
+  if self.scene then self.view.viewport.CurrentCamera=self.scene.camera end
+  error(reason,0)
+ end
+ if self.scene then self.scene:destroy() end
+ self.scene=candidate;self.state=State.new(document);self.state.snap=false
+ self.view.name.Text=document.name;self.view.worldId.Text=document.id
+ self:frameWorld();self:refresh();self:updateGrid();self:setMode(self.mode)
+end
+function Controller:import()
+ local ok,reason=pcall(function()
+  assert(#self.view.json.Text<=260000,"Import exceeds 260 KB")
+  local document=Http:JSONDecode(self.view.json.Text)
+  require(Shared.WorldSettings).validate({width=document.settings.width,depth=document.settings.depth,ground=document.settings.ground,boundary=document.settings.boundary,spawns=document.spawns,zones={}})
+  document=Document.export(document,self.catalog)
+  for _,entry in document.objects do assert(self.catalog.byPath[entry.asset].available,"An imported asset is unavailable in this game") end
+  self:replaceDocument(document)
+  self.library.revisions[document.id]=nil
+  self.view.overlay.Visible=false
+ end)
+ local message=tostring(reason):gsub("^.-:%d+:%s*","")
+ self.view:message(if ok then "Imported backup. Use My Worlds / Save to make it durable; change World ID for a separate copy." else "Import blocked: "..message)
 end
 function Controller:loadCatalog()
  local context=self.context
@@ -105,10 +135,13 @@ function Controller:updateGrid()
 end
 function Controller:setMode(mode)
  self:cancel();self.mode=mode
- if self.scene then self.scene:setMode(mode,self.rotationAxis or "Yaw") end
+ if self.scene then
+  self.scene:setMode(mode,self.rotationAxis or "Yaw")
+  local selected=self:selected();self.scene:selection(selected and selected.id,self.distance)
+ end
  for axis,button in self.view.rotationAxes do button.BackgroundColor3=if axis==(self.rotationAxis or "Yaw") then Color3.fromRGB(133,94,38) else Color3.fromRGB(43,61,66) end
  for name,button in self.view.tools do button.BackgroundColor3=if name==mode then Color3.fromRGB(133,94,38) else Color3.fromRGB(43,61,66) end
- self.view:message(if mode=="Move" then "Move • red X / blue Z slides; green Y raises or lowers. Height Y also accepts an exact value." elseif mode=="Rotate" then "Rotate • choose Tilt X, Yaw Y or Tilt Z on the left, then drag the ring. Grid snaps angles to 15°." else "Scale • drag the green anchor to resize uniformly.")
+ self.view:message(if mode=="Move" then "Move • red X / blue Z slides; green Y raises or lowers. Height Y also accepts an exact value." elseif mode=="Rotate" then "Rotate • choose local X, Y or Z on the left, then drag the ring. Axes follow the object; grid snaps the turn to 15°." else "Scale • drag the green anchor to resize uniformly.")
 end
 function Controller:frameWorld() self.focus=Vector3.zero;self.distance=math.max(self.state.document.settings.width,self.state.document.settings.depth)*.95;self.pitch=1;self.yaw=.55 end
 function Controller:mousePosition()

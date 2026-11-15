@@ -52,6 +52,10 @@
       "$className": "ServerStorage",
       "BattleWorksStudio": {
         "$className": "Configuration",
+        "WorldStorageProvider": {
+          "$className": "StringValue",
+          "$properties": { "Value": "Http" }
+        },
         "SelectedWorld": {
           "$path": "worlds/selected-world.model.json"
         },

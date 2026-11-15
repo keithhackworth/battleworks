@@ -56,8 +56,11 @@ The current format supports uniform scaling only. Stretch remains removed.
   deck with **Tilt X = 15°**, **Yaw = 0°**, **Tilt Z = 0°**, and **Height Y = 0**.
   A second level deck raised to about **6.2** studs can meet its upper end.
   Align the ends in X/Z, then duplicate/reverse a ramp for the other side.
-- All rotation fields follow the existing Rx × Ry × Rz Euler transform order;
-  rings follow their corresponding axes on an already tilted object. Snapping
+- Numeric rotation fields and saved documents retain the existing Rx × Ry × Rz
+  Euler format. Handles rotate around the object’s actual local X/Y/Z axes,
+  composing the orientation before writing equivalent Euler angles. At 90° yaw,
+  multiple numeric fields may change together even though only one local axis
+  is being turned; the handles remain distinct and follow the object. Snapping
   remains optional and rounds rotation to 15°. If a ring is edge-on to the
   camera, orbit slightly or enter its numeric angle.
 - **Collision: SOLID** is required for tank support; NONE stays decorative.
@@ -89,8 +92,10 @@ Choose **My Worlds / Save & Play** on the left of the editor.
 4. Return with the battle HUD's **Main Menu**, then open World Editor to continue
    your draft. In a private battle server, Play BattleWorks re-enters that world.
 
-In the published Roblox experience, up to **10 private worlds per account** are
-stored in `BattleWorksPlayerWorlds_v1`. Each world is limited to 512 objects and
+The default provider stores up to **10 private worlds per player** in the
+BattleWorks HTTP service at `https://groupboard.app/api/battleworks/v1`, hosted
+by the existing GroupBoard API. Studio and live worlds have separate durable
+namespaces. See [HTTP setup and backup transfer](HTTP_WORLD_STORAGE.md). Each world is limited to 512 objects and
 260 KB of JSON; all slots together are limited to 3 MB. Successful saves receive
 revision numbers. Stale saves cannot silently overwrite another session's changes.
 Storage/launch failures appear in the panel; failed saves are never called durable.
@@ -104,18 +109,24 @@ never geometry, code or damage claims. The public server's battlefield stays int
 Names/documents are private; this does not publish a world to a public catalog or
 add invites, matchmaking or collaborative authoring.
 
-**Studio intentionally uses temporary session-only saves**, labeled in the UI.
-They are lost when the player disconnects or Play stops. Save & Play tests locally
-only when every client has left combat; otherwise it explains that the battlefield
-is occupied. This avoids Studio writing live player data or relying on unsupported
-Studio teleports. To verify account persistence and travel, publish the updated
-place and test in the Roblox app. Players require no API keys or commands.
+**Studio now saves durably through HTTP**, after one-time Allow HTTP Requests
+and Local Secret setup. Save & Play still tests locally only when every client
+has left combat; otherwise it explains that the battlefield is occupied. Live
+servers use a separate secret/namespace and load their saved world through the
+same service. Missing credentials or outages leave the draft intact and report
+an error, never silent temporary storage. Explicit Session/DataStore providers
+remain available for old fixtures and existing Roblox saves.
+
+**Before stopping an existing temporary Play session**, export and keep its JSON.
+After source sync/setup/restart, paste it into the JSON box and click **Import JSON
+(replaces draft)**, then Save. Invalid imports preserve the current draft. No
+new game build or player-side server command is needed.
 
 ## Optional developer JSON export using the existing format
 
 Choose **Export JSON**, enter a valid world ID/name, then **Generate / Select JSON**.
 Copy with Ctrl/Cmd+C (or Ctrl/Cmd+A then C in the export box). The copy box may be
-edited for convenience; this does not edit the layout. Generate restores the
+edited for convenience; this does not edit the layout until Import JSON is clicked. Generate restores the
 validated layout JSON.
 
 Save that text to `worlds/builder/<id>.json`, then run the existing build flow:
@@ -199,11 +210,14 @@ There is no new asset conversion pipeline.
   planar solver skips step-accessible upper faces; standard suspension/gravity,
   movement, snapshots and hits retain server authority.
 - `EditorAssetCatalog` publishes sanitized native templates.
-- `WorldLibrary` owns the private save/open UI and ignores late responses after exit.
+- `WorldLibrary` owns the private save/open UI and ignores late responses after exit. JSON import reuses
+  document validation and rebuilds its private scene before committing a replacement.
 - `PlayerWorldDocument` validates the authoring schema on the server, replaces
   claimed bounds with native measurements, and adapts to existing placement specs,
   interaction fractions and water/mud zones. No compiler or gameplay rewrite.
-- `PlayerWorldStore` owns per-user DataStore slots with UpdateAsync revision checks;
+- `PlayerWorldStore` retains per-user legacy DataStore slots;
+  `HttpWorldStore` implements the same interface for authenticated HTTP persistence,
+  and `PlayerWorldStorage` selects the explicit provider;
   `PlayerWorldService` validates/rate-limits List/Load/Save/Play/Bootstrap requests.
   The server derives ownership from the authenticated Player, never a payload.
 - `installPlayerWorld` stages native scenery with ModelPlacement and WorldObjects,
@@ -268,7 +282,7 @@ CLI/mock verification does not establish native viewport rendering/input success
    Edit X/Z/yaw/scale/HP and collision/destructibility. Enter invalid values or
    drag past a boundary: edits must roll back without losing history.
 5. Choose My Worlds, name a layout, Save, reopen it, edit and Save & Play.
-   Check that the Studio session-only notice is visible. Drive into solid cover,
+   After HTTP/Local Secret setup, check that the panel says Saved to world service. Drive into solid cover,
    shoot destructible objects, reset, and check water/mud slowdown. Return to the
    menu and editor, then reopen the save. Optionally verify JSON export still works.
 6. Return to Main Menu while placing, dragging and editing a field. Re-enter:
@@ -301,7 +315,7 @@ alignment at the user's window size and display scaling.
 
 ### Published Roblox acceptance (required before release)
 
-1. Publish this build, join through Roblox, save a world, leave the experience,
+1. Publish the synced source, join through Roblox, save a world, leave the experience,
    rejoin and Open it. Confirm name, hierarchical assets, transforms and properties.
 2. Save & Play; confirm private-server arrival, automatic battle admission, correct
    dimensions/spawns, normal mouse/touch/gamepad/BW controls and server damage.
@@ -312,7 +326,7 @@ alignment at the user's window size and display scaling.
 4. Verify save conflicts across sessions, missing asset rejection, cloud failure
    messages and both synchronous/asynchronous teleport failure feedback. A failed
    launch must preserve the saved world and leave the editor usable for retry.
-5. Native viewport input, visual layout, Windows stability, cloud services and
+5. Native viewport input, visual layout, Windows stability, HTTP credentials/storage and
    teleport behavior cannot be proven by the CLI mocks. The main-menu native
    selection crash workaround is preserved; no non-nil native menu focus added.
 
@@ -367,3 +381,31 @@ hops, and aim toward a tank on the same deck. Check barrel direction, leveling
 above the deck and actual damage. Also shoot below an overhead platform, toward
 another raised platform, and into nearby solid cover. CLI tests do not establish
 native visuals or exact feel.
+
+HTTP world persistence is documented in [HTTP_WORLD_STORAGE.md](HTTP_WORLD_STORAGE.md).
+The new adapter has 55 assertions; the editor runtime has 59 including JSON backup
+restoration and invalid-import preservation; all 34 Luau groups pass. The backend's
+14 BattleWorks tests pass. Its wider 189-test run retains exactly the 12 existing
+failures/errors from the 175-test pre-change baseline. Live TiDB/HTTPS tests also
+verified save/load, retry idempotency, concurrent revisions and namespace isolation.
+No Rojo builds were run for this change.
+
+### Local rotation handles at 90° yaw
+
+The ring axes now come from the entire object orientation. Local X/Y/Z remain
+orthogonal after yaw or any combination of pitch/roll; they no longer use the
+Euler-component axes that collapse together at yaw=90°. Drag planes and visible
+rings use that same basis. A drag composes an axis rotation with the original
+frame, then converts back to the unchanged XYZ Euler save format. Zero movement
+leaves the original numeric values untouched; snapping quantizes the local turn
+in 15° increments. Numeric inspector fields still edit explicit Euler components.
+Switching axis buttons immediately updates ring positions before the next frame.
+
+Regression coverage includes yaw 90°/270°, combined tilt, near-singular angles,
+independent orientation comparisons, snapping, height/scale preservation, actual
+UI ring picking/drags, undo/redo and export through the existing Node validator.
+The document/math suite now has 121 assertions and the editor runtime suite 74.
+All 34 Luau groups were run, with no Rojo builds. Native validation: after Rojo
+sync and restarting Play, yaw a board to 90°, alternate Tilt X / Tilt Z / Yaw Y,
+and verify each ring follows the object and rotates about its own axis. Test
+snapping, undo/redo and Save/Open afterward.

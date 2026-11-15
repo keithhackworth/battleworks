@@ -4,7 +4,7 @@ local Store=require(script.Parent.PlayerWorldStore)
 local Service={};Service.__index=Service
 function Service.new(options)
  local self=setmetatable(options,Service)
- self.store=Store.new(options.dataStore,options.studio,function(v) return options.http:JSONEncode(v) end)
+ self.store=options.store or Store.new(options.dataStore,options.studio,function(v) return options.http:JSONEncode(v) end)
  self.requests={};self.pending={};self.ready={}
  return self
 end
@@ -34,7 +34,11 @@ function Service:request(player,action,payload)
  local ok,result=pcall(function()
   assert(self.isPresent(player),"Player left the experience")
   if action=="List" then return {worlds=self.store:list(owner)} end
-  if action=="Load" then return self.store:load(owner,payload) end
+  if action=="Load" then
+   local entry=self.store:load(owner,payload)
+   local document=self:validate(entry.document)
+   return {document=document,revision=entry.revision}
+  end
   if action=="Save" then
    assert(type(payload)=="table","Missing world")
    local document=self:validate(payload.document)
@@ -66,7 +70,7 @@ function Service:request(player,action,payload)
  end)
  state.busy=false
  if not ok then return {ok=false,message=tostring(result):gsub("^.-:%d+:%s*","")} end
- local response=table.clone(result);response.ok=true;response.temporary=self.studio
+ local response=table.clone(result);response.ok=true;response.temporary=self.store.temporary;response.storage=self.store.kind
  return response
 end
 function Service:remove(player)
