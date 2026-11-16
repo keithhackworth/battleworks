@@ -14,8 +14,11 @@ local function typed(parent,name,class)
  local item=child(parent,name); return if item and item:IsA(class) then item.Value else nil
 end
 local function placement(source)
+ local stretch
+ local raw=text(source,"Stretch")
+ if raw then local ok,value=pcall(function()return game:GetService("HttpService"):JSONDecode(raw)end);if ok then stretch=value end end
  return {id=text(source,"InstanceId"),asset=text(source,"AssetId"),source=text(source,"Source"),template=text(source,"Template"),
-  position=typed(source,"Position","Vector3Value"),rotation=typed(source,"Rotation","Vector3Value"),scale=typed(source,"Scale","NumberValue"),
+  position=typed(source,"Position","Vector3Value"),rotation=typed(source,"Rotation","Vector3Value"),scale=typed(source,"Scale","NumberValue"),stretch=stretch,
   interaction=if child(source,"Solid") then {solid=typed(source,"Solid","BoolValue"),destructible=typed(source,"Destructible","BoolValue"),hp=typed(source,"Health","NumberValue"),fractions=typed(source,"ColliderFractions","Vector3Value")} else nil}
 end
 function Selector.catalog(configuration)

@@ -37,7 +37,10 @@ Instance.new=function(class)
 end
 local function node(class,name,parent)local p=Instance.new(class);p.Name=name;p.Parent=parent;return p end
 local source=Instance.new("Folder");source.Name="BattleWorksAssets"
-local trees=node("Folder","Trees",source)
+-- Match Rojo's Folder-bundle mount: logical Trees/Oak is physically below assets/.
+local bundle=node("Folder","assets",source)
+local trees=node("Folder","Trees",bundle)
+local bundleIndex=node("StringValue","__BattleWorksAssetIndex",source);bundleIndex.Value="source-index"
 local oak=node("Model","Oak",trees);local sourcePart=node("Part","Trunk",oak);sourcePart.Anchored=false
 local sourceScript=node("Script","MustNotExecute",oak)
 local storage=Instance.new("Folder");source.Parent=storage
@@ -45,6 +48,7 @@ local a={id="asset.oak",name="Oak",model="Trees/Oak",defaultScale=1,solid=true,d
 local missing=State.copy(a);missing.id="asset.absent";missing.model="Trees/Missing"
 local published,lastExport,importedDocument
 local http={JSONDecode=function(_,raw)
+ if raw=="source-index" then return {version=1,paths={["Trees/Oak"]="assets/Trees/Oak"}} end
  if raw=="backup_json" then return State.copy(importedDocument) end
  if raw=="malformed_json" then error("Invalid JSON") end
  return State.copy(if raw=="catalog" then published else {a,missing})
@@ -53,9 +57,13 @@ end,JSONEncode=function(_,value)
  published=State.copy(value);return "catalog"
 end}
 local replicated=Instance.new("Folder")
+local indexService=game.GetService
+game.GetService=function(self,name)if name=="HttpService" then return http end;return indexService(self,name)end
 local library=require("EditorAssetCatalog").publish(storage,replicated,{Value="source"},http)
+game.GetService=indexService
 check(library.Parent==replicated and library:GetAttribute("Ready"),"catalog published once as a replicated library")
 check(published[1].available and not published[2].available and published[1].size[2]==12,"only actual native templates are available; dimensions measured from source")
+check(oak.Parent==trees and trees.Parent==bundle,"bundle geometry stays in its original source hierarchy while templates are published")
 local template=library:FindFirstChild("Templates"):FindFirstChild("Trees"):FindFirstChild("Oak")
 check(template and not template:FindFirstChild("MustNotExecute") and not template:FindFirstChild("Trunk").CanCollide and not template:FindFirstChild("Trunk").CanQuery,"published templates strip executable content and all physical participation")
 check(not sourcePart.Anchored and not sourceScript.destroyed,"source gameplay templates are unchanged")
@@ -296,6 +304,12 @@ local row
 for _,node in controller.library.list:GetChildren()do if node:IsA("TextButton")then row=node end end
 controller.state.document.objects={};row.Activated:Fire()
 check(#controller.state.document.objects==countBefore and controller.library.document==controller.state.document,"open UI restores a saved world and replaces its history/state")
+local beforeBlocked=#calls
+controller.library.play.Activated:Fire()
+check(joinCount==0 and #calls==beforeBlocked and controller.library.frame.Visible,"incomplete world is blocked before saving or requesting Play")
+check(controller.library.status.Text:find("not playable",1,true) and controller.library.status.Text:find("0/5",1,true) and controller.library.status.Text:find("top toolbar",1,true),"Play explains the five-zone requirement, current count and tool location")
+controller.state.document.spawns={}
+for i,p in {{-60,0,-60},{0,0,-60},{60,0,-60},{-60,0,60},{60,0,60}} do table.insert(controller.state.document.spawns,{id="start_"..i,slot=i,position=p,heading=0})end
 controller.library.play.Activated:Fire()
 check(joinCount==1 and not controller.library.frame.Visible and calls[#calls].action=="Play","Save & Play requests admission only after server launch acknowledgment")
 -- A late save acknowledgment after leaving cannot trigger Play or overwrite metadata.
@@ -394,16 +408,27 @@ check(controller.yaw==exitedYaw,"late mouse events cannot move an exited editor"
 controller:enter();check(cameraBindings.BattleWorksEditorCamera~=nil,"re-entry creates one fresh camera binding")
 -- Exercise production snapping transactions, including cancel and refit.
 local Snap=require("WorldEditorSnap")
+controller.state.document.spawns={} -- Snap scenarios use their own unobstructed draft.
 controller.scene.camera.CFrame=CFrame.lookAt(Vector3.new(0,60,100),Vector3.zero)
-controller.state:select(first.id);controller.snapSide=-1;controller.edgeSnap=true;controller:refresh()
+controller.state:select(first.id);controller.snapSide=0;controller:setMode("Snap");controller:refresh()
 local selected=controller:selected()
 check(controller.scene.snapEnds.A.CanQuery and controller.scene.snapEnds.B.CanQuery,"snap endpoints are pickable only in private editor scene")
+check(controller.view.tools.Snap~=nil and controller.scene.snapEnds.C.CanQuery and controller.scene.snapEnds.D.CanQuery,"Snap tool exposes four side handles")
+controller:setMode("Move")
+check(not controller.scene.snapEnds.A.CanQuery and not controller.scene.snapEnds.C.CanQuery,"side handles cannot steal Move drags")
+controller:setMode("Snap")
+controller.view.snapContact.Activated:Fire()
+check(controller.fitMode=="Stretch" and controller.view.snapContact.Text=="Scale / [Stretch]","left button selects Stretch")
+controller:beginSnap("C",selected)
+check(not controller.gesture,"unsupported mesh assets cannot enter stretch gesture")
+controller.view.snapContact.Activated:Fire()
+check(controller.fitMode=="Scale","left button switches back to Scale")
 local endpointPixel=Math.project(controller.scene.camera.CFrame,controller.view.viewport.AbsoluteSize,controller.scene.snapEnds.A.CFrame.Position,controller.scene.camera.FieldOfView)
 local _,snapHandle=controller.scene:pick(Vector3.new(0,60,100),Vector3.new(0,-1,0),endpointPixel,controller.view.viewport.AbsoluteSize)
 check(snapHandle=="SnapA","endpoint pixel picking takes priority over model body")
 controller:pinHere("A")
 local pinned=State.copy(controller.state.pins[first.id])
-check(pinned and pinned.side==-1,"pin action records selected corner contact")
+check(pinned and pinned.side==0,"pin action records selected corner contact")
 controller:pinHere("B")
 check(controller.state.pins[first.id].endpoint=="A","choosing another fixed end cannot silently break existing pin")
 local previousPose=State.copy(selected)
@@ -411,10 +436,10 @@ controller:beginSnap("B",selected)
 local target={point={35,10,-25},normal={0,1,0},kind="edge",targetId=second.id}
 local fitted=Snap.fit(selected,"B",target,pinned)
 selected.position=fitted.position;selected.rotation=fitted.rotation;selected.scale=fitted.scale
-controller.snapPreview={endpoint="B",target=target,valid=true,side=-1}
+controller.snapPreview={endpoint="B",target=target,valid=true,side=0}
 controller:finishGesture(false)
 check(controller.state.pins[first.id].second~=nil,"fitting commits both endpoint contacts")
-local ends=Snap.ends(controller:selected(),-1)
+local ends=Snap.ends(controller:selected(),0)
 check((ends.A-Vector3.new(table.unpack(pinned.point))).Magnitude<1e-5 and (ends.B-Vector3.new(table.unpack(target.point))).Magnitude<1e-5,"controller fit preserves fixed contact and reaches target")
 controller:history(false)
 check(not controller.state.pins[first.id].second and controller:selected().scale==previousPose.scale,"undo restores pose and single pin together")
@@ -424,9 +449,11 @@ controller:beginSnap("B",controller:selected());controller:finishGesture(true)
 check(controller.state.pins[first.id].second~=nil,"cancel refit restores previous second contact")
 controller:beginSnap("B",controller:selected());controller:finishGesture(false)
 check(controller.state.pins[first.id].second~=nil,"missing snap target rolls back refit")
+local contactsBeforeRelease=State.copy(controller.state.pins[first.id]);local pastBeforeRelease=#controller.state.past
 controller:perform(function()controller.state.pins[first.id]=nil end,"Released")
 check(controller.state.pins[first.id]==nil,"release unlocks transforms")
-controller:history(false);check(controller.state.pins[first.id].second~=nil,"release pins is undoable")
+check(#controller.state.past==pastBeforeRelease,"releasing contacts does not consume an undo step")
+controller.state.pins[first.id]=contactsBeforeRelease
 local oldPointer=controller.pointer;local oldTarget=controller.scene.snapTarget
 controller.pointer=function()return Vector3.zero,Vector3.new(0,60,0),Vector3.new(0,-1,0),Vector2.zero end
 controller.view.isScene=function()return true end
@@ -442,6 +469,46 @@ check(controller.snapPreview and not controller.snapPreview.valid,"invalid world
 controller:finishGesture(false)
 check(controller.state.pins[first.id].second~=nil,"invalid fit leaves previous contacts intact")
 controller.pointer=oldPointer;controller.scene.snapTarget=oldTarget
+local fixedBefore=State.copy(controller.state.pins[first.id])
+controller:beginSnap(fixedBefore.endpoint,controller:selected())
+check(controller.gesture and controller.gesture.pin.endpoint~=fixedBefore.endpoint,"previously fixed end can be grabbed; opposite end becomes pivot")
+controller:finishGesture(true)
+check(controller.state.pins[first.id].endpoint==fixedBefore.endpoint,"cancel endpoint swap restores previous contacts")
+local savedPick=controller.scene.pick
+controller.scene.pick=function()return nil,"MoveX" end
+controller.pointer=function()return Vector3.zero,Vector3.new(0,60,0),Vector3.new(0,-1,0),Vector2.zero end
+controller:begin({UserInputType=Enum.UserInputType.MouseButton1},false)
+check(controller.gesture and controller.gesture.kind=="MoveX" and not controller.gesture.pin and not controller.state.pins[first.id],"Move mode releases contacts instead of blocking movement")
+controller:finishGesture(true)
+check(controller.state.pins[first.id].second~=nil,"cancel whole-piece movement restores both contacts")
+controller:begin({UserInputType=Enum.UserInputType.MouseButton1},false)
+local moveX=controller:selected().position[1]
+controller.edgeSnap=false
+controller.pointer=function()return Vector3.new(3,0,0),Vector3.new(3,60,0),Vector3.new(0,-1,0),Vector2.zero end
+controller:step(.016);controller:finishGesture(false)
+check(math.abs(controller:selected().position[1]-moveX-3)<1e-5 and not controller.state.pins[first.id],"whole-piece move commits normally after fitting")
+controller:history(false)
+check(controller.state.pins[first.id].second~=nil,"undo movement restores fitted pose and contacts")
+controller:setMode("Snap");controller:beginSnap("C",controller:selected())
+check(controller.gesture.pin.endpoint=="D","side handle chooses its own opposite side as pivot")
+controller:finishGesture(true)
+controller.scene.pick=savedPick;controller.pointer=oldPointer
+-- Ground-only, numbered areas use the actual editor placement and history path.
+controller.state=State.new(require("WorldEditorDocument").editorFresh());controller:refresh()
+check(#controller.state.document.spawns==0,"new editor draft requires designer-placed starting areas")
+check(controller.view.placeStart.Parent==controller.view.toolbar,"starting-zone placement is discoverable in the top toolbar")
+for i,p in {Vector3.new(-60,0,-60),Vector3.new(0,0,-60),Vector3.new(60,0,-60),Vector3.new(-60,0,60),Vector3.new(60,0,60)} do
+ controller.view.placeStart.Activated:Fire();controller:place(p)
+ local spawn=controller.state.document.spawns[i]
+ check(spawn and spawn.slot==i and controller.scene.spawnModels[spawn.id]~=nil,"placing starting areas creates numbered, selectable caution markings")
+end
+controller.view.placeStart.Activated:Fire();check(not controller.placingStart,"sixth starting area cannot be armed")
+local spawn=controller.state.document.spawns[3];controller.state:select(spawn.id);controller:refresh()
+check(controller.view.selected.Text:find("PLAYER 3",1,true)~=nil,"selection identifies exact player starting slot")
+controller.view.fields.x.Text="65";controller.view.fields.x.FocusLost:Fire()
+check(controller.state:find(spawn.id).position[1]==65,"starting area supports ground position editing")
+controller.view.delete.Activated:Fire();check(#controller.state.document.spawns==4,"starting areas can be deleted")
+controller:history(false);check(#controller.state.document.spawns==5,"undo restores numbered starting area")
 controller:destroy()
 check(cameraBindings.BattleWorksEditorCamera==nil,"destroy removes camera binding")
 Instance.new=baseFactory;game.GetService=oldService

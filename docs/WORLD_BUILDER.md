@@ -162,12 +162,23 @@ assets/roblox/Buildings/Houses/Fence.rbxm
 assets/roblox/Structures/Fences/Fence.rbxm
 ```
 
-Rojo preserves these folders under BattleWorksAssets. The exported Model itself
-is the file root; do not export a flattened combined asset folder. Mesh references,
+Rojo preserves these folders under BattleWorksAssets. Individual exports have a
+Model root. Bulk `.rbxm`/`.rbxmx` exports may instead have a Folder root containing
+Models in nested Folders. Mesh references,
 textures, pivots and hierarchy remain native Roblox serialization. The plugin's
 Connect action also discovers the actual Studio hierarchy and records template
 paths/bounds automatically. Built-in shapes live in the reserved `Builtin/`
 namespace under the same root.
+
+A bulk export can be saved as `assets/roblox/assets.rbxm`; run
+`node tools/build-editor-catalog.js` afterward. Rojo's binary-aware sourcemap reader
+discovers each asset; a generated index maps logical `Trees/Oak` to physical
+`assets/Trees/Oak`. The filename is not part of the saved asset identity. The
+original bundle is mounted once; names and geometry are not rewritten. Nested
+Models inside a Model stay together as one asset. Duplicate full logical/native
+paths fail clearly; duplicate basenames in different Folders are supported.
+Export one enclosing Folder rather than several top-level roots, which Rojo
+cannot mount.
 
 A newly imported GLB still needs a one-time native export to its corresponding
 repository path. This implementation uses Studio's file-selection/read APIs and does not reconstruct

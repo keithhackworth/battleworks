@@ -11,6 +11,21 @@ local host=require("BattleClientHost").new(function()
 end)
 host:setActive(false)
 check(#hostCalls==0,"menu startup does not construct battle UI, input or camera")
+local eventListeners={};local consumed=0;local detached=0
+local quietNetwork={WaitForChild=function(_,name)return {OnClientEvent={Connect=function(_,callback)
+ eventListeners[name]=callback;return {Disconnect=function()detached+=1 end}
+end}}end}
+local quietCreates=0
+local quiet=require("BattleClientHost").new(function()quietCreates+=1;return {setActive=function()end}end,quietNetwork)
+for _,name in {"Snapshot","Shot","PrepareShot"} do
+ check(type(eventListeners[name])=="function","menu attaches an early receiver for "..name)
+ for _=1,500 do eventListeners[name]({}) end
+end
+check(quietCreates==0 and #quiet.receivers==3,"menu consumes broadcasts without starting gameplay or buffering events")
+quiet:setActive(true)
+check(quietCreates==1 and detached==3 and #quiet.receivers==0,"temporary receivers detach only after the real gameplay client has its listeners")
+quiet:setActive(false);quiet:setActive(true)
+check(quietCreates==1 and detached==3,"menu re-entry retains the existing gameplay listeners without duplicate receivers")
 host:setActive(true);host:setActive(false);host:setActive(true)
 check(#hostCalls==4 and hostCalls[1]=="create" and hostCalls[2]==true and hostCalls[3]==false and hostCalls[4]==true,"battle client initializes only once and preserves lifecycle on re-entry")
 check(session:join() and session.mode=="Joining" and not session:canControl(),"join waits for server acknowledgment")

@@ -1,0 +1,88 @@
+'use strict';
+// Rojo/rbx-dom inspects native binary/XML exports. Never decode/rewrite geometry
+// here: sourcemaps contain only hierarchy metadata, not mesh or property data.
+const fs=require('node:fs/promises');
+const path=require('node:path');
+const os=require('node:os');
+const {spawnSync}=require('node:child_process');
+const {validatePath}=require('./world/asset-path');
+const partClasses=new Set(['Part','MeshPart','WedgePart','CornerWedgePart','UnionOperation','TrussPart','Seat','VehicleSeat','SpawnLocation']);
+async function exportFiles(directory,prefix='') {
+ const files=[];const stems=new Set();
+ for(const entry of (await fs.readdir(directory,{withFileTypes:true})).sort((a,b)=>a.name.localeCompare(b.name))) {
+  const relative=prefix+entry.name;
+  if(entry.isSymbolicLink())throw new Error(`Asset symlinks are unsupported: ${relative}`);
+  if(entry.isDirectory())files.push(...await exportFiles(path.join(directory,entry.name),relative+'/'));
+  else if(/\.rbxmx?$/i.test(entry.name)) {
+   const stem=relative.replace(/\.rbxmx?$/i,'');validatePath(stem);
+   if(stems.has(stem))throw new Error(`Duplicate model export '${stem}': keep one RBXM/RBXMX format`);
+   stems.add(stem);files.push({stem,file:path.resolve(directory,entry.name)});
+  }
+ }
+ return files;
+}
+async function inspect(file,temporary) {
+ const project=path.join(temporary,'inspect.project.json');
+ await fs.writeFile(project,JSON.stringify({name:'NativeAssetInspection',tree:{$path:file}}));
+ const run=spawnSync('rojo',['sourcemap',project,'--include-non-scripts','--absolute'],{encoding:'utf8',maxBuffer:64*1024*1024,timeout:60000});
+ if(run.error)throw new Error(`Cannot inspect ${file}: ${run.error.code==='ENOENT'?'Rojo 7 must be available on PATH':'could not start Rojo sourcemap'} (${run.error.message})`);
+ if(run.status!==0)throw new Error(`${file}: rojo sourcemap failed: ${run.stderr||run.stdout}\nExport a Model or one enclosing Folder. Rojo does not support multiple top-level instances in a native file.`);
+ return JSON.parse(run.stdout);
+}
+const children=node=>node.children||[];
+function geometry(node) {
+ let parts=Number(partClasses.has(node.className)),meshes=Number(node.className==='MeshPart');
+ for(const child of children(node)){const n=geometry(child);parts+=n.parts;meshes+=n.meshes;}
+ return {parts,meshes};
+}
+function segment(name,file) {
+ if(typeof name!=='string'||name.includes('/'))throw new Error(`${file}: asset folder/model name '${name}' cannot contain '/'`);
+ validatePath(name);return name;
+}
+async function nativeExports(directory,prefix='') {
+ const files=await exportFiles(directory,prefix);if(!files.length)return [];
+ const temporary=await fs.mkdtemp(path.join(os.tmpdir(),'bw-native-index-'));
+ const result=[];const paths=new Map();const physical=new Map();
+ function add(node,logical,nativePath,file,bundle) {
+  validatePath(logical);validatePath(nativePath);
+  const count=geometry(node);
+  if(!count.parts)throw new Error(`${file}: Model '${logical}' has no BasePart/MeshPart geometry`);
+  if(paths.has(logical))throw new Error(`Duplicate logical asset path '${logical}' in ${paths.get(logical)} and ${file}. Give asset folders distinct paths.`);
+  if(physical.has(nativePath))throw new Error(`Duplicate native mount path '${nativePath}' in ${physical.get(nativePath)} and ${file}. A bundle mount and filesystem directory cannot contain the same asset.`);
+  physical.set(nativePath,file);
+  paths.set(logical,file);result.push({path:logical,nativePath,file,bundle,parts:count.parts,meshes:count.meshes});
+ }
+ function walk(folder,logical,nativePath,file) {
+  const seen=new Set();
+  for(const child of children(folder)) {
+   const name=segment(child.name,file);
+   if(seen.has(name))throw new Error(`${file}: duplicate sibling name '${name}' inside '${logical||'/'}' makes asset lookup ambiguous`);
+   seen.add(name);
+   if(child.className==='Folder')walk(child,logical+name+'/',nativePath+name+'/',file);
+   // A Model is one asset. Its nested Models are retained as authored geometry,
+   // not duplicated as additional palette items (notably glTF primitive groups).
+   else if(child.className==='Model')add(child,logical+name,nativePath+name,file,true);
+   else throw new Error(`${file}: '${logical+name}' is ${child.className}; place each asset inside a Model and organize Models with Folders`);
+  }
+ }
+ try {
+  for(const {file,stem} of files) {
+   const root=await inspect(file,temporary);
+   if(root.className==='Model')add(root,stem,stem,file,false);
+   else if(root.className==='Folder') {
+    const slash=stem.lastIndexOf('/');const parent=slash<0?'':stem.slice(0,slash+1);
+    walk(root,parent,stem+'/',file);
+   } else throw new Error(`${file}: export the Model itself or its enclosing Folder, not a ${root.className}`);
+  }
+ } finally {await fs.rm(temporary,{recursive:true,force:true});}
+ return result.sort((a,b)=>a.path.localeCompare(b.path));
+}
+function findExport(exports,logical) {
+ const exact=exports.find(e=>e.path===logical);if(exact)return exact;
+ const physical=exports.find(e=>e.nativePath===logical);if(physical)return physical;
+ if(logical.includes('/'))return undefined;
+ const matches=exports.filter(e=>e.path.split('/').at(-1)===logical);
+ if(matches.length>1)throw new Error(`Ambiguous registered asset '${logical}': ${matches.map(e=>e.path).join(', ')}. Use its full path in worlds/roblox-assets.json.`);
+ return matches[0];
+}
+module.exports={nativeExports,findExport,geometryCounts:geometry};

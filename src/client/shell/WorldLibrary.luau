@@ -42,7 +42,10 @@ function Library:run(fn)
   local ok,err=pcall(fn,epoch)
   if not self:current(epoch) then return end
   self.busy=false
-  if not ok then self.status.Text=tostring(err):gsub("^.-:%d+:%s*","") end
+  if not ok then
+   local message=tostring(err)
+   self.status.Text=if message:match("^%[[a-z_]+%]") then message else message:gsub("^.-:%d+:%s*","")
+  end
  end)
 end
 function Library:fetch(epoch)
@@ -64,6 +67,7 @@ function Library:fetch(epoch)
   end)
  end
  self.status.Text=(if result.temporary then "STUDIO: saves last only until you stop Play. " elseif result.storage=="Http" then "Saved privately to the BattleWorks world service. " else "Saved privately to your Roblox account. ").."Open a save before updating it. Opening replaces your draft. Change World ID for a separate save."
+ if result.teamTest then self.status.Text="TEAM TEST • Your Studio saves. Open a world, then Save & Play to load it for everyone in this test session."..(if #result.worlds==0 then " No saves found for this account; check that you saved in local Studio using the same account." else "") end
 end
 function Library:open(document)
  self.epoch+=1;self.busy=false;self.document=document
@@ -74,6 +78,7 @@ function Library:saveWorld(play)
  self:run(function(epoch)
   -- Serialize a copy before yielding; edits made later cannot alter this save.
   local copy=require(game.ReplicatedStorage.Shared.WorldEditorState).copy(self.document)
+  if play then require(game.ReplicatedStorage.Shared.WorldSettings).ready(copy) end
   copy.id=self.id.Text;copy.name=self.name.Text
   local saved=self:call("Save",{document=copy,revision=self.revisions[copy.id] or 0})
   if not self:current(epoch) then return end

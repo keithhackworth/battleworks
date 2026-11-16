@@ -84,7 +84,7 @@ if singleModelWorld then weather="Normal" end
 local function createEnvironment(size)
  local data=Environment.create(size,weather)
  if singleModelWorld then data.rocks={}; data.logs={}; data.trees={}; data.zones={} end
- if worldSettings then data.zones=table.clone(worldSettings.zones) end
+ if worldSettings then data.zones=table.clone(worldSettings.zones);data.startPositions=worldSettings.spawns end
  data.worldObjects=worldObjects
  return data
 end
@@ -259,7 +259,7 @@ local function addPlayer(player)
 		hitbox:SetAttribute("OwnerId",player.UserId); hitbox:SetAttribute("TankId",id)
 		local tank={owner=player.UserId,playerName=player.Name,kind=kind,seed=(math.abs(player.UserId)+(if kind=="Rattler" then 7919 else 0))%2147483646+1,hitbox=hitbox,lastPacket=0}
 		tank.worldSettings=worldSettings; tank.worldObjects=worldObjects
-  tank.spawnIndex=spawnCount; tank.findSpawn=if multiplayer then findSpawn else nil
+  tank.spawnIndex=spawnCount; tank.findSpawn=if multiplayer or (worldSettings and WorldSettings.numbered(worldSettings)) then findSpawn else nil
 		if not Battle.resetTank(tank,mapSize,spawnCount,"Battle started.") then
    -- A full authored map leaves the player waiting for a free spawn, with no
    -- targetable or controllable body. Retry through the normal respawn path.
@@ -332,7 +332,7 @@ battleSession.OnServerEvent:Connect(function(player,action,requestId)
   leaveBattle(player)
  elseif not battles[player.UserId] then
   if playerWorlds and not playerWorlds:canEnter(player) then
-   battleSession:FireClient(player,requestId,false,"Your saved world is not ready. Return to World Editor and try Play again.")
+   battleSession:FireClient(player,requestId,false,playerWorlds:entryMessage())
    return
   end
   local now=os.clock()
@@ -550,12 +550,13 @@ if editorMetadata then
   local http=game:GetService("HttpService")
   local library=ReplicatedStorage:FindFirstChild("BattleWorksEditorAssets")
   assert(library,"Editor asset library unavailable")
-  local studio=RunService:IsStudio()
+  local context=require(script.WorldTestContext).resolve(RunService,game,studioConfiguration)
+  local studio=context.studio
   local teleport=if not studio then game:GetService("TeleportService") else nil
   playerWorlds=require(script.PlayerWorldService).new({
-   studio=studio,reserved=not studio and game.PrivateServerId~="" and game.PrivateServerOwnerId==0,
+   studio=studio,reserved=context.reserved,testHost=context.testHost,
    placeId=game.PlaceId,http=http,items=http:JSONDecode(library:FindFirstChild("Catalog").Value),assets=storage:FindFirstChild("BattleWorksAssets"),
-   store=require(script.PlayerWorldStorage).create(http,studioConfiguration,studio),
+   store=require(script.PlayerWorldStorage).create(http,studioConfiguration,studio,context),
    isPresent=function(player) return sessions[player.UserId]~=nil end,
    inBattle=function(player) return battles[player.UserId]~=nil end,
    install=installPlayerWorld,

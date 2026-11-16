@@ -46,7 +46,7 @@ try {
         ? await readFile('tests/fixtures/SwappedVehicleAssemblies.luau', 'utf8') : originalSource;
     const name = file.split('/').pop().replace('.luau', '');
     const parent = file.includes('/shell/') ? 'Shell' : file.includes('/shared/') ? 'Shared' : 'Client';
-    bundle += `\nloaders[${JSON.stringify(name)}] = function()\nlocal script = { Parent = ${parent}, BWController = "BWController", LocalBattle = "LocalBattle", StudioWorldSelector = "StudioWorldSelector", StudioAssetPlacement = "StudioAssetPlacement", WorldObjects = "WorldObjects", DirectionalScanner = "DirectionalScanner", ManualScanner = "ManualScanner", EnvironmentBuilder = "EnvironmentBuilder", PlayerWorldStorage = "PlayerWorldStorage", PlayerWorldService = "PlayerWorldService", EditorAssetCatalog = "EditorAssetCatalog", PracticeTargets = "PracticeTargets", ProjectileSimulation = "ProjectileSimulation" }\n${source}\nend\n`;
+    bundle += `\nloaders[${JSON.stringify(name)}] = function()\nlocal script = { Parent = ${parent}, BWController = "BWController", LocalBattle = "LocalBattle", WorldTestContext = "WorldTestContext", StudioWorldSelector = "StudioWorldSelector", StudioAssetPlacement = "StudioAssetPlacement", WorldObjects = "WorldObjects", DirectionalScanner = "DirectionalScanner", ManualScanner = "ManualScanner", EnvironmentBuilder = "EnvironmentBuilder", PlayerWorldStorage = "PlayerWorldStorage", PlayerWorldService = "PlayerWorldService", EditorAssetCatalog = "EditorAssetCatalog", PracticeTargets = "PracticeTargets", ProjectileSimulation = "ProjectileSimulation" }\n${source}\nend\n`;
   }
   bundle += `\nloaders.EditorState=function()\n${await readFile('studio/world-builder/EditorState.luau','utf8')}\nend\n`;
   bundle += '\nrequire = function(name)\nif name == "PlayerModule" then return { GetControls = function() return defaultControls end } end\nif cache[name] == nil then cache[name] = assert(loaders[name], "Unknown module " .. tostring(name))() end\nreturn cache[name]\nend\n';
@@ -89,6 +89,9 @@ try {
     ['HttpWorldStore'],
     ['RestoredLoadouts'],
     ['WorldEditorSnap'],
+    ['StartingPositions'],
+    ['WorldTestContext'],
+    ['TeamWorldServerIntegration'],
   ];
   if (groupIndex === null) {
     const worldTests = spawnSync(process.execPath, ['--test', 'tests/world-compiler.test.js', 'tests/asset-persistence.test.js', 'tests/world-builder.test.js', 'tests/asset-paths.test.js', 'tests/ingame-editor.test.js'], { stdio: 'inherit' });
@@ -104,13 +107,13 @@ try {
     if (!group) throw new Error('Invalid test group');
     let tests = '';
     for (const suite of group) {
-      if (suite === 'StudioAssetPlacement' || suite === 'WorldObjects' || suite === 'InGameEditorRuntime' || suite === 'PlayerWorlds' || suite === 'WorldElevation') {
+      if (suite === 'StudioAssetPlacement' || suite === 'WorldObjects' || suite === 'InGameEditorRuntime' || suite === 'PlayerWorlds' || suite === 'WorldElevation' || suite === 'StartingPositions') {
         const harness = await readFile('tests/ServerIntegration.spec.luau', 'utf8');
         const marker = 'Vector3.one=';
         if (!harness.includes(marker)) throw new Error('Transform harness marker changed');
         tests += '\ndo\n' + harness.slice(0, harness.indexOf(marker));
         tests += await readFile(`tests/${suite}.spec.luau`, 'utf8') + '\nend\n';
-      } else if (suite === 'BuilderServerIntegration' || suite === 'BuilderPublishedIntegration' || suite === 'PlayerWorldServerIntegration' || suite === 'PlayerWorldPublishedIntegration') {
+      } else if (suite === 'BuilderServerIntegration' || suite === 'BuilderPublishedIntegration' || suite === 'PlayerWorldServerIntegration' || suite === 'PlayerWorldPublishedIntegration' || suite === 'TeamWorldServerIntegration') {
         const {default:doc}=await import(pathToFileURL(resolve('tools/world-builder/document.js')).href);
         const {default:cat}=await import(pathToFileURL(resolve('tools/world-builder/catalog.js')).href);
         const {default:worldCatalog}=await import(pathToFileURL(resolve('tools/world/catalog.js')).href);
@@ -126,11 +129,12 @@ try {
         const harness=await readFile('tests/ServerIntegration.spec.luau','utf8');
         let setup=harness.slice(0,harness.indexOf(' local generation=snapshots[boomerId].generation'));
         setup=setup.replace('math.abs(snapshots[boomerId].yaw+snapshots[rattlerId].yaw)','math.abs(math.abs(snapshots[boomerId].yaw-snapshots[rattlerId].yaw)%(math.pi*2)-math.pi)');
-        const published=suite==='BuilderPublishedIntegration' || suite==='PlayerWorldPublishedIntegration';
+        const published=suite==='BuilderPublishedIntegration' || suite==='PlayerWorldPublishedIntegration' || suite==='TeamWorldServerIntegration';
         if(published) setup=setup.replace('Heartbeat=heartbeat,IsStudio=function() return true end','Heartbeat=heartbeat,IsStudio=function() return false end');
-        setup=setup.replace(' require("ServerEntrypoint")',(await readFile('tests/BuilderIntegrationSetup.luau','utf8'))+((suite==='PlayerWorldServerIntegration'||suite==='PlayerWorldPublishedIntegration')?'\n'+await readFile('tests/PlayerWorldIntegrationSetup.luau','utf8'):'')+'\n require("ServerEntrypoint")');
+        if(suite==='TeamWorldServerIntegration')setup=setup.slice(0,setup.indexOf(' check(snapshots[boomerId].tankType'));
+        setup=setup.replace(' require("ServerEntrypoint")',(await readFile('tests/BuilderIntegrationSetup.luau','utf8'))+((suite==='PlayerWorldServerIntegration'||suite==='PlayerWorldPublishedIntegration'||suite==='TeamWorldServerIntegration')?'\n'+await readFile('tests/PlayerWorldIntegrationSetup.luau','utf8'):'')+(suite==='TeamWorldServerIntegration'?'\n'+await readFile('tests/TeamWorldSetup.luau','utf8'):'')+'\n require("ServerEntrypoint")');
         tests+='\ndo\nlocal builderCatalog='+lua(catalog)+'\nlocal builderItems='+lua(items)+'\nlocal builderSettings='+lua(manifest.builderSettings)+'\nlocal builderPublished='+String(published)+'\n'+setup;
-        tests+=await readFile('tests/'+((suite==='PlayerWorldServerIntegration'||suite==='PlayerWorldPublishedIntegration')?suite:'BuilderServerIntegration')+'.spec.luau','utf8')+'\nend\n';
+        tests+=await readFile('tests/'+((suite==='PlayerWorldServerIntegration'||suite==='PlayerWorldPublishedIntegration'||suite==='TeamWorldServerIntegration')?suite:'BuilderServerIntegration')+'.spec.luau','utf8')+'\nend\n';
       } else if (suite === 'SwappedWeapons' || suite === 'RestoredLoadouts' || suite === 'IceWind' || suite === 'Multiplayer' || suite === 'ShellServerIntegration') {
         // Reuse the real server/transform setup, replacing only scenario assertions.
         const harness = await readFile('tests/ServerIntegration.spec.luau', 'utf8');

@@ -1,8 +1,34 @@
 -- Native Studio-imported Model cloning only. No GLB parsing or asset downloads.
 local Paths=require(game.ReplicatedStorage.Shared.AssetPaths)
 local Placement={}
+local nativeSizes=setmetatable({},{__mode="k"})
+function Placement.stretchPart(model)
+ local selected
+ for _,p in model:GetDescendants() do
+  if p:IsA("BasePart") then
+   if selected or not p:IsA("Part") or p.Shape~=Enum.PartType.Block then return nil end
+   for _,child in p:GetChildren() do if child:IsA("DataModelMesh") then return nil end end
+   selected=p
+  end
+ end
+ if not selected then return nil end
+ -- An angled child would require shear, which a native Part cannot represent.
+ local pivot=model:GetPivot()
+ for _,axis in {"RightVector","UpVector","LookVector"} do
+  local a,b=pivot[axis],selected.CFrame[axis]
+  if math.abs(a.X*b.X+a.Y*b.Y+a.Z*b.Z)<.99999 then return nil end
+ end
+ return selected
+end
 function Placement.pose(model,templateScale,spec)
+ local p=if spec.stretch or nativeSizes[model] then Placement.stretchPart(model) else nil
+ if spec.stretch then assert(p,"Stretch requires a single aligned native block asset") end
+ if p and not nativeSizes[model] then nativeSizes[model]=p.Size/model:GetScale()*templateScale end
  model:ScaleTo(templateScale*spec.scale)
+ if p then
+  local s=spec.stretch or {1,1,1};local size=nativeSizes[model]*spec.scale
+  p.Size=Vector3.new(size.X*s[1],size.Y*s[2],size.Z*s[3])
+ end
  local r=spec.rotation
  model:PivotTo(CFrame.Angles(math.rad(r.X),math.rad(r.Y),math.rad(r.Z)))
  local bounds,size=model:GetBoundingBox()
@@ -16,6 +42,10 @@ function Placement.place(assets,spec,arena,destination,builtins)
   return nil,"Invalid imported-model placement configuration."
  end
  for _,v in {spec.position,spec.rotation} do if not finite(v.X) or not finite(v.Y) or not finite(v.Z) then return nil,"Invalid placement coordinates." end end
+ if spec.stretch then
+  if type(spec.stretch)~="table" or #spec.stretch~=3 then return nil,"Invalid stretch factors" end
+  for _,n in spec.stretch do if not finite(n) or n<.001 or n>1000 then return nil,"Invalid stretch factors" end end
+ end
  local template,pathError=Paths.resolve(assets,spec.template)
  if not template and builtins then template,pathError=Paths.resolve(builtins,spec.template) end
  if not template or not template:IsA("Model") then

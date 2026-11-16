@@ -2,6 +2,7 @@ local arena=workspace:FindFirstChild("Arena")
 local worlds=network:FindFirstChild("PlayerWorlds")
 check(worlds and worlds.OnServerInvoke,"published world service initialized")
 local doc=require("WorldEditorDocument").fresh();doc.id="cloud_forest"
+doc.spawns={};for i,p in {{-60,0,-60},{0,0,-60},{60,0,-60},{-60,0,60},{60,0,60}} do table.insert(doc.spawns,{id="start_"..i,slot=i,position=p,heading=0})end
 local saved=worlds.OnServerInvoke(first,"Save",{document=doc,revision=0})
 check(saved.ok and not saved.temporary and cloudProfile["player:101"].worlds[doc.id],"published saves commit to private DataStore")
 check(not cloudProfile["player:102"] and not worlds.OnServerInvoke(second,"Load",doc.id).ok,"published reads/writes cannot change another player's storage")

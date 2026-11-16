@@ -69,12 +69,32 @@ check(not pcall(Snap.fit,base,"B",{point={0,0,0}},pin),"degenerate fit rejected"
 check(not pcall(Snap.fit,base,"B",{point={100000,0,0}},pin),"oversize fit rejected")
 local state=State.new({objects={base},spawns={}});state:select(base.id)
 local before=state:snapshot();state.pins[base.id]=pin
-check(state:record(before),"pin-only transaction recorded")
-state:undo();check(state.pins[base.id]==nil,"undo removes pin")
-state:redo();check(state.pins[base.id].side==-1,"redo restores contact corner")
+check(not state:record(before) and #state.past==0,"pin-only interaction does not create an undo step")
+check(not state:undo() and state.pins[base.id].side==-1,"undo skips transient pin changes")
 state:duplicate();local duplicate=next(state.selection)
 check(state.pins[duplicate]==nil and state.pins[base.id]~=nil,"duplicate does not inherit pin")
 state:select(base.id);state:delete();check(state.pins[base.id]==nil,"deletion cleans pins")
 state:undo();check(state.pins[base.id]~=nil,"undo deletion restores pin")
 check(state.document.pins==nil,"pins never enter world schema")
+for _,bounds in {{20,1,4},{4,1,20},{8,2,8}} do
+ for _,endpoint in {"A","B","C","D"} do
+  local source=object(bounds,{20,90,10});source.scale=2
+  local fixed=Snap.opposite(endpoint)
+  local ends=Snap.ends(source)
+  local pin=Snap.pin(fixed,{point={ends[fixed].X,ends[fixed].Y,ends[fixed].Z},normal={0,1,0}})
+  local target={point={-12,16,-24}}
+  local scaled=Snap.fit(source,endpoint,target,pin,"Scale")
+  near(Snap.ends(scaled)[endpoint],v(target.point),"four-side proportional scale hits target")
+  near(Snap.ends(scaled)[fixed],ends[fixed],"four-side proportional scale keeps opposite side fixed")
+  local result=Snap.fit(source,endpoint,target,pin,"Stretch")
+  local fitted=Snap.ends(result)
+  near(fitted[fixed],ends[fixed],"four-side stretch keeps opposite side fixed")
+  near(fitted[endpoint],v(target.point),"four-side stretch hits target")
+  check(result.scale==source.scale and result.stretch[2]==1,"stretch preserves uniform scale and thickness")
+  local alongX=if endpoint=="C" or endpoint=="D" then bounds[1]<=bounds[3] else bounds[1]>bounds[3]
+  check(result.stretch[if alongX then 3 else 1]==1,"stretch preserves perpendicular dimension")
+  local repeated=Snap.fit(result,endpoint,{point={-18,12,-30}},pin,"Stretch")
+  near(Snap.ends(repeated)[fixed],ends[fixed],"repeated stretching keeps original contact")
+ end
+end
 print(string.format("World editor snapping passed: %d assertions",count))

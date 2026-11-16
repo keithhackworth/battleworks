@@ -34,6 +34,7 @@ async function discoverWorlds(directory, bindings = {}) {
       { Name: 'Rotation', ClassName: 'Vector3Value', Properties: { Value: placement.rotation } },
       { Name: 'Scale', ClassName: 'NumberValue', Properties: { Value: placement.scale } },
       ];
+      if(placement.stretch)fields.push(value('Stretch',JSON.stringify(placement.stretch)));
       if (placement.interaction) {
         const v = placement.interaction;
         fields.push({ Name: 'Solid', ClassName: 'BoolValue', Properties: { Value: v.solid } },

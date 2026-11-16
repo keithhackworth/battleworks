@@ -116,5 +116,31 @@ check(latest.Parent==prior.Parent and not latest.Parent.destroyed,"selector reta
 record.children[3].children[2].children[3].Value="absent"
 local fallback=require("StudioWorldSelector").start({IsStudio=function() return true end},storage,container("NewArena"),function() end)
 check(fallback.active.id=="default" and next(fallback.objects.records)==nil,"missing panel gives default arena with no partial interactive records")
-Instance.new=originalFactory; CFrame.new=saveNew; CFrame.Angles=saveAngles; CFrame.lookAt=saveLookAt
+Instance.new=originalFactory
+-- A single native block exercises anisotropic placement and repeated pose reset.
+local block={Size=Vector3.new(8,1,20),CFrame=CFrame.new(),Shape=Enum.PartType.Block}
+function block:IsA(kind)return kind=="Part" or kind=="BasePart"end
+function block:GetChildren()return {}end
+local deck={scale=1,frame=CFrame.new()}
+function deck:GetDescendants()return {block}end
+function deck:GetScale()return self.scale end
+function deck:GetPivot()return self.frame end
+function deck:ScaleTo(n)block.Size=block.Size*(n/self.scale);self.scale=n end
+function deck:PivotTo(frame)self.frame=frame;block.CFrame=frame end
+function deck:GetBoundingBox()return block.CFrame,block.Size end
+check(Placement.stretchPart(deck)==block,"native block is stretchable")
+local pose={scale=1,stretch={1,1,2},position=Vector3.new(4,8,-12),rotation=Vector3.new(20,90,15)}
+for i=1,10 do Placement.pose(deck,1,pose)end
+check(math.abs(block.Size.Z-40)<1e-6 and block.Size.X==8 and block.Size.Y==1,"repeated native poses stretch one axis without cumulative deformation")
+local Geometry=require("WorldObjectGeometry")
+local expected=Geometry.from({4,8,-12},{20,90,15},{8,1,40},1)
+check((deck.frame.Position-expected.position).Magnitude<1e-5,"stretched visual bounds match server geometry and lowest-point placement")
+pose.stretch=nil;Placement.pose(deck,1,pose)
+check(block.Size.Z==20,"undo/reset removes stretch from native geometry")
+pose.scale=2;pose.stretch={3,1,1};Placement.pose(deck,1,pose)
+check(block.Size.X==48 and block.Size.Y==2 and block.Size.Z==40,"uniform scale composes with per-axis stretching")
+block.Shape=Enum.PartType.Ball
+check(Placement.stretchPart(deck)==nil,"unsupported shapes cannot be stretched")
+check(not pcall(Placement.pose,deck,1,pose),"placement rejects stretch on unsupported native shapes")
+CFrame.new=saveNew; CFrame.Angles=saveAngles; CFrame.lookAt=saveLookAt
 print(string.format("Studio native-model placement suite passed: %d assertions",count))

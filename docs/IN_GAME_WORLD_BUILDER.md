@@ -119,6 +119,47 @@ same service. Missing credentials or outages leave the draft intact and report
 an error, never silent temporary storage. Explicit Session/DataStore providers
 remain available for old fixtures and existing Roblox saves.
 
+For shared cloud **Team Test**, enable the explicit server configuration under
+`ServerStorage/BattleWorksStudio`: `TeamTestMode=true`. For user-owned experiences,
+`TeamTestHostUserId="0"` chooses the experience owner; for group-owned experiences,
+set it to the hosting person's numeric Roblox user ID. The provider must be Http.
+Configure **BattleWorksStudioWorlds** in Creator Dashboard Secrets using the same
+Studio key as Local Secrets, scoped to **groupboard.app**. Local Secrets alone are
+not available on the cloud test server. Ensure the current code/configuration is
+published/committed to the shared test, then restart Team Test. Local Rojo sync
+alone does not update a running cloud server.
+
+Both players initially stay at the main menu. The host's My Worlds library shows
+**TEAM TEST • Your Studio saves**. The host opens a save and uses Save & Play to
+install it into that shared server. Collaborators then use Play BattleWorks.
+Only the host can access saved-world RPCs; collaborators can join the installed
+battle without access to the host's private save library. The mode is disabled
+by default, refuses public servers, and must be disabled for ordinary published
+play. Ordinary reserved saved-world launches retain owner-only admission.
+
+Save diagnostics appear in server Output as **[BattleWorks worlds]**. Startup
+records raw IsStudio, the runtime TeamTestMode flag, private-server presence,
+selected mode/provider, expected namespace, secret **name**, and secret-store
+location. No secret value, Secret object, authorization header, request body or
+response body is logged. Restart the server after syncing to get current startup
+inputs; the Rojo file's values alone do not establish the deployed server's values.
+
+`secret_missing` / `secret_lookup_failed` identify GetSecret failures and preserve
+the Roblox exception. `secret_header_failed` is an AddPrefix failure after lookup
+succeeded. These happen before any HTTP request. `http_disabled` is separate.
+`http_transport` preserves the RequestAsync exception; `http_authorization` records
+401/403 after successful secret retrieval. Backend errors record HTTP status,
+backend code and returned message; invalid JSON/response contracts are distinct.
+The client keeps these diagnostic codes instead of collapsing them to a setup
+warning. Check these logs before changing secrets or switching namespaces.
+
+Before the first world operation, the selected HTTP credential makes a read-only
+`GET /health` call. Its server-reported namespace must match the configured mode;
+otherwise `namespace_mismatch` blocks the world request. A missing/invalid health
+namespace also blocks access. Successful verification is cached for that store.
+There is no live/Studio fallback, save migration, credential rotation or save
+deletion during this check.
+
 **Before stopping an existing temporary Play session**, export and keep its JSON.
 After source sync/setup/restart, paste it into the JSON box and click **Import JSON
 (replaces draft)**, then Save. Invalid imports preserve the current draft. No
@@ -180,6 +221,34 @@ node tools/build-editor-catalog.js
 ```
 
 Static thumbnails use folders in ViewportFrames; they allocate no physics worlds.
+
+Bulk exports are supported by the same command. Organize independent asset Models
+with nested Folders in Studio, select the enclosing Folder, and Save to File as
+`assets/roblox/assets.rbxm` (or `.rbxmx`). Rojo 7 on PATH inspects the native binary
+through `sourcemap --include-non-scripts`; Node never parses it as XML/JSON or
+reconstructs geometry. The command updates both `assets/editor-catalog.model.json`
+and `assets/asset-index.model.json`. The latter is mounted as the server-only
+`BattleWorksAssets/__BattleWorksAssetIndex` StringValue. It maps logical paths such
+as `Trees/Oak` to the native bundle mount `assets/Trees/Oak`.
+
+The shared AssetPaths resolver follows this index for source lookup, runtime
+placement and server validation. EditorAssetCatalog clones each individual asset
+into its sanitized library using its logical path. Bundle containers are never
+placeable. A Model's nested Models are retained within that asset; use Folders
+to organize separate assets. Different full paths can share a basename. Duplicate
+full logical or native paths fail before metadata is replaced. Rojo requires one
+top-level instance per export, so export one containing Folder, not a multi-select
+with several root Models. A corrupt export keeps the previous generated metadata.
+
+Individual exports and registered IDs/paths stay compatible. Unique registered
+bare names can resolve to bundled Models without rewriting saved references;
+their palettePath follows the bundle's folders. Existing explicit root paths beat
+legacy basename search. Bundled copies of the generated Builtin models are ignored
+by the catalog; the original Builtin mount remains authoritative. No geometry is
+unpacked into duplicate model files, no models are renamed, and renaming a bundle
+file only changes the generated physical paths. Native mesh/texture permissions
+and Rojo's existing MeshPart live-sync limitations still need Studio validation.
+
 The server publishes a sanitized template library once at startup under
 `ReplicatedStorage/BattleWorksEditorAssets`. It mirrors canonical folder paths,
 measures real native bounds, removes executable/active effects, and disables
@@ -446,47 +515,105 @@ Roblox input references: [UserInputService](https://create.roblox.com/docs/refer
 
 ## Edge snapping and bridge fitting
 
-Enable **Edge snap** in the left panel and select a board. A/B mark the ends of
-its longest local horizontal dimension. **Contact** switches between the middle
-of each top end edge and the left/right pair of top corners. Drag A or B onto
-another object's highlighted top edge/corner (or top face/ground) and release.
-This translates the object and pins that endpoint. Alternatively, **Pin A here**
-or **Pin B here** holds its current position without moving it.
+Choose **Snap** alongside Move, Rotate and Scale (shortcut **4**). Only Snap
+shows four colored handles, one at the middle of each top side edge. Move,
+Rotate and Scale retain their own handles, without overlapping snap handles.
+The left **Scale / Stretch** button selects how endpoint fitting changes size.
 
-With one end pinned, Rotate and Scale use that contact as their pivot. Drag the
-other endpoint to the second platform or ground: the board changes orientation
-and scale to meet both contacts exactly. The first contact stays fixed. Green
-feedback indicates a valid fit; red indicates a world-boundary, spawn-clearance,
-scale or other existing validation failure. Release with no valid target or press
-Escape to restore the previous pose. Each completed gesture is one undo step;
-undo/redo includes pins. Normal Move/Rotate/Scale gestures can also magnetize nearby
-end edges/corners within two studs when Edge snap is enabled. Grid snapping remains
-independent and optional; exact contacts take precedence over grid alignment.
+Grab any side handle and drag it onto a highlighted platform edge/corner, top
+face or ground. The opposite side remains fixed while the object rotates and
+fits to the grabbed side. Release to hold the fit. Any handle can be grabbed
+again immediately; its opposite then becomes the pivot. Away from a surface,
+the grabbed handle follows a screen-facing plane through its starting position.
 
-Both fitted ends lock ordinary transformations. Drag the free endpoint again to
-refit, or use **Release pins** before moving/resizing freely. The fixed endpoint
-cannot be dragged or replaced until released. Duplicates start unpinned.
+**Scale** resizes all dimensions proportionally. **Stretch** changes only the
+local horizontal dimension between the grabbed side and its opposite, preserving
+thickness and the other dimension. Stretch supports a single aligned native block
+Part without a mesh, including the bundled bridge deck. Other shapes and complex
+models use Scale; the server checks the actual template before accepting stretch.
+There is no mesh deformation, shear or new asset conversion pipeline.
 
-Auto-fit uses the existing **uniform scale**: width and thickness change along
-with length. There is no stretch handle, new world schema, or asset pipeline.
-Contacts use oriented visual bounding boxes, so irregular meshes or assets with
+Move always moves the whole piece and releases its contacts when a body/Move-axis
+drag starts. Position fields do the same. Rotate/Scale retain a single contact as
+the pivot and release its second contact. **Clear contacts** resets the pivot.
+Escape or an invalid release restores the previous pose and contacts. Undo/redo
+tracks actual document changes, with one transaction per completed drag. Selection,
+no-op clicks and contact-only changes do not create history or clear redo. Undo/redo
+keeps the current selection, removing only IDs that no longer exist; it never
+restores a historical selection. Contacts accompany actual geometry changes. Duplicates
+retain fitted geometry but start without contacts. Green feedback indicates a
+valid fit; red indicates an existing scale, boundary, spawn-clearance or other
+validation failure. Grid snapping remains optional and independent.
+
+Authoring-v2 objects may now contain optional `stretch: [x,y,z]` factors, each in
+[0.001,1000], defaulting to `[1,1,1]`. `bounds` remains the server-measured native
+size, and `scale` remains the uniform multiplier. Stretch is applied to visual
+native block dimensions and derived collision bounds, not accepted as client
+supplied collider dimensions. HTTP saves retain these factors. Compiled v1 worlds
+use the existing per-axis transform scale; the native placement adapter accepts
+that only for explicitly stretch-capable catalog entries. Old unstretched worlds
+continue to use their existing data and uniform placement path.
+
+Contacts use oriented visual bounding boxes. Irregular meshes or assets with
 smaller registered colliders may not make a seamless drivable bridge. Prefer solid
 box boards with full-size colliders. Existing driving support handles slopes up
-to 45 degrees; snapping does not guarantee that a steep fitted ramp is drivable.
+to 45 degrees; snapping does not guarantee steep fitted ramps are drivable.
 Ground contacts align the top surface at Y=0, allowing the underside below ground.
 
 Pins are temporary, world-space editor references, not runtime welds or linked
 constraints. Moving/deleting a target does not move the fitted bridge. Saving,
-exporting and reopening retain the final position/rotation/uniform scale and full
+exporting and reopening retain the final position/rotation/scale/stretch and full
 hierarchical asset reference, but do not persist pin metadata. Editor geometry,
 feedback and camera remain in the private WorldModel, isolated from active battles.
 
 After Rojo sync, restart Play. Native Studio validation: place two uneven solid
-platforms and a board; try edge-center and corner contacts, pin the first end,
-rotate with each local axis and fit the second end. Check both contact markers
+platforms and a board; try all four side handles, switch between Scale and Stretch,
+and alternate which side is dragged. In Stretch, check thickness stays fixed.
+Check both contact markers
 remain flush, undo/redo, Escape, invalid boundary/spawn fits, release, duplicate,
 save/reopen, and drive across the saved bridge. Verify eye-level camera picking
 and that exiting to menu/battle removes editor feedback. CLI tests validate math,
 controller transactions and export through the existing compiler; native viewport
 rendering, mouse delivery and tank traversal still require Studio. No Rojo builds
 are needed for this change.
+
+## Five player starting areas
+
+New in-game editor drafts start with no starting areas. Use the gold **Place start
+zone • N/5** button in the top toolbar beside Move/Rotate/Scale/Snap, then click
+the ground to place the next missing number, 1–5. The
+preview turns red if the area is outside the world, too near another start, or
+blocked by solid scenery. These are starting areas for player battle slots,
+independent of tank type and the number of tanks owned by a player.
+
+Each caution-striped area is **36 × 16 studs**, with three 12-stud-wide bays for
+the current 8 × 10 stud tank hitboxes. White geometry digits show the player
+number and an arrow shows facing. The same non-colliding, non-queryable markings
+remain visible in the playable world. The editor alone makes the base selectable.
+Select an area to drag it on the ground or edit X/Z and yaw. Areas cannot be
+raised, tilted, scaled, stretched or duplicated. Delete and undo/redo work;
+replacing a deleted area reuses its number without renumbering other players.
+
+Ground clearance is deliberately conservative: starting centers must be 40 studs
+apart, at least 20 studs inside world edges, and clear of solid objects within a
+20-stud horizontal margin. The server remeasures imported model bounds before
+accepting a save. Drafts with 0–4 areas can be saved and reopened; both Studio Play
+and reserved-server launch require exactly five unique slots 1–5. Save & Play
+checks this before saving or sending a launch request. Incomplete worlds show
+"World is not playable", the placed count, and the top-toolbar tool location;
+the regular Save action remains available. Legacy two-point
+worlds remain loadable, but the editor clears their tank-type starts in its draft
+so the designer can deliberately place the five larger areas. Scenery and the
+existing saved source are retained until the designer saves the updated draft.
+
+Authoring `spawns` use `{id, slot, position, heading}` for numbered areas. The
+server selects the area matching the player's battle slot, tries its three clear
+bays for that player's owned tanks, then uses existing safe fallback spawning if
+occupied. Disconnects release player battle slots through the existing lifecycle.
+This does not add a third owned tank or change multiplayer admission/publication.
+
+Studio acceptance: place all five areas, check the 1–5 digits and caution stripes
+from both overhead and low camera angles, move/delete/undo a start, and save/reopen
+an incomplete draft. Confirm Play reports missing starts until all five are valid.
+Launch the saved world and check all markings remain visible, player 3 starts in
+area 3, owned tanks use separate bays, and bullets/tanks ignore the markings.

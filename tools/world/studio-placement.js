@@ -46,7 +46,9 @@ function itemIssue(item, bindings) {
   const m = item.transform;
   if (!Array.isArray(m) || m.length !== 16 || !m.every(Number.isFinite)) return 'Invalid imported-model transform.';
   const s = Math.hypot(m[0], m[1], m[2]);
-  if (s <= 0 || [4, 8].some(i => Math.abs(Math.hypot(m[i], m[i + 1], m[i + 2]) - s) > s * 1e-6)) return 'Imported-model placement requires positive uniform scale.';
+  const sizes=[s,Math.hypot(m[4],m[5],m[6]),Math.hypot(m[8],m[9],m[10])];
+  if(sizes.some(n=>n<=0))return 'Imported-model placement requires positive scale.';
+  if(!binding.stretchable && sizes.some(n=>Math.abs(n-s)>s*1e-6))return 'Imported-model placement requires positive uniform scale.';
   for (const [a, b] of [[0, 4], [0, 8], [4, 8]]) if (Math.abs((m[a] * m[b] + m[a + 1] * m[b + 1] + m[a + 2] * m[b + 2]) / s ** 2) > 1e-6) return 'Imported-model placement does not support sheared transforms.';
   const det = m[0] * (m[5] * m[10] - m[9] * m[6]) - m[4] * (m[1] * m[10] - m[9] * m[2]) + m[8] * (m[1] * m[6] - m[5] * m[2]);
   if (det <= 0) return 'Imported-model placement does not support reflected transforms.';
@@ -58,14 +60,17 @@ function itemIssue(item, bindings) {
 function studioPlacement(manifest, bindings) {
   if (manifest.objects.length !== 1 || placementIssue(manifest, bindings)) return null;
   const item = manifest.objects[0], binding = resolveAsset(item.asset, bindings), m = item.transform;
-  const s = Math.hypot(m[0], m[1], m[2]);
-  const y = Math.asin(Math.max(-1, Math.min(1, m[8] / s))), cosine = Math.cos(y);
-  const x = Math.abs(cosine) > 1e-6 ? Math.atan2(-m[9], m[10]) : Math.atan2(m[6], m[5]);
-  const z = Math.abs(cosine) > 1e-6 ? Math.atan2(-m[4], m[0]) : 0;
+  const sizes=[0,4,8].map(i=>Math.hypot(m[i],m[i+1],m[i+2]));
+  const s=sizes[1];
+  const stretch=sizes.map(n=>n/s);
+  const normalized=m.map((n,i)=>i<12 && i%4<3?n/sizes[Math.floor(i/4)]:n);
+  const y = Math.asin(Math.max(-1, Math.min(1, normalized[8]))), cosine = Math.cos(y);
+  const x = Math.abs(cosine) > 1e-6 ? Math.atan2(-normalized[9], normalized[10]) : Math.atan2(normalized[6], normalized[5]);
+  const z = Math.abs(cosine) > 1e-6 ? Math.atan2(-normalized[4], normalized[0]) : 0;
   // Equivalent Euler triples can contain 180-degree roll for upright yaw >90.
   const interaction = interactionFor(item.influences, binding);
   const upright=Math.abs(m[1]/s)<1e-6 && Math.abs(m[9]/s)<1e-6 && m[5]/s>1-1e-6;
-  const rotation = upright ? [0, Math.atan2(m[8], m[0]) * 180 / Math.PI, 0] : [x, y, z].map(n => n * 180 / Math.PI);
-  return { ...binding, id: item.id, assetId: binding.id, position: m.slice(12, 15), rotation, scale: s, interaction };
+  const rotation = upright ? [0, Math.atan2(normalized[8], normalized[0]) * 180 / Math.PI, 0] : [x, y, z].map(n => n * 180 / Math.PI);
+  return { ...binding, id: item.id, assetId: binding.id, position: m.slice(12, 15), rotation, scale: s, ...(stretch.some(n=>Math.abs(n-1)>1e-6)?{stretch}:{}), interaction };
 }
 module.exports = { resolveAsset, studioPlacement, studioPlacements, placementIssue, interactionFor, MaxPlacements };

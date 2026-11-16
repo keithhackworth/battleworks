@@ -66,11 +66,13 @@ test('missing exports fail before an existing place or Studio backup can be repl
  assert.deepEqual(await fs.readFile(output), backup);
  const checked = await validateAssets({ ...f, allowMissingAssets: true }); assert.equal(checked.missing.length, 1);
 });
-test('corrupt native files and accidental Folder exports are not silently skipped', async t => {
+test('corrupt native files fail; Folder bundles require bindings to the contained Model', async t => {
  const f = await fixture(t), source = path.join(f.directory, 'models/tree-large.rbxmx');
  await fs.writeFile(source, 'not a model'); await assert.rejects(validateAssets(f), /rojo sourcemap failed/);
  await fs.writeFile(source, MODEL_XML.replace('class="Model" referent="RBX0"', 'class="Folder" referent="RBX0"'));
- await assert.rejects(validateAssets(f), /export exactly the imported Model/);
+ await assert.rejects(validateAssets(f), /Persistent asset exports missing/);
+ await fs.writeFile(f.bindingsFile,JSON.stringify({tree_large:{model:'TrunkGroup'}}));
+ assert.equal((await validateAssets(f)).models,1);
 });
 test('duplicate format exports are rejected and source bytes are not touched', async t => {
  const f = await fixture(t), model = path.join(f.directory, 'models/tree-large.rbxmx');

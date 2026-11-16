@@ -13,7 +13,7 @@ local Controller={};Controller.__index=Controller
 function Controller.new(context)
  if not context.editorAssets and context.getEditorAssets then context.editorAssets=context.getEditorAssets() end
  local view=View.new(context)
- local self=setmetatable({context=context,view=view,frame=view.frame,buttons=view.buttons,state=State.new(Document.fresh()),catalog=Document.catalog({}),prefix="",page=1,mode="Move",runtime={},keys={},yaw=.55,pitch=1,distance=210,focus=Vector3.zero},Controller)
+ local self=setmetatable({context=context,view=view,frame=view.frame,buttons=view.buttons,state=State.new(Document.editorFresh()),catalog=Document.catalog({}),prefix="",page=1,mode="Move",runtime={},keys={},yaw=.55,pitch=1,distance=210,focus=Vector3.zero},Controller)
  self.state.snap=false
  self.library=require(script.Parent.WorldLibrary).new(view.frame,context.worldRequest,function(document)
   self:replaceDocument(document)
@@ -26,7 +26,14 @@ function Controller.new(context)
  for axis,button in view.rotationAxes do action(button.Activated,function() self.rotationAxis=axis;self:setMode("Rotate") end) end
  action(view.undo.Activated,function() self:history(false) end);action(view.redo.Activated,function() self:history(true) end)
  action(view.duplicate.Activated,function() self:perform(function() self.state:duplicate() end,"Duplicated selection. Drag the new object to move it.") end)
- action(view.delete.Activated,function() self:perform(function() self.state:delete() end,"Deleted selection.") end)
+ action(view.delete.Activated,function()
+  if not self:selected() then view:message("Select an object or starting zone, then click Delete.");return end
+  self:perform(function() self.state:delete() end,"Deleted selection. Undo restores it.")
+ end)
+ action(view.placeStart.Activated,function()
+  if #self.state.document.spawns>=5 then view:message("All five starts are placed. Select a marked area to move or delete it.");return end
+  self:cancel();self.placingStart=true;view:message("Click clear ground to place the next numbered starting area. Each area holds three tanks; keep centers 40 studs apart. Esc cancels.")
+ end)
  action(view.up.Activated,function() self.prefix=self.prefix:gsub("[^/]+/$","");self.page=1;self:browse() end)
  action(view.nextPage.Activated,function() self.page=self.page%self.pages+1;self:browse() end)
  view:on(view.search:GetPropertyChangedSignal("Text"),function() if self.active then self.page=1;self:browse() end end)
@@ -37,11 +44,9 @@ function Controller.new(context)
   self.state.grid=value;self:updateGrid()
  end)
  action(view.frameWorld.Activated,function() self:frameWorld() end)
- action(view.edgeSnap.Activated,function()self:cancel();self.edgeSnap=not self.edgeSnap;self:refresh()end)
+ action(view.edgeSnap.Activated,function()self:setMode("Snap")end)
  action(view.snapContact.Activated,function()
-  local entry=self:selected()
-  if entry and self.state.pins[entry.id] then view:message("Release pins before changing the contact corner.");return end
-  self:cancel();self.snapSide=if not self.snapSide or self.snapSide==0 then -1 elseif self.snapSide==-1 then 1 else 0;self:refresh()
+  self:cancel();self.fitMode=if self.fitMode=="Stretch" then "Scale" else "Stretch";self:refresh()
  end)
  action(view.pinA.Activated,function()self:pinHere("A")end)
  action(view.pinB.Activated,function()self:pinHere("B")end)
@@ -54,12 +59,18 @@ function Controller.new(context)
   local n=tonumber(field.Text)
   self:perform(function()
    assert(n and n==n and math.abs(n)<math.huge,"Enter a finite number")
-   assert(not self.state.pins[entry.id] or (key~="x" and key~="y" and key~="z"),"Release the endpoint pin before editing position")
+   if entry.slot then
+    assert(key=="x" or key=="z" or key=="yaw","Starting areas stay on the ground; edit X, Z or yaw")
+    if key=="yaw" then entry.heading=n else entry.position[if key=="x" then 1 else 3]=n end
+    return
+   end
+   if key=="x" or key=="y" or key=="z" then self.state.pins[entry.id]=nil
+   elseif self.state.pins[entry.id] and key~="hp" then self.state.pins[entry.id].second=nil end
    if key=="x" then entry.position[1]=n elseif key=="y" then entry.position[2]=n elseif key=="z" then entry.position[3]=n elseif key=="pitch" then entry.rotation[1]=n elseif key=="yaw" then entry.rotation[2]=n elseif key=="roll" then entry.rotation[3]=n elseif key=="scale" then entry.scale=n else entry.hp=n end
   end,"Updated "..key)
  end) end
- action(view.solid.Activated,function() local o=self:selected();if o then self:perform(function() o.solid=not o.solid end,"Collision updated.") end end)
- action(view.destructible.Activated,function() local o=self:selected();if o then self:perform(function() o.destructible=not o.destructible end,"Destructibility updated.") end end)
+ action(view.solid.Activated,function() local o=self:selected();if o and not o.slot then self:perform(function() o.solid=not o.solid end,"Collision updated.") end end)
+ action(view.destructible.Activated,function() local o=self:selected();if o and not o.slot then self:perform(function() o.destructible=not o.destructible end,"Destructibility updated.") end end)
  action(view.export.Activated,function()
   self:cancel();view.name.Text=self.state.document.name;view.worldId.Text=self.state.document.id
   view.overlay.Visible=true;self:export()
@@ -71,6 +82,7 @@ function Controller.new(context)
 end
 function Controller:replaceDocument(document)
  self:cancel()
+ document=Document.numberStarts(State.copy(document))
  local candidate
  local ok,reason=pcall(function()
   candidate=Scene.new(self.view.viewport,self.context.editorAssets,document)
@@ -90,7 +102,7 @@ function Controller:import()
  local ok,reason=pcall(function()
   assert(#self.view.json.Text<=260000,"Import exceeds 260 KB")
   local document=Http:JSONDecode(self.view.json.Text)
-  require(Shared.WorldSettings).validate({width=document.settings.width,depth=document.settings.depth,ground=document.settings.ground,boundary=document.settings.boundary,spawns=document.spawns,zones={}})
+  require(Shared.WorldSettings).validate({width=document.settings.width,depth=document.settings.depth,ground=document.settings.ground,boundary=document.settings.boundary,spawns=document.spawns,zones={}},true)
   document=Document.export(document,self.catalog)
   for _,entry in document.objects do assert(self.catalog.byPath[entry.asset].available,"An imported asset is unavailable in this game") end
   self:replaceDocument(document)
@@ -114,6 +126,7 @@ function Controller:selected()
  for id in self.state.selection do return self.state:find(id) end
 end
 function Controller:refresh()
+ self.view.placeStart.Text="Place start zone  •  "..#self.state.document.spawns.."/5"
  if self.scene then self.scene:sync(self.state.document,self.catalog) end
  local selected=self:selected();self.view:selection(selected,selected and self.catalog.byPath[selected.asset])
  if self.scene then self.scene:selection(selected and selected.id,self.distance) end
@@ -122,13 +135,14 @@ function Controller:refresh()
 end
 local function copyPose(entry,pose)
  entry.position=State.copy(pose.position);entry.rotation=State.copy(pose.rotation);entry.scale=pose.scale
+ entry.stretch=State.copy(pose.stretch)
 end
 function Controller:updateSnap()
  local entry=self:selected();local pin=entry and self.state.pins[entry.id]
  local side=if pin then pin.side else (self.snapPreview and self.snapPreview.side) or self.snapSide or 0
- self.view.edgeSnap.Text="Edge snap: "..(if self.edgeSnap then "ON" else "OFF")
- self.view.snapContact.Text="Contact: "..(if side==-1 then "left corners" elseif side==1 then "right corners" else "edge center")
- self.view.pinStatus.Text=if pin then (if pin.second then "Both ends fitted. Drag the free end again to refit, or Release pins to transform." else pin.endpoint.." pinned. Rotate/scale around it, or drag the other end to auto-fit. Uniform fit resizes width too.") else "Select a board; drag A/B onto a top edge/corner. Fit uses uniform scale. Pins are temporary."
+ self.view.edgeSnap.Text="Snap tool  •  4"
+ self.view.snapContact.Text=if self.fitMode=="Stretch" then "Scale / [Stretch]" else "[Scale] / Stretch"
+ self.view.pinStatus.Text=if self.fitMode=="Stretch" then "Drag one of four side handles. Opposite side stays fixed. Stretch preserves thickness and the other dimension. Native blocks only." else "Drag one of four side handles onto an edge. Opposite side stays fixed. Scale resizes all dimensions. Move moves the whole piece."
  if self.scene then self.scene:setSnap(self.edgeSnap,self.state.pins,side);self.scene:selection(entry and entry.id,self.distance) end
 end
 function Controller:pinHere(endpoint)
@@ -186,13 +200,15 @@ function Controller:updateGrid()
 end
 function Controller:setMode(mode)
  self:cancel();self.mode=mode
+ self.edgeSnap=mode=="Snap"
  if self.scene then
   self.scene:setMode(mode,self.rotationAxis or "Yaw")
   local selected=self:selected();self.scene:selection(selected and selected.id,self.distance)
  end
  for axis,button in self.view.rotationAxes do button.BackgroundColor3=if axis==(self.rotationAxis or "Yaw") then Color3.fromRGB(133,94,38) else Color3.fromRGB(43,61,66) end
  for name,button in self.view.tools do button.BackgroundColor3=if name==mode then Color3.fromRGB(133,94,38) else Color3.fromRGB(43,61,66) end
- self.view:message(if mode=="Move" then "Move • red X / blue Z slides; green Y raises or lowers. Height Y also accepts an exact value." elseif mode=="Rotate" then "Rotate • choose local X, Y or Z on the left, then drag the ring. Axes follow the object; grid snaps the turn to 15°." else "Scale • drag the green anchor to resize uniformly.")
+ self:updateSnap()
+ self.view:message(if mode=="Move" then "Move • red X / blue Z slides; green Y raises or lowers. Height Y also accepts an exact value." elseif mode=="Rotate" then "Rotate • choose local X, Y or Z on the left, then drag the ring. Axes follow the object; grid snaps the turn to 15°." elseif mode=="Snap" then "Snap • drag any of the four side handles onto a surface edge. Choose Scale or Stretch on the left." else "Scale • drag the green anchor to resize uniformly.")
 end
 function Controller:frameWorld() self.focus=Vector3.zero;self.distance=math.max(self.state.document.settings.width,self.state.document.settings.depth)*.95;self.pitch=1;self.yaw=.55 end
 function Controller:mousePosition()
@@ -210,6 +226,10 @@ function Controller:candidate(point)
  return {id="placement_preview",type=item.id,asset=item.model,position={self.state:snapValue(point.X),0,self.state:snapValue(point.Z)},rotation={0,0,0},scale=item.defaultScale or 1,solid=item.solid or false,destructible=item.destructible or false,hp=item.hp or 100,bounds=State.copy(item.size)}
 end
 function Controller:place(point)
+ if self.placingStart and point then
+  self:perform(function()self.state:addStart(point)end,"Starting area placed. Drag it to move; set yaw to change facing.")
+  return
+ end
  if not self.placing or not point then return end
  local item=self.placing
  local valid,reason=pcall(Document.checkEntry,self.state.document,self.catalog,self:candidate(point))
@@ -218,10 +238,10 @@ function Controller:place(point)
 end
 function Controller:cancel()
  if self.gesture then self.state:restore(self.gesture.before);self.gesture=nil;if self.scene then self.scene:sync(self.state.document,self.catalog) end end
- self.placing=nil;self.paletteDrag=nil;self:stopCamera()
+ self.placing=nil;self.placingStart=nil;self.paletteDrag=nil;self:stopCamera()
  self.snapPreview=nil
  if self.scene then self.scene:snapFeedback(nil);self.scene:setSnap(self.edgeSnap,self.state.pins,self.snapSide) end
- if self.scene then self.scene:clearGhost() end
+ if self.scene then self.scene:clearGhost();self.scene:startPreview(nil) end
 end
 function Controller:finishGesture(cancel)
  local g=self.gesture;if not g then return end
@@ -230,7 +250,8 @@ function Controller:finishGesture(cancel)
   local preview=self.snapPreview
   if g.kind=="Snap" then assert(preview and preview.valid,"No valid snap target; previous pose restored") end
   if preview and preview.valid then
-   local pin=self.state.pins[g.id]
+   local pin=if g.kind=="Snap" then State.copy(g.pin) else self.state.pins[g.id]
+   if g.kind=="Snap" then self.state.pins[g.id]=pin end
    if pin then pin.second=Snap.pin(preview.endpoint,preview.target,pin.side)
    else self.state.pins[g.id]=Snap.pin(preview.endpoint,preview.target,preview.side) end
   end
@@ -242,13 +263,18 @@ function Controller:finishGesture(cancel)
 end
 function Controller:beginSnap(endpoint,entry)
  local pin=self.state.pins[entry.id]
- if pin and pin.endpoint==endpoint then self.view:message("That end is pinned. Drag the other end, or use Release pins first.");return end
  if self.catalog.byPath[entry.asset].zone then self.view:message("Ground regions cannot be fitted.");return end
+ local side=0
+ local opposite=Snap.opposite(endpoint)
+ if self.fitMode=="Stretch" and not self.catalog.byPath[entry.asset].stretchable then self.view:message("Stretch supports native block assets. Choose Scale for this asset.");return end
+ local ends,box=Snap.ends(entry,side)
+ local fixed=if pin and pin.endpoint==opposite then State.copy(pin) elseif pin and pin.second and pin.second.endpoint==opposite then State.copy(pin.second) else Snap.pin(opposite,{point={ends[opposite].X,ends[opposite].Y,ends[opposite].Z},normal={box.up.X,box.up.Y,box.up.Z},kind="position"},side)
+ fixed.second=nil
  self.edgeSnap=true
- self.gesture={kind="Snap",endpoint=endpoint,id=entry.id,before=self.state:snapshot(),base=State.copy(entry),pin=State.copy(pin),side=if pin then pin.side else self.snapSide or 0}
- if pin then self.state.pins[entry.id].second=nil end
+ self.gesture={kind="Snap",endpoint=endpoint,id=entry.id,before=self.state:snapshot(),base=State.copy(entry),pin=fixed,side=side,startPoint=ends[endpoint]}
+ self.state.pins[entry.id]=State.copy(fixed)
  self.snapPreview=nil;self:updateSnap()
- self.view:message("Drag onto a highlighted top edge/corner or the ground; release to snap. Esc cancels.")
+ self.view:message("Drag this end; the opposite end stays fixed. Release to hold the fit. Esc cancels.")
 end
 function Controller:stopCamera()
  local drag=self.cameraDrag
@@ -285,19 +311,27 @@ function Controller:begin(input,processed)
  if not origin or not direction or not self.view:isScene(mouse) then return end
  if processed then return end
  if processed or input.UserInputType~=Enum.UserInputType.MouseButton1 then return end
- if self.placing then self:place(point);return end
+ if self.placing or self.placingStart then self:place(point);return end
  local id,handle=self.scene:pick(origin,direction,mouse-self.view.viewport.AbsolutePosition,self.view.viewport.AbsoluteSize)
  if id then self.state:select(id);self:refresh() end
  local entry=self:selected()
- if entry and (handle=="SnapA" or handle=="SnapB") then self:beginSnap(handle:sub(-1),entry);return end
+ if entry and entry.slot then
+  local start=Math.ground(origin,direction)
+  if (id or handle) and start then self:setMode("Move");self.gesture={kind="StartMove",id=entry.id,before=self.state:snapshot(),base=State.copy(entry),start=start,axis=handle} end
+  return
+ end
+ if entry and handle and handle:match("^Snap[ABCD]$") then self:beginSnap(handle:sub(-1),entry);return end
  if entry and (handle or (id and self.mode=="Move")) then
   local kind=handle or "Move"
   local pin=self.state.pins[entry.id]
-  if pin and (pin.second or kind:sub(1,4)=="Move") then self.view:message("Use the free endpoint to refit, or Release pins before moving a fitted object.");return end
+  local before=self.state:snapshot()
+  if kind:sub(1,4)=="Move" then pin=nil end
+  if pin then pin=State.copy(pin);pin.second=nil end
   local pivot=if pin then Vector3.new(table.unpack(pin.point)) elseif kind:sub(1,6)=="Rotate" then self.scene.models[entry.id].model:GetBoundingBox().Position else nil
   local start=Math.dragPoint(kind,entry,origin,direction,self.scene.camera.CFrame,pivot)
   if not start then self.view:message("Orbit the camera slightly to face this rotation ring, then drag again.");return end
-  self.gesture={before=self.state:snapshot(),base=State.copy(entry),id=entry.id,start=start,kind=kind,pivot=pivot,pin=State.copy(pin)}
+  self.state.pins[entry.id]=State.copy(pin)
+  self.gesture={before=before,base=State.copy(entry),id=entry.id,start=start,kind=kind,pivot=pivot,pin=State.copy(pin)}
  elseif not id and not handle then self.state.selection={};self:refresh() end
 end
 function Controller:key(input,processed)
@@ -313,6 +347,7 @@ function Controller:key(input,processed)
  elseif input.KeyCode==Enum.KeyCode.Delete or input.KeyCode==Enum.KeyCode.Backspace then self:perform(function() self.state:delete() end,"Deleted selection.")
  elseif input.KeyCode==Enum.KeyCode.One then self:setMode("Move") elseif input.KeyCode==Enum.KeyCode.Two then self:setMode("Rotate")
  elseif input.KeyCode==Enum.KeyCode.Three then self:setMode("Scale")
+ elseif input.KeyCode==Enum.KeyCode.Four then self:setMode("Snap")
  elseif input.KeyCode==Enum.KeyCode.G then self.state.snap=not self.state.snap;self:updateGrid()
  elseif input.KeyCode==Enum.KeyCode.F then self:frameWorld() end
 end
@@ -341,22 +376,43 @@ function Controller:step(dt)
  self.pitch=Math.cameraPitch(self.pitch,self.focus.Y,self.distance)
  scene.camera.CFrame=CFrame.lookAt(self.focus+Vector3.new(math.sin(self.yaw)*math.cos(self.pitch),math.sin(self.pitch),math.cos(self.yaw)*math.cos(self.pitch))*self.distance,self.focus)
  local point,origin,direction=self:pointer()
+ if self.placingStart and point and self.view:isScene(mouse) then
+  local used={};for _,p in self.state.document.spawns do used[p.slot]=true end
+  local slot=1;while used[slot] do slot+=1 end
+  local spawn={id="start_"..slot,slot=slot,position={self.state:snapValue(point.X),0,self.state:snapValue(point.Z)},heading=0}
+  local draft=State.copy(self.state.document);table.insert(draft.spawns,spawn)
+  local valid,reason=pcall(Document.export,draft,self.catalog)
+  scene:startPreview(spawn,valid);self.view:message(if valid then "Click to place player "..slot.." starting area • three tanks" else tostring(reason))
+ else scene:startPreview(nil) end
  if self.gesture then
   local g=self.gesture;local entry=self.state:find(g.id)
   self.snapPreview=nil
-  if g.kind=="Snap" then
+  if g.kind=="StartMove" then
+   if point then entry.position={if g.axis=="MoveZ" then g.base.position[1] else self.state:snapValue(g.base.position[1]+point.X-g.start.X),0,if g.axis=="MoveX" then g.base.position[3] else self.state:snapValue(g.base.position[3]+point.Z-g.start.Z)} end
+  elseif g.kind=="Snap" then
    copyPose(entry,g.base)
    local target=if origin and direction and self.view:isScene(mouse) then scene:snapTarget(origin,direction,g.id,g.target) else nil
+   if not target and origin and direction and self.view:isScene(mouse) then
+    -- Away from surfaces, drag in a screen-facing plane through the grabbed end.
+    local n=scene.camera.CFrame.LookVector
+    local d=direction.X*n.X+direction.Y*n.Y+direction.Z*n.Z
+    local offset=g.startPoint-origin
+    local t=if math.abs(d)>.00001 then (offset.X*n.X+offset.Y*n.Y+offset.Z*n.Z)/d else -1
+    if t>0 then
+     local p=origin+direction*t
+     target={point={p.X,p.Y,p.Z},normal={0,1,0},kind="position"}
+    end
+   end
    g.target=target
    if target then
     local ok,pose=pcall(function()
-     if g.pin then return Snap.fit(g.base,g.endpoint,target,g.pin) end
+     if g.pin then return Snap.fit(g.base,g.endpoint,target,g.pin,self.fitMode) end
      return Snap.anchor(State.copy(g.base),Snap.pin(g.endpoint,target,g.side))
     end)
     if ok then copyPose(entry,pose) end
     local valid,reason=pcall(Document.checkEntry,self.state.document,self.catalog,entry)
     self.snapPreview={endpoint=g.endpoint,target=target,valid=ok and valid,side=g.side}
-    self.view:message(if not ok then tostring(pose) elseif not valid then tostring(reason) else "Release to snap "..g.endpoint.." to "..target.kind.." • uniform scale "..string.format("%.3g",entry.scale).." (width/thickness also resize)")
+    self.view:message(if not ok then tostring(pose) elseif not valid then tostring(reason) else "Release to hold this side • "..target.kind.." • "..(self.fitMode or "Scale"))
    end
   else
    local drag=Math.dragPoint(g.kind,g.base,origin,direction,scene.camera.CFrame,g.pivot)
@@ -365,7 +421,7 @@ function Controller:step(dt)
     copyPose(entry,transform)
     if g.pin then Snap.anchor(entry,g.pin) end
     if self.edgeSnap and self.view:isScene(mouse) then
-     local free=if g.pin then (if g.pin.endpoint=="A" then "B" else "A") else nil
+     local free=if g.pin then Snap.opposite(g.pin.endpoint) else nil
      local near=Snap.nearby(self.state.document,entry,free,g.pin and g.pin.side)
      if near then
       local ok,pose=pcall(function()

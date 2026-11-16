@@ -28,13 +28,14 @@ function View.new(context)
  local toolbar=make("Frame",frame,{Name="Toolbar",Size=UDim2.new(1,0,0,54),BackgroundColor3=Color3.fromRGB(19,30,35),BorderSizePixel=0,Active=true});self.toolbar=toolbar
  self.back=button(toolbar,"MainMenu","← Main Menu",UDim2.fromOffset(120,38),UDim2.fromOffset(8,8));self.buttons={self.back}
  self.back.Activated:Connect(context.home)
- local title=text(toolbar,"EditorTitle","WORLD BUILDER",32);title.Position=UDim2.fromOffset(144,12);title.Size=UDim2.fromOffset(180,32);title.TextColor3=accent
+ local title=text(toolbar,"EditorTitle","BUILDER",32);title.Position=UDim2.fromOffset(144,12);title.Size=UDim2.fromOffset(76,32);title.TextSize=16;title.TextColor3=accent
  self.tools={}
- for index,name in {"Move","Rotate","Scale"} do
-  self.tools[name]=button(toolbar,name,name,UDim2.fromOffset(68,32),UDim2.fromOffset(328+(index-1)*72,12))
+ for index,name in {"Move","Rotate","Scale","Snap"} do
+  self.tools[name]=button(toolbar,name,name,UDim2.fromOffset(60,32),UDim2.fromOffset(224+(index-1)*64,12))
  end
- self.undo=button(toolbar,"Undo","Undo",UDim2.fromOffset(60,32),UDim2.fromOffset(624,12))
- self.redo=button(toolbar,"Redo","Redo",UDim2.fromOffset(60,32),UDim2.fromOffset(688,12))
+ self.delete=button(toolbar,"Delete","Delete",UDim2.fromOffset(60,32),UDim2.fromOffset(488,12));self.delete.BackgroundColor3=Color3.fromRGB(139,57,49)
+ self.undo=button(toolbar,"Undo","Undo",UDim2.fromOffset(44,32),UDim2.fromOffset(736,12));self.undo.TextSize=11
+ self.redo=button(toolbar,"Redo","Redo",UDim2.fromOffset(44,32),UDim2.fromOffset(788,12));self.redo.TextSize=11
  self.export=button(toolbar,"Export","Export JSON",UDim2.fromOffset(114,32),UDim2.new(1,-126,0,12));self.export.BackgroundColor3=Color3.fromRGB(121,89,37)
  local pane=make("Frame",frame,{Name="AssetPalette",AnchorPoint=Vector2.new(1,0),Position=UDim2.new(1,-12,0,66),Size=UDim2.new(0,310,.48,-32),BackgroundColor3=Color3.fromRGB(23,35,39),BorderSizePixel=0,Active=true});self.palette=pane
  local label=text(pane,"PaletteTitle","ASSET LIBRARY  •  drag into the world",28);label.Position=UDim2.fromOffset(12,6)
@@ -58,7 +59,7 @@ function View.new(context)
  end
  self.solid=row(button(self.properties,"Collision","Collision: —"));self.destructible=row(button(self.properties,"Destructible","Destructible: —"))
  self.influences=row(text(self.properties,"Influences","Fixed objects • height / tilt • uniform scale",100))
- self.duplicate=row(button(self.properties,"Duplicate","Duplicate  •  Ctrl+D"));self.delete=row(button(self.properties,"Delete","Delete  •  Delete"))
+ self.duplicate=row(button(self.properties,"Duplicate","Duplicate  •  Ctrl+D"))
  local controls=make("Frame",frame,{Name="EditorOptions",Position=UDim2.fromOffset(12,66),Size=UDim2.fromOffset(208,76),BackgroundColor3=Color3.fromRGB(23,35,39),Active=true,BorderSizePixel=0});self.options=controls
  self.snap=button(controls,"GridSnap","Grid snap: OFF",UDim2.fromOffset(132,28),UDim2.fromOffset(8,8))
  self.grid=make("TextBox",controls,{Name="GridSize",Text="1",ClearTextOnFocus=false,Size=UDim2.fromOffset(48,28),Position=UDim2.fromOffset(150,8),BackgroundColor3=Color3.fromRGB(43,61,66),TextColor3=ink,TextSize=14,Font=Enum.Font.Code})
@@ -74,9 +75,14 @@ function View.new(context)
  self.edgeSnap=button(magnets,"EdgeSnap","Edge snap: OFF",UDim2.fromOffset(192,28),UDim2.fromOffset(8,8))
  self.pinA=button(magnets,"PinA","Pin A here",UDim2.fromOffset(92,28),UDim2.fromOffset(8,42));self.pinA.TextColor3=Color3.fromRGB(80,215,255)
  self.pinB=button(magnets,"PinB","Pin B here",UDim2.fromOffset(92,28),UDim2.fromOffset(108,42));self.pinB.TextColor3=Color3.fromRGB(255,183,92)
- self.releasePin=button(magnets,"ReleasePin","Release pin(s)",UDim2.fromOffset(192,28),UDim2.fromOffset(8,76))
+ self.pinA.Visible=false;self.pinB.Visible=false
+ self.releasePin=button(magnets,"ReleasePin","Clear contacts",UDim2.fromOffset(192,28),UDim2.fromOffset(8,76))
  self.snapContact=button(magnets,"SnapContactMode","Contact: edge center",UDim2.fromOffset(192,28),UDim2.fromOffset(8,110))
  self.pinStatus=text(magnets,"PinStatus","Enable snapping, select a board, then drag end A or B onto a top edge.",58);self.pinStatus.Position=UDim2.fromOffset(8,144);self.pinStatus.Size=UDim2.new(1,-16,0,58);self.pinStatus.TextSize=11
+ self.snapContact.Position=UDim2.fromOffset(8,42)
+ self.pinStatus.Position=UDim2.fromOffset(8,110)
+ magnets.Size=UDim2.fromOffset(208,174)
+ self.placeStart=button(toolbar,"PlaceStartingPosition","Place start zone  •  0/5",UDim2.fromOffset(172,32),UDim2.fromOffset(556,12));self.placeStart.BackgroundColor3=Color3.fromRGB(121,89,37)
  self.status=text(frame,"EditorStatus","Loading native asset library…",30);self.status.Position=UDim2.new(0,12,1,-72);self.status.Size=UDim2.new(1,-344,0,30);self.status.BackgroundTransparency=.1;self.status.BackgroundColor3=Color3.fromRGB(19,30,35)
  self.hint=text(frame,"EditorHints","RMB orbit • Shift+RMB / middle drag pan • WASD move • E/Q height while dragging • Wheel zoom • F reset",30);self.hint.Position=UDim2.new(0,12,1,-36);self.hint.Size=UDim2.new(1,-344,0,30)
  local overlay=make("Frame",frame,{Name="ExportOverlay",Position=UDim2.fromScale(.08,.12),Size=UDim2.fromScale(.84,.76),BackgroundColor3=Color3.fromRGB(17,28,33),Visible=false,Active=true,ZIndex=10});self.overlay=overlay
@@ -94,7 +100,7 @@ function View:on(event,callback) table.insert(self.connections,event:Connect(cal
 function View:message(message) self.status.Text=tostring(message):gsub("^.-:%d+:%s*","") end
 function View:isModal() return self.overlay.Visible or (self.library and self.library.frame.Visible) end
 function View:isScene(point)
- return self.frame.Visible and not self:isModal() and not rectContains(self.worlds,point) and not rectContains(self.rotationPanel,point) and not rectContains(self.magnets,point) and rectContains(self.viewport,point) and not rectContains(self.toolbar,point) and not rectContains(self.palette,point) and not rectContains(self.properties,point) and not rectContains(self.options,point) and not rectContains(self.status,point) and not rectContains(self.hint,point)
+ return self.frame.Visible and not self:isModal() and not rectContains(self.placeStart,point) and not rectContains(self.worlds,point) and not rectContains(self.rotationPanel,point) and not rectContains(self.magnets,point) and rectContains(self.viewport,point) and not rectContains(self.toolbar,point) and not rectContains(self.palette,point) and not rectContains(self.properties,point) and not rectContains(self.options,point) and not rectContains(self.status,point) and not rectContains(self.hint,point)
 end
 function View:thumbnail(parent,item,assets)
  local templates=assets and assets:FindFirstChild("Templates")
@@ -134,6 +140,17 @@ function View:paletteEntries(directories,items,prefix,page,assets,onFolder,onAss
  return page,pages
 end
 function View:selection(entry,item)
+ if entry and entry.slot then
+  self.selected.Text="PLAYER "..entry.slot.." STARTING AREA\nRoom for three tanks"
+  for key,field in self.fields do
+   local n=({x=entry.position[1],z=entry.position[3],yaw=entry.heading})[key]
+   field.Text=if n then tostring(n) else "";field.TextEditable=n~=nil
+  end
+  self.solid.Text="Ground marking • no collision";self.destructible.Text="Starting areas cannot be destroyed"
+  self.influences.Text="Move on the ground or set X/Z. Yaw sets starting direction. Delete to relocate this numbered area. All five are required to play."
+  return
+ end
+ for _,field in self.fields do field.TextEditable=true end
  self.selected.Text=if entry then entry.id.."\n"..entry.asset else "Select a placed object to inspect it."
  local values=if entry then {x=entry.position[1],y=entry.position[2],z=entry.position[3],pitch=entry.rotation[1],yaw=entry.rotation[2],roll=entry.rotation[3],scale=entry.scale,hp=entry.hp} else {}
  for key,field in self.fields do field.Text=if values[key] then string.format("%.5g",values[key]) else "" end

@@ -1,5 +1,5 @@
 -- Authoring-only bounding-box contacts. Pins are undoable editor state, never
--- runtime welds or world-schema fields. Fitted poses use the existing uniform scale.
+-- runtime welds or world-schema fields. Stretch factors are part of saved geometry.
 local G=require(script.Parent.WorldObjectGeometry)
 local State=require(script.Parent.WorldEditorState)
 local Snap={Radius=2}
@@ -7,14 +7,20 @@ local function dot(a,b)return a.X*b.X+a.Y*b.Y+a.Z*b.Z end
 local function cross(a,b)return Vector3.new(a.Y*b.Z-a.Z*b.Y,a.Z*b.X-a.X*b.Z,a.X*b.Y-a.Y*b.X)end
 local function array(v)return {v.X,v.Y,v.Z}end
 local function vector(v)return Vector3.new(table.unpack(v))end
-function Snap.box(entry)return G.from(entry.position,entry.rotation,entry.bounds,entry.scale)end
+function Snap.bounds(entry)
+ local s=entry.stretch or {1,1,1};return {entry.bounds[1]*s[1],entry.bounds[2]*s[2],entry.bounds[3]*s[3]}
+end
+function Snap.box(entry)return G.from(entry.position,entry.rotation,Snap.bounds(entry),entry.scale)end
+function Snap.opposite(endpoint)return ({A="B",B="A",C="D",D="C"})[endpoint]end
 function Snap.ends(entry,side)
  local box=Snap.box(entry)
- local axis=if box.size.X>box.size.Z then box.right else box.back
- local span=math.max(box.size.X,box.size.Z)
- local width=if box.size.X>box.size.Z then box.back*(box.size.Z/2) else box.right*(box.size.X/2)
+ local mainX=entry.bounds[1]>entry.bounds[3]
+ local axis=if mainX then box.right else box.back
+ local span=if mainX then box.size.X else box.size.Z
+ local width=if mainX then box.back*(box.size.Z/2) else box.right*(box.size.X/2)
  local top=box.position+box.up*(box.size.Y/2*(if box.up.Y>=0 then 1 else -1))+width*(side or 0)
- return {A=top-axis*(span/2),B=top+axis*(span/2)},box
+ local middle=box.position+box.up*(box.size.Y/2*(if box.up.Y>=0 then 1 else -1))
+ return {A=top-axis*(span/2),B=top+axis*(span/2),C=middle-width,D=middle+width},box
 end
 function Snap.anchor(entry,pin)
  local ends=Snap.ends(entry,pin.side)
@@ -22,13 +28,19 @@ function Snap.anchor(entry,pin)
  entry.position={entry.position[1]+delta.X,entry.position[2]+delta.Y,entry.position[3]+delta.Z}
  return entry
 end
-function Snap.fit(base,endpoint,target,pin)
+function Snap.fit(base,endpoint,target,pin,mode)
  assert(endpoint~=pin.endpoint,"Release the pinned end before moving it")
  local fixed=vector(pin.point);local free=vector(target.point)
- local delta=if pin.endpoint=="A" then free-fixed else fixed-free
+ local delta=if pin.endpoint=="A" or pin.endpoint=="C" then free-fixed else fixed-free
  assert(delta.Magnitude>.05,"Endpoints are too close to fit")
  local result=State.copy(base)
- result.scale=delta.Magnitude/math.max(base.bounds[1],base.bounds[3])
+ local alongX=if endpoint=="C" or endpoint=="D" then base.bounds[1]<=base.bounds[3] else base.bounds[1]>base.bounds[3]
+ local index=if alongX then 1 else 3
+ if mode=="Stretch" then
+  result.stretch=State.copy(base.stretch or {1,1,1})
+  result.stretch[index]=delta.Magnitude/(base.bounds[index]*base.scale)
+  assert(result.stretch[index]>=.001 and result.stretch[index]<=1000,"Stretch exceeds the allowed range")
+ else result.scale=delta.Magnitude/(base.bounds[index]*(base.stretch or {1,1,1})[index]) end
  assert(result.scale>=.001 and result.scale<=1000,"Auto-fit exceeds the allowed scale range")
  local direction=delta.Unit
  local _,oldUp=G.axes(base.rotation)
@@ -38,7 +50,7 @@ function Snap.fit(base,endpoint,target,pin)
  if up.Magnitude<.001 then up=Vector3.new(1,0,0)-direction*direction.X end
  up=up.Unit
  local right,back
- if base.bounds[1]>base.bounds[3] then right=direction;back=cross(right,up).Unit
+ if alongX then right=direction;back=cross(right,up).Unit
  else back=direction;right=cross(up,back).Unit end
  up=cross(back,right).Unit
  result.rotation=G.rotation(right,up,back)

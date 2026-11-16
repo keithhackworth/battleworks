@@ -23,11 +23,11 @@ end
 function Preview:pose(id,entry)
  local model=self.models[id]; if not model then return end
  if entry.tank then model:PivotTo(CFrame.new(entry.position[1],.12,entry.position[3])*CFrame.Angles(0,math.rad(-entry.heading),0)); return end
- self.placement.pose(model,self.templates[id],{position=Vector3.new(table.unpack(entry.position)),rotation=Vector3.new(table.unpack(entry.rotation)),scale=entry.scale})
+ self.placement.pose(model,self.templates[id],{position=Vector3.new(table.unpack(entry.position)),rotation=Vector3.new(table.unpack(entry.rotation)),scale=entry.scale,stretch=entry.stretch})
 end
 function Preview:object(entry,item)
  local template=self:template(item); if not template then return nil,"Missing imported model: "..item.model end
- local model,reason=self.placement.place(self.storage:FindFirstChild("BattleWorksAssets"),{id=entry.id,template=item.model,source=item.source,position=Vector3.new(table.unpack(entry.position)),rotation=Vector3.new(table.unpack(entry.rotation)),scale=entry.scale},self:folder(),self:folder(),self.storage:FindFirstChild("BattleWorksBuiltinAssets"))
+ local model,reason=self.placement.place(self.storage:FindFirstChild("BattleWorksAssets"),{id=entry.id,template=item.model,source=item.source,position=Vector3.new(table.unpack(entry.position)),rotation=Vector3.new(table.unpack(entry.rotation)),scale=entry.scale,stretch=entry.stretch},self:folder(),self:folder(),self.storage:FindFirstChild("BattleWorksBuiltinAssets"))
  if not model then return nil,reason end
  model:SetAttribute("BWEditorId",entry.id)
  for _,p in model:GetDescendants() do

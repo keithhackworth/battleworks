@@ -1,5 +1,6 @@
 -- Cosmetic terrain and queryable cover from the same deterministic terrain data.
 local Builder = {}
+local StartingAreas=require(game.ReplicatedStorage.Shared.StartingAreas)
 local function part(parent,name,size,frame,color,material,shape,query)
 	local p=Instance.new("Part")
 	p.Name=name; p.Size=size; p.CFrame=frame; p.Color=color; p.Material=material
@@ -20,6 +21,7 @@ function Builder.build(arena,data,floor)
 	local old=arena:FindFirstChild("Environment")
 	if old then old:Destroy() end
 	local folder=Instance.new("Folder"); folder.Name="Environment"; folder.Parent=arena
+ for _,spawn in data.startPositions or {} do if spawn.slot then StartingAreas.make(folder,spawn,false) end end
 	for _,zone in data.zones do
 		local color=if zone.kind=="Water" then Color3.fromRGB(67,156,183) elseif zone.kind=="Mud" then Color3.fromRGB(103,70,43) else Color3.fromRGB(73,105,57)
 		local patch=part(folder,zone.kind,Vector3.new(zone.rx*2,0.16,zone.rz*2),CFrame.new(zone.x,0.08,zone.z),color,

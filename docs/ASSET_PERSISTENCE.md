@@ -8,10 +8,19 @@ The project now mounts **`assets/roblox`** directly at **`ServerStorage/BattleWo
 
 ## One-time export of existing imports — do this before discarding anything
 
+**Bulk alternative:** individual exports are no longer required. Select one
+enclosing Folder of imported Models, preserving its nested Folders, and save it
+as `assets/roblox/assets.rbxm` (or `.rbxmx`). Run
+`node tools/build-editor-catalog.js`, let Rojo sync and restart Play. This inspects
+the binary with Rojo's sourcemap command and writes only catalog/path-index
+metadata; it does not compile a game or reconstruct native geometry. Each Model
+under a Folder becomes an independent asset; nested Models within that asset
+stay together. The old individual-file workflow below remains supported.
+
 1. Stop Play. Disconnect the Rojo Studio plugin while exporting/verifying. Keep the existing place/model intact and save a **separate backup place**, outside your generated build output. If your current generated place has already lost the tree, open a saved/recovered/published copy that still contains it.
 2. Select **the imported Model itself** under `ServerStorage/BattleWorksAssets`. For the tree it must be named `tree-large`. Retain all its nested meshes, textures/materials, pivots, `PrimaryPart` and scale. Do not resize, regroup or flatten the hierarchy for this export.
 3. In Explorer's context menu, choose **Save / Export → Save to File** (or **Save to File** in older Studio layouts). Save **`assets/roblox/tree-large.rbxm`** in the local repository Rojo uses. If choosing XML instead, save `tree-large.rbxmx`. This is a Roblox model save, **not** OBJ/glTF “Export Selection”. Export the Model, not its enclosing Folder.
-4. For each other imported GLB, save one similarly named model file directly in `assets/roblox`. Keep **one format per name**, not both. Each file must contain one Model with mesh descendants. Extra folder nesting would change the runtime lookup path and is rejected by the checked build.
+4. For individual exports, save similarly named Model files under `assets/roblox`, retaining organizational subfolders. Alternatively, save all Models together in a Folder-root bundle. Keep **one format per export filename**, not both. Run the catalog builder after adding/replacing either kind of export.
 5. Verify without touching the original Studio place:
 
    ```sh

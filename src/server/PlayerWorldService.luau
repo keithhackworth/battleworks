@@ -18,7 +18,12 @@ function Service:register(player)
  end
 end
 function Service:canEnter(player)
+ if self.testHost then return self.testReady==true end
  return not self.reserved or self.ready[player.UserId]==true
+end
+function Service:entryMessage()
+ if self.testHost then return "The test host must load a world using World Editor → My Worlds → Save & Play first. Then everyone can use Play BattleWorks." end
+ return "Your saved world is not ready. Return to World Editor and try Play again."
 end
 function Service:validate(document)
  assert(type(document)=="table" and #self.http:JSONEncode(document)<=260000,"World exceeds 260 KB")
@@ -33,6 +38,7 @@ function Service:request(player,action,payload)
  state.busy=true;state.last[action]=os.clock()
  local ok,result=pcall(function()
   assert(self.isPresent(player),"Player left the experience")
+  assert(not self.testHost or owner==self.testHost or action=="Bootstrap","Only the Team Test host can access saved worlds in this session. Wait for the host to load the world, then choose Play BattleWorks.")
   if action=="List" then return {worlds=self.store:list(owner)} end
   if action=="Load" then
    local entry=self.store:load(owner,payload)
@@ -50,6 +56,7 @@ function Service:request(player,action,payload)
    local entry=self.store:load(owner,launch.id)
    assert(entry.revision==launch.revision,"Saved world changed before launch. Open it and play again.")
    local document,specs,settings=self:validate(entry.document)
+   require(game.ReplicatedStorage.Shared.WorldSettings).ready(settings)
    assert(self.isPresent(player),"Player left the experience")
    self.install(player,document,specs,settings)
    self.pending[owner]=nil;self.ready[owner]=true
@@ -60,17 +67,23 @@ function Service:request(player,action,payload)
   local entry=self.store:load(owner,payload.id)
   assert(entry.revision==payload.revision,"Open the latest saved revision before playing")
   local document,specs,settings=self:validate(entry.document)
+  require(game.ReplicatedStorage.Shared.WorldSettings).ready(settings)
   assert(self.isPresent(player),"Player left the experience")
   if self.studio then
    self.install(player,document,specs,settings)
+   if self.testHost then self.testReady=true end
    return {launch=true}
   end
   self.teleport(player,{battleWorksWorld=true,owner=owner,id=document.id,revision=entry.revision})
   return {teleporting=true}
  end)
  state.busy=false
- if not ok then return {ok=false,message=tostring(result):gsub("^.-:%d+:%s*","")} end
- local response=table.clone(result);response.ok=true;response.temporary=self.store.temporary;response.storage=self.store.kind
+ if not ok then
+  local message=tostring(result)
+  if not message:match("^%[[a-z_]+%]") then message=message:gsub("^.-:%d+:%s*","") end
+  return {ok=false,message=message}
+ end
+ local response=table.clone(result);response.ok=true;response.temporary=self.store.temporary;response.storage=self.store.kind;response.teamTest=self.testHost~=nil
  return response
 end
 function Service:remove(player)

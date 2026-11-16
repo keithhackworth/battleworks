@@ -21,9 +21,9 @@ test('catalog packaging retains hierarchical identities and existing influence d
  await fs.mkdir(path.join(root,'worlds'),{recursive:true});
  await fs.mkdir(path.join(root,'assets/roblox/Trees'),{recursive:true});
  await fs.mkdir(path.join(root,'assets/roblox/Decorations'),{recursive:true});
- // Discovery uses file identities, not conversion; native geometry is tested in Luau.
- await fs.writeFile(path.join(root,'assets/roblox/Trees/Oak.rbxmx'),'native-export-fixture');
- await fs.writeFile(path.join(root,'assets/roblox/Decorations/Oak.rbxmx'),'native-export-fixture');
+ // Rojo inspects real native hierarchy; runtime geometry is tested in Luau.
+ await fs.writeFile(path.join(root,'assets/roblox/Trees/Oak.rbxmx'),'<roblox version="4"><Item class="Model" referent="M"><Properties><string name="Name">Oak</string></Properties><Item class="MeshPart" referent="P"><Properties><string name="Name">Mesh</string></Properties></Item></Item></roblox>');
+ await fs.writeFile(path.join(root,'assets/roblox/Decorations/Oak.rbxmx'),'<roblox version="4"><Item class="Model" referent="M"><Properties><string name="Name">Oak</string></Properties><Item class="MeshPart" referent="P"><Properties><string name="Name">Mesh</string></Properties></Item></Item></roblox>');
  await fs.writeFile(path.join(root,'worlds/roblox-assets.json'),JSON.stringify({oak:{model:'Trees/Oak',source:'Trees/Oak',displayName:'Oak',size:[4,12,4],solid:true,destructible:true,collider:{widthFraction:.3,depthFraction:.3,heightFraction:.5}},decoration:{model:'Decorations/Oak',source:'Decorations/Oak',size:[4,12,4],solid:false,destructible:false,collider:{widthFraction:1,depthFraction:1,heightFraction:1}}}));
  const items=await buildEditorCatalog(root);
  const oak=items.find(i=>i.model==='Trees/Oak'),other=items.find(i=>i.model==='Decorations/Oak');

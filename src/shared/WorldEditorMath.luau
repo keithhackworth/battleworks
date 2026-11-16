@@ -65,6 +65,7 @@ function Math.dragPoint(kind,base,origin,direction,camera,pivot)
 end
 function Math.transform(base,kind,startPoint,point,snap,grid,pivot)
  local copy={position=table.clone(base.position),rotation=table.clone(base.rotation),scale=base.scale}
+ if base.stretch then copy.stretch=table.clone(base.stretch) end
  local function quantize(n) return if snap then math.round(n/grid)*grid else n end
  if kind=="MoveY" then copy.position[2]=quantize(base.position[2]+point.Y-startPoint.Y)
  elseif kind=="Move" or kind=="MoveX" or kind=="MoveZ" then

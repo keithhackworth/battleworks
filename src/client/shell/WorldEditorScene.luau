@@ -3,6 +3,7 @@ local Placement=require(Shared.ModelPlacement)
 local Paths=require(Shared.AssetPaths)
 local Math=require(Shared.WorldEditorMath)
 local Snap=require(Shared.WorldEditorSnap)
+local StartingAreas=require(Shared.StartingAreas)
 local Scene={};Scene.__index=Scene
 local function part(parent,name,size,frame,color,transparency)
  local p=Instance.new("Part");p.Name=name;p.Anchored=true;p.CanCollide=false;p.CanTouch=false;p.CanQuery=false
@@ -15,24 +16,21 @@ function Scene.new(viewport,assets,document)
  local gizmos=Instance.new("Folder");gizmos.Name="Anchors";gizmos.Parent=world
  local snapGizmos=Instance.new("Folder");snapGizmos.Name="SnapHandles";snapGizmos.Parent=world
  local self=setmetatable({world=world,camera=camera,root=root,gizmos=gizmos,snapGizmos=snapGizmos,models={},assets=assets,document=document,mode="Move",wire={},snapEnds={},snapLabels={},viewport=viewport},Scene)
- for _,endpoint in {"A","B"} do
+ for _,endpoint in {"A","B","C","D"} do
   local p=part(snapGizmos,"Snap"..endpoint,Vector3.new(2,2,2),CFrame.new(),if endpoint=="A" then Color3.fromRGB(80,215,255) else Color3.fromRGB(255,183,92),1)
   p.Shape=Enum.PartType.Ball;p.Material=Enum.Material.Neon;p:SetAttribute("EditorHandle","Snap"..endpoint);self.snapEnds[endpoint]=p
-  local label=Instance.new("TextLabel");label.Name="SnapLabel"..endpoint;label.Text=endpoint;label.Size=UDim2.fromOffset(24,24);label.BackgroundTransparency=1;label.TextColor3=p.Color;label.TextSize=18;label.Font=Enum.Font.GothamBold;label.TextStrokeTransparency=.2;label.Visible=false;label.ZIndex=4;label.Parent=viewport;self.snapLabels[endpoint]=label
+  local label=Instance.new("TextLabel");label.Name="SnapLabel"..endpoint;label.Text="↔";label.Size=UDim2.fromOffset(24,24);label.BackgroundTransparency=1;label.TextColor3=p.Color;label.TextSize=18;label.Font=Enum.Font.GothamBold;label.TextStrokeTransparency=.2;label.Visible=false;label.ZIndex=4;label.Parent=viewport;self.snapLabels[endpoint]=label
  end
  local s=document.settings
  self.floor=part(world,"EditorGround",Vector3.new(s.width,1,s.depth),CFrame.new(0,-.5,0),Color3.fromRGB(table.unpack(s.ground.color)));self.floor.Material=Enum.Material[s.ground.material];self.floor.CanQuery=true
- for _,spawn in document.spawns do
-  local marker=part(world,spawn.tank.."Spawn",Vector3.new(10,.12,12),CFrame.new(spawn.position[1],.08,spawn.position[3])*CFrame.Angles(0,-math.rad(spawn.heading),0),if spawn.tank=="Boomer" then Color3.fromRGB(244,172,75) else Color3.fromRGB(80,215,128),.35)
-  marker.CanQuery=false
- end
+ self.spawnModels={}
  self:setMode("Move")
  return self
 end
 function Scene:template(item) return self.assets and Paths.resolve(self.assets:FindFirstChild("Templates"),item.model) end
 function Scene:make(entry,item,parent)
  local template=self:template(item);if not template then return nil,"Native template unavailable: "..item.model end
- local model,reason=Placement.place(self.assets:FindFirstChild("Templates"),{id=entry.id,template=item.model,position=Vector3.new(table.unpack(entry.position)),rotation=Vector3.new(table.unpack(entry.rotation)),scale=entry.scale},nil,parent or self.root)
+ local model,reason=Placement.place(self.assets:FindFirstChild("Templates"),{id=entry.id,template=item.model,position=Vector3.new(table.unpack(entry.position)),rotation=Vector3.new(table.unpack(entry.rotation)),scale=entry.scale,stretch=entry.stretch},nil,parent or self.root)
  if model then
   model:SetAttribute("EditorObjectId",entry.id)
   for _,p in model:GetDescendants() do if p:IsA("BasePart") then p.CanQuery=true end end
@@ -50,12 +48,39 @@ function Scene:sync(document,catalog)
    assert(model,err);record={model=model,scale=self:template(item):GetScale()};self.models[entry.id]=record
   end
   record.entry=entry
-  if record.x~=entry.position[1] or record.y~=entry.position[2] or record.z~=entry.position[3] or record.pitch~=entry.rotation[1] or record.yaw~=entry.rotation[2] or record.roll~=entry.rotation[3] or record.objectScale~=entry.scale then
-   Placement.pose(record.model,record.scale,{position=Vector3.new(table.unpack(entry.position)),rotation=Vector3.new(table.unpack(entry.rotation)),scale=entry.scale})
+  local stretchKey=if entry.stretch then table.concat(entry.stretch,",") else ""
+  if record.stretchKey~=stretchKey or record.x~=entry.position[1] or record.y~=entry.position[2] or record.z~=entry.position[3] or record.pitch~=entry.rotation[1] or record.yaw~=entry.rotation[2] or record.roll~=entry.rotation[3] or record.objectScale~=entry.scale then
+   Placement.pose(record.model,record.scale,{position=Vector3.new(table.unpack(entry.position)),rotation=Vector3.new(table.unpack(entry.rotation)),scale=entry.scale,stretch=entry.stretch})
+   record.stretchKey=stretchKey
    record.x=entry.position[1];record.y=entry.position[2];record.z=entry.position[3];record.pitch=entry.rotation[1];record.yaw=entry.rotation[2];record.roll=entry.rotation[3];record.objectScale=entry.scale
   end
  end
  for id,record in self.models do if not retained[id] then record.model:Destroy();self.models[id]=nil end end
+ local starts={}
+ for _,spawn in document.spawns do if spawn.slot then
+  starts[spawn.id]=true
+  local key=table.concat(spawn.position,",")..":"..spawn.heading..":"..spawn.slot
+  local old=self.spawnModels[spawn.id]
+  if not old or old.key~=key then
+   local model
+   if old and old.heading==spawn.heading and old.slot==spawn.slot then
+    model=old.model;model:PivotTo(CFrame.new(spawn.position[1]-old.x,0,spawn.position[3]-old.z)*model:GetPivot())
+   else if old then old.model:Destroy() end;model=StartingAreas.make(self.root,spawn,true) end
+   self.spawnModels[spawn.id]={key=key,spawn=true,model=model,entry=spawn,x=spawn.position[1],z=spawn.position[3],heading=spawn.heading,slot=spawn.slot}
+  end
+ end end
+ for id,record in self.spawnModels do if not starts[id] then record.model:Destroy();self.spawnModels[id]=nil end end
+end
+function Scene:startPreview(spawn,valid)
+ if not spawn then if self.startGhost then self.startGhost:Destroy();self.startGhost=nil end;return end
+ if self.startGhost and self.startGhostSlot==spawn.slot and self.startGhostValid==valid then
+  self.startGhost:PivotTo(CFrame.new(spawn.position[1]-self.startGhostX,0,spawn.position[3]-self.startGhostZ)*self.startGhost:GetPivot())
+  self.startGhostX=spawn.position[1];self.startGhostZ=spawn.position[3];return
+ end
+ if self.startGhost then self.startGhost:Destroy() end
+ self.startGhost=StartingAreas.make(self.world,spawn,false)
+ self.startGhostSlot=spawn.slot;self.startGhostValid=valid;self.startGhostX=spawn.position[1];self.startGhostZ=spawn.position[3]
+ for _,p in self.startGhost:GetDescendants() do if p:IsA("BasePart") then p.Transparency=.4;if not valid then p.Color=Color3.fromRGB(245,90,75) end end end
 end
 function Scene:ghost(entry,item,valid)
  if self.ghostPath~=item.model then
@@ -88,13 +113,16 @@ function Scene:setMode(mode,rotationAxis)
  end
 end
 function Scene:selection(id,distance)
- local record=id and self.models[id]
+ local record=id and (self.models[id] or self.spawnModels[id])
  local size=math.clamp(distance*.012,1,3)
- for _,p in self.gizmos:GetChildren() do p.Transparency=if record then 0 else 1;p.CanQuery=record~=nil end
+ for _,p in self.gizmos:GetChildren() do
+  local enabled=record~=nil and (not record.spawn or (self.mode=="Move" and p.Name~="MoveY"))
+  p.Transparency=if enabled then 0 else 1;p.CanQuery=enabled
+ end
  for endpoint,p in self.snapEnds do p.Transparency=1;p.CanQuery=false;self.snapLabels[endpoint].Visible=false end
  if not record then for _,p in self.wire do p.Transparency=1 end;return end
  local pin=self.snapPins and self.snapPins[id]
- if self.snapEnabled or pin then
+ if self.mode=="Snap" and not record.spawn then
   local ends=Snap.ends(record.entry,if pin then pin.side else self.snapSide)
   for endpoint,p in self.snapEnds do
    local pinned=pin and (pin.endpoint==endpoint or (pin.second and pin.second.endpoint==endpoint))
@@ -106,7 +134,7 @@ function Scene:selection(id,distance)
   end
  end
  local box,bounds=record.model:GetBoundingBox()
- local center=if pin and not pin.second and (self.mode=="Rotate" or self.mode=="Scale") then Vector3.new(table.unpack(pin.point)) else box.Position
+ local center=if pin and (self.mode=="Rotate" or self.mode=="Scale") then Vector3.new(table.unpack(pin.point)) else box.Position
  local reach=math.max(bounds.X,bounds.Y,bounds.Z)/2+size*2
  for code,p in self.anchors do
   p.Size=Vector3.new(size,size,size)

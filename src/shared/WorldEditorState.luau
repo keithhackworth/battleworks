@@ -20,8 +20,8 @@ function State:markSaved(document) self.document=copy(document or self.document)
 function State:snapshot() return {document=copy(self.document),selection=copy(self.selection),pins=copy(self.pins)} end
 function State:restore(snapshot) self.document=copy(snapshot.document); self.selection=copy(snapshot.selection);self.pins=copy(snapshot.pins or {}) end
 function State:record(before)
- if equal(before.document,self.document) and equal(before.pins or {},self.pins) then return false end
- table.insert(self.past,before); if #self.past>self.limit then table.remove(self.past,1) end
+ if equal(before.document,self.document) then return false end
+ table.insert(self.past,{document=copy(before.document),pins=copy(before.pins or {})}); if #self.past>self.limit then table.remove(self.past,1) end
  table.clear(self.future); return true
 end
 function State:change(fn)
@@ -29,13 +29,19 @@ function State:change(fn)
  if not ok then self:restore(before); error(err,0) end
  self:record(before)
 end
+function State:restoreHistory(snapshot)
+ self.document=copy(snapshot.document);self.pins=copy(snapshot.pins or {})
+ -- Keep the user's present selection; history never selects an old object.
+ for id in self.selection do if not self:find(id) then self.selection[id]=nil end end
+end
+local function historySnapshot(state)return {document=copy(state.document),pins=copy(state.pins)}end
 function State:undo()
  local snapshot=table.remove(self.past); if not snapshot then return false end
- table.insert(self.future,self:snapshot()); self:restore(snapshot); return true
+ table.insert(self.future,historySnapshot(self)); self:restoreHistory(snapshot); return true
 end
 function State:redo()
  local snapshot=table.remove(self.future); if not snapshot then return false end
- table.insert(self.past,self:snapshot()); self:restore(snapshot); return true
+ table.insert(self.past,historySnapshot(self)); self:restoreHistory(snapshot); return true
 end
 function State:find(id)
  for _,entry in self.document.objects do if entry.id==id then return entry,false end end
@@ -58,15 +64,29 @@ function State:add(item,position,bounds)
  end)
  return id
 end
+function State:addStart(position)
+ local used={};for _,p in self.document.spawns do used[p.slot]=true end
+ local slot=1;while used[slot] do slot+=1 end
+ assert(slot<=5,"All five starting positions are placed; move or delete an existing area")
+ local id="start_"..slot;local suffix=1
+ while self:find(id) do suffix+=1;id="start_"..slot.."_"..suffix end
+ self:change(function()
+  table.insert(self.document.spawns,{id=id,slot=slot,position={self:snapValue(position.X),0,self:snapValue(position.Z)},heading=0})
+  self.selection={[id]=true}
+ end)
+ return id
+end
 function State:delete()
  self:change(function()
-  for id in self.selection do local _,spawn=self:find(id); assert(not spawn,"Tank spawns cannot be deleted; move them instead") end
+  for id in self.selection do local p,spawn=self:find(id);assert(not spawn or p.slot,"Legacy tank spawns cannot be deleted") end
+  for i=#self.document.spawns,1,-1 do if self.selection[self.document.spawns[i].id] then table.remove(self.document.spawns,i) end end
   for i=#self.document.objects,1,-1 do if self.selection[self.document.objects[i].id] then self.pins[self.document.objects[i].id]=nil;table.remove(self.document.objects,i) end end
   self.selection={}
  end)
 end
 function State:duplicate()
  self:change(function()
+  for id in self.selection do local p,spawn=self:find(id);assert(not spawn,"Use Place tank start to add the next numbered area") end
   local originals={}; for _,o in self.document.objects do if self.selection[o.id] then table.insert(originals,copy(o)) end end
   assert(#self.document.objects+#originals<=512,"Object limit: 512")
   self.selection={}

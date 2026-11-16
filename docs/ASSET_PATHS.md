@@ -1,13 +1,16 @@
 # Canonical asset paths
 
-World `asset` fields identify a **Model path relative to
-ServerStorage/BattleWorksAssets**, using exact case and forward slashes:
+World `asset` fields identify a **logical Model path in the asset library**,
+using exact case and forward slashes:
 
 ```json
 {"type":"model","asset":"Structures/Fences/Fence"}
 ```
 
-This identifies `ServerStorage/BattleWorksAssets/Structures/Fences/Fence`.
+For individual exports this identifies
+`ServerStorage/BattleWorksAssets/Structures/Fences/Fence`. For bulk Folder exports,
+the generated `__BattleWorksAssetIndex` maps the same logical path to the Model
+inside its native bundle mount (for example `assets/Structures/Fences/Fence`).
 It is not a Linux filename or a generated Workspace instance name. Another
 `Buildings/Houses/Fence` can coexist without being merged or renamed. Qualified
 paths are traversed segment by segment; lookup never falls back to a basename
@@ -28,7 +31,9 @@ The registry may attach source provenance and collider defaults:
 Registry keys are metadata identifiers; **worlds use the model path**. The GLB
 source is not read at runtime. Existing root models (`tree-large`, `rope-fence`)
 remain root-relative one-segment paths; no assets are moved automatically.
-Legacy registered GLB paths, logical aliases and basenames resolve only when
+An exact root-level Model path takes precedence over legacy basename lookup, so
+adding a bundle cannot invalidate an existing standalone root reference.
+Legacy registered GLB paths, logical aliases and other basenames resolve only when
 unambiguous. Ambiguous names identify the conflicting complete paths instead of
 choosing the first model. Invalid paths (absolute, backslashes, empty segments,
 `.`, `..`, whitespace-only segments or control characters) are rejected.
@@ -40,10 +45,16 @@ assets/roblox/Buildings/Houses/Fence.rbxm
 assets/roblox/Structures/Fences/Fence.rbxmx
 ```
 
-Both are packaged at their original relative locations. Recursive catalog and
-build validation support nested folders and duplicate basenames. Each file
-contains its own Model; the `.rbxm` and `.rbxmx` formats cannot both define the
-same logical path. No flattening, automatic renaming, or GLB parser is involved.
+Both are packaged at their original relative locations. A file may alternatively
+contain one Folder root holding many Models organized in nested Folders. Run
+`node tools/build-editor-catalog.js` to inspect binary/XML hierarchy with Rojo and
+refresh both catalog and path index. Bundle filenames are physical mount names,
+not logical prefixes; filesystem folders above the file remain logical prefixes.
+Rojo receives the original bundle once. The index contains paths only, no geometry.
+`.rbxm` and `.rbxmx` files cannot both define the same logical path. Duplicate full
+paths fail rather than resolving arbitrary geometry. A Model is an asset boundary;
+nested Models within it retain their hierarchy and are not duplicate palette items.
+Rojo requires one top-level instance; select the enclosing Folder when exporting.
 
 The World Builder also recursively discovers Models in the actual Studio asset
 hierarchy on Connect and measures their bounds. Its authoring/export JSON stores

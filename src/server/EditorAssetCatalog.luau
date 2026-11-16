@@ -2,6 +2,7 @@
 -- are accepted by the battle server, and ServerStorage originals remain intact.
 local Paths=require(game.ReplicatedStorage.Shared.AssetPaths)
 local Catalog={}
+local Placement=require(game.ReplicatedStorage.Shared.ModelPlacement)
 function Catalog.publish(storage,replicated,metadata,http)
  local entries=http:JSONDecode(metadata.Value)
  local root=Instance.new("Folder"); root.Name="BattleWorksEditorAssets"
@@ -25,7 +26,7 @@ function Catalog.publish(storage,replicated,metadata,http)
      if not nextFolder then nextFolder=Instance.new("Folder");nextFolder.Name=segments[i];nextFolder.Parent=folder end
      folder=nextFolder
     end
-    copy.Name=segments[#segments];copy.Parent=folder;item.available=true
+    copy.Name=segments[#segments];copy.Parent=folder;item.available=true;item.stretchable=Placement.stretchPart(model)~=nil and not item.zone
    end)
    if not ok then if copy then copy:Destroy() end;item.available=false end
   end

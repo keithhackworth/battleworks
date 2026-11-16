@@ -32,7 +32,7 @@ function validate(input,items){
  if(!Array.isArray(input.objects)||input.objects.length>MaxObjects)fail('objects',`expected array of up to ${MaxObjects} objects`);
  const catalog=new Map(items.map(i=>[i.id,i])),ids=new Set();
  const objects=input.objects.map((o,index)=>{
-  const at=`objects[${index}] (${o?.id||'?'})`;keys(o,['id','type','asset','position','rotation','scale','solid','destructible','hp','bounds'],at);
+  const at=`objects[${index}] (${o?.id||'?'})`;keys(o,['id','type','asset','position','rotation','scale','stretch','solid','destructible','hp','bounds'],at);
   id(o.id,`${at}.id`);if(ids.has(o.id))fail(at,'duplicate object ID');ids.add(o.id);
   let type=catalog.get(o.type);
   if(o.asset!==undefined){
@@ -44,6 +44,7 @@ function validate(input,items){
   }
   if(!type)fail(`${at}.type`,`unknown catalog type '${o.type}'`);
   vector(o.position,3,-2000,2000,`${at}.position`);vector(o.rotation,3,-360000,360000,`${at}.rotation`);number(o.scale,.001,1000,`${at}.scale`);
+  if(o.stretch!==undefined){vector(o.stretch,3,.001,1000,`${at}.stretch`);if(!type.stretchable||type.zone)fail(at,'Stretch requires a native block asset');}
   if(type.zone&&(o.position[1]!==0||o.rotation[0]%360!==0||o.rotation[2]%360!==0))fail(at,'water/mud regions must stay level at ground height');
   if(Math.abs(o.position[0])>width/2||Math.abs(o.position[2])>depth/2)fail(at,'object center outside world bounds');
   bool(o.solid,`${at}.solid`);bool(o.destructible,`${at}.destructible`);number(o.hp,1,100000,`${at}.hp`);
@@ -55,22 +56,26 @@ function validate(input,items){
   if(Math.abs(b.x)+ex>width/2+.001||Math.abs(b.z)+ez>depth/2+.001)fail(at,'object footprint crosses world boundary');
   return result;
  });
- if(!Array.isArray(input.spawns)||input.spawns.length!==2)fail('spawns','exactly one Boomer and one Rattler spawn are required');
- const tanks=new Set();const spawns=input.spawns.map((p,index)=>{
-  const at=`spawns[${index}]`;keys(p,['id','tank','position','heading'],at);id(p.id,at+'.id');if(ids.has(p.id))fail(at,'duplicate object/spawn ID');ids.add(p.id);
-  if(!['Boomer','Rattler'].includes(p.tank)||tanks.has(p.tank))fail(at,'one unique spawn per tank is required');tanks.add(p.tank);
+ if(!Array.isArray(input.spawns)||input.spawns.length>5)fail('spawns','up to five numbered starting areas are supported');
+ const numbered=input.spawns.length===0||input.spawns[0].slot!==undefined;
+ if(!numbered&&input.spawns.length!==2)fail('spawns','legacy worlds require two tank spawns');
+ const seen=new Set();const spawns=input.spawns.map((p,index)=>{
+  const at=`spawns[${index}]`;keys(p,['id','tank','slot','position','heading'],at);id(p.id,at+'.id');if(ids.has(p.id))fail(at,'duplicate object/spawn ID');ids.add(p.id);
+  const key=numbered?p.slot:p.tank;
+  if((numbered?(!Number.isInteger(key)||key<1||key>5):!['Boomer','Rattler'].includes(key))||seen.has(key))fail(at,'duplicate or invalid starting position');seen.add(key);
   vector(p.position,3,-2000,2000,at+'.position');number(p.heading,-360000,360000,at+'.heading');
-  if(p.position[1]!==0||Math.abs(p.position[0])>width/2-7||Math.abs(p.position[2])>depth/2-7)fail(at,'spawn must rest on ground at least 7 studs inside boundary');
-  for(const o of objects)if(o.solid){const type=catalog.get(o.type),f=type.collider;const box=Geometry.box(o,[f.widthFraction,f.heightFraction,f.depthFraction]);if(Geometry.spawnHits(p.position,box))fail(at,`spawn intersects solid '${o.id}'`);}
+  const margin=numbered?20:7;
+  if(p.position[1]!==0||Math.abs(p.position[0])>width/2-margin||Math.abs(p.position[2])>depth/2-margin)fail(at,'starting area must fit on clear ground inside boundary');
+  for(const o of objects)if(o.solid){const type=catalog.get(o.type),f=type.collider;const box=Geometry.box(o,[f.widthFraction,f.heightFraction,f.depthFraction]);if(Geometry.spawnHits(p.position,box,numbered?20:6))fail(at,`spawn intersects solid '${o.id}'`);}
   return {...structuredClone(p),heading:((p.heading%360)+360)%360};
  });
- if(Math.hypot(spawns[0].position[0]-spawns[1].position[0],spawns[0].position[2]-spawns[1].position[2])<14)fail('spawns','tank spawns must be at least 14 studs apart');
- return {...structuredClone(input),objects:objects.sort((a,b)=>a.id.localeCompare(b.id)),spawns:spawns.sort((a,b)=>a.tank.localeCompare(b.tank))};
+ for(let i=0;i<spawns.length;i++)for(let j=0;j<i;j++)if(Math.hypot(spawns[i].position[0]-spawns[j].position[0],spawns[i].position[2]-spawns[j].position[2])<(numbered?40:14))fail('spawns','starting areas overlap');
+ return {...structuredClone(input),objects:objects.sort((a,b)=>a.id.localeCompare(b.id)),spawns:spawns.sort((a,b)=>numbered?a.slot-b.slot:a.tank.localeCompare(b.tank))};
 }
 function compileDocument(input,items){
  const document=validate(input,items),byId=new Map(items.map(i=>[i.id,i]));
  const definitions={},instances=[];
- document.objects.forEach(o=>{const i=byId.get(o.type);const ref='asset_'+createHash('sha256').update(i.model).digest('hex').slice(0,16);definitions[ref]={type:'model',asset:i.model};instances.push({id:o.id,ref,position:o.position,rotation:o.rotation,scale:o.scale,influences:{physical:{movable:false,destructible:o.destructible,hp:o.hp},movement:{collision:o.solid?'solid':'none',traversable:!o.solid}}});});
+ document.objects.forEach(o=>{const i=byId.get(o.type);const ref='asset_'+createHash('sha256').update(i.model).digest('hex').slice(0,16);definitions[ref]={type:'model',asset:i.model};instances.push({id:o.id,ref,position:o.position,rotation:o.rotation,scale:o.stretch?o.stretch.map(n=>n*o.scale):o.scale,influences:{physical:{movable:false,destructible:o.destructible,hp:o.hp},movement:{collision:o.solid?'solid':'none',traversable:!o.solid}}});});
  const manifest=compileWorld({version:1,id:document.id,name:document.name,seed:0,definitions,instances},{},{assetBindings:bindingsFor(items)});
  // Empty worlds are valid: ground and spawns are enough for a battle.
  manifest.builderSettings={...document.settings,spawns:document.spawns,zones:document.objects.filter(o=>byId.get(o.type).zone).map(o=>({kind:byId.get(o.type).zone,x:o.position[0],z:o.position[2],rx:o.bounds[0]*o.scale/2,rz:o.bounds[2]*o.scale/2,speed:byId.get(o.type).zone==='Water'?.9:.75}))};
@@ -82,7 +87,7 @@ function migrate(manifest,items,newId){
  if(!placements)fail('migration','legacy world contains unmapped assets, unsupported influences or nonuniform transforms');
  const used=new Set();doc.objects=placements.map((p,index)=>{
   const item=items.find(i=>i.model===p.model);let name=p.id.replace(/[^a-zA-Z0-9_-]/g,'_');if(!/^[a-zA-Z]/.test(name))name='object_'+name;name=name.slice(0,55);if(used.has(name))name+='_'+index;used.add(name);
-  return {id:name,type:item.id,asset:item.model,position:p.position,rotation:p.rotation,scale:p.scale,solid:p.interaction?.solid||false,destructible:p.interaction?.destructible||false,hp:p.interaction?.hp??100,...(item.size?{bounds:item.size}:{})};
+  return {id:name,type:item.id,asset:item.model,position:p.position,rotation:p.rotation,scale:p.scale,...(p.stretch?{stretch:p.stretch}:{}),solid:p.interaction?.solid||false,destructible:p.interaction?.destructible||false,hp:p.interaction?.hp??100,...(item.size?{bounds:item.size}:{})};
  });
  // Bounds for imported assets are measured when the plugin resolves templates.
  return doc;

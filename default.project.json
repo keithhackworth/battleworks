@@ -56,6 +56,14 @@
           "$className": "StringValue",
           "$properties": { "Value": "Http" }
         },
+        "TeamTestMode": {
+          "$className": "BoolValue",
+          "$properties": { "Value": false }
+        },
+        "TeamTestHostUserId": {
+          "$className": "StringValue",
+          "$properties": { "Value": "0" }
+        },
         "SelectedWorld": {
           "$path": "worlds/selected-world.model.json"
         },
@@ -73,6 +81,9 @@
         "$className": "Folder",
         "$ignoreUnknownInstances": true,
         "$path": "assets/roblox",
+        "__BattleWorksAssetIndex": {
+          "$path": "assets/asset-index.model.json"
+        },
         "Builtin": {
           "$path": "assets/builtin/catalog.model.json"
         }

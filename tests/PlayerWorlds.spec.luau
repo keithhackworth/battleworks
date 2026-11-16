@@ -35,6 +35,18 @@ check(not pcall(Adapter.validate,State.copy(doc),{unavailable},assets),"missing 
 local water=State.copy(item);water.zone="Water"
 local _,_,wet=Adapter.validate(State.copy(doc),{water},assets)
 check(wet.zones[1].rx==4 and wet.zones[1].speed==.9,"catalog environmental influences retained")
+local block={CFrame=CFrame.new(),Shape=Enum.PartType.Block}
+function block:IsA(kind)return kind=="Part" or kind=="BasePart"end
+function block:GetChildren()return {}end
+function oak:GetDescendants()return {block}end
+function oak:GetPivot()return CFrame.new()end
+local stretched=State.copy(doc);stretched.objects[1].stretch={1,1,2}
+local stretchDoc,stretchSpecs=Adapter.validate(stretched,{item},assets)
+check(stretchDoc.objects[1].stretch[3]==2 and stretchSpecs[1].stretch[3]==2,"server carries validated stretch through saved document and native placement")
+reject(function(v)v.objects[1].stretch={100,1,1}end,"stretch cannot bypass boundary validation with forged native bounds")
+reject(function(v)v.objects[1].stretch={1,0,2}end,"invalid stretch factors rejected")
+block.Shape=Enum.PartType.Ball
+reject(function(v)v.objects[1].stretch={1,1,2}end,"server inspects actual native geometry rather than trusting client stretch support")
 local data={};local failRead,failWrite=false,false
 local ds={GetAsync=function(_,key)assert(not failRead,"storage read failed");return State.copy(data[key])end,UpdateAsync=function(_,key,fn)
  assert(not failWrite,"storage write failed")
@@ -42,6 +54,10 @@ local ds={GetAsync=function(_,key)assert(not failRead,"storage read failed");ret
  fn(State.copy(data[key]));data[key]=State.copy(fn(State.copy(data[key])))
 end}
 local store=Store.new(ds,false,function()return "json"end)
+-- Launch fixtures use the new five player starting areas; legacy saves above
+-- remain covered for load/migration compatibility.
+normalized.spawns={}
+for i,p in {{-60,0,-60},{0,0,-60},{60,0,-60},{-60,0,60},{60,0,60}} do table.insert(normalized.spawns,{id="start_"..i,slot=i,position=p,heading=0}) end
 local saved=store:save(101,normalized,0)
 check(saved.revision==1 and #store:list(101)==1 and #store:list(102)==0,"private save/list keyed only by authenticated owner")
 check(not pcall(store.load,store,102,"forest"),"another player cannot open the owner's world")
@@ -88,7 +104,7 @@ check(not destination:request(alice,"Bootstrap").launch and installed==1,"duplic
 destination:remove(alice)
 check(not destination:canEnter(alice),"disconnect clears reserved admission")
 local studio=Service.new(options(true,false))
-result=studio:request(alice,"Save",{document=State.copy(doc),revision=0})
+result=studio:request(alice,"Save",{document=State.copy(normalized),revision=0})
 check(result.ok and result.temporary,"Studio save truthfully reports session-only persistence")
 occupied=true
 result=studio:request(alice,"Play",{id="forest",revision=1})
@@ -96,6 +112,16 @@ check(not result.ok and installed==1,"Studio cannot replace occupied battlefield
 occupied=false;time+=1
 result=studio:request(alice,"Play",{id="forest",revision=1})
 check(result.ok and result.launch and installed==2,"Studio tests through same validated installation path without teleport")
+local drafting=Service.new(options(true,false))
+for n=0,4 do
+ time+=1
+ local draft=State.copy(normalized);draft.id="unfinished";draft.spawns={}
+ for i=1,n do table.insert(draft.spawns,State.copy(normalized.spawns[i])) end
+ local savedDraft=drafting:request(alice,"Save",{document=draft,revision=n})
+ check(savedDraft.ok,"incomplete starting areas can be saved as a draft")
+ local denied=drafting:request(alice,"Play",{id=draft.id,revision=n+1})
+ check(not denied.ok and denied.message:find("five",1,true) and installed==2,"server denies Play with fewer than five starts")
+end
 local forged=Service.new(options(false,true));bob.GetJoinData=function()return {SourcePlaceId=55,TeleportData={battleWorksWorld=true,owner=101,id="forest",revision=2}}end
 forged:register(bob)
 check(not forged:request(bob,"Bootstrap").launch and not forged:canEnter(bob),"spoofed cross-owner launch cannot install a world")
@@ -109,4 +135,16 @@ local listed=durableStudio:request(alice,"List")
 check(listed.ok and listed.temporary==false and listed.storage=="Http","Studio mode with HTTP backend reports durable saves")
 durableStudio:remove(alice)
 check(#store:list(101)==10,"disconnect from HTTP-backed Studio never deletes saved worlds")
+local teamOptions=options(true,false);teamOptions.store=store;teamOptions.testHost=101
+local team=Service.new(teamOptions)
+check(not team:canEnter(alice) and not team:canEnter(bob),"Team Test waits for host installation")
+check(not team:request(bob,"List").ok and not team:request(bob,"Load","forest").ok,"test collaborators cannot list or load host saves")
+check(not team:request(bob,"Play",{id="forest",revision=2}).ok,"test collaborators cannot replace the shared world")
+local hostList=team:request(alice,"List")
+check(hostList.ok and hostList.teamTest and hostList.storage=="Http" and #hostList.worlds==10,"host sees existing Studio saves without migration")
+local hostPlay=team:request(alice,"Play",{id="forest",revision=2})
+check(hostPlay.ok and hostPlay.launch and installed==3,"host installs saved world in shared test server without teleport")
+check(team:canEnter(alice) and team:canEnter(bob),"collaborators can join installed test world")
+check(team:request(bob,"Bootstrap").launch==false,"collaborator bootstrap never reloads or teleports the world")
+team:remove(alice);check(team:canEnter(bob),"host disconnect does not invalidate an installed shared test")
 print(string.format("Player world validation, persistence and isolation passed: %d assertions",count))
