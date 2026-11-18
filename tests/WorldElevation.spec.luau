@@ -11,7 +11,7 @@ local function add(id,position,rotation,size)
  local frame=CFrame.new(box.position)*CFrame.Angles(math.rad(rotation[1]),math.rad(rotation[2]),math.rad(rotation[3]))
  local model={}
  function model:GetBoundingBox()return frame,Vector3.new(table.unpack(size))end
- function model:GetDescendants()return {}end
+ function model:GetDescendants()return {{Transparency=0,IsA=function(_,kind)return kind=="BasePart"end,CFrame=frame,Size=Vector3.new(table.unpack(size))}}end
  function model:SetAttribute()end
  return registry:add(model,{id=id,position=Vector3.new(table.unpack(position)),rotation=Vector3.new(table.unpack(rotation)),interaction={solid=true,destructible=true,hp=100,fractions=Vector3.new(1,1,1)}})
 end

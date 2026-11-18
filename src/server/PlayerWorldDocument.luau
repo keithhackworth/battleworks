@@ -5,6 +5,8 @@ local Document=require(Shared.WorldEditorDocument)
 local Settings=require(Shared.WorldSettings)
 local Paths=require(Shared.AssetPaths)
 local Placement=require(Shared.ModelPlacement)
+local Visual=require(Shared.AssetGeometry)
+local Fit=require(script.Parent.MeshCollisionFit)
 local Adapter={}
 local function keys(value,allowed)
  assert(type(value)=="table","Expected a world record")
@@ -37,16 +39,18 @@ function Adapter.validate(raw,items,assets)
   local item=catalog.byPath[object.asset]
   assert(item and item.id==object.type and item.available,"Asset is not available in this experience")
   local model=assert(Paths.resolve(assets,item.model),"Native asset unavailable")
-  local _,size=model:GetBoundingBox()
+  local _,size=Visual.measure(model)
   -- Never trust client-supplied dimensions for spawn/boundary validation.
   object.bounds={size.X,size.Y,size.Z}
   if object.stretch then array(object.stretch,3);item.stretchable=Placement.stretchPart(model)~=nil and not item.zone end
+  if item.collider and item.collider.fit=="mesh" then item.collider.boxes=Fit.profile(model) end
+  if item.collider then Visual.checkFaceProfile(size,item.collider)end
   Document.checkEntry(raw,catalog,object)
   local spec={id=object.id,asset=item.model,source=item.source,template=item.model,
    position=Vector3.new(table.unpack(object.position)),rotation=Vector3.new(table.unpack(object.rotation)),scale=object.scale,stretch=object.stretch}
   if item.collider then
    local c=item.collider
-   spec.interaction={solid=object.solid,destructible=object.destructible,hp=object.hp,fractions=Vector3.new(c.widthFraction,c.heightFraction,c.depthFraction)}
+   spec.interaction={solid=object.solid,destructible=object.destructible,hp=object.hp,fractions=Vector3.new(c.widthFraction,c.heightFraction,c.depthFraction),fit=c.fit,boxes=c.boxes,faces=c.faces,bases=c.bases,walls=c.walls,sourceSize=c.sourceSize}
   end
   table.insert(specs,spec)
   if item.zone then table.insert(settings.zones,{kind=item.zone,x=object.position[1],z=object.position[3],rx=size.X*object.scale/2,rz=size.Z*object.scale/2,speed=if item.zone=="Water" then .9 else .75}) end

@@ -91,3 +91,28 @@ test('reserved bundled built-ins never replace or duplicate generated built-in c
  assert.equal(items.filter(i=>i.model==='Builtin/BW_block').length,1);assert.equal(index.paths['Builtin/BW_block'],undefined);
  assert.equal(items.filter(i=>i.model==='Trees/Oak').length,1);
 });
+
+test('explicit irregular collision profiles propagate without shrinking buildings or changing asset identities',async t=>{
+ const {root}=await fixture(t);
+ const before=await catalogData(root);
+ await fs.writeFile(path.join(root,'worlds/asset-collision-profiles.json'),JSON.stringify({'Trees/Oak':{fit:'mesh'}}));
+ const after=await catalogData(root);
+ assert.deepEqual(after.items.map(i=>[i.id,i.model,i.defaultScale]),before.items.map(i=>[i.id,i.model,i.defaultScale]));
+ assert.equal(after.items.find(i=>i.model==='Trees/Oak').collider.fit,'mesh');
+ for(const item of after.items.filter(i=>i.model!=='Trees/Oak'))assert.equal(item.collider?.fit,undefined);
+ const {bindingsFor}=require('../tools/world-builder/catalog');
+ assert.equal(bindingsFor(after.items)[after.items.find(i=>i.model==='Trees/Oak').id].collider.fit,'mesh');
+ const oak=after.items.find(i=>i.model==='Trees/Oak');oak.size=[4,12,4];
+ const {fresh,compileDocument}=require('../tools/world-builder/document');
+ const document=fresh('profile_world');document.objects=[{id:'rock',type:oak.id,asset:oak.model,position:[0,0,-20],rotation:[0,37,0],scale:1,solid:true,destructible:false,hp:100}];
+ const compiled=compileDocument(document,after.items);
+ assert.equal(compiled.document.objects[0].fit,undefined,'collision implementation details never enter saved authoring objects');
+ assert.equal(compiled.document.objects[0].boxes,undefined);
+ const directory=path.join(root,'compiled');await fs.mkdir(directory);await fs.writeFile(path.join(directory,'profile_world.json'),JSON.stringify(compiled.manifest));
+ const worlds=await require('../tools/world/catalog').discoverWorlds(directory,bindingsFor(after.items));
+ const placement=worlds.Children.find(node=>node.Name==='profile_world').Children.find(node=>node.Name==='Placement');
+ assert.equal(placement.Children.find(node=>node.Name==='ColliderFit').Properties.Value,'mesh','native Studio runtime receives the trusted profile selector');
+ const profiles=JSON.parse(await fs.readFile(path.resolve(__dirname,'../worlds/asset-collision-profiles.json'),'utf8'));
+ assert.deepEqual(Object.keys(profiles).sort(),['Forest/rocks-high','Forest/rocks-low','Forest/rocks-ramp','Forest/stones']);
+ assert.ok(!Object.keys(profiles).filter(p=>profiles[p].fit==='mesh').some(p=>/bridge|building|ramp|Builtin/.test(p)));
+});

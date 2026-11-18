@@ -143,6 +143,7 @@ do
  local objects=Objects.new()
  local function platform(id,top,z,depth)
   local record={solid=true,destroyed=false,proxy={Parent=true},geometry=G.from({0,top-.2,z},{0,0,0},{30,.2,depth},1)}
+  record.geometries={record.geometry}
   objects.records[id]=record;return record
  end
  local deck=platform("bridge",12,-35,100)

@@ -49,9 +49,9 @@ function Document.checkEntry(doc,catalog,o)
  if o.solid then
   local f=item.collider
   local collider=Geometry.from(o.position,o.rotation,bounds,o.scale,{f.widthFraction,f.heightFraction,f.depthFraction})
-  for _,spawn in doc.spawns do
-   assert(not Geometry.spawnBlocked(collider,math.rad(o.rotation[2]),spawn.position,if spawn.slot then 20 else 6),"Solid object overlaps a reserved tank starting area")
-  end
+  for _,part in (if f.fit=="faces" then Geometry.faces(collider,f.faces,f.bases,f.walls) else Geometry.cells(collider,f.boxes)) do for _,spawn in doc.spawns do
+   assert(not Geometry.spawnBlocked(part,math.rad(o.rotation[2]),spawn.position,if spawn.slot then 20 else 6),"Solid object overlaps a reserved tank starting area")
+  end end
  end
  return true
 end

@@ -37,6 +37,8 @@ async function discoverWorlds(directory, bindings = {}) {
       if(placement.stretch)fields.push(value('Stretch',JSON.stringify(placement.stretch)));
       if (placement.interaction) {
         const v = placement.interaction;
+        if(v.collider.fit)fields.push(value('ColliderFit',v.collider.fit));
+        if(v.collider.fit==='faces')fields.push(value('ColliderFaces',JSON.stringify({faces:v.collider.faces,bases:v.collider.bases,walls:v.collider.walls,sourceSize:v.collider.sourceSize})));
         fields.push({ Name: 'Solid', ClassName: 'BoolValue', Properties: { Value: v.solid } },
           { Name: 'Destructible', ClassName: 'BoolValue', Properties: { Value: v.destructible } },
           { Name: 'Health', ClassName: 'NumberValue', Properties: { Value: v.hp } },

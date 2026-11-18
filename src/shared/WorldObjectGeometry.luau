@@ -36,13 +36,64 @@ function G.fromBox(frame,size)
  local box={position=frame.Position,right=frame.RightVector,up=frame.UpVector,back=frame.LookVector*-1,size=size}
  box.extents=G.extents(box);return box
 end
+function G.cells(box,cells)
+ if not cells then return {box} end
+ local out={}
+ for _,cell in cells do
+  local c,s=cell.center,cell.size
+  local b={position=box.position+box.right*(box.size.X*c[1])+box.up*(box.size.Y*c[2])+box.back*(box.size.Z*c[3]),right=box.right,up=box.up,back=box.back,size=Vector3.new(box.size.X*s[1],box.size.Y*s[2],box.size.Z*s[3])}
+  b.extents=G.extents(b);table.insert(out,b)
+ end
+ return out
+end
+function G.faces(box,faces,bases,walls)
+ local out={}
+ assert(type(faces)=="table" and #faces>0 and #faces<=512,"Invalid terrain face profile")
+ local entries={}
+ if bases then assert(#bases==#faces,"Invalid face base count")end
+ for i,face in faces do table.insert(entries,{face=face,base=if bases then bases[i] else -.5})end
+ if walls then assert(#walls<=2048,"Invalid wall count");for _,face in walls do table.insert(entries,{face=face,wall=true})end end
+ for _,entry in entries do
+  local face=entry.face
+  assert(type(face)=="table" and #face==3,"Invalid terrain triangle")
+  local vertices,points={},{}
+  for _,v in face do
+   assert(type(v)=="table" and #v==3,"Invalid terrain vertex")
+   for _,n in v do assert(type(n)=="number" and n==n and math.abs(n)<=.501,"Invalid terrain coordinate")end
+   local p=box.position+box.right*(v[1]*box.size.X)+box.up*(v[2]*box.size.Y)+box.back*(v[3]*box.size.Z)
+   table.insert(vertices,p);table.insert(points,p)
+   local base=if entry.wall then v[2] else entry.base
+   assert(type(base)=="number" and base==base and base>=-.501 and base<=v[2]+.001,"Invalid face underside")
+   table.insert(points,p-box.up*((v[2]-base)*box.size.Y))
+  end
+  local a,b=vertices[2]-vertices[1],vertices[3]-vertices[1]
+  local normal=Vector3.new(a.Y*b.Z-a.Z*b.Y,a.Z*b.X-a.X*b.Z,a.X*b.Y-a.Y*b.X)
+  -- Native Vector3 quantization can collapse microscopic details after a
+  -- small scale/large translation. Skip those zero-area faces, not the asset.
+  if normal.Magnitude>1e-12 then
+  local low,high={math.huge,math.huge,math.huge},{-math.huge,-math.huge,-math.huge}
+  for _,p in points do for i,n in {p.X,p.Y,p.Z}do low[i]=math.min(low[i],n);high[i]=math.max(high[i],n)end end
+  local center=Vector3.new((low[1]+high[1])/2,(low[2]+high[2])/2,(low[3]+high[3])/2)
+  table.insert(out,{position=center,extents=Vector3.new(high[1]-low[1],high[2]-low[2],high[3]-low[3])/2,up=normal/normal.Magnitude,vertices=vertices,points=points,wall=entry.wall})
+  end
+ end
+ return out
+end
+function G.topVertices(box)
+ if box.vertices then return box.vertices end
+ local top=box.position+box.up*(box.size.Y/2);local vertices={}
+ for _,corner in {{-1,-1},{1,-1},{1,1},{-1,1}}do table.insert(vertices,top+box.right*(corner[1]*box.size.X/2)+box.back*(corner[2]*box.size.Z/2))end
+ return vertices
+end
 function G.planar(box,yaw)
+ if box.vertices then local e=box.extents;return {x=box.position.X,z=box.position.Z,y=box.position.Y,hx=e.X,hz=e.Z,c=1,s=0,yaw=0,bottom=box.position.Y-e.Y,top=box.position.Y+e.Y}end
  local upright=math.abs(box.up.Y-1)<1e-6
+ yaw=if upright then math.atan2(-box.right.Z,box.right.X) else 0
  local extents=G.extents(box)
  return {x=box.position.X,z=box.position.Z,y=box.position.Y,
   hx=if upright then box.size.X/2 else extents.X,hz=if upright then box.size.Z/2 else extents.Z,
   c=if upright then math.cos(yaw) else 1,s=if upright then math.sin(yaw) else 0,
-  yaw=if upright then yaw else 0,bottom=box.position.Y-extents.Y,top=box.position.Y+extents.Y}
+  yaw=yaw,bottom=box.position.Y-extents.Y,top=box.position.Y+extents.Y}
 end
 function G.spawnBlocked(box,yaw,spawn,radius)
  local p=G.planar(box,yaw);radius=radius or 6
@@ -54,12 +105,26 @@ function G.planeHeight(box,x,z)
  -- Native CFrame components have float precision; an authored 45-degree face
  -- must not switch between walkable and non-walkable at the exact limit.
  if box.up.Y<G.MinSupportNormal-1e-6 then return nil end
- local top=box.position+box.up*(box.size.Y/2)
+ local top=if box.vertices then box.vertices[1] else box.position+box.up*(box.size.Y/2)
  return top.Y-(box.up.X*(x-top.X)+box.up.Z*(z-top.Z))/box.up.Y
 end
 local function topPoint(box,x,z,clamp)
  local y=G.planeHeight(box,x,z)
  if not y then return nil end
+ if box.vertices then
+  local sign,inside=0,true
+  local closest,distance=nil,math.huge
+  for i,a in box.vertices do
+   local b=box.vertices[i%#box.vertices+1];local dx,dz=b.X-a.X,b.Z-a.Z
+   local cross=dx*(z-a.Z)-dz*(x-a.X)
+   if math.abs(cross)>1e-7 then local nextSign=if cross>0 then 1 else -1;if sign~=0 and sign~=nextSign then inside=false end;sign=nextSign end
+   local denominator=dx*dx+dz*dz
+   local t=if denominator>1e-12 then math.clamp(((x-a.X)*dx+(z-a.Z)*dz)/denominator,0,1) else 0
+   local px,pz=a.X+t*dx,a.Z+t*dz;local d=(px-x)^2+(pz-z)^2
+   if d<distance then distance=d;closest=Vector3.new(px,G.planeHeight(box,px,pz),pz)end
+  end
+  return if inside then Vector3.new(x,y,z) elseif clamp then closest else nil
+ end
  local top=box.position+box.up*(box.size.Y/2)
  local delta=Vector3.new(x,y,z)-top
  local lx,lz=dot(delta,box.right),dot(delta,box.back)
@@ -75,6 +140,9 @@ end
 function G.canTraverse(box,position,radius,state)
  local e=box.extents;radius=radius or 0
  if e and (math.abs(position.X-box.position.X)>e.X+radius or math.abs(position.Z-box.position.Z)>e.Z+radius) then return false end
+ -- A short bevel/riser obeys the same step allowance as a short block. It
+ -- still supplies no walkable plane; the adjoining top must support the tank.
+ if box.vertices and box.up.Y<G.MinSupportNormal-1e-6 then return box.position.Y+e.Y<=position.Y+G.MaxStep+.001 end
  local point=topPoint(box,position.X,position.Z,true)
  local support=position.Y
  if point and state and state.surface=="Structure" and (state.lift or 0)<.001 then

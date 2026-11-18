@@ -100,10 +100,18 @@ function Environment.blocked(data,x,z,radius)
 end
 function Environment.pose(data,position,yaw,footprint)
  local shape=footprint or DefaultFootprint
+ local structural=data.worldObjects and data.worldObjects.footprintSupport
+ local structureHeight,structurePitch,structureRoll
+ if structural then
+  structureHeight,structurePitch,structureRoll=data.worldObjects:footprintSupport(position,yaw,shape)
+ end
  local length,width=shape.ContactLength,shape.ContactWidth
 	local x,z=position.X,position.Z
 	local s,c=math.sin(yaw),math.cos(yaw)
- local maxHeight=position.Y+WorldGeometry.MaxStep
+ -- Procedural rocks/logs keep their suspension sampling. Structural faces
+ -- have already been evaluated over the entire footprint; sampling them a
+ -- second time here would reintroduce the center/cross seam and cliff bug.
+ local maxHeight=if structural then nil else position.Y+WorldGeometry.MaxStep
  local points={{x,z},{x-s*length/2,z-c*length/2},{x+s*length/2,z+c*length/2},{x+c*width/2,z-s*width/2},{x-c*width/2,z+s*width/2}}
  local heights,surfaces={},{}
  local kind,speed
@@ -138,7 +146,9 @@ function Environment.pose(data,position,yaw,footprint)
   end
  end
  local center,front,rear,right,left=table.unpack(heights)
-	return math.max(center,(front+rear+right+left)/4), math.atan2(front-rear,length),
+ local terrainHeight=math.max(center,(front+rear+right+left)/4)
+ if structureHeight and structureHeight>=terrainHeight then return structureHeight,structurePitch,structureRoll,"Structure",1 end
+	return terrainHeight, math.atan2(front-rear,length),
 		math.atan2(right-left,width),kind,speed
 end
 return Environment

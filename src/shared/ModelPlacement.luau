@@ -1,5 +1,6 @@
 -- Native Studio-imported Model cloning only. No GLB parsing or asset downloads.
 local Paths=require(game.ReplicatedStorage.Shared.AssetPaths)
+local Visual=require(game.ReplicatedStorage.Shared.AssetGeometry)
 local Placement={}
 local nativeSizes=setmetatable({},{__mode="k"})
 function Placement.stretchPart(model)
@@ -31,7 +32,7 @@ function Placement.pose(model,templateScale,spec)
  end
  local r=spec.rotation
  model:PivotTo(CFrame.Angles(math.rad(r.X),math.rad(r.Y),math.rad(r.Z)))
- local bounds,size=model:GetBoundingBox()
+ local bounds,size=Visual.measure(model)
  local halfHeight=(math.abs(bounds.RightVector.Y)*size.X+math.abs(bounds.UpVector.Y)*size.Y+math.abs(bounds.LookVector.Y)*size.Z)/2
  local offset=Vector3.new(spec.position.X-bounds.Position.X,spec.position.Y-(bounds.Position.Y-halfHeight),spec.position.Z-bounds.Position.Z)
  model:PivotTo(CFrame.new(offset)*model:GetPivot())

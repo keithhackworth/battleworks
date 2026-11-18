@@ -10,6 +10,8 @@ assets.children={folder};folder.children={oak}
 function assets:FindFirstChild(name) if name=="Trees" then return folder end end
 function folder:FindFirstChild(name) if name=="Oak" then return oak end end
 function oak:GetBoundingBox() return CFrame.new(),Vector3.new(8,12,8) end
+local nativeVisual={IsA=function(_,kind)return kind=="BasePart"end}
+function oak:GetDescendants()return {nativeVisual}end
 local item={id="asset.oak",model="Trees/Oak",source="Trees/Oak.glb",available=true,collider={widthFraction=.5,heightFraction=.5,depthFraction=.5}}
 local doc=Document.fresh();doc.id="forest"
 doc.objects={{id="oak_1",type=item.id,asset=item.model,position={0,0,0},rotation={0,25,0},scale=1,solid=true,destructible=true,hp=150,bounds={.001,.001,.001}}}

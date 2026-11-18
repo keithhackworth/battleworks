@@ -1,0 +1,500 @@
+{
+  "version": 1,
+  "assets": [
+    {
+      "asset": "tree-large",
+      "packaged": true,
+      "source": "GLBs/suburban/tree-large.glb",
+      "fit": "faces",
+      "faces": 24,
+      "walls": 0
+    },
+    {
+      "asset": "rope-fence",
+      "packaged": false,
+      "source": "GLBs/forest/fence.glb",
+      "fit": "faces",
+      "faces": 158,
+      "walls": 20
+    },
+    {
+      "asset": "Forest/bridge",
+      "packaged": true,
+      "source": "GLBs/forest/bridge.glb",
+      "fit": "faces",
+      "faces": 132,
+      "walls": 120
+    },
+    {
+      "asset": "Forest/building-platform",
+      "packaged": true,
+      "source": "GLBs/forest/building-platform.glb",
+      "fit": "faces",
+      "faces": 238,
+      "walls": 32
+    },
+    {
+      "asset": "Forest/building-roof",
+      "packaged": true,
+      "source": "GLBs/forest/building-roof.glb",
+      "fit": "faces",
+      "faces": 166,
+      "walls": 20
+    },
+    {
+      "asset": "Forest/building-structure",
+      "packaged": true,
+      "source": "GLBs/forest/building-structure.glb",
+      "fit": "faces",
+      "faces": 36,
+      "walls": 72
+    },
+    {
+      "asset": "Forest/character-archer",
+      "packaged": true,
+      "source": "GLBs/forest/character-archer.glb",
+      "fit": "mesh",
+      "faces": 0,
+      "walls": 0,
+      "reason": "GLB collision profile: only static uncompressed triangle primitives are supported"
+    },
+    {
+      "asset": "Forest/fence",
+      "packaged": true,
+      "source": "GLBs/forest/fence.glb",
+      "fit": "faces",
+      "faces": 158,
+      "walls": 20
+    },
+    {
+      "asset": "Forest/flag",
+      "packaged": true,
+      "source": "GLBs/forest/flag.glb",
+      "fit": "faces",
+      "faces": 47,
+      "walls": 62
+    },
+    {
+      "asset": "Forest/ladder",
+      "packaged": true,
+      "source": "GLBs/forest/ladder.glb",
+      "fit": "faces",
+      "faces": 64,
+      "walls": 72
+    },
+    {
+      "asset": "Forest/patch-dirt",
+      "packaged": true,
+      "source": "GLBs/forest/patch-dirt.glb",
+      "fit": "faces",
+      "faces": 81,
+      "walls": 0
+    },
+    {
+      "asset": "Forest/patch-grass",
+      "packaged": true,
+      "source": "GLBs/forest/patch-grass.glb",
+      "fit": "faces",
+      "faces": 196,
+      "walls": 0
+    },
+    {
+      "asset": "Forest/plant",
+      "packaged": true,
+      "source": "GLBs/forest/plant.glb",
+      "fit": "faces",
+      "faces": 102,
+      "walls": 0
+    },
+    {
+      "asset": "Forest/platform",
+      "packaged": true,
+      "source": "GLBs/forest/platform.glb",
+      "fit": "faces",
+      "faces": 347,
+      "walls": 0
+    },
+    {
+      "asset": "Forest/rocks-high",
+      "packaged": true,
+      "source": "GLBs/forest/rocks-high.glb",
+      "fit": "faces",
+      "faces": 98,
+      "walls": 176
+    },
+    {
+      "asset": "Forest/rocks-low",
+      "packaged": true,
+      "source": "GLBs/forest/rocks-low.glb",
+      "fit": "faces",
+      "faces": 98,
+      "walls": 176
+    },
+    {
+      "asset": "Forest/rocks-ramp",
+      "packaged": true,
+      "source": "GLBs/forest/rocks-ramp.glb",
+      "fit": "faces",
+      "faces": 107,
+      "walls": 93
+    },
+    {
+      "asset": "Forest/stones",
+      "packaged": true,
+      "source": "GLBs/forest/stones.glb",
+      "fit": "faces",
+      "faces": 190,
+      "walls": 0
+    },
+    {
+      "asset": "Forest/target",
+      "packaged": true,
+      "source": "GLBs/forest/target.glb",
+      "fit": "faces",
+      "faces": 98,
+      "walls": 40
+    },
+    {
+      "asset": "Forest/tent",
+      "packaged": true,
+      "source": "GLBs/forest/tent.glb",
+      "fit": "faces",
+      "faces": 469,
+      "walls": 48
+    },
+    {
+      "asset": "Forest/tree",
+      "packaged": true,
+      "source": "GLBs/forest/tree.glb",
+      "fit": "faces",
+      "faces": 138,
+      "walls": 0
+    },
+    {
+      "asset": "Forest/tree-high",
+      "packaged": true,
+      "source": "GLBs/forest/tree-high.glb",
+      "fit": "faces",
+      "faces": 172,
+      "walls": 0
+    },
+    {
+      "asset": "Surburban/building-type-a",
+      "packaged": true,
+      "source": "GLBs/suburban/building-type-a.glb",
+      "fit": "faces",
+      "faces": 282,
+      "walls": 586
+    },
+    {
+      "asset": "Surburban/building-type-b",
+      "packaged": true,
+      "source": "GLBs/suburban/building-type-b.glb",
+      "fit": "faces",
+      "faces": 492,
+      "walls": 815
+    },
+    {
+      "asset": "Surburban/building-type-c",
+      "packaged": true,
+      "source": "GLBs/suburban/building-type-c.glb",
+      "fit": "faces",
+      "faces": 242,
+      "walls": 673
+    },
+    {
+      "asset": "Surburban/building-type-d",
+      "packaged": true,
+      "source": "GLBs/suburban/building-type-d.glb",
+      "fit": "faces",
+      "faces": 400,
+      "walls": 962
+    },
+    {
+      "asset": "Surburban/building-type-e",
+      "packaged": true,
+      "source": "GLBs/suburban/building-type-e.glb",
+      "fit": "faces",
+      "faces": 394,
+      "walls": 953
+    },
+    {
+      "asset": "Surburban/building-type-f",
+      "packaged": true,
+      "source": "GLBs/suburban/building-type-f.glb",
+      "fit": "faces",
+      "faces": 405,
+      "walls": 809
+    },
+    {
+      "asset": "Surburban/building-type-g",
+      "packaged": true,
+      "source": "GLBs/suburban/building-type-g.glb",
+      "fit": "faces",
+      "faces": 314,
+      "walls": 479
+    },
+    {
+      "asset": "Surburban/building-type-h",
+      "packaged": true,
+      "source": "GLBs/suburban/building-type-h.glb",
+      "fit": "faces",
+      "faces": 252,
+      "walls": 352
+    },
+    {
+      "asset": "Surburban/building-type-i",
+      "packaged": true,
+      "source": "GLBs/suburban/building-type-i.glb",
+      "fit": "faces",
+      "faces": 192,
+      "walls": 404
+    },
+    {
+      "asset": "Surburban/building-type-j",
+      "packaged": true,
+      "source": "GLBs/suburban/building-type-j.glb",
+      "fit": "faces",
+      "faces": 287,
+      "walls": 655
+    },
+    {
+      "asset": "Surburban/building-type-k",
+      "packaged": true,
+      "source": "GLBs/suburban/building-type-k.glb",
+      "fit": "faces",
+      "faces": 236,
+      "walls": 560
+    },
+    {
+      "asset": "Surburban/building-type-l",
+      "packaged": true,
+      "source": "GLBs/suburban/building-type-l.glb",
+      "fit": "faces",
+      "faces": 327,
+      "walls": 691
+    },
+    {
+      "asset": "Surburban/building-type-m",
+      "packaged": true,
+      "source": "GLBs/suburban/building-type-m.glb",
+      "fit": "faces",
+      "faces": 295,
+      "walls": 544
+    },
+    {
+      "asset": "Surburban/building-type-n",
+      "packaged": true,
+      "source": "GLBs/suburban/building-type-n.glb",
+      "fit": "faces",
+      "faces": 377,
+      "walls": 873
+    },
+    {
+      "asset": "Surburban/building-type-o",
+      "packaged": true,
+      "source": "GLBs/suburban/building-type-o.glb",
+      "fit": "faces",
+      "faces": 428,
+      "walls": 614
+    },
+    {
+      "asset": "Surburban/building-type-p",
+      "packaged": true,
+      "source": "GLBs/suburban/building-type-p.glb",
+      "fit": "faces",
+      "faces": 325,
+      "walls": 701
+    },
+    {
+      "asset": "Surburban/building-type-q",
+      "packaged": true,
+      "source": "GLBs/suburban/building-type-q.glb",
+      "fit": "faces",
+      "faces": 268,
+      "walls": 626
+    },
+    {
+      "asset": "Surburban/building-type-r",
+      "packaged": true,
+      "source": "GLBs/suburban/building-type-r.glb",
+      "fit": "faces",
+      "faces": 288,
+      "walls": 500
+    },
+    {
+      "asset": "Surburban/building-type-s",
+      "packaged": true,
+      "source": "GLBs/suburban/building-type-s.glb",
+      "fit": "faces",
+      "faces": 297,
+      "walls": 604
+    },
+    {
+      "asset": "Surburban/building-type-t",
+      "packaged": true,
+      "source": "GLBs/suburban/building-type-t.glb",
+      "fit": "faces",
+      "faces": 445,
+      "walls": 1171
+    },
+    {
+      "asset": "Surburban/building-type-u",
+      "packaged": true,
+      "source": "GLBs/suburban/building-type-u.glb",
+      "fit": "faces",
+      "faces": 398,
+      "walls": 604
+    },
+    {
+      "asset": "Surburban/driveway-long",
+      "packaged": true,
+      "source": "GLBs/suburban/driveway-long.glb",
+      "fit": "faces",
+      "faces": 6,
+      "walls": 4
+    },
+    {
+      "asset": "Surburban/driveway-short",
+      "packaged": true,
+      "source": "GLBs/suburban/driveway-short.glb",
+      "fit": "faces",
+      "faces": 6,
+      "walls": 4
+    },
+    {
+      "asset": "Surburban/fence",
+      "packaged": true,
+      "source": "GLBs/suburban/fence.glb",
+      "fit": "faces",
+      "faces": 18,
+      "walls": 52
+    },
+    {
+      "asset": "Surburban/fence-1x2",
+      "packaged": true,
+      "source": "GLBs/suburban/fence-1x2.glb",
+      "fit": "faces",
+      "faces": 32,
+      "walls": 92
+    },
+    {
+      "asset": "Surburban/fence-1x3",
+      "packaged": true,
+      "source": "GLBs/suburban/fence-1x3.glb",
+      "fit": "faces",
+      "faces": 42,
+      "walls": 120
+    },
+    {
+      "asset": "Surburban/fence-1x4",
+      "packaged": true,
+      "source": "GLBs/suburban/fence-1x4.glb",
+      "fit": "faces",
+      "faces": 52,
+      "walls": 148
+    },
+    {
+      "asset": "Surburban/fence-2x2",
+      "packaged": true,
+      "source": "GLBs/suburban/fence-2x2.glb",
+      "fit": "faces",
+      "faces": 48,
+      "walls": 140
+    },
+    {
+      "asset": "Surburban/fence-2x3",
+      "packaged": true,
+      "source": "GLBs/suburban/fence-2x3.glb",
+      "fit": "faces",
+      "faces": 58,
+      "walls": 168
+    },
+    {
+      "asset": "Surburban/fence-3x2",
+      "packaged": true,
+      "source": "GLBs/suburban/fence-3x2.glb",
+      "fit": "faces",
+      "faces": 64,
+      "walls": 188
+    },
+    {
+      "asset": "Surburban/fence-3x3",
+      "packaged": true,
+      "source": "GLBs/suburban/fence-3x3.glb",
+      "fit": "faces",
+      "faces": 74,
+      "walls": 216
+    },
+    {
+      "asset": "Surburban/fence-low",
+      "packaged": true,
+      "source": "GLBs/suburban/fence-low.glb",
+      "fit": "faces",
+      "faces": 36,
+      "walls": 108
+    },
+    {
+      "asset": "Surburban/path-long",
+      "packaged": true,
+      "source": "GLBs/suburban/path-long.glb",
+      "fit": "faces",
+      "faces": 6,
+      "walls": 4
+    },
+    {
+      "asset": "Surburban/path-short",
+      "packaged": true,
+      "source": "GLBs/suburban/path-short.glb",
+      "fit": "faces",
+      "faces": 6,
+      "walls": 4
+    },
+    {
+      "asset": "Surburban/path-stones-long",
+      "packaged": true,
+      "source": "GLBs/suburban/path-stones-long.glb",
+      "fit": "faces",
+      "faces": 40,
+      "walls": 0
+    },
+    {
+      "asset": "Surburban/path-stones-messy",
+      "packaged": true,
+      "source": "GLBs/suburban/path-stones-messy.glb",
+      "fit": "faces",
+      "faces": 30,
+      "walls": 0
+    },
+    {
+      "asset": "Surburban/path-stones-short",
+      "packaged": true,
+      "source": "GLBs/suburban/path-stones-short.glb",
+      "fit": "faces",
+      "faces": 20,
+      "walls": 0
+    },
+    {
+      "asset": "Surburban/planter",
+      "packaged": true,
+      "source": "GLBs/suburban/planter.glb",
+      "fit": "faces",
+      "faces": 98,
+      "walls": 48
+    },
+    {
+      "asset": "Surburban/tree-small",
+      "packaged": true,
+      "source": "GLBs/suburban/tree-small.glb",
+      "fit": "faces",
+      "faces": 24,
+      "walls": 0
+    }
+  ],
+  "summary": {
+    "processed": 61,
+    "faces": 60,
+    "sampled": 1,
+    "unavailable": 1
+  }
+}

@@ -92,6 +92,22 @@ local body=controller.scene.models[first.id].model:FindFirstChild("Trunk")
 check(not body.CanCollide and body.CanQuery and body.Parent.Parent==controller.scene.root,"selectable editor geometry never enters Workspace collision")
 local box,size=controller.scene.models[first.id].model:GetBoundingBox()
 check(math.abs(box.Position.X-first.position[1])<1e-6 and math.abs(box.Position.Y-size.Y/2)<1e-6,"editor uses the production placement helper's exact grounding")
+-- Imported rock/building surfaces below the outer top face are valid snap
+-- targets. Builtin ramps/platforms continue to use their established face math.
+do
+ local scene=controller.scene;local savedRaycast=scene.world.Raycast
+ local hitPoint=Vector3.new(first.position[1],1,first.position[3])
+ for _,normal in {Vector3.new(0,1,0),Vector3.new(0,0,1)}do
+  scene.world.Raycast=function()return {Instance=body,Position=hitPoint,Normal=normal}end
+  local target=scene:snapTarget(Vector3.new(0,60,0),Vector3.new(0,-1,0),second.id)
+  check(target and target.kind=="surface" and target.point[2]==1 and target.normal[3]==normal.Z,"imported irregular rock and building sides snap at the actual native query surface")
+ end
+ local record=scene.models[first.id];local originalAsset=record.entry.asset
+ record.entry.asset="Builtin/BW_block"
+ local target=scene:snapTarget(Vector3.new(0,60,0),Vector3.new(0,-1,0),second.id)
+ check(not target,"builtin snapping does not change to side-surface behavior")
+ record.entry.asset=originalAsset;scene.world.Raycast=savedRaycast
+end
 -- A geometry-based query double: unlike an unconditional mocked hit, a wrong
 -- camera ray really misses. Use a nonzero Roblox top-bar inset and viewport offset.
 local Math=require("WorldEditorMath")
@@ -420,12 +436,41 @@ controller:setMode("Snap")
 controller.view.snapContact.Activated:Fire()
 check(controller.fitMode=="Stretch" and controller.view.snapContact.Text=="Scale / [Stretch]","left button selects Stretch")
 controller:beginSnap("C",selected)
-check(not controller.gesture,"unsupported mesh assets cannot enter stretch gesture")
-controller.view.snapContact.Activated:Fire()
-check(controller.fitMode=="Scale","left button switches back to Scale")
+check(controller.gesture and controller.fitMode=="Scale","imported meshes can snap by falling back from unsupported stretch to proportional scale")
+controller:finishGesture(true);selected=controller:selected()
+check(controller.fitMode=="Scale","mesh snap fallback keeps Scale selected")
 local endpointPixel=Math.project(controller.scene.camera.CFrame,controller.view.viewport.AbsoluteSize,controller.scene.snapEnds.A.CFrame.Position,controller.scene.camera.FieldOfView)
 local _,snapHandle=controller.scene:pick(Vector3.new(0,60,100),Vector3.new(0,-1,0),endpointPixel,controller.view.viewport.AbsoluteSize)
 check(snapHandle=="SnapA","endpoint pixel picking takes priority over model body")
+do
+ local scene=controller.scene;local savedRaycast=scene.world.Raycast;local savedPointer=controller.pointer
+ local savedCamera=scene.camera.CFrame
+ local center=scene.models[first.id].model:GetBoundingBox().Position
+ scene.camera.CFrame=CFrame.lookAt(center+Vector3.new(0,12,18),center)
+ local occluder=scene.models[second.id].model:FindFirstChild("Trunk")
+ local bodyQueries=0
+ scene.world.Raycast=function(_,_,_,params)
+  if params.FilterDescendantsInstances[1]==scene.root then bodyQueries+=1;return {Instance=occluder}end
+ end
+ for _,endpoint in {"A","B","C","D"}do
+  for _,offset in {Vector2.zero,Vector2.new(0,-23)}do
+   controller.state:select(first.id);controller:refresh()
+   local pixel=Math.project(scene.camera.CFrame,controller.view.viewport.AbsoluteSize,scene.snapEnds[endpoint].CFrame.Position,scene.camera.FieldOfView)+offset
+   controller.pointer=function()return Vector3.zero,Vector3.new(0,60,100),Vector3.new(0,-1,0),controller.view.viewport.AbsolutePosition+pixel end
+   controller:begin(nativeClick,false)
+   check(controller:selected().id==first.id and controller.gesture and controller.gesture.id==first.id and controller.gesture.endpoint==endpoint,"buried snap sphere and its offset label start the selected object's correct endpoint drag: "..endpoint.." "..offset.Y.." got "..tostring(controller.gesture and controller.gesture.endpoint))
+   controller:finishGesture(true)
+  end
+ end
+ check(bodyQueries==0,"selected snap handle and label clicks never fall through to overlapping object selection")
+ local id=scene:pick(Vector3.new(0,60,100),Vector3.new(0,-1,0),Vector2.new(2,2),controller.view.viewport.AbsoluteSize)
+ check(id==second.id,"clicking away from handles still selects another overlapping object normally")
+ controller:setMode("Move")
+ local pixel=Math.project(scene.camera.CFrame,controller.view.viewport.AbsoluteSize,scene.snapEnds.A.CFrame.Position,scene.camera.FieldOfView)+Vector2.new(0,-23)
+ id=scene:pick(Vector3.new(0,60,100),Vector3.new(0,-1,0),pixel,controller.view.viewport.AbsoluteSize)
+ check(id==second.id,"hidden snap labels cannot steal clicks outside Snap mode")
+ scene.camera.CFrame=savedCamera;scene.world.Raycast=savedRaycast;controller.pointer=savedPointer;controller:setMode("Snap");selected=controller:selected()
+end
 controller:pinHere("A")
 local pinned=State.copy(controller.state.pins[first.id])
 check(pinned and pinned.side==0,"pin action records selected corner contact")

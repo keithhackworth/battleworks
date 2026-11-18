@@ -11,7 +11,7 @@ const ROOT=path.resolve(__dirname,'..');
 test('packaged in-game catalog is generated from the existing asset catalog',async()=>{
  const metadata=JSON.parse(await fs.readFile(path.join(ROOT,'assets/editor-catalog.model.json'),'utf8'));
  assert.equal(metadata.ClassName,'StringValue');
- assert.deepEqual(JSON.parse(metadata.Properties.Value),await catalog(ROOT));
+ assert.deepEqual(require('../tools/catalog-chunks').decodeCatalogModel(metadata),await catalog(ROOT));
  const project=JSON.parse(await fs.readFile(path.join(ROOT,'default.project.json'),'utf8'));
  assert.equal(project.tree.ServerStorage.BattleWorksStudio.EditorAssetCatalog.$path,'assets/editor-catalog.model.json');
 });

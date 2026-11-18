@@ -1,0 +1,7 @@
+{
+  "enabled": true,
+  "sourceFolders": {
+    "Forest": "GLBs/forest",
+    "Surburban": "GLBs/suburban"
+  }
+}

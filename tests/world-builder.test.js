@@ -79,3 +79,20 @@ test('numbered three-tank starting areas persist and reserve full ground clearan
  bad.spawns=structuredClone(d.spawns);bad.spawns[0].position=[100,0,-60];assert.throws(()=>validate(bad,items),/inside boundary/);
  bad.spawns=structuredClone(d.spawns);bad.objects=[object({position:[-45,0,-60]})];assert.throws(()=>validate(bad,items),/intersects/);
 });
+
+test('fitted imported collision cells preserve rotated spawn clearance without changing visual bounds',()=>{
+ const Geometry=require('../tools/world-builder/geometry');
+ for(const rotation of [[0,0,0],[0,90,0],[15,37,-10]]){
+  const o={bounds:[40,20,60],scale:1.5,rotation,position:[10,4,-20]};
+  const outer=Geometry.box(o,[1,1,1]);
+  const cells=Geometry.cells(outer,[{center:[0,0,0],size:[.25,1,.25]}]);
+  assert.equal(cells.length,1);assert.deepEqual(cells[0].size,[15,30,22.5]);
+  assert.deepEqual(cells[0].center,outer.center);
+  assert.deepEqual(Geometry.cells(outer),[outer],'unprofiled buildings and builtins retain the whole box');
+ }
+ const outer=Geometry.box({bounds:[80,20,80],scale:1,rotation:[0,90,0],position:[0,0,0]},[1,1,1]);
+ const [cell]=Geometry.cells(outer,[{center:[0,0,0],size:[.5,1,.5]}]);
+ assert.equal(Geometry.spawnHits([37,0,37],outer,1),true);
+ assert.equal(Geometry.spawnHits([37,0,37],cell,1),false);
+ assert.equal(Geometry.spawnHits([0,0,0],cell,1),true);
+});

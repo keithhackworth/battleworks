@@ -15,11 +15,14 @@ local function typed(parent,name,class)
 end
 local function placement(source)
  local stretch
+ local profile
+ local faces=text(source,"ColliderFaces")
+ if faces then profile=game:GetService("HttpService"):JSONDecode(faces)end
  local raw=text(source,"Stretch")
  if raw then local ok,value=pcall(function()return game:GetService("HttpService"):JSONDecode(raw)end);if ok then stretch=value end end
  return {id=text(source,"InstanceId"),asset=text(source,"AssetId"),source=text(source,"Source"),template=text(source,"Template"),
   position=typed(source,"Position","Vector3Value"),rotation=typed(source,"Rotation","Vector3Value"),scale=typed(source,"Scale","NumberValue"),stretch=stretch,
-  interaction=if child(source,"Solid") then {solid=typed(source,"Solid","BoolValue"),destructible=typed(source,"Destructible","BoolValue"),hp=typed(source,"Health","NumberValue"),fractions=typed(source,"ColliderFractions","Vector3Value")} else nil}
+  interaction=if child(source,"Solid") then {solid=typed(source,"Solid","BoolValue"),destructible=typed(source,"Destructible","BoolValue"),hp=typed(source,"Health","NumberValue"),fractions=typed(source,"ColliderFractions","Vector3Value"),fit=text(source,"ColliderFit"),faces=profile and profile.faces,bases=profile and profile.bases,walls=profile and profile.walls,sourceSize=profile and profile.sourceSize} else nil}
 end
 function Selector.catalog(configuration)
  local records={table.clone(DEFAULT)}
@@ -85,6 +88,13 @@ function Selector.start(runService,storage,arena,log,productionId)
  local result=Selector.resolve(productionId or text(configuration,"SelectedWorld"),records,true,function(spec,settings)
   local candidate=WorldObjects.new()
   local specs=if spec.id then {spec} else spec
+  -- Fit source templates once, not every rotated/scaled placement of a rock.
+  for _,p in specs do
+   if p.interaction and p.interaction.fit=="mesh" then
+    local template=require(game.ReplicatedStorage.Shared.AssetPaths).resolve(child(storage,"BattleWorksAssets"),p.template)
+    if template then p.interaction.boxes=require(script.Parent.MeshCollisionFit).profile(template) end
+   end
+  end
   local models,reason=Placement.placeMany(child(storage,"BattleWorksAssets"),specs,arena,function(model,p)
    if p.interaction then candidate:add(model,p) end
    if settings then WorldSettings.checkSpawns(settings,candidate:obstacles()) end

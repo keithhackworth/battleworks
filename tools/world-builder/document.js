@@ -66,7 +66,7 @@ function validate(input,items){
   vector(p.position,3,-2000,2000,at+'.position');number(p.heading,-360000,360000,at+'.heading');
   const margin=numbered?20:7;
   if(p.position[1]!==0||Math.abs(p.position[0])>width/2-margin||Math.abs(p.position[2])>depth/2-margin)fail(at,'starting area must fit on clear ground inside boundary');
-  for(const o of objects)if(o.solid){const type=catalog.get(o.type),f=type.collider;const box=Geometry.box(o,[f.widthFraction,f.heightFraction,f.depthFraction]);if(Geometry.spawnHits(p.position,box,numbered?20:6))fail(at,`spawn intersects solid '${o.id}'`);}
+  for(const o of objects)if(o.solid){const type=catalog.get(o.type),f=type.collider;const box=Geometry.box(o,[f.widthFraction,f.heightFraction,f.depthFraction]);if((f.fit==='faces'?Geometry.faces(box,f.faces,f.bases,f.walls):Geometry.cells(box,f.boxes)).some(cell=>Geometry.spawnHits(p.position,cell,numbered?20:6)))fail(at,`spawn intersects solid '${o.id}'`);}
   return {...structuredClone(p),heading:((p.heading%360)+360)%360};
  });
  for(let i=0;i<spawns.length;i++)for(let j=0;j<i;j++)if(Math.hypot(spawns[i].position[0]-spawns[j].position[0],spawns[i].position[2]-spawns[j].position[2])<(numbered?40:14))fail('spawns','starting areas overlap');

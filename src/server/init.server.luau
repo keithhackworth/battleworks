@@ -555,7 +555,7 @@ if editorMetadata then
   local teleport=if not studio then game:GetService("TeleportService") else nil
   playerWorlds=require(script.PlayerWorldService).new({
    studio=studio,reserved=context.reserved,testHost=context.testHost,
-   placeId=game.PlaceId,http=http,items=http:JSONDecode(library:FindFirstChild("Catalog").Value),assets=storage:FindFirstChild("BattleWorksAssets"),
+   placeId=game.PlaceId,http=http,items=require(Shared.CatalogData).decode(library:FindFirstChild("Catalog"),http),assets=storage:FindFirstChild("BattleWorksAssets"),
    store=require(script.PlayerWorldStorage).create(http,studioConfiguration,studio,context),
    isPresent=function(player) return sessions[player.UserId]~=nil end,
    inBattle=function(player) return battles[player.UserId]~=nil end,

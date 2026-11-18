@@ -3,6 +3,7 @@ local State=require(Shared.WorldEditorState)
 local Document=require(Shared.WorldEditorDocument)
 local Math=require(Shared.WorldEditorMath)
 local Snap=require(Shared.WorldEditorSnap)
+local Visual=require(Shared.AssetGeometry)
 local View=require(script.Parent.WorldEditorView)
 local Scene=require(script.Parent.WorldEditorScene)
 local UIS=game:GetService("UserInputService")
@@ -118,7 +119,7 @@ function Controller:loadCatalog()
  if not context.editorAssets then return false end
  local data=context.editorAssets:FindFirstChild("Catalog")
  if not data then return false end
- local ok,items=pcall(function() return Http:JSONDecode(data.Value) end)
+ local ok,items=pcall(function() return require(Shared.CatalogData).decode(data,Http,true) end)
  if ok then self.catalog=Document.catalog(items) else self.view:message("Catalog could not be read: "..tostring(items)) end
  return ok
 end
@@ -266,7 +267,7 @@ function Controller:beginSnap(endpoint,entry)
  if self.catalog.byPath[entry.asset].zone then self.view:message("Ground regions cannot be fitted.");return end
  local side=0
  local opposite=Snap.opposite(endpoint)
- if self.fitMode=="Stretch" and not self.catalog.byPath[entry.asset].stretchable then self.view:message("Stretch supports native block assets. Choose Scale for this asset.");return end
+ if self.fitMode=="Stretch" and not self.catalog.byPath[entry.asset].stretchable then self.fitMode="Scale" end
  local ends,box=Snap.ends(entry,side)
  local fixed=if pin and pin.endpoint==opposite then State.copy(pin) elseif pin and pin.second and pin.second.endpoint==opposite then State.copy(pin.second) else Snap.pin(opposite,{point={ends[opposite].X,ends[opposite].Y,ends[opposite].Z},normal={box.up.X,box.up.Y,box.up.Z},kind="position"},side)
  fixed.second=nil
@@ -327,7 +328,7 @@ function Controller:begin(input,processed)
   local before=self.state:snapshot()
   if kind:sub(1,4)=="Move" then pin=nil end
   if pin then pin=State.copy(pin);pin.second=nil end
-  local pivot=if pin then Vector3.new(table.unpack(pin.point)) elseif kind:sub(1,6)=="Rotate" then self.scene.models[entry.id].model:GetBoundingBox().Position else nil
+  local pivot=if pin then Vector3.new(table.unpack(pin.point)) elseif kind:sub(1,6)=="Rotate" then Visual.measure(self.scene.models[entry.id].model).Position else nil
   local start=Math.dragPoint(kind,entry,origin,direction,self.scene.camera.CFrame,pivot)
   if not start then self.view:message("Orbit the camera slightly to face this rotation ring, then drag again.");return end
   self.state.pins[entry.id]=State.copy(pin)

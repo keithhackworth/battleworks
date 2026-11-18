@@ -92,6 +92,10 @@ try {
     ['StartingPositions'],
     ['WorldTestContext'],
     ['TeamWorldServerIntegration'],
+    ['ImportedGeometry'],
+    ['FootprintSupport'],
+    ['TerrainFaces'],
+    ['BulkAssetCollision'],
   ];
   if (groupIndex === null) {
     const worldTests = spawnSync(process.execPath, ['--test', 'tests/world-compiler.test.js', 'tests/asset-persistence.test.js', 'tests/world-builder.test.js', 'tests/asset-paths.test.js', 'tests/ingame-editor.test.js'], { stdio: 'inherit' });
@@ -107,11 +111,24 @@ try {
     if (!group) throw new Error('Invalid test group');
     let tests = '';
     for (const suite of group) {
-      if (suite === 'StudioAssetPlacement' || suite === 'WorldObjects' || suite === 'InGameEditorRuntime' || suite === 'PlayerWorlds' || suite === 'WorldElevation' || suite === 'StartingPositions') {
+      if (suite === 'StudioAssetPlacement' || suite === 'WorldObjects' || suite === 'InGameEditorRuntime' || suite === 'PlayerWorlds' || suite === 'WorldElevation' || suite === 'StartingPositions' || suite === 'ImportedGeometry' || suite === 'FootprintSupport' || suite === 'TerrainFaces' || suite === 'BulkAssetCollision') {
         const harness = await readFile('tests/ServerIntegration.spec.luau', 'utf8');
         const marker = 'Vector3.one=';
         if (!harness.includes(marker)) throw new Error('Transform harness marker changed');
         tests += '\ndo\n' + harness.slice(0, harness.indexOf(marker));
+        if(suite==='TerrainFaces'){
+          const {loadFaces}=await import(pathToFileURL(resolve('tools/glb-collision.js')).href);
+          const profile=await loadFaces('GLBs/forest/rocks-ramp.glb');
+          const lua=v=>Array.isArray(v)?'{'+v.map(lua).join(',')+'}':JSON.stringify(v);
+          tests+='\nlocal nativeProfile={faces='+lua(profile.faces)+',sourceSize='+lua(profile.sourceSize)+'}\n';
+        }
+        if(suite==='BulkAssetCollision'){
+          const {decodeCatalogModel}=await import(pathToFileURL(resolve('tools/catalog-chunks.js')).href);
+          const items=decodeCatalogModel(JSON.parse(await readFile('assets/editor-catalog.model.json','utf8')));
+          const selected=items.filter(i=>['Forest/bridge','Forest/fence','Surburban/fence','Surburban/building-type-a'].includes(i.model));
+          const lua=v=>v===null?'nil':typeof v==='object'?(Array.isArray(v)?'{'+v.map(lua).join(',')+'}':'{'+Object.entries(v).map(([k,n])=>'['+JSON.stringify(k)+']='+lua(n)).join(',')+'}'):JSON.stringify(v);
+          tests+='\nlocal bulkItems='+lua(selected)+'\n';
+        }
         tests += await readFile(`tests/${suite}.spec.luau`, 'utf8') + '\nend\n';
       } else if (suite === 'BuilderServerIntegration' || suite === 'BuilderPublishedIntegration' || suite === 'PlayerWorldServerIntegration' || suite === 'PlayerWorldPublishedIntegration' || suite === 'TeamWorldServerIntegration') {
         const {default:doc}=await import(pathToFileURL(resolve('tools/world-builder/document.js')).href);

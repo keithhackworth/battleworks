@@ -1,0 +1,15 @@
+{
+  "Forest/rocks-high": {
+    "fit": "mesh"
+  },
+  "Forest/rocks-low": {
+    "fit": "mesh"
+  },
+  "Forest/stones": {
+    "fit": "mesh"
+  },
+  "Forest/rocks-ramp": {
+    "fit": "faces",
+    "source": "GLBs/forest/rocks-ramp.glb"
+  }
+}

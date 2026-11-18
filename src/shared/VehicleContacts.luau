@@ -9,6 +9,21 @@ local function extent(r,x,z)
  local ax,az,bx,bz=axes(r)
  return math.abs(dot(ax,az,x,z))*r.halfX+math.abs(dot(bx,bz,x,z))*r.halfZ
 end
+local function polygonAxes(a,b)
+ local ax,az,bx,bz=axes(a);local out={{ax,az},{bx,bz}}
+ for i,p in b.polygon do
+  local q=b.polygon[i%#b.polygon+1];local x,z=q.z-p.z,p.x-q.x;local length=math.sqrt(x*x+z*z)
+  if length>1e-9 then table.insert(out,{x/length,z/length})end
+ end
+ return out
+end
+local function interval(r,x,z)
+ local center=dot(r.state.position.X,r.state.position.Z,x,z)
+ if not r.polygon then local radius=extent(r,x,z);return center-radius,center+radius end
+ local low,high=math.huge,-math.huge
+ for _,p in r.polygon do local d=center+dot(p.x,p.z,x,z);low=math.min(low,d);high=math.max(high,d)end
+ return low,high
+end
 local function vertical(a,b)
  if b.surface and WorldGeometry.canTraverse(b.surface,a.state.position,a.halfX+a.halfZ,a.state) then return false end
  local ay=a.state.position.Y; local by=b.state.position.Y
@@ -23,6 +38,17 @@ local function separating(a,b,margin)
  if not vertical(a,b) then return nil end
  local radius=a.halfX+a.halfZ+b.halfX+b.halfZ+(margin or 0)+C.Skin
  if math.abs(a.state.position.X-b.state.position.X)>radius or math.abs(a.state.position.Z-b.state.position.Z)>radius then return nil end
+ if b.polygon then
+  local best,nx,nz=math.huge,0,0
+  for _,axis in polygonAxes(a,b)do
+   local x,z=axis[1],axis[2];local al,ah=interval(a,x,z);local bl,bh=interval(b,x,z)
+   local plus,minus=bh-al,ah-bl
+   if math.min(plus,minus)< -(C.Skin+(margin or 0)) then return nil end
+   if plus<best then best=plus;nx=x;nz=z end
+   if minus<best then best=minus;nx=-x;nz=-z end
+  end
+  return nx,nz,math.max(0,best),math.max(0,-best)
+ end
  local ax,az,bx,bz=axes(a); local cx,cz,dx,dz=axes(b)
  local px,pz=a.state.position.X-b.state.position.X,a.state.position.Z-b.state.position.Z
  local best,nx,nz=math.huge,0,0
@@ -36,6 +62,14 @@ local function separating(a,b,margin)
 end
 local function feature(r,nx,nz,minimum)
  local ax,az,bx,bz=axes(r); local points={}; local best=if minimum then math.huge else -math.huge
+ if r.polygon then
+  for _,p in r.polygon do
+   local x,z=r.state.position.X+p.x,r.state.position.Z+p.z;local d=dot(x,z,nx,nz)
+   if (minimum and d<best-1e-7) or (not minimum and d>best+1e-7) then best=d;points={{x=x,z=z}}
+   elseif math.abs(d-best)<1e-7 then table.insert(points,{x=x,z=z})end
+  end
+  return points,best
+ end
  for _,sx in {-1,1} do for _,sz in {-1,1} do
   local x=r.state.position.X+ax*r.halfX*sx+bx*r.halfZ*sz
   local z=r.state.position.Z+az*r.halfX*sx+bz*r.halfZ*sz
@@ -185,6 +219,18 @@ local function impactTime(a,b,dt)
  local radius=a.halfX+a.halfZ+b.halfX+b.halfZ+expansion
  if (px>radius and px+vx>radius) or (px< -radius and px+vx< -radius) or (pz>radius and pz+vz>radius) or (pz< -radius and pz+vz< -radius) then return nil end
  local enter,exit=0,1
+ if b.polygon then
+  for _,axis in polygonAxes(a,b)do
+   local x,z=axis[1],axis[2];local al,ah=interval(a,x,z);local bl,bh=interval(b,x,z);local v=dot(vx,vz,x,z)
+   if math.abs(v)<1e-10 then if ah+expansion<bl or al-expansion>bh then return nil end
+   else
+    local t1,t2=(bl-ah-expansion)/v,(bh-al+expansion)/v
+    if t1>t2 then t1,t2=t2,t1 end
+    enter=math.max(enter,t1);exit=math.min(exit,t2);if enter>exit then return nil end
+   end
+  end
+  return if enter>=1e-8 and enter<=1 then enter else nil
+ end
  for _,axis in {{ax,az},{bx,bz},{cx,cz},{dx,dz}} do
   local x,z=axis[1],axis[2]; local p,v=dot(px,pz,x,z),dot(vx,vz,x,z)
   local radius=extent(a,x,z)+extent(b,x,z)+expansion
@@ -205,6 +251,32 @@ function C.body(id,state,chassis)
 end
 function C.box(id,position,halfX,halfZ,bottom,top,yaw)
  return {id=id,fixed=true,state={position=position,yaw=yaw or 0,linearVelocity=Vector3.zero,angularVelocity=Vector3.zero},halfX=halfX,halfZ=halfZ,bottom=bottom,top=top}
+end
+function C.polygon(id,points,bottom,top,wall)
+ local sorted={};for _,p in points do table.insert(sorted,{x=p.X,z=p.Z})end
+ table.sort(sorted,function(a,b)return a.x<b.x or (a.x==b.x and a.z<b.z)end)
+ local function turn(a,b,c)return (b.x-a.x)*(c.z-a.z)-(b.z-a.z)*(c.x-a.x)end
+ local hull={}
+ for _,p in sorted do while #hull>=2 and turn(hull[#hull-1],hull[#hull],p)<=1e-9 do table.remove(hull)end;table.insert(hull,p)end
+ local lower=#hull
+ for i=#sorted-1,1,-1 do local p=sorted[i];while #hull>lower and turn(hull[#hull-1],hull[#hull],p)<=1e-9 do table.remove(hull)end;table.insert(hull,p)end
+ table.remove(hull)
+ if #hull<3 then
+  if wall and #hull==2 then
+   local a,b=hull[1],hull[2];local dx,dz=b.x-a.x,b.z-a.z;local length=math.sqrt(dx*dx+dz*dz)
+   if length>1e-9 then
+    local nx,nz=-dz/length*C.Skin*5,dx/length*C.Skin*5
+    return C.polygon(id,{Vector3.new(a.x+nx,0,a.z+nz),Vector3.new(b.x+nx,0,b.z+nz),Vector3.new(b.x-nx,0,b.z-nz),Vector3.new(a.x-nx,0,a.z-nz)},bottom,top)
+   end
+  end
+  return nil
+ end
+ local lowX,lowZ,highX,highZ=math.huge,math.huge,-math.huge,-math.huge
+ for _,p in hull do lowX=math.min(lowX,p.x);lowZ=math.min(lowZ,p.z);highX=math.max(highX,p.x);highZ=math.max(highZ,p.z)end
+ local center=Vector3.new((lowX+highX)/2,0,(lowZ+highZ)/2)
+ local body=C.box(id,center,(highX-lowX)/2,(highZ-lowZ)/2,bottom,top)
+ body.polygon={};for _,p in hull do table.insert(body.polygon,{x=p.x-center.X,z=p.z-center.Z})end
+ return body
 end
 function C.obstacles(environment,mapSize,radius)
  local cached=environment and environment.motionObstacles

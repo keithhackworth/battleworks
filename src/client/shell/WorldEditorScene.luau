@@ -3,8 +3,11 @@ local Placement=require(Shared.ModelPlacement)
 local Paths=require(Shared.AssetPaths)
 local Math=require(Shared.WorldEditorMath)
 local Snap=require(Shared.WorldEditorSnap)
+local Visual=require(Shared.AssetGeometry)
 local StartingAreas=require(Shared.StartingAreas)
 local Scene={};Scene.__index=Scene
+local snapLabelSize=24
+local snapLabelOffset=Vector2.new(-12,-26)
 local function part(parent,name,size,frame,color,transparency)
  local p=Instance.new("Part");p.Name=name;p.Anchored=true;p.CanCollide=false;p.CanTouch=false;p.CanQuery=false
  p.Size=size;p.CFrame=frame;p.Color=color;p.Transparency=transparency or 0;p.Parent=parent;return p
@@ -19,7 +22,7 @@ function Scene.new(viewport,assets,document)
  for _,endpoint in {"A","B","C","D"} do
   local p=part(snapGizmos,"Snap"..endpoint,Vector3.new(2,2,2),CFrame.new(),if endpoint=="A" then Color3.fromRGB(80,215,255) else Color3.fromRGB(255,183,92),1)
   p.Shape=Enum.PartType.Ball;p.Material=Enum.Material.Neon;p:SetAttribute("EditorHandle","Snap"..endpoint);self.snapEnds[endpoint]=p
-  local label=Instance.new("TextLabel");label.Name="SnapLabel"..endpoint;label.Text="↔";label.Size=UDim2.fromOffset(24,24);label.BackgroundTransparency=1;label.TextColor3=p.Color;label.TextSize=18;label.Font=Enum.Font.GothamBold;label.TextStrokeTransparency=.2;label.Visible=false;label.ZIndex=4;label.Parent=viewport;self.snapLabels[endpoint]=label
+  local label=Instance.new("TextLabel");label.Name="SnapLabel"..endpoint;label.Text="↔";label.Size=UDim2.fromOffset(snapLabelSize,snapLabelSize);label.BackgroundTransparency=1;label.TextColor3=p.Color;label.TextSize=18;label.Font=Enum.Font.GothamBold;label.TextStrokeTransparency=.2;label.Visible=false;label.ZIndex=4;label.Parent=viewport;self.snapLabels[endpoint]=label
  end
  local s=document.settings
  self.floor=part(world,"EditorGround",Vector3.new(s.width,1,s.depth),CFrame.new(0,-.5,0),Color3.fromRGB(table.unpack(s.ground.color)));self.floor.Material=Enum.Material[s.ground.material];self.floor.CanQuery=true
@@ -33,7 +36,7 @@ function Scene:make(entry,item,parent)
  local model,reason=Placement.place(self.assets:FindFirstChild("Templates"),{id=entry.id,template=item.model,position=Vector3.new(table.unpack(entry.position)),rotation=Vector3.new(table.unpack(entry.rotation)),scale=entry.scale,stretch=entry.stretch},nil,parent or self.root)
  if model then
   model:SetAttribute("EditorObjectId",entry.id)
-  for _,p in model:GetDescendants() do if p:IsA("BasePart") then p.CanQuery=true end end
+  for _,p in model:GetDescendants() do if p:IsA("BasePart") then p.CanQuery=Visual.visible(p) end end
  end
  return model,reason
 end
@@ -130,10 +133,10 @@ function Scene:selection(id,distance)
    p.Transparency=0;p.CanQuery=true;p.Size=Vector3.new(size*1.3,size*1.3,size*1.3);p.CFrame=CFrame.new(ends[endpoint])
    local pixel=Math.project(self.camera.CFrame,self.viewport.AbsoluteSize,ends[endpoint],self.camera.FieldOfView)
    local label=self.snapLabels[endpoint];label.Visible=pixel~=nil
-   if pixel then label.Position=UDim2.fromOffset(pixel.X-12,pixel.Y-26);label.TextColor3=p.Color end
+   if pixel then label.Position=UDim2.fromOffset(pixel.X+snapLabelOffset.X,pixel.Y+snapLabelOffset.Y);label.TextColor3=p.Color end
   end
  end
- local box,bounds=record.model:GetBoundingBox()
+ local box,bounds=Visual.measure(record.model)
  local center=if pin and (self.mode=="Rotate" or self.mode=="Scale") then Vector3.new(table.unpack(pin.point)) else box.Position
  local reach=math.max(bounds.X,bounds.Y,bounds.Z)/2+size*2
  for code,p in self.anchors do
@@ -175,7 +178,20 @@ function Scene:snapTarget(origin,direction,ignore,previous)
  local p=hit.Instance
  while p and p~=self.world do
   local id=p:GetAttribute("EditorObjectId")
-  if id then local record=self.models[id];return record and Snap.target(record.entry,hit.Position,Snap.Radius,previous) end
+  if id then
+   local record=self.models[id];if not record then return nil end
+   local target=Snap.target(record.entry,hit.Position,Snap.Radius,previous)
+   if record.entry.asset:sub(1,8)=="Builtin/" then return target end
+   -- Imported geometry need not reach the upper face of its rectangular bounds
+   -- (rocks, roofs, arches). A native visible surface hit remains a valid target.
+   if target and target.kind~="face" and hit.Normal then
+    local point=Vector3.new(table.unpack(target.point));local normal=Vector3.new(table.unpack(target.normal))
+    local surfaceParams=RaycastParams.new();surfaceParams.FilterType=Enum.RaycastFilterType.Include;surfaceParams.FilterDescendantsInstances={record.model};surfaceParams.RespectCanCollide=false
+    local probe=self.world:Raycast(point+normal*.2,normal*-.4,surfaceParams)
+    if probe and (probe.Position-point).Magnitude<.08 then return target end
+   end
+   return {point={hit.Position.X,hit.Position.Y,hit.Position.Z},normal=if hit.Normal then {hit.Normal.X,hit.Normal.Y,hit.Normal.Z} else {0,1,0},targetId=id,kind="surface"}
+  end
   p=p.Parent
  end
 end
@@ -217,7 +233,7 @@ function Scene:pick(origin,direction,pixel,viewportSize)
  -- Use a small pixel hit area for visible anchors. A thin ring/axis handle
  -- should not lose to the object's mesh or require a pixel-perfect click.
  if pixel and viewportSize then
-  local chosen,best,bestDepth=nil,math.huge,math.huge
+  local chosen,best,bestDepth,bestPriority=nil,math.huge,math.huge,-1
   local pickable=table.clone(self.anchors)
   for endpoint,p in self.snapEnds do pickable["Snap"..endpoint]=p end
   for code,p in pickable do
@@ -226,7 +242,15 @@ function Scene:pick(origin,direction,pixel,viewportSize)
     if at and at.X>=0 and at.Y>=0 and at.X<=viewportSize.X and at.Y<=viewportSize.Y then
      local distance=(at-pixel).Magnitude
      local radius=math.max(10,p.Size.X*viewportSize.Y/(4*depth*math.tan(math.rad(self.camera.FieldOfView)/2))+3)
-     if distance<=radius and (distance<best or (distance==best and depth<bestDepth)) then chosen=code;best=distance;bestDepth=depth end
+     -- A buried sphere may only be visible through its overlay arrow. Include
+     -- that rendered label before querying bodies, so it cannot select the
+     -- overlapping object instead of dragging this selected object's handle.
+     local label=self.snapLabels[code:match("^Snap([ABCD])$")]
+     local relative=pixel-at-snapLabelOffset
+     local onLabel=label and label.Visible and relative.X>=0 and relative.Y>=0 and relative.X<=snapLabelSize and relative.Y<=snapLabelSize
+     local priority=if distance<=6 then 2 elseif onLabel then 1 else 0
+     if onLabel then distance=math.min(distance,(relative-Vector2.new(snapLabelSize/2,snapLabelSize/2)).Magnitude) end
+     if (distance<=radius or onLabel) and (priority>bestPriority or (priority==bestPriority and (distance<best or (distance==best and depth<bestDepth)))) then chosen=code;best=distance;bestDepth=depth;bestPriority=priority end
     end
    end
   end
