@@ -35,7 +35,7 @@ add("weapon.gatling","Weapon","Jackhammer Gatling",{WeaponType="Gatling",MinPitc
 		MaxHorizontalSpeed = 36, DefaultSeed = 13579,
 		PitchJolt = math.rad(7), RollJoltMin = math.rad(7), RollJolt = math.rad(10), MaxRock = math.rad(12), RockRecovery = 10,
 		LandingCompression = 0.3, MaxLandingImpulse = 14,}})
-add("sensor.standard","Sensor","Directional scanner",{Range=150,ConeWidth=15,Acquisition=0.05,Cooldown=0.1,OriginHeight=2.5,DistancePercent=100})
+add("sensor.standard","Sensor","Directional scanner",{Range=150,ConeWidth=15,Acquisition=0.05,Cooldown=0.1,OriginHeight=2.5,DistancePercent=100,GroundObservations=true})
 for name,spec in {Bunny={threads=1,ticks=10,queue=1},Dual={threads=2,ticks=15,queue=2},Quad={threads=4,ticks=20,queue=4},Octa={threads=8,ticks=30,queue=8},Hexadeca={threads=16,ticks=40,queue=16}} do
  spec.Tier=name; add("computer."..name,"Computer",name.." computer",spec)
 end

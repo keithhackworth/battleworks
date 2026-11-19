@@ -67,6 +67,7 @@ label.Font = Enum.Font.GothamMedium; label.TextSize = 14; label.TextWrapped = tr
 label.Text = "BATTLEWORKS  /  Connecting to tank server…"
 local speedDebug=SpeedDebugHud.new(gui)
 local controller = InputController.new(gui, function(command) if active and driving then input:FireServer(command,selectedId,controlEpoch) end end)
+self.inputController=controller -- shared modal input integration (chat, on foot or in tank)
 controller:setExternalControl(true)
 if royale then controller:setCharacterControl(true)end
 local ide

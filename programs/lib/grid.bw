@@ -1,0 +1,57 @@
+function floor_value(value):
+    result = 0
+    if value < 0:
+        while result > value:
+            result = result - 1
+    else:
+        while result + 1 <= value:
+            result = result + 1
+    return result
+function cell(x, z, const origin):
+    column = floor_value((x - origin.x) / 12 + 2.5)
+    row = floor_value((z - origin.z) / 12 + 2.5)
+    if column < 0 or column > 4 or row < 0 or row > 4:
+        return null
+    return row * 5 + column
+function route(cells, start, target):
+    if start == target:
+        return null
+    parents = [-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1]
+    queue = [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]
+    parents[start] = start
+    queue[0] = start
+    head = 0
+    tail = 1
+    goal = null
+    frontier = null
+    offsets = [-5,1,5,-1]
+    while head < tail and goal == null:
+        current = queue[head]
+        head = head + 1
+        side = 0
+        while side < 4 and goal == null:
+            next = current + offsets[side]
+            column = current - floor_value(current / 5) * 5
+            if next >= 0 and next < 25 and not (side == 1 and column == 4) and not (side == 3 and column == 0):
+                if parents[next] == -1 and cells[next] != -1:
+                    parents[next] = current
+                    queue[tail] = next
+                    tail = tail + 1
+                    if cells[next] == 0 and frontier == null:
+                        frontier = next
+                    if next == target or (target == null and frontier != null):
+                        goal = next
+            side = side + 1
+    if goal == null:
+        goal = frontier
+    if goal == null:
+        return null
+    while parents[goal] != start:
+        goal = parents[goal]
+    if goal == start - 5:
+        return 0
+    if goal == start + 1:
+        return 90
+    if goal == start + 5:
+        return 180
+    return 270

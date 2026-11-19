@@ -1,0 +1,49 @@
+# P13 Survivor — health and observed threats change aggression, never regenerate HP.
+# A fixed damage threshold may retreat too early or too late.
+# Backing away isn't always the direction that reduces exposure.
+sector = 0
+previous_health = get_tank_state().health.current
+escape_after = 0
+phase = "assess"
+print({personality: "Survivor", phase: phase})
+while true:
+    observation = Scanner(sector * 45)
+    own = get_tank_state()
+    threats = 0
+    if observation.status == "success":
+        index = 0
+        while index < observation.count:
+            hit = observation.detections[index]
+            if hit.type == "tank" and hit.relation == "enemy":
+                threats = threats + 1
+            index = index + 1
+    hit = enemy(observation)
+    lost = previous_health - own.health.current
+    previous_health = own.health.current
+    aggression = own.health.current / own.health.max / (1 + threats)
+    critical = own.health.current <= own.health.max * 0.25
+    if hit != null:
+        phase = "fight"
+        print({personality: "Survivor", phase: phase})
+        fired = engage(observation)
+    if (critical or lost >= 15 or aggression < 0.2) and get_clock().time >= escape_after:
+        phase = "escape"
+        print({personality: "Survivor", phase: phase})
+        if hit != null:
+            turn_to(hit.world_direction + 180)
+        else:
+            turn_to(own.chassis.world_direction + 120)
+        progress = travel(4)
+        escape_after = get_clock().time + 4
+        if progress < 0.25 or own.motion.effective_max_speed == 0:
+            phase = "cornered_fight"
+            print({personality: "Survivor", phase: phase})
+            renewed = Scanner(sector * 45)
+            fired = engage(renewed)
+    elif hit == null and not critical and aggression > 0.4 and sector == 0:
+        phase = "cautious_advance"
+        print({personality: "Survivor", phase: phase})
+        progress = travel(2)
+    sector = sector + 1
+    if sector == 8:
+        sector = 0

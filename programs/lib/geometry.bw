@@ -1,0 +1,23 @@
+# Approximate atan2 heading in degrees; ordinary BW arithmetic, no scene access.
+function heading_to(x, z):
+    north = 0 - z
+    ax = x
+    if ax < 0:
+        ax = 0 - ax
+    az = north
+    if az < 0:
+        az = 0 - az
+    angle = 0
+    if ax + az < 0.001:
+        return get_tank_direction().world_direction
+    if ax <= az:
+        ratio = ax / az
+        angle = ratio / (1 + 0.28 * ratio * ratio) * 57.29578
+    else:
+        ratio = az / ax
+        angle = 90 - ratio / (1 + 0.28 * ratio * ratio) * 57.29578
+    if north < 0:
+        angle = 180 - angle
+    if x < 0:
+        angle = 360 - angle
+    return angle

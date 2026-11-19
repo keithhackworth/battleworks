@@ -293,6 +293,9 @@ function C.obstacles(environment,mapSize,radius)
   table.insert(out,C.box("boundary:s",Vector3.new(0,0,z+thick),x+thick,thick,-math.huge,math.huge))
   out[#out].plane={nx=0,nz=-1,offset=-z}
  end
+ for _,r in environment and environment.playground and environment.playground.staticBoxes or{}do
+  table.insert(out,C.box(r.id,Vector3.new(r.x,r.y,r.z),r.sx/2,r.sz/2,-r.sy/2,r.sy/2))
+ end
  for i,t in environment and environment.trees or {} do table.insert(out,C.box("tree:"..i,Vector3.new(t.x,0,t.z),t.radius,t.radius,0,t.height or math.huge)) end
  if environment then environment.motionObstacles={width=mapSize and mapSize.X,depth=mapSize and mapSize.Y,records=out} end
  return out

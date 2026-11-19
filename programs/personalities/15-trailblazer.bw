@@ -1,0 +1,59 @@
+# P15 Trailblazer — short measured pulses, ground observations and progress feedback.
+# A few recent moves may not predict how different ground behaves.
+# A shorter step is cautious, but it can also waste time.
+pulse = 3
+progress_ratio = 1
+sector = 0
+phase = "observe"
+print({personality: "Trailblazer", phase: phase})
+while true:
+    observation = Scanner(sector * 45)
+    fired = engage(observation)
+    front = Scanner(0)
+    own = get_tank_state()
+    missing = false
+    support = null
+    if front.terrain != null and front.terrain.supported:
+        missing = front.terrain.edge_near != null and front.terrain.edge_near < pulse + 5
+        index = 0
+        while index < front.terrain.count:
+            sample = front.terrain.samples[index]
+            if sample.lane == 1 and sample.forward_distance <= 4 and sample.confidence == "observed":
+                support = sample.ground_detected
+            index = index + 1
+    if own.motion.effective_max_speed == 0:
+        phase = "stationary"
+        print({personality: "Trailblazer", phase: phase})
+        stop()
+    elif missing or support == false:
+        phase = "observed_missing_ground"
+        print({personality: "Trailblazer", phase: phase})
+        stop()
+        turn_to(own.chassis.world_direction + 70)
+        pulse = 1
+    else:
+        phase = "measure_pulse"
+        print({personality: "Trailblazer", phase: phase})
+        before = get_current_coordinates()
+        await_command(forward(pulse))
+        stop()
+        wait_for_clock(get_clock().time + 0.3)
+        after = get_current_coordinates()
+        distance_squared = (after.x - before.x) * (after.x - before.x) + (after.z - before.z) * (after.z - before.z)
+        progress_ratio = distance_squared / (pulse * pulse)
+        if progress_ratio < 0.1 and support == true:
+            phase = "blocked_on_observed_ground"
+            print({personality: "Trailblazer", phase: phase})
+            pulse = 1
+            await_command(back(2))
+            stop()
+            turn_to(own.chassis.world_direction + 50)
+        elif progress_ratio < 0.1 or after.y - before.y > 1 or before.y - after.y > 1:
+            phase = "uncertain_support_or_motion"
+            print({personality: "Trailblazer", phase: phase})
+            pulse = 1
+        elif progress_ratio > 0.7 and pulse < 6:
+            pulse = pulse + 0.5
+    sector = sector + 1
+    if sector == 8:
+        sector = 0

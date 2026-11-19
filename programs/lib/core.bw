@@ -1,0 +1,38 @@
+# Ordinary editable BW helpers. Commands wait through the real device queues.
+function await_command(const command):
+    if command.status == "fail":
+        return command
+    deadline = get_clock().time + 35
+    state = command_status(command.commandId)
+    while (state.state == "accepted" or state.state == "queued" or state.state == "running") and get_clock().time < deadline:
+        wait_for_clock(get_clock().time + 0.1)
+        state = command_status(command.commandId)
+    if state.state != "completed":
+        abort_command(state.device)
+    return state
+function random_step(seed):
+    seed = seed * 17 + 43
+    while seed >= 997:
+        seed = seed - 997
+    return seed
+function turn_to(heading):
+    hardware = get_tank_state()
+    if hardware.motion.effective_max_speed <= 0:
+        return
+    if hardware.motion.can_pivot:
+        await_command(turn_right(to=heading))
+    else:
+        forward()
+        await_command(turn_right(to=heading))
+        stop()
+function travel(distance):
+    before = get_current_coordinates()
+    result = await_command(forward(distance))
+    stop()
+    after = get_current_coordinates()
+    progress = (after.x - before.x) * (after.x - before.x) + (after.z - before.z) * (after.z - before.z)
+    if progress < 0.25 or result.state != "completed":
+        await_command(back(2))
+        stop()
+        turn_to(get_tank_direction().world_direction + 55)
+    return progress

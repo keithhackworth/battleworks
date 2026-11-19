@@ -265,7 +265,7 @@ ui:receiveScan("own",0,1,{timestamp=13.1,text='[null, null, null, null, null]',l
 ui:update({generation=0,bwRequestId=2,bwRunRequestId=1,bwStatus="stopped",tankType="Boomer"})
 local printed=ui.output.Text
 check(printed:find('"player3"',1,true)<printed:find('"wall"',1,true) and printed:find('"wall"',1,true)<printed:find('[null, null, null, null, null]',1,true),"tank, wall and empty readings all remain in chronological order after Stop")
-for i=4,require("BWConfig").MaxInstructions do ui:receiveScan("own",0,1,{timestamp=13+i,text='["wall", '..i..', 0, null, null]',line=i}) end
+for i=4,128 do ui:receiveScan("own",0,1,{timestamp=13+i,text='["wall", '..i..', 0, null, null]',line=i}) end
 ui:update({generation=0,bwRequestId=2,bwRunRequestId=1,bwStatus="stopped",tankType="Boomer"})
 check(#ui.scanOutputs.own.readings==128 and ui.scanOutputs.own.text:find('"player3"',1,true) and ui.output.Text:find('"wall", 128',1,true),"full retained history survives while latest page shows recent scans")
 check(ui.outputScroll.CanvasSize.Y.Offset>ui.outputScroll.AbsoluteSize.Y and ui.outputScroll.CanvasPosition.Y>0 and not ui.output.TextWrapped,"history scrolls vertically/horizontally and follows new results at bottom")

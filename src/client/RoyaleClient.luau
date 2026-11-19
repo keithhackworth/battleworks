@@ -20,10 +20,12 @@ function Client.start()
  local gui=Instance.new("ScreenGui");gui.Name="RoyaleOnFoot";gui.ResetOnSpawn=false;gui.ScreenInsets=Enum.ScreenInsets.CoreUISafeInsets;gui.Parent=playerGui
  local hint=Instance.new("TextLabel");hint.Size=UDim2.new(1,-40,0,48);hint.Position=UDim2.new(0,20,0,8);hint.BackgroundColor3=Color3.fromRGB(24,31,35);hint.BackgroundTransparency=.2;hint.TextColor3=Color3.fromRGB(237,239,224);hint.TextSize=16;hint.TextWrapped=true;hint.Font=Enum.Font.GothamMedium;hint.Parent=gui
  hint.Text="THE PLAYGROUND • Approach a public tank • E / controller X / touch prompt to enter"
+ local chat=require(script.Parent.PlaygroundChat).new(playerGui,battle.inputController,"BattleRoyale")
  local navigation=Instance.new("ScreenGui");navigation.Name="RoyaleNavigation";navigation.ResetOnSpawn=false;navigation.ScreenInsets=Enum.ScreenInsets.CoreUISafeInsets;navigation.Parent=playerGui
  gameplay={}
  function gameplay:setActive(enabled)
   battle:setActive(enabled)
+  chat:setActive(enabled)
   navigation.Enabled=enabled;gui.Enabled=enabled and (not reading or reading.mode=="OnFoot")
  end
  local function worldRequest(action,payload)
@@ -61,11 +63,11 @@ function Client.start()
   gui.Enabled=nextReading.mode=="OnFoot";navigation.Enabled=nextReading.mode~="Menu"
  end)
  Actions:BindAction("BattleWorksExitTank",function(_,state)
-  if session.mode~="Battle" or not reading or not reading.selected or UIS:GetFocusedTextBox()then return Enum.ContextActionResult.Pass end
+  if session.mode~="Battle" or not reading or not reading.selected or UIS:GetFocusedTextBox()or battle.inputController.textEntryActive then return Enum.ContextActionResult.Pass end
   if state==Enum.UserInputState.Begin then request("Exit")end
   return Enum.ContextActionResult.Sink
  end,false,Enum.KeyCode.F,Enum.KeyCode.ButtonB)
  request("Sync")
- return {battle=battle,request=request,gui=gui,navigation=navigation,session=session,home=home,getShell=function()return shell end}
+ return {battle=battle,request=request,gui=gui,navigation=navigation,chat=chat,session=session,home=home,getShell=function()return shell end}
 end
 return Client

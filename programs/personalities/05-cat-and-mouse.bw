@@ -1,0 +1,49 @@
+# P05 Cat and Mouse — observed obstacles are cover hypotheses, never guarantees.
+# This hiding spot may still be exposed from another direction.
+# Remembering several cover candidates could beat the first useful obstacle.
+sector = 0
+cover = null
+phase = "discover"
+print({personality: "Cat and Mouse", phase: phase})
+while true:
+    observation = Scanner(sector * 45)
+    if observation.status == "success" and observation.count > 0:
+        if observation.type != "tank" and observation.distance < 45:
+            cover = observation.point
+    hit = enemy(observation)
+    if hit != null:
+        phase = "engage"
+        print({personality: "Cat and Mouse", phase: phase})
+        fired = engage(observation)
+        if cover != null:
+            own = get_current_coordinates()
+            # Choose our side of the observed cover, away from the enemy.
+            dx = cover.x - hit.point.x
+            dz = cover.z - hit.point.z
+            size = (dx * dx + dz * dz) / 8 + 1
+            destination_x = cover.x + dx / size
+            destination_z = cover.z + dz / size
+            turn_to(heading_to(destination_x - own.x, destination_z - own.z))
+            phase = "retreat"
+            print({personality: "Cat and Mouse", phase: phase})
+            progress = travel(6)
+            blocked = Scanner(180)
+            if blocked.status != "success" or blocked.count == 0:
+                cover = null
+        else:
+            phase = "evade"
+            print({personality: "Cat and Mouse", phase: phase})
+            await_command(back(3))
+            stop()
+            turn_to(get_tank_direction().world_direction + 65)
+    else:
+        phase = "discover"
+        print({personality: "Cat and Mouse", phase: phase})
+        front = Scanner(0)
+        if front.status == "success" and (front.count == 0 or front.distance > 12):
+            progress = travel(4)
+        else:
+            turn_to(get_tank_direction().world_direction + 45)
+    sector = sector + 1
+    if sector == 8:
+        sector = 0

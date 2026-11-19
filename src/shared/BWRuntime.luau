@@ -8,12 +8,13 @@ local Limits=require(script.Parent.BWConfig)
 local Adapter=require(script.Parent.BWTankAdapter)
 local Command=require(script.Parent.InputCommand)
 local Components=require(script.Parent.VehicleComponents)
+local Aim=require(script.Parent.TurretAim)
 local Runtime={}
 Runtime.__index=Runtime
 function Runtime.new(instructions,state,services)
  -- Function programs use the production virtual CPU, including when invoked
  -- through this legacy serial harness. Device navigation still uses this module.
- if instructions.functions and next(instructions.functions) then
+ if (instructions.functions and next(instructions.functions))or(instructions.streams and require(script.Parent.BWSelfState).used(instructions))then
   return require(script.Parent.BWExecution).new(instructions,state,services)
  end
 	return setmetatable({services=services or {},variables={},cycleCounts={},outputCount=0,results={},cyclesSpent=0,instructions=instructions,index=1,status="running",message="Running",elapsed=0,
@@ -82,6 +83,7 @@ local function begin(instruction,state)
 		c.kind="move"; c.sign=if op=="forward" then 1 else -1
 		c.axis=Vector3.new(-math.sin(state.yaw)*c.sign,0,-math.cos(state.yaw)*c.sign)
 		c.target=instruction.value; c.timeout=math.min(Limits.MaxInstructionSeconds,math.max(10,c.target/18*4+5))
+	elseif op=="aim_at"then c.kind="aim";c.timeout=Limits.MaxInstructionSeconds;c.point=Vector3.new(instruction.x,instruction.y,instruction.z)
 	elseif op=="Scanner" then c.kind="scan"; c.timeout=1
 	elseif op=="fire" then c.kind="fire"; c.timeout=Limits.MaxFireSeconds+5
 	else
@@ -160,6 +162,22 @@ function Runtime:_step(state,dt)
 	c.pauseUsed=(c.pauseUsed or 0)+paused
 	c.elapsed+=dt-paused
 	if c.elapsed>c.timeout then return self:instructionFailed("Instruction timed out.") end
+	if c.kind=="aim"then
+  local yaw,pitch=Aim.target(state,c.point)
+  local yawError=math.abs(Adapter.delta(state.turretYaw,yaw))
+  local pitchError=math.abs(state.turretPitch-pitch)
+  if math.max(yawError,pitchError)<=Limits.AngleTolerance then
+   local delta=Aim.toMount(state,c.point-Aim.pivot(state));local desired=math.atan2(delta.Y,math.sqrt(delta.X^2+delta.Z^2))
+   local mount=Components.get(state).Turret
+   self.completionReason=if desired<mount.MinPitch-1e-7 or desired>mount.MaxPitch+1e-7 then "mountLimited"else nil
+   return self:finish()
+  end
+  local error=yawError+pitchError
+  if not c.bestError or error<c.bestError-Limits.ProgressAngle then c.bestError=error;c.noProgress=0 else c.noProgress+=dt end
+  if c.noProgress>Limits.StuckSeconds then return self:instructionFailed("No progress aiming turret.")end
+  local command=Command.neutral();command.aimMode="World";command.aim=c.point
+  return command
+ end
 	if c.kind=="scan" then
 		self:scan(c.instruction.value,c.instruction.bestEffort,c.instruction.line)
 		return self:finish()

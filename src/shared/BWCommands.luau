@@ -1,14 +1,28 @@
 -- Shared argument contracts for static validation and evaluated action inputs.
 local Limits=require(script.Parent.BWConfig)
+local Reads=require(script.Parent.BWSelfState).Names
 local C={}
 C.special={get_clock=true,get_facing_direction=true,wait_for_clock=true,wait_for=true,variable_has_changed=true,clear_queue=true,abort_command=true,command_status=true}
+C.reads=Reads
+for name in Reads do C.special[name]=true end
 C.elevation={turret_up=true,turret_down=true}
 C.moves={forward=true,back=true}
 C.steering={steer_left=true,steer_right=true,steer_center=true}
 C.turns={turn_left=true,turn_right=true,turret_left=true,turret_right=true}
-function C.known(name) return C.special[name] or C.moves[name] or C.turns[name] or C.elevation[name] or C.steering[name] or name=="stop" or name=="fire" or name=="Scanner" or name=="print" end
+function C.known(name) return Reads[name] or C.special[name] or C.moves[name] or C.turns[name] or C.elevation[name] or C.steering[name] or name=="aim_at" or name=="stop" or name=="fire" or name=="Scanner" or name=="print" end
 function C.error(line,message) error({bwError=true,line=line,message=message},0) end
 function C.signature(call,functions)
+ if call.name=="aim_at"then
+  if #call.args<3 or #call.args>4 then C.error(call.line,"aim_at expects x, y, z and optional best_effort=true.")end
+  for i,arg in call.args do
+   if (i<=3 and arg.key~=nil)or(i==4 and arg.key~="best_effort")then C.error(call.line,"aim_at expects three positional coordinates and optional best_effort=true.")end
+  end
+  return
+ end
+ if Reads[call.name]then
+  if #call.args~=0 then C.error(call.line,call.name.." expects no arguments.")end
+  return
+ end
  local fn=functions and functions[call.name]
  if fn then
   if #call.args~=#fn.parameters then C.error(call.line,"Function '"..call.name.."' expects "..#fn.parameters.." arguments, received "..#call.args..".") end
@@ -51,6 +65,10 @@ function C.validate(name,key,value,line)
 	end
 	if name=="print" or C.special[name] then return value end
 	if type(value)~="number" or value~=value or math.abs(value)==math.huge then C.error(line,name.." expects a finite number.") end
+	if name=="aim_at"then
+  if math.abs(value)>100000 then C.error(line,"Aim coordinate exceeds 100000 studs.")end
+  return value
+ end
 	if name=="Scanner" then
         if key=="position" then
             if value%1~=0 or value<0 or value>7 then C.error(line,"invalidSensor: position must be an integer from 0 to 7.") end
@@ -72,10 +90,11 @@ function C.validate(name,key,value,line)
 end
 function C.resolve(call,evaluate)
 	local instruction={op=call.name,value=nil,absolute=false,bestEffort=true,line=call.line,text=call.text}
-	for _,arg in call.args do
+	for i,arg in call.args do
 		local key=arg.key or "value"
 		local value=C.validate(call.name,key,evaluate(arg.expression),call.line)
 		if key=="best_effort" then instruction.bestEffort=value
+		elseif call.name=="aim_at"then instruction[({"x","y","z"})[i]]=value
 		else instruction.value=value; instruction.absolute=key=="to" end
 	end
 	return instruction

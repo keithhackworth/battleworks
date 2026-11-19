@@ -168,11 +168,11 @@ function D:step(state,dt,time)
     if c.instruction.op=="forward" or c.instruction.op=="back" then
      input.steer=if self.components.Mobility.Kind=="Tracked" and command.throttle==0 then 0 else self:steerInput()
     else input.steer=command.steer end
-   elseif name=="turret" then input.turretX=command.turretX; input.turretY=command.turretY
+   elseif name=="turret" then input.turretX=command.turretX; input.turretY=command.turretY; input.aimMode=command.aimMode; input.aim=command.aim
    elseif name=="weapon" then input.fire=command.fire end
    if c.executor.status=="error" and c.executor.message:find("Internal device error:",1,true) then error(c.executor.message,0) end
    if c.executor.status~="running" then
-    self:terminal(d,c,if c.executor.status=="completed" then "completed" else "failed",if c.executor.status=="completed" then nil elseif c.executor.message:find("No progress",1,true) then "stuck" elseif c.executor.message:find("timed out",1,true) then "commandTimedOut" else "executionFailed",time)
+    self:terminal(d,c,if c.executor.status=="completed" then "completed" else "failed",if c.executor.status=="completed" then c.executor.completionReason elseif c.executor.message:find("No progress",1,true) then "stuck" elseif c.executor.message:find("timed out",1,true) then "commandTimedOut" else "executionFailed",time)
    end
   end
  end

@@ -3,7 +3,8 @@ local Hardware=require(script.Parent.ComponentCatalog)["sensor.standard"].Proper
 return table.freeze({
 	ConeWidth=Hardware.ConeWidth,MaxRange=Hardware.Range,DistancePercent=Hardware.DistancePercent,MaxHardwareRange=1000,MinRange=0,OriginHeight=Hardware.OriginHeight,
 	SurfaceTolerance=0.002,AngularEpsilon=1e-7,
-	MaxSpatialParts=256,MaxCandidates=64,MaxRaycasts=512,
+	TerrainDistances=table.freeze({2,4,6,8,12,18,26,40}),TerrainMaxRaycasts=64,TerrainRise=12,TerrainDrop=40,
+ MaxSpatialParts=256,MaxCandidates=64,MaxRaycasts=512,
 	SensorCooldown=Hardware.Cooldown,ServerRate=64,ServerBurst=16,
 	ScannerCost=5, -- informational hook only; no CPU budget enforcement
 	VisualDuration=1.2,SensorCount=8,MaxTremble=0.4,

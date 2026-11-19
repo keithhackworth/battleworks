@@ -17,6 +17,7 @@ This handbook describes implemented features. [BW_RUNTIME.md](BW_RUNTIME.md) con
 - [Busy devices and command queues](#busy-devices-and-command-queues)
 - [Command results and failures](#command-results-and-failures)
 - [Movement commands](#movement-commands)
+- [Own-state and hardware APIs](#own-state-and-hardware-apis)
 - [Turret commands](#turret-commands)
 - [Weapon command](#weapon-command)
 - [Scanner command](#scanner-command)
@@ -479,6 +480,12 @@ Installed mobility determines turning: installed tracks can pivot, while install
 
 Rotate clockwise using the corresponding relative or absolute semantics. `turn_right(360)` requests a full revolution; `turn_right(to=360)` targets north.
 
+## Own-state and hardware APIs
+
+Zero-argument own-tank reads: `get_weapon_speed()`, `get_current_coordinates()`, `get_weapon_type()`, `is_weapon_ready()`, `get_turret_direction()`, `get_tank_direction()`, `get_drivetrain_type()`, `get_bus_configuration()` and `get_tank_state()`. Existing `get_facing_direction()` and `get_clock()` remain unchanged.
+
+Results are immutable dictionaries/zero-based arrays, built fresh after each call's CPU charge. Readiness costs one tier-relative CPU cycle; the full snapshot costs two. Ordinary field access does not repeat those fees. See [exact types, units, costs, real examples and unsupported mechanics](BW_CORE_API_SPEC.md). These APIs accept no tank/user selector and reveal no opponents or maps.
+
 ## Turret commands
 
 | Command | Required input | Base ticks |
@@ -925,10 +932,10 @@ A waiting/finished thread does not stop other streams or device work. Variables 
 
 | Limit | Current value |
 | --- | ---: |
-| Source size | 16,384 bytes |
-| Source lines | 400 |
-| Source statements | 128; loop iterations do not add source statements |
-| Compiled instructions | 512 |
+| Technical upload size | 262,144 bytes; not a gameplay cost |
+| Source lines | No independent ceiling |
+| Source statements | No independent ceiling; ordinary CPU/runaway limits remain |
+| Technical bytecode allocation guard | 65,536 |
 | Block nesting | 12 levels |
 | Expression nesting | 32 levels |
 | Tokens/line | 512 |
@@ -1054,3 +1061,9 @@ On low grip, braking and steering take longer, the chassis can rotate while slid
 Finite movement counts signed actual horizontal travel along the commanded direction (the changing heading tangent for steered arcs). Sideways/vertical displacement and collision penetration corrections do not count. Backward displacement subtracts progress; external forward displacement can help. Turns measure actual signed unwrapped yaw, so external angular impulses can help or oppose the requested rotation. Completion does not promise the tank is stationary or holding its exact final pose: residual sliding/spinning remains possible. Existing tolerance, bounded immobilization pauses, stuck detection and timeouts apply; environmental difficulty does not create an infinite instruction or silently complete unfinished motion. Low-traction braking estimates help approach the target without introducing a second movement engine.
 
 BW cannot directly invoke the server's force/impulse APIs. Those are internal simulation interfaces, not new language commands. See [PHYSICS_FORCES_IMPLEMENTATION.md](PHYSICS_FORCES_IMPLEMENTATION.md).
+
+### Mechanical coordinate aim (Stage2 approved API)
+
+`aim_at(x, y, z, best_effort=true)` queues a fixed world point on the ordinary turret device at1 submission tick plus expression costs. Both axes use the same existing bus-limited traverse speed and mount stops. `command_status(id).completionReason == "mountLimited"` reports unreachable elevation after settling at the stop. It performs no sensing, prediction or tracking. Existing own turret reads now include immutable pivot/muzzle/direction records; readiness includes native heat/burst and interval/preparation timing, at unchanged introspection fees. See [exact API contract](BW_CORE_API_SPEC.md).
+
+Scanner successes additionally include immutable terrain/elevation observations at the existing cost. See [exact terrain schema, units and unknowns](SCANNER_TERRAIN.md). No scan_ground command or automatic movement decisions exist. Technical compilation guards are1 second and250,000 analysis updates; recursive call depth remains50. Function definitions remain top level; nested function calls and recursion are supported.

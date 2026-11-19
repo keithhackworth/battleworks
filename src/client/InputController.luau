@@ -1,13 +1,14 @@
 local UIS = game:GetService("UserInputService")
 local GuiService = game:GetService("GuiService")
 local Players = game:GetService("Players")
+local Actions=game:GetService("ContextActionService")
 local Command = require(game.ReplicatedStorage.Shared.InputCommand)
 local Controller = {}
 Controller.__index = Controller
 local modes = { "Auto", "KeyboardMouse", "Touch", "Gamepad" }
 function Controller.new(gui, onRelease)
 	local self = setmetatable({ preference = "Auto", mode = nil, suspended = false, focused = true,
-		menuOpen = false, onRelease = onRelease, hiddenTouchGuis = {}, controls = nil, restoreMovement = false }, Controller)
+		menuOpen = false, onRelease = onRelease, hiddenTouchGuis = {}, controls = nil, restoreMovement = false, textEntryOwners = {} }, Controller)
 	self.providers = {
 		KeyboardMouse = require(script.Parent.KeyboardMouseInput).new(),
 		Touch = require(script.Parent.TouchInput).new(gui, { turretDeadZone = 0.15, driveDeadZone = 0.15 }),
@@ -40,7 +41,7 @@ function Controller.new(gui, onRelease)
 	local player = Players.LocalPlayer
 	self.playerGui = player:WaitForChild("PlayerGui")
 	self.playerGui.ChildAdded:Connect(function(child)
-  if self.characterControl==false or (self.mode == "Touch" and not self.characterControl) then self:hideDefaultTouch(child) end
+  if self.textEntryActive or self.characterControl==false or (self.mode == "Touch" and not self.characterControl) then self:hideDefaultTouch(child) end
 	end)
 	self:refreshMode()
 	-- PlayerModule may arrive after our LocalScript. Never block tank startup on it.
@@ -50,7 +51,7 @@ function Controller.new(gui, onRelease)
 		local ok, controls = pcall(function() return require(module):GetControls() end)
 		if ok then
 			self.controls = controls
-			if self.characterControl==false or (self.mode == "Touch" and not self.characterControl) then self:disableDefaultMovement() end
+			if self.textEntryActive or self.characterControl==false or (self.mode == "Touch" and not self.characterControl) then self:disableDefaultMovement() end
 		else
 			warn("BattleWorks: could not access default movement controls", controls)
 		end
@@ -95,7 +96,7 @@ function Controller:release()
 end
 function Controller:setCharacterControl(enabled)
  self.characterControl=enabled==true
- if self.characterControl then self:restoreDefaultMovement()else self:disableDefaultMovement()end
+ if self.characterControl and not self.textEntryActive then self:restoreDefaultMovement()else self:disableDefaultMovement()end
  self:setExternalControl(self.characterControl)
 end
 function Controller:setExternalControl(enabled)
@@ -103,7 +104,7 @@ function Controller:setExternalControl(enabled)
 	self:refreshSuspension()
 end
 function Controller:refreshSuspension()
-	local suspended = self.externalControl or not self.focused or self.menuOpen or UIS:GetFocusedTextBox() ~= nil
+	local suspended = self.textEntryActive or self.externalControl or not self.focused or self.menuOpen or UIS:GetFocusedTextBox() ~= nil
 	if suspended ~= self.suspended then
 		self.suspended = suspended
   if suspended and self.mouseView then self.mouseView:open(false)end
@@ -120,13 +121,42 @@ function Controller:refreshMode()
 	end
 	if resolved ~= self.mode then
 		self:release()
-		if self.mode == "Touch" then self:restoreDefaultMovement() end
+		if self.mode == "Touch" and not self.textEntryActive then self:restoreDefaultMovement() end
 		self.mode = resolved
 		for name, provider in self.providers do provider:setActive(name == resolved and not self.suspended) end
-		if self.characterControl==false or (resolved == "Touch" and not self.characterControl) then self:disableDefaultMovement() end
+		if self.textEntryActive or self.characterControl==false or (resolved == "Touch" and not self.characterControl) then self:disableDefaultMovement() end
 	end
  self.mouseView:setVisible(resolved=="KeyboardMouse")
 	self.button.Text = "Input: " .. self.preference .. (if self.preference == "Auto" then " / " .. self.mode else "") .. "  ›"
+end
+-- Shared modal focus bridge, including native chat fields in CoreGui which
+-- need not appear in UserInputService:GetFocusedTextBox(). No aim-mode changes.
+function Controller:setTextEntryFocus(owner,focused)
+ local was=self.textEntryActive==true
+ self.textEntryOwners[owner]=if focused then true else nil
+ self.textEntryActive=next(self.textEntryOwners)~=nil
+ if was==self.textEntryActive then return end
+ self:release()
+ if self.textEntryActive then
+  self.promptService=game:GetService("ProximityPromptService")
+  if self.promptService then self.savedPromptEnabled=self.promptService.Enabled;self.promptService.Enabled=false end
+  self:disableDefaultMovement()
+ elseif self.characterControl==true or (self.characterControl==nil and self.mode~="Touch")then self:restoreDefaultMovement()end
+ if not self.textEntryActive and self.promptService then self.promptService.Enabled=self.savedPromptEnabled;self.promptService=nil end
+ self:refreshSuspension()
+end
+function Controller:bindTextEntry(name,callbacks)
+ local action="BattleWorksTextEntry_"..name
+ Actions:BindActionAtPriority(action,function(_,state,input)
+  if state~=Enum.UserInputState.Begin or not callbacks.enabled()or not self.focused or self.menuOpen then return Enum.ContextActionResult.Pass end
+  if input.KeyCode==Enum.KeyCode.Escape then
+   if callbacks.focused()then callbacks.cancel()end
+  elseif not UIS:GetFocusedTextBox()and not callbacks.focused()then callbacks.open()end
+  -- Roblox owns focus, sending and cancellation for the promoted TextBox.
+  -- Opening happens before the native Return hotkey; never swallow that key.
+  return Enum.ContextActionResult.Pass
+ end,false,3000,Enum.KeyCode.Return,Enum.KeyCode.KeypadEnter,Enum.KeyCode.Escape)
+ return function()Actions:UnbindAction(action);self:setTextEntryFocus(name,false)end
 end
 function Controller:sample(camera,context,dt)
 	local command = if self.suspended then Command.neutral() else self.providers[self.mode]:sample(camera,context,dt)

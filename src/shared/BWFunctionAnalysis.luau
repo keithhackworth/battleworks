@@ -3,6 +3,7 @@
 -- unions deliberately retain aliases across branches, loops and recursive calls.
 local Commands=require(script.Parent.BWCommands)
 local Expression=require(script.Parent.BWExpression)
+local SelfShapes=require(script.Parent.BWSelfState).Shapes
 local A={}
 local function value(scalar,unknown,readonly) return {scalar=scalar or false,unknown=unknown or false,readonly=readonly or false,refs={}} end
 local function merge(a,b)
@@ -13,10 +14,17 @@ local function merge(a,b)
 end
 local function copy(v) local out=value(); merge(out,v); return out end
 local function reference(v) return v.unknown or next(v.refs)~=nil end
-function A.validate(ast,functions)
+function A.validate(ast,functions,deadline)
+ local limits=require(script.Parent.BWConfig)
+ local work=0
+ local function budget()
+  work+=1
+  if work>limits.MaxAnalysisWork or(work%256==0 and deadline and os.clock()>deadline)then Commands.error(1,"Function analysis exceeded technical compilation budget.")end
+ end
  if next(functions)==nil then return end
  local wildcard={}
- local globals,heap,contexts={}, {},{}; local changed=false; local threads={ [1]=true }
+ local globals,heap,contexts={}, {},{}; local changed=false
+ local shapeSites,closedShapes={},{}; local threads={ [1]=true }
  local function slot(env,name) if not env[name] then env[name]=value() end; return env[name] end
  for name,fn in functions do
   local ctx={fn=fn,env={},returns=value(),writes=value(),calls={},rebound={}}; contexts[name]=ctx
@@ -31,9 +39,21 @@ function A.validate(ast,functions)
   end
  end
  collect(ast); local threadCount=0; for _ in threads do threadCount+=1 end
- local function update(a,b) if merge(a,b) then changed=true end end
+ local function update(a,b) budget();if merge(a,b) then changed=true end end
  local function binding(ctx,name)
   return if ctx and ctx.fn.locals[name] then slot(ctx.env,name) else slot(globals,name)
+ end
+ -- Separate allocation sites per call AST, preserving ordinary alias safety.
+ local function shapeValue(site,schema)
+  shapeSites[site]=shapeSites[site]or {}
+  local ids=shapeSites[site]
+  local function build(fields)
+   if ids[fields]then local v=value(false,false,true);v.refs[ids[fields]]=true;return v end
+   local id={};ids[fields]=id;heap[id]={};closedShapes[id]=true
+   for key,child in fields do heap[id][if key=="*"then wildcard else key]=if child==true then value(true)else build(child)end
+   local v=value(false,false,true);v.refs[id]=true;return v
+  end
+  return build(schema)
  end
  local eval
  eval=function(n,ctx)
@@ -57,7 +77,8 @@ function A.validate(ast,functions)
    local known,key=Expression.constant(n.index)
    for id in base.refs do
     local fields=heap[id] or {}
-    if known and key~=nil then if fields[key] then merge(v,fields[key]) else v.unknown=true end; if fields[wildcard] then merge(v,fields[wildcard]) end
+    if known and key~=nil then if fields[key] then merge(v,fields[key]) elseif not(closedShapes[id]and fields[wildcard])then v.unknown=true end; if fields[wildcard] then merge(v,fields[wildcard]) end
+    elseif closedShapes[id]and fields[wildcard]then merge(v,fields[wildcard])
     else for _,item in fields do merge(v,item) end; v.unknown=true end
    end
    return v
@@ -71,6 +92,7 @@ function A.validate(ast,functions)
     local v=copy(other.returns); v.readonly=false; return v
    end
    for _,arg in n.args do eval(arg.expression,ctx) end
+   if SelfShapes[n.name]then return shapeValue(n,SelfShapes[n.name])end
    -- Built-in result records have known scalar metadata. Their public records
    -- are immutable; unknown extension fields remain conservatively unknown.
    heap[n]=heap[n] or {}
@@ -124,6 +146,7 @@ function A.validate(ast,functions)
  local function reachable(v)
   local out=copy(v); local seen={}
   local function visit(id)
+    budget()
    if seen[id] then return end; seen[id]=true
    for _,field in heap[id] or {} do merge(out,field); for child in field.refs do visit(child) end end
   end

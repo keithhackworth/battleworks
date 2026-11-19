@@ -115,6 +115,7 @@ do
   for _,child in self.children do if child.Name==name and not child.destroyed then return child end end
  end
  workspace.GetPartBoundsInRadius=function() return {} end
+ workspace.Raycast=function() return nil end -- no geometry in this lifecycle fixture; terrain observation is unknown
  workspace.Spherecast=function() return nil end
  game.GetService=function(self,name)
   if name=="Players" then return players end

@@ -24,7 +24,7 @@ function Targets.sync(part, target, now)
 end
 function Targets.new(part)
 	part:SetAttribute("ScannerType","object")
-	local target = { health = Targets.Health, resetAt = 0, flashUntil = 0 }
+	local target = { health = Targets.Health, resetAt = 0, flashUntil = 0, spawnPosition=part.Position,spawnCFrame=part.CFrame }
 	part.Color = orange
 	Targets.sync(part, target, 0)
 	return target
@@ -38,14 +38,14 @@ function Targets.damage(part, target, now, damage)
 	Targets.sync(part, target, now)
 	return true
 end
-function Targets.occupied(part, tanks)
+function Targets.occupied(part, tanks,position)
 	-- Match the movement solver's conservative XZ footprint, including corners.
 	-- Center-only or circular checks could restore a target where movement's
 	-- expanded rectangle still blocks the tank. Boundary contact also waits.
 	for _, tank in tanks do
 		local state = tank.state
 		if state.health > 0 then
-			local delta = state.position - part.Position
+			local delta = state.position - (position or part.Position)
 			if math.abs(delta.X) <= part.Size.X / 2 + Config.Radius
 				and math.abs(delta.Z) <= part.Size.Z / 2 + Config.Radius then
 				return true
@@ -56,10 +56,12 @@ function Targets.occupied(part, tanks)
 end
 function Targets.update(part, target, now, tanks)
 	if target.health == 0 and now >= target.resetAt then
-		if Targets.occupied(part, tanks) then
+		if Targets.occupied(part, tanks,target.spawnPosition) then
 			target.resetAt = now + Targets.RespawnRetryInterval
 		else
-			target.health = Targets.Health; target.resetAt = 0; target.flashUntil = 0
+			if target.spawnCFrame then part.CFrame=target.spawnCFrame end
+   if target.spawnPosition then part.Position=target.spawnPosition end
+   target.health = Targets.Health; target.resetAt = 0; target.flashUntil = 0
 		end
 	end
 	Targets.sync(part, target, now)

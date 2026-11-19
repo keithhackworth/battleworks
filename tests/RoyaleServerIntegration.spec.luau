@@ -90,6 +90,22 @@ for _,event in privateRuntime do if event.recipient==first and event.args[1]==a 
 check(bunnyDiagnostics,"occupied public tank reports the actual Bunny hardware through production diagnostics")
 network:FindFirstChild("BWHardware").OnServerEvent:Fire(second,{},a,epochA)
 network:FindFirstChild("BWHardware").OnServerEvent:Fire(first,{tier="Octa"},a,epochA)
+-- Production self introspection is scoped to the currently authorized public tank.
+local probeBefore=#privateOutputs
+bwRun.OnServerEvent:Fire(first,'own = get_tank_state()\nprint(own.coordinates.x)\nprint(own.equipment.Weapon)\nprint(own.simulation.tick)\nprint(own.weapon.readiness.ready)\nprint(own.scanner_count)',1,a,epochA)
+advance(55)
+local probe={}
+for i=probeBefore+1,#privateOutputs do
+ local event=privateOutputs[i]
+ if event.args[4].kind=="print"then
+  check(event.recipient==first and event.args[1]==a,"self state output remains private to the current tank occupant")
+  table.insert(probe,event.args[4].text)
+ end
+end
+check(#probe==5 and tonumber(probe[1])==snapshots[a].position.X and probe[2]=="weapon.cannon" and tonumber(probe[3])>=0 and probe[4]=="true"and probe[5]=="8","live server getter supplies actual own pose, canonical equipment, global tick, readiness and scanner metadata")
+local noEnemyOutput=#privateOutputs
+bwRun.OnServerEvent:Fire(second,'print(get_tank_state())',1,a,epochA);advance(4)
+check(#privateOutputs==noEnemyOutput and not snapshots[a].bwRunning,"non-occupant cannot launch private self queries on someone else's public tank")
 local move={throttle=1,steer=0,fire=false,aimMode="Rate",turretX=1,turretY=0}
 local neutral=require("InputCommand").neutral()
 local authorizedPitch=snapshots[a].turretPitch
@@ -218,7 +234,7 @@ local poolCount=0;for _ in snapshots do poolCount+=1 end
 check(poolCount==6,"menu round trips neither reset nor duplicate arena tanks")
 players.PlayerRemoving:Fire(menuPlayer);advance(4)
 -- Environmental hazards run through production physics, damage and pool lifecycle.
-local Terrain=require("PlaygroundTerrain");local terrain=Terrain.create(Vector2.new(230,230))
+local Terrain=require("PlaygroundTerrain");local terrain=Terrain.create(Terrain.DefaultSize)
 local bridge
 for _,part in created do
  if part.Name=="Bridge"then bridge=part end

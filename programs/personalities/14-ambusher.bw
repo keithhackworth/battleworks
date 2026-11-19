@@ -1,0 +1,73 @@
+# P14 Ambusher — bounded spatial traffic clusters from legal sightings, no prefire.
+# Yesterday's busy crossing may be quiet now.
+# This waiting spot watches one approach but leaves other approaches exposed.
+xs = [0,0,0,0,0,0,0,0]
+zs = [0,0,0,0,0,0,0,0]
+counts = [0,0,0,0,0,0,0,0]
+seen = [0,0,0,0,0,0,0,0]
+sector = 0
+phase = "learn"
+print({personality: "Ambusher", phase: phase})
+while true:
+    observation = Scanner(sector * 45)
+    hit = enemy(observation)
+    clock = get_clock().time
+    if hit != null:
+        slot = 0
+        nearest = 144
+        oldest = 0
+        oldest_time = clock + 1
+        index = 0
+        while index < 8:
+            distance = (hit.point.x - xs[index]) * (hit.point.x - xs[index]) + (hit.point.z - zs[index]) * (hit.point.z - zs[index])
+            if counts[index] > 0 and distance < nearest:
+                nearest = distance
+                slot = index
+            if seen[index] < oldest_time:
+                oldest_time = seen[index]
+                oldest = index
+            index = index + 1
+        if nearest == 144:
+            slot = oldest
+            counts[slot] = 1
+            seen[slot] = clock
+            xs[slot] = hit.point.x
+            zs[slot] = hit.point.z
+        if clock - seen[slot] > 0.5:
+            counts[slot] = counts[slot] + 1
+            xs[slot] = (xs[slot] + hit.point.x) / 2
+            zs[slot] = (zs[slot] + hit.point.z) / 2
+            seen[slot] = clock
+        fired = engage(observation)
+    best = -1
+    best_score = 1
+    index = 0
+    while index < 8:
+        age = clock - seen[index]
+        score = counts[index] / (1 + age / 10)
+        if score > best_score:
+            best = index
+            best_score = score
+        index = index + 1
+    if best >= 0:
+        phase = "watch_traffic"
+        print({personality: "Ambusher", phase: phase})
+        own = get_current_coordinates()
+        distance = (xs[best] - own.x) * (xs[best] - own.x) + (zs[best] - own.z) * (zs[best] - own.z)
+        if distance > 625 and hit == null:
+            phase = "relocate"
+            print({personality: "Ambusher", phase: phase})
+            turn_to(heading_to(xs[best] - own.x, zs[best] - own.z))
+            front = Scanner(0)
+            if front.status == "success" and (front.count == 0 or front.distance > 12):
+                progress = travel(3)
+    else:
+        phase = "learn"
+        print({personality: "Ambusher", phase: phase})
+    # Briefly reobserve a promising crossing before resuming the full sweep.
+    if hit == null or counts[slot] >= 3:
+        sector = sector + 1
+    if sector == 8:
+        sector = 0
+        if best < 0:
+            turn_to(get_tank_direction().world_direction + 15)

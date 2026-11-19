@@ -1,0 +1,37 @@
+# P09 Wallflower — local right-wall following and front-obstacle corner recovery.
+# Following the same wall forever can make us predictable.
+# An empty side scan might be a doorway, a blind spot, or the end of a wall.
+phase = "find_wall"
+print({personality: "Wallflower", phase: phase})
+while true:
+    front = Scanner(0)
+    side = Scanner(90)
+    fired = engage(front)
+    if not fired:
+        fired = engage(side)
+    hardware = get_tank_state()
+    if hardware.motion.steering_mode == "none" or hardware.motion.effective_max_speed == 0:
+        phase = "stationary"
+        print({personality: "Wallflower", phase: phase})
+        stop()
+    elif front.status == "success" and front.count > 0 and front.type != "tank" and front.distance < 12:
+        phase = "inside_corner"
+        print({personality: "Wallflower", phase: phase})
+        steer_center()
+        turn_to(hardware.chassis.world_direction - 50)
+    elif side.status == "success" and side.count > 0 and side.type != "tank":
+        phase = "follow_wall"
+        print({personality: "Wallflower", phase: phase})
+        if side.distance < 10:
+            steer_left(12)
+        elif side.distance > 18:
+            steer_right(12)
+        else:
+            steer_center()
+        progress = travel(4)
+    else:
+        phase = "outside_corner"
+        print({personality: "Wallflower", phase: phase})
+        steer_right(15)
+        progress = travel(3)
+    steer_center()

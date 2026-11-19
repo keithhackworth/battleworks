@@ -68,7 +68,14 @@ function Simulation.moveBody(state,command,dt,mapSize,environment,deferContacts)
  if state.position.Y>support+0.001 then state.lift=math.max(state.lift or 0,state.position.Y-support) end
  local airborne=Recoil.airborne(state)
  local speedScale=if environment then select(3,Environment.sample(environment,state.position.X,state.position.Z,state.position.Y+1.5)) else 1
- local static,kinetic,resistance,passiveGrip=Surface.contact(environment and environment.physicsSurfaces,state.position,state.yaw,c.Chassis)
+ local static,kinetic,resistance,passiveGrip,terrainScale=Surface.contact(environment and environment.physicsSurfaces,state.position,state.yaw,c.Chassis,c.Mobility.Kind)
+ if environment and environment.materialTerrain then
+  -- Apply the approved tracked base factor ONCE, after footprint blending.
+  terrainScale*=if c.Mobility.Kind=="Tracked"then require(script.Parent.TerrainMaterials).TrackedBaseSpeed else 1
+  local normal=math.max(.1,math.cos(state.groundPitch or 0)*math.cos(state.groundRoll or 0))
+  static*=normal;kinetic*=normal
+ end
+ speedScale*=terrainScale;state.terrainSpeedScale=speedScale
  if not airborne then Drive.ground(state,command,dt,speedScale,static,kinetic,resistance,passiveGrip) end
  -- No traction, steering, coasting or ground damping is applied in the air.
  state.motionStepStart=state.position; state.motionYawStart=state.yaw

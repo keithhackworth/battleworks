@@ -1,0 +1,123 @@
+# P06 Hunter — observed local grid, bounded BFS, trajectory/corner interception.
+# Unknown cells may hide cliffs; our coarse map is only a set of hypotheses.
+# A steady-motion prediction is understandable, but what if the opponent turns?
+# This local search works; a better frontier policy could find shorter routes.
+origin = get_current_coordinates()
+cells = [0,0,0,0,0,0,0,0,0,0,0,0,1,0,0,0,0,0,0,0,0,0,0,0,0]
+sector = 0
+previous = null
+previous_scan = null
+previous_time = 0
+goal = null
+phase = "map"
+print({personality: "Hunter", phase: phase})
+while true:
+    observation = Scanner(sector * 45)
+    own = get_current_coordinates()
+    start = cell(own.x, own.z, origin)
+    if start != null:
+        cells[start] = 1
+    index = 0
+    while observation.status == "success" and index < observation.count:
+        hit = observation.detections[index]
+        blocked = cell(hit.point.x, hit.point.z, origin)
+        if hit.type != "tank" and blocked != null and blocked != start:
+            cells[blocked] = -1
+        index = index + 1
+    if observation.terrain != null and observation.terrain.supported:
+        index = 0
+        while index < observation.terrain.count:
+            sample = observation.terrain.samples[index]
+            if sample.confidence == "observed" and sample.point != null:
+                mapped = cell(sample.point.x, sample.point.z, origin)
+                if mapped != null and mapped != start:
+                    if sample.surface_type == "Water":
+                        cells[mapped] = -1
+                    elif sample.ground_detected == true and cells[mapped] != -1:
+                        cells[mapped] = 1
+            index = index + 1
+    hit = enemy(observation)
+    if hit != null:
+        phase = "intercept"
+        print({personality: "Hunter", phase: phase})
+        predicted_x = hit.point.x
+        predicted_z = hit.point.z
+        hardware = get_tank_state()
+        horizon = 1
+        if hardware.weapon.projectile_speed != null and hardware.weapon.projectile_speed > 0:
+            horizon = hit.distance / hardware.weapon.projectile_speed
+        if horizon > 3:
+            horizon = 3
+        if previous != null and previous.player == hit.player and observation.timestamp - previous_time > 0.05 and observation.timestamp - previous_time < 5:
+            delay = observation.timestamp - previous_time
+            vx = (hit.point.x - previous.point.x) / delay
+            vz = (hit.point.z - previous.point.z) / delay
+            if vx * vx + vz * vz < 2500:
+                predicted_x = hit.point.x + vx * horizon
+                predicted_z = hit.point.z + vz * horizon
+        goal = cell(predicted_x, predicted_z, origin)
+        if previous_scan != null:
+            fired = predict(previous_scan, observation)
+        else:
+            fired = engage(observation)
+        previous = hit
+        previous_time = observation.timestamp
+        previous_scan = observation
+    elif get_clock().time - previous_time > 5:
+        goal = null
+        previous = null
+        previous_scan = null
+    if observation.status != "success":
+        phase = "scanner_unavailable"
+        print({personality: "Hunter", phase: phase})
+        stop()
+        wait_for_clock(get_clock().time + 0.5)
+    elif start == null:
+        phase = "return_to_local_map"
+        print({personality: "Hunter", phase: phase})
+        turn_to(heading_to(origin.x - own.x, origin.z - own.z))
+        progress = travel(4)
+    else:
+        heading = route(cells, start, goal)
+        if heading != null:
+            phase = "navigate"
+            print({personality: "Hunter", phase: phase})
+            turn_to(heading)
+            front = Scanner(0)
+            edge = false
+            if front.terrain != null and front.terrain.supported:
+                edge = front.terrain.edge_near != null and front.terrain.edge_near < 10
+            if heading == 0:
+                next_cell = start - 5
+            elif heading == 90:
+                next_cell = start + 1
+            elif heading == 180:
+                next_cell = start + 5
+            else:
+                next_cell = start - 1
+            if front.status != "success":
+                phase = "scanner_unavailable"
+                print({personality: "Hunter", phase: phase})
+                stop()
+            elif edge:
+                phase = "observed_edge"
+                print({personality: "Hunter", phase: phase})
+                stop()
+                if next_cell >= 0 and next_cell < 25:
+                    cells[next_cell] = -1
+            else:
+                before = get_current_coordinates()
+                result = await_command(forward(6))
+                stop()
+                after = get_current_coordinates()
+                if (after.x - before.x) * (after.x - before.x) + (after.z - before.z) * (after.z - before.z) < 0.25:
+                    phase = "blocked"
+                    print({personality: "Hunter", phase: phase})
+                    if next_cell >= 0 and next_cell < 25:
+                        cells[next_cell] = -1
+                    await_command(back(2))
+                    stop()
+                    turn_to(heading + 90)
+    sector = sector + 1
+    if sector == 8:
+        sector = 0

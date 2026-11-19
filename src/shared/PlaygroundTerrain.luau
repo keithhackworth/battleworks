@@ -1,6 +1,9 @@
 -- One description for native character geometry and authoritative tank support.
 -- No catch planes: the bridge and banks are the only support above the river.
-local T={Depth=-42,BridgeWidth=24}
+local Layout=require(script.Parent.PlaygroundProvingLayout)
+local Materials=require(script.Parent.TerrainMaterials)
+local Surface=require(script.Parent.SurfacePhysics)
+local T={Depth=-42,BridgeWidth=24,DefaultSize=Layout.Size}
 function T.create(size)
  local x,z=size.X/2,size.Y/2
  local regions={}
@@ -17,9 +20,24 @@ function T.create(size)
  add("Bridge",-22,22,-12,12)
  local entries={}
  for _,z0 in {84,104,44,24}do for _,x0 in {-90,-66,-42,42,66,90}do table.insert(entries,Vector3.new(x0,0,z0))end end
- return {regions=regions,entries=entries,hazards={
+ local data={regions=regions,entries=entries,hazards={
   {name="River",x0=-22,x1=22,z0=-75,z1=65,y0=-1000000,y1=-27},
  },spawns={Vector3.new(-72,0,84),Vector3.new(-48,0,84),Vector3.new(48,0,84),Vector3.new(72,0,84),Vector3.new(-72,0,50),Vector3.new(72,0,50)}}
+ if size.X>=Layout.Size.X and size.Y>=Layout.Size.Y then Layout.extend(data)end
+ return data
+end
+-- Attach to the existing Environment. Authored worlds never call this factory.
+function T.configure(environment,size)
+ local data=T.create(size);environment.playground=data
+ environment.rocks={};environment.logs={};environment.zones={};environment.trees=data.trees or{}
+ environment.materialTerrain=data.provingGround==true
+ if data.provingGround then
+  local regions={{id="proving-grass",shape="box",x=0,z=0,rx=size.X/2,rz=size.Y/2,surface=Materials.profile("Grass",0,0,1)}}
+  for _,r in data.strips do table.insert(regions,{id=r.id,shape="box",x=r.x,z=r.z,rx=r.rx,rz=r.rz,priority=10,surface=r.profile})end
+  for _,r in data.boundaries do table.insert(regions,{id=r.id,shape="box",x=r.x,z=r.z,rx=r.rx,rz=r.rz,priority=5,surface=r.profile})end
+  environment.physicsSurfaces=Surface.prepare(regions)
+ end
+ return data
 end
 local function inside(r,x,z,margin)
  margin=margin or 0

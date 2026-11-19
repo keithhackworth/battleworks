@@ -1,0 +1,26 @@
+# P01 Marauder — move twenty studs, settle, search, repeat.
+# Improve this by choosing a route from observed obstacles before driving.
+# Searching all lenses equally wastes time when one approach is busy.
+seed = 41
+sector = 0
+phase = "advance"
+print({personality: "Marauder", phase: phase})
+while true:
+    progress = travel(20)
+    phase = "settle"
+    print({personality: "Marauder", phase: phase})
+    wait_for_clock(get_clock().time + 0.5)
+    phase = "search"
+    print({personality: "Marauder", phase: phase})
+    scans = 0
+    while scans < 8:
+        observation = Scanner(sector * 45)
+        fired = engage(observation)
+        sector = sector + 1
+        if sector == 8:
+            sector = 0
+        scans = scans + 1
+    seed = random_step(seed)
+    turn_to(seed * 360 / 997)
+    phase = "advance"
+    print({personality: "Marauder", phase: phase})

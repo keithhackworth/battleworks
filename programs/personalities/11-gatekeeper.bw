@@ -1,0 +1,38 @@
+# P11 Gatekeeper — defend a self-observed home coordinate, not a hidden objective.
+# A circle around home is a crude definition of what matters.
+# Chasing one intruder can leave another approach unattended.
+home = get_current_coordinates()
+sector = 0
+last_enemy = null
+last_distance = 0
+phase = "patrol"
+print({personality: "Gatekeeper", phase: phase})
+while true:
+    own = get_current_coordinates()
+    tether = (own.x - home.x) * (own.x - home.x) + (own.z - home.z) * (own.z - home.z)
+    observation = Scanner(sector * 45)
+    hit = enemy(observation)
+    if hit != null:
+        fired = engage(observation)
+    if tether > 144:
+        phase = "return_home"
+        print({personality: "Gatekeeper", phase: phase})
+        turn_to(heading_to(home.x - own.x, home.z - own.z))
+        progress = travel(4)
+    elif hit != null:
+        distance = (hit.point.x - home.x) * (hit.point.x - home.x) + (hit.point.z - home.z) * (hit.point.z - home.z)
+        if hit.player == last_enemy and distance < last_distance and tether < 64:
+            phase = "challenge_approach"
+            print({personality: "Gatekeeper", phase: phase})
+            turn_to(hit.world_direction)
+            progress = travel(3)
+        last_enemy = hit.player
+        last_distance = distance
+    elif sector == 0:
+        phase = "patrol"
+        print({personality: "Gatekeeper", phase: phase})
+        turn_to(get_tank_direction().world_direction + 60)
+        progress = travel(2)
+    sector = sector + 1
+    if sector == 8:
+        sector = 0

@@ -1,0 +1,29 @@
+# P04 Sniper — reposition, settle, observe and lead; no invented crouch mechanic.
+# Settling at low speed doesn't prove that this position is good cover.
+# We assume constant velocity. What if the enemy turns during preparation?
+seed = 107
+sector = 0
+phase = "reposition"
+print({personality: "Sniper", phase: phase})
+while true:
+    seed = random_step(seed)
+    turn_to(seed * 360 / 997)
+    progress = travel(4 + seed / 70)
+    phase = "settle"
+    print({personality: "Sniper", phase: phase})
+    wait_for_clock(get_clock().time + 1)
+    own = get_tank_state()
+    searches = 0
+    while searches < 8 and own.motion.airborne == false:
+        first = Scanner(sector * 45)
+        if enemy(first) != null:
+            second = Scanner(sector * 45)
+            phase = "predict"
+            print({personality: "Sniper", phase: phase})
+            fired = predict(first, second)
+        sector = sector + 1
+        if sector == 8:
+            sector = 0
+        searches = searches + 1
+    phase = "reposition"
+    print({personality: "Sniper", phase: phase})

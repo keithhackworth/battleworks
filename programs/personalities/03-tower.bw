@@ -1,0 +1,19 @@
+# P03 Tower — no drive commands. Recoil and external pushes still affect us.
+# We assume constant velocity. What if the enemy turns?
+# Our conservative ninety-degree turn allowance could use measured angular error.
+sector = 0
+phase = "observe"
+print({personality: "Tower", phase: phase})
+while true:
+    first = Scanner(sector * 45)
+    if enemy(first) != null:
+        wait_for_clock(get_clock().time + 0.2)
+        second = Scanner(sector * 45)
+        phase = "predict"
+        print({personality: "Tower", phase: phase})
+        fired = predict(first, second)
+    sector = sector + 1
+    if sector == 8:
+        sector = 0
+    phase = "observe"
+    print({personality: "Tower", phase: phase})

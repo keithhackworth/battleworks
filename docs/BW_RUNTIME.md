@@ -14,6 +14,10 @@ Every reference is replaced with an ordinary literal AST node. The source AST re
 
 See [constant examples and rules](BW_LANGUAGE.md#compile-time-constants). `tests/BWConstants.spec.luau` checks literal-equivalent instruction tables, per-step scheduling/physics/ticks, scalars, compile diagnostics, concurrency and ordinary variable costs. Constant declarations still count toward existing source statement/size limits; they consume no runtime operations.
 
+## Own-state core APIs
+
+Stage 1 adds read-only own-tank introspection through the same production CPU and immutable BW values. Readiness costs one tier-relative CPU cycle, full snapshot two; other reads are inexpensive ticks and field access uses ordinary expression fees. Calls read the authoritative own entity after any CPU wait. See [exact signatures, schema and gaps](BW_CORE_API_SPEC.md) and [staged roadmap/evidence](BW_ROADMAP_CHECKLIST.md). No opponent/map helpers, personality fleet or autonomous arena population is added.
+
 ## Clock and execution
 
 The server's existing 60 Hz fixed simulation drives BW. CPU cycles occur at 10 Hz, configurable in `src/shared/BWChassis.luau`. Each bus runs one instruction stream, independently budgeted:
@@ -451,3 +455,5 @@ No extra scan is performed for identification. Ordinary untagged cover remains
 are unchanged. Manual and BW observations flash yellow for objects, retaining
 higher priority for detected tanks. Public light events contain no object IDs,
 exact ranges or hidden positions.
+
+G4 removes the old source-statement and line ceilings; technical source/compilation guards live in BWConfig (256KiB upload,65,536 bytecode instructions,1s deadline/250,000 analysis updates). No source-length CPU fee. Existing50-frame recursion, container/variable sizes, scheduler grants/hard operation caps, cancellation and180s lifetime remain. G5 adds terrain/elevation data to existing Scanner at unchanged cost; see SCANNER_TERRAIN.md.

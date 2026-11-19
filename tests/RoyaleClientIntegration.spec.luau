@@ -26,8 +26,19 @@ local bindings={}
 local actions={BindAction=function(_,name,fn)bindings[name]=fn end,BindActionAtPriority=function(_,name,fn)bindings[name]=fn end,UnbindAction=function(_,name)bindings[name]=nil end}
 local frame
 local run={IsStudio=function() return false end,BindToRenderStep=function(_,_,_,callback) frame=callback end}
+local chatService=Instance.new("TextChatService");chatService.ChatVersion=Enum.ChatVersion.TextChatService;chatService.MessageReceived=signal()
+local chatBar=Instance.new("ChatInputBarConfiguration");chatBar.Enabled=true;chatBar.IsFocused=false
+local chatHistory=Instance.new("ChatWindowConfiguration");chatHistory.Enabled=true
+local chatChannels=Instance.new("Folder");chatChannels.Name="TextChannels"
+local chatChannel=Instance.new("TextChannel");chatChannel.Name="RBXGeneral";chatChannel.ChildRemoved=signal()
+local chatSource=Instance.new("TextSource");chatSource.UserId=101;chatSource.CanSend=true;chatChannel.children={chatSource}
+function chatService:FindFirstChildOfClass(name)return if name=="ChatInputBarConfiguration"then chatBar elseif name=="ChatWindowConfiguration"then chatHistory else nil end
+function chatService:FindFirstChild(name)return if name=="TextChannels"then chatChannels else nil end
+function chatChannels:FindFirstChild(name)return if name=="RBXGeneral"then chatChannel else nil end
+function chatService:CanUserChatAsync()return true end
+Players.PlayerRemoving=signal()
 game.GetService=function(self,name)
- if name=="RunService" then return run elseif name=="ContextActionService"then return actions end
+ if name=="RunService" then return run elseif name=="ContextActionService"then return actions elseif name=="TextChatService"then return chatService end
  return originalService(self,name)
 end
 Enum.RenderPriority.Camera={Value=200}
@@ -180,5 +191,34 @@ check(named("MouseAimSelector"):GetAttribute("MouseAimMode")=="Mouse Direct","in
 exitAndEnter(112,24)
 check(named("MouseAimSelector"):GetAttribute("MouseAimMode")=="Mouse Direct","mouse preference persists across public tank lease/death-style control changes")
 named("MouseAimSelector").Activated:Fire();named("Mouse Points").Activated:Fire()
+-- Chat persists across real RoyaleClient control acknowledgments, not a second HUD.
+UIS.PreferredInput=Enum.PreferredInput.KeyboardAndMouse;UIS.preferredSignal:Fire()
+check(client.chat.ready and client.chat.gui.Enabled and client.chat.window.Target==chatChannel,"production Playground client mounts native global chat both on foot/in tank")
+local chatWindow=client.chat.window;local chatWidgets=#created
+client.chat:setExpanded(true)
+chatBar.IsFocused=true;chatBar:GetPropertyChangedSignal("IsFocused"):Fire()
+local beforeExit=#requests
+bindings.BattleWorksExitTank(nil,Enum.UserInputState.Begin)
+check(#requests==beforeExit,"typing F/B cannot eject through the separate Royale action binding")
+UIS.InputBegan:Fire({KeyCode=Enum.KeyCode.W,UserInputType=Enum.UserInputType.Keyboard},false)
+UIS.InputBegan:Fire({KeyCode=Enum.KeyCode.C,UserInputType=Enum.UserInputType.Keyboard},false)
+frame(1/30)
+check(lastInput().args[1].throttle==0 and not lastInput().args[1].fire and lastInput().args[1].turretX==0 and lastInput().args[1].turretY==0,"chat focus emits only neutral gameplay intent through real client routing")
+remotes.RoyaleControl.OnClientEvent:Fire({revision=114,mode="OnFoot"})
+check(client.chat.gui.Enabled and not defaultControls.controlsEnabled,"death/respawn-style on-foot ACK cannot restore movement through active chat")
+state.controlEpoch=26;remotes.Snapshot.OnClientEvent:Fire({["public:1"]=state},{})
+remotes.RoyaleControl.OnClientEvent:Fire({revision=115,mode="Tank",selected="public:1",epoch=26})
+check(client.chat.window==chatWindow and client.battle.inputController.textEntryActive,"switching tanks retains singleton chat/history and native focus lease")
+chatBar.IsFocused=false;chatBar:GetPropertyChangedSignal("IsFocused"):Fire()
+client.chat:setExpanded(false)
+check(not client.battle.inputController.textEntryActive and named("MouseAimSelector"):GetAttribute("MouseAimMode")=="Mouse Points","chat blur restores existing input mode without changing aim preference")
+remotes.RoyaleControl.OnClientEvent:Fire({revision=116,mode="OnFoot"})
+check(defaultControls.controlsEnabled and client.chat.gui.Enabled,"on-foot native controls and chat resume after text entry")
+named("RoyaleMainMenu").Activated:Fire();remotes.RoyaleControl.OnClientEvent:Fire({revision=117,mode="Menu"})
+check(not client.chat.gui.Enabled and not chatBar.Enabled,"menu and its World Editor do not retain active chat input")
+main.buttons[1].Activated:Fire();remotes.RoyaleControl.OnClientEvent:Fire({revision=118,mode="OnFoot"})
+check(client.chat.window==chatWindow and #created==chatWidgets,"returning to Playground reuses chat across menu transitions without duplicate UI")
+Players.PlayerRemoving:Fire(player)
+check(client.chat.destroyed and not bindings.BattleWorksTextEntry_PlaygroundChat,"production departure cleans chat input route and native wrapper")
 Instance.new=savedNew;game.GetService=originalService
 print(string.format("Battle Royale production client transitions passed: %d assertions",count))

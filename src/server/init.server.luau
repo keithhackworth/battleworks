@@ -88,12 +88,13 @@ end
 -- The imported-asset world uses ground/boundaries and registered model placements.
 -- Normal arena creation, including weather and terrain, is unchanged.
 if singleModelWorld then weather="Normal" end
+if isRoyale and not worldSettings and not singleModelWorld then mapSize=Playground.DefaultSize end
 local function createEnvironment(size)
  local data=Environment.create(size,weather)
  if singleModelWorld then data.rocks={}; data.logs={}; data.trees={}; data.zones={} end
  if worldSettings then data.zones=table.clone(worldSettings.zones);data.startPositions=worldSettings.spawns end
  if isRoyale and not worldSettings then
-  data.playground=Playground.create(size);data.rocks={};data.logs={};data.trees={};data.zones={}
+  Playground.configure(data,size)
  end
  data.worldObjects=worldObjects
  return data
@@ -143,10 +144,12 @@ if worldSettings then
 end
 local function buildTargets(size)
  if singleModelWorld then return end
-	local count = math.clamp(math.floor((size.X-10)/9),1,5)
+	local locations=environment.playground and environment.playground.targets
+ local count = if locations then #locations else math.clamp(math.floor((size.X-10)/9),1,5)
 	for i = 1, count do
 		local p = part("Target", Vector3.new(7, 7, 5), Vector3.new((i-(count+1)/2)*math.min(18,(size.X-10)/count), 3.5, -size.Y*65/230), Color3.fromRGB(210, 102, 60))
-		if environment.playground then p.Position=Vector3.new(38+(i-1)*16,3.5,-90)end
+		if locations then local location=locations[i];p.Position=Vector3.new(location.x,location.y,location.z);p:SetAttribute("PracticeTargetId",location.id)
+  elseif environment.playground then p.Position=Vector3.new(38+(i-1)*16,3.5,-90)end
 		local target = PracticeTargets.new(p)
         target.collisionId="target:"..i
 		targets[p] = target
@@ -166,14 +169,21 @@ end
 buildTargets(mapSize)
 local simulationTime=0
 local scanner=DirectionalScanner.new(workspace,function()
-	local geometry,records={},{}
+	local geometry,records,terrain={}, {},{}
 	-- Only authoritative arena geometry participates. Projectiles, decorations,
 	-- particle volumes and client render models are outside this allowlist.
 	for _,p in arena:GetDescendants() do
-		if (p:IsA("BasePart") or p:IsA("Part")) and p~=floor and p.CanQuery~=false then table.insert(geometry,p) end
+		if (p:IsA("BasePart") or p:IsA("Part")) and p~=floor and p.CanQuery~=false then
+   if p:GetAttribute("ScannerTerrainOnly")==true then table.insert(terrain,p)else table.insert(geometry,p)end
+  end
 	end
 	for id,tank in tanks do records[tank.hitbox]={state=tank.state,id=id,playerName=tank.playerName,tankName=tank.tankName or tank.kind,teamId=tank.teamId} end
-	return geometry,records
+	for _,p in geometry do
+  table.insert(terrain,p)
+ end
+ if floor.CanQuery then table.insert(terrain,floor)end
+ local native=workspace:FindFirstChild("Terrain");if native then table.insert(terrain,native)end
+ return geometry,records,terrain
 end)
 local function publishScan(tank,angle,observation,manual)
 	local values=observation.value
@@ -311,6 +321,7 @@ local function createTank(id,player,kind,index,assembly)
   end
 		tank.bwServices={
 			getClock=function() return simulationTime end,
+            getOwnTank=function()return tank,simulationTime,math.floor(simulationTime/Config.Step+.5),Config.Step end,
             cancelWeapon=function() tank.pendingShot=nil; tank.rattlerShot=false end,
             scan=function(angle,performance,time,hardware)
 				local observation,err=scanner:execute(tank,angle,simulationTime,hardware)

@@ -9,11 +9,13 @@ local Parser={}
 local reserved={CONST=true,const=true,["function"]=true,['with']=true,['thread']=true,['if']=true,['elif']=true,['else']=true,['switch']=true,['case']=true,['default']=true,['and']=true,['or']=true,['not']=true,['true']=true,['false']=true,['null']=true,['while']=true,['for']=true,['def']=true,['break']=true,['return']=true}
 local function parse(source)
 	if type(source)~="string" then Commands.error(1,"Source must be text.") end
-	if #source>Limits.MaxSourceBytes then Commands.error(1,"Program exceeds 16,384 bytes.") end
-	local lines,line={},0
+	if #source>Limits.MaxSourceBytes then Commands.error(1,"Program exceeds technical upload limit ("..Limits.MaxSourceBytes.." bytes).") end
+	local deadline=os.clock()+Limits.MaxCompileSeconds
+ local function budget()if os.clock()>deadline then Commands.error(1,"Compilation exceeded technical time budget.")end end
+ local lines,line={},0
 	for raw in ((if source:sub(-1)=="\n" then source else source.."\n")):gmatch("([^\n]*)\n") do
 		line+=1
-		if line>Limits.MaxLines then Commands.error(line,"Too many source lines (maximum 400).") end
+		if line%128==0 then budget()end
 		local tokens=Lexer.line(raw,line)
 		if tokens[1].kind=="eof" then continue end
 		local leading=raw:match("^[ \t]*")
@@ -114,7 +116,7 @@ local function parse(source)
 		while lines[cursor] and lines[cursor].indent>=indent do
 			local row=lines[cursor]
 			if row.indent~=indent then Commands.error(row.line,"Unexpected indentation.") end
-			count+=1; if count>Limits.MaxInstructions then Commands.error(row.line,"Too many statements (maximum 128).") end
+			count+=1; if count%128==0 then budget()end
 			local token=row.tokens[1]; local word=token.value
 			cursor+=1
 			local node={line=row.line,text=row.text}
@@ -213,12 +215,13 @@ local function parse(source)
 		return result
 	end
 	local ast=block(0,0)
-	local tips=Analysis.validate(ast,functions)
+	local tips=Analysis.validate(ast,functions,deadline)
 	local instructions={}
     local streams={[1]=instructions}; local declared={}
 	local function emit(op,node,fields)
 		local item=fields or {}; item.op=op; item.line=node.line; item.text=node.text; item.bestEffort=if item.bestEffort==nil then false else item.bestEffort
 		table.insert(instructions,item)
+		if #instructions%128==0 then budget()end
 		if #instructions>Limits.MaxCompiledInstructions then Commands.error(node.line,"Compiled program is too large.") end
 		return item
 	end
@@ -264,7 +267,8 @@ local function parse(source)
 				if node.otherwise then compile(node.otherwise) end
 				for _,exit in exits do exit.target=#instructions+1 end
 			end
-			if #instructions>Limits.MaxCompiledInstructions then Commands.error(node.line,"Compiled program is too large.") end
+			if #instructions%128==0 then budget()end
+		if #instructions>Limits.MaxCompiledInstructions then Commands.error(node.line,"Compiled program is too large.") end
 		end
 	end
 	compile(ast)

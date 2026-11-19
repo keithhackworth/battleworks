@@ -1,0 +1,39 @@
+# P08 Skirmisher — range-band feedback, oblique approaches and short withdrawals.
+# A fixed distance band isn't ideal for every weapon.
+# Smoothing several range observations could reduce needless reversals.
+sector = 0
+phase = "search"
+print({personality: "Skirmisher", phase: phase})
+stance = "hold"
+while true:
+    observation = Scanner(sector * 45)
+    hit = enemy(observation)
+    if hit != null:
+        if hit.distance < 30:
+            stance = "withdraw"
+        elif hit.distance > 65:
+            stance = "approach"
+        elif hit.distance > 38 and hit.distance < 55:
+            stance = "hold"
+        phase = stance
+        print({personality: "Skirmisher", phase: phase})
+        if stance == "approach":
+            turn_to(hit.world_direction + 20)
+            drive = forward(5)
+            fired = engage(observation)
+            await_command(drive)
+            stop()
+        elif stance == "withdraw":
+            drive = back(4)
+            fired = engage(observation)
+            await_command(drive)
+            stop()
+        else:
+            fired = engage(observation)
+    else:
+        phase = "search"
+        print({personality: "Skirmisher", phase: phase})
+    sector = sector + 1
+    if sector == 8:
+        sector = 0
+        turn_to(get_tank_direction().world_direction + 15)

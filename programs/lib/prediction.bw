@@ -1,0 +1,49 @@
+# Visible constant-velocity gunnery, shared verbatim by Tower and Sniper.
+function root(value):
+    guess = value + 1
+    iteration = 0
+    while iteration < 12:
+        guess = (guess + value / guess) / 2
+        iteration = iteration + 1
+    return guess
+function predict(const old, const scan):
+    hit = enemy(scan)
+    if hit == null:
+        return false
+    previous = enemy(old)
+    own = get_tank_state()
+    vx = 0
+    vy = 0
+    vz = 0
+    dt = scan.timestamp - old.timestamp
+    if previous != null and previous.player == hit.player and dt > 0.05 and dt < 5:
+        vx = (hit.point.x - previous.point.x) / dt
+        vy = (hit.point.y - previous.point.y) / dt
+        vz = (hit.point.z - previous.point.z) / dt
+    point = [hit.point.x, hit.point.y, hit.point.z]
+    muzzle = own.turret.muzzle_position
+    speed = own.weapon.projectile_speed
+    latency = get_clock().time - scan.timestamp
+    if own.turret.effective_rotation_speed > 0:
+        latency = latency + 90 / own.turret.effective_rotation_speed
+    if own.weapon.readiness.effective_preparation_seconds != null:
+        latency = latency + own.weapon.readiness.effective_preparation_seconds
+    flight = 0
+    iteration = 0
+    while iteration < 4 and speed != null and speed > 0 and own.weapon.projectile_model == "projectile":
+        point = [hit.point.x + vx * (latency + flight), hit.point.y + vy * (latency + flight), hit.point.z + vz * (latency + flight)]
+        flight = root((point[0] - muzzle.x) * (point[0] - muzzle.x) + (point[1] - muzzle.y) * (point[1] - muzzle.y) + (point[2] - muzzle.z) * (point[2] - muzzle.z)) / speed
+        iteration = iteration + 1
+    if flight > 5 or vx * vx + vy * vy + vz * vz > 2500:
+        point = [hit.point.x, hit.point.y, hit.point.z]
+    aligned = await_command(aim_at(point[0], point[1], point[2]))
+    fresh = Scanner(scan.sensor)
+    visible = enemy(fresh)
+    ready = is_weapon_ready()
+    if visible != null and visible.player == hit.player and aligned.state == "completed" and aligned.completionReason == null and ready.ready == true and get_clock().time - fresh.timestamp < 2:
+        if ready.operation == "Heat":
+            await_command(fire(1))
+        else:
+            await_command(fire())
+        return true
+    return false

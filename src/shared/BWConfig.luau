@@ -1,8 +1,10 @@
 -- Bounded BW syntax/safety limits. Production hardware costs live in BWChassis.
 return table.freeze({
 	MaxCallDepthPerThread=50, -- top-level execution is not a function frame
- MaxSourceBytes=16384, MaxLines=400, MaxInstructions=128,
-	MaxCompiledInstructions=512,MaxBlockDepth=12,MaxExpressionDepth=32,MaxExpressionNodes=2048,
+ MaxSourceBytes=262144, -- technical upload/parse-memory ceiling, not gameplay balancing
+ MaxCompileSeconds=1, MaxAnalysisWork=250000,
+	MaxCompiledInstructions=65536, -- technical bytecode-allocation guard
+ MaxBlockDepth=12,MaxExpressionDepth=32,MaxExpressionNodes=2048,
 	MaxTokensPerLine=512,MaxArrayItems=64,MaxStringBytes=2048,MaxVariables=128,
 	MaxScannerCalls=128, -- legacy serial-interpreter limit; production retains rolling snapshots
  MaxScannerHistory=128,MaxCommandHistory=512,MaxLogEventsPerCycle=64,MaxOutputEvents=256,MaxOutputBytes=2048,MaxOutputPageBytes=8192,MaxOutputPageLines=120,IndentWidth=4,

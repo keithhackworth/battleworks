@@ -19,8 +19,8 @@ for _,source in {"Forward(1)","forward(-1)","fire(to=90)","fire(11)","forward(10
  check(result==nil and err.line==2 and err.message:find("Line 2:",1,true)==1,"invalid syntax is rejected with its source line")
 end
 check(Parser.parse(string.rep("x",Limits.MaxSourceBytes+1))==nil,"source byte limit")
-check(Parser.parse(string.rep("fire()\n",129))==nil,"instruction count limit")
-check(Parser.parse(string.rep("\n",401))==nil,"source line limit")
+check(Parser.parse(string.rep("fire()\n",129))~=nil,"approved removal of source statement ceiling")
+check(Parser.parse("stop()"..string.rep("\n",401))~=nil,"no source line ceiling within technical upload bounds")
 check(Parser.parse({})==nil,"non-text source rejected")
 check(near(Adapter.heading(0),0) and near(Adapter.heading(-math.pi/2),90) and near(Adapter.heading(math.pi/2),270),"compass is clockwise and camera-independent")
 local function instruction(source) return assert(Parser.parse(source))[1] end

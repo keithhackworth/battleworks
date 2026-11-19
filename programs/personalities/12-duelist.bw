@@ -1,0 +1,44 @@
+# P12 Duelist — sticky visible opponent and intentionally simple orbiting pursuit.
+# Always circling the same side makes us easier to lead.
+# We ignore dangerous terrain here. Can you improve that without losing the duel?
+function selected_enemy(const scan, const identity):
+    if scan.status == "success":
+        index = 0
+        while index < scan.count:
+            hit = scan.detections[index]
+            if hit.type == "tank" and hit.relation == "enemy" and hit.player == identity:
+                return hit
+            index = index + 1
+    return null
+identity = null
+last_seen = 0
+sector = 0
+phase = "find_opponent"
+print({personality: "Duelist", phase: phase})
+while true:
+    observation = Scanner(sector * 45)
+    target = selected_enemy(observation, identity)
+    if target == null and (identity == null or get_clock().time - last_seen > 6):
+        target = enemy(observation)
+        if target != null:
+            identity = target.player
+    if target != null:
+        last_seen = get_clock().time
+        phase = "duel"
+        print({personality: "Duelist", phase: phase})
+        # Present only our chosen legal contact to the shared gunnery helper.
+        focused = {status: "success", sensor: observation.sensor, count: 1, detections: [target], timestamp: observation.timestamp}
+        fired = engage(focused)
+        turn_to(target.world_direction + 70)
+        steer_right(12)
+        progress = travel(4)
+        steer_center()
+    else:
+        phase = "reacquire"
+        print({personality: "Duelist", phase: phase})
+    sector = sector + 1
+    if sector == 8:
+        sector = 0
+        if get_clock().time - last_seen > 6:
+            identity = null
+            turn_to(get_tank_direction().world_direction + 15)

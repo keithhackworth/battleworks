@@ -1,0 +1,29 @@
+function enemy(const scan):
+    if scan.status == "success":
+        index = 0
+        while index < scan.count:
+            hit = scan.detections[index]
+            if hit.type == "tank" and hit.relation == "enemy":
+                return hit
+            index = index + 1
+    return null
+function engage(const scan):
+    hit = enemy(scan)
+    if hit == null:
+        return false
+    aligned = await_command(aim_at(hit.point.x, hit.point.y, hit.point.z))
+    if aligned.state != "completed" or aligned.completionReason != null:
+        return false
+    fresh = Scanner(scan.sensor)
+    current = enemy(fresh)
+    if current == null or current.player != hit.player:
+        return false
+    aligned = await_command(aim_at(current.point.x, current.point.y, current.point.z))
+    ready = is_weapon_ready()
+    if aligned.state == "completed" and aligned.state == "completed" and aligned.completionReason == null and ready.ready == true and get_clock().time - fresh.timestamp < 2:
+        if ready.operation == "Heat":
+            await_command(fire(1))
+        else:
+            await_command(fire())
+        return true
+    return false

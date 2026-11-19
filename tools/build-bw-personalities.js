@@ -1,0 +1,40 @@
+#!/usr/bin/env node
+// Visible source concatenation only: the output goes through the ordinary BW compiler.
+const fs = require('node:fs');
+const path = require('node:path');
+const crypto = require('node:crypto');
+const root = path.resolve(__dirname, '..');
+function build(entry) {
+  const program = fs.readFileSync(path.join(root, 'programs/personalities', entry.source), 'utf8');
+  const functions = entry.libraries.flatMap(name => {
+    const source = fs.readFileSync(path.join(root, 'programs/lib', name + '.bw'), 'utf8');
+    return [...source.matchAll(/^function (\w+)\([^]*?(?=^function |$(?![^]))/gm)].map(match => ({name: match[1], source: match[0]}));
+  });
+  const used = new Set();
+  let scanned = program;
+  for (let changed = true; changed;) {
+    changed = false;
+    for (const fn of functions) if (!used.has(fn.name) && new RegExp('\\b' + fn.name + '\\s*\\(').test(scanned)) {
+      used.add(fn.name); scanned += '\n' + fn.source; changed = true;
+    }
+  }
+  return [...functions.filter(fn => used.has(fn.name)).map(fn => fn.source), program].join('\n');
+}
+function digest(source) { return crypto.createHash('sha256').update(source).digest('hex'); }
+function describe(entry) {
+  return {...entry, source_sha256: digest(fs.readFileSync(path.join(root, 'programs/personalities', entry.source))),
+    library_sha256: Object.fromEntries(entry.libraries.map(name => [name, digest(fs.readFileSync(path.join(root, 'programs/lib', name + '.bw')))])),
+    generated_sha256: digest(build(entry))};
+}
+module.exports = { build, digest, describe };
+if (require.main === module) {
+  const profiles = JSON.parse(fs.readFileSync(path.join(root, 'programs/personalities/profiles.json'), 'utf8'));
+  const output = path.resolve(process.argv[2] || path.join(root, 'build/bw-personalities'));
+  fs.mkdirSync(output, { recursive: true });
+  fs.writeFileSync(path.join(output, 'manifest.json'), JSON.stringify({schema_version: 1, profiles: profiles.map(describe)}, null, 2) + '\n');
+  for (const entry of profiles) {
+    const source = build(entry);
+    fs.writeFileSync(path.join(output, entry.source), source);
+    console.log(`${entry.id} ${Buffer.byteLength(source)} bytes sha256=${digest(source)}`);
+  }
+}

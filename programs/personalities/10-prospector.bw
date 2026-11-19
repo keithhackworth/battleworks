@@ -1,0 +1,42 @@
+# P10 Prospector — choose locally stale/less-visited directions for information.
+# An unfamiliar direction is not necessarily safe ground.
+# Try balancing the information gain against the physical cost of turning.
+visits = [0,0,0,0,0,0,0,0]
+last_seen = [0,0,0,0,0,0,0,0]
+anchor = get_current_coordinates()
+phase = "choose"
+print({personality: "Prospector", phase: phase})
+while true:
+    clock = get_clock().time
+    sector = 0
+    chosen = 0
+    best_score = -100000
+    while sector < 8:
+        score = clock - last_seen[sector] - visits[sector] * 2
+        if score > best_score:
+            best_score = score
+            chosen = sector
+        sector = sector + 1
+    phase = "observe"
+    print({personality: "Prospector", phase: phase})
+    observation = Scanner(chosen * 45)
+    visits[chosen] = visits[chosen] + 1
+    last_seen[chosen] = get_clock().time
+    fired = engage(observation)
+    if not fired and observation.status == "success":
+        phase = "explore"
+        print({personality: "Prospector", phase: phase})
+        turn_to(get_tank_direction().world_direction + chosen * 45)
+        front = Scanner(0)
+        edge = false
+        if front.terrain != null:
+            edge = front.terrain.edge_near != null and front.terrain.edge_near < 8
+        if not edge and front.status == "success" and (front.count == 0 or front.distance > 12):
+            progress = travel(4)
+    here = get_current_coordinates()
+    if (here.x - anchor.x) * (here.x - anchor.x) + (here.z - anchor.z) * (here.z - anchor.z) > 64:
+        visits = [0,0,0,0,0,0,0,0]
+        last_seen = [0,0,0,0,0,0,0,0]
+        anchor = here
+    phase = "choose"
+    print({personality: "Prospector", phase: phase})

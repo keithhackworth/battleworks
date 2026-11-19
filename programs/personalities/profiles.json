@@ -1,0 +1,623 @@
+[
+  {
+    "id": "P01",
+    "name": "Marauder",
+    "source": "01-marauder.bw",
+    "libraries": [
+      "core",
+      "targeting"
+    ],
+    "tier": "Dual",
+    "seed": 41,
+    "constraints": {
+      "drivetrain": {
+        "min": 20,
+        "max": 50
+      },
+      "turret": {
+        "min": 10,
+        "max": 25
+      },
+      "weapon": {
+        "min": 15,
+        "max": 35
+      },
+      "sensor*": {
+        "min": 1,
+        "max": 4
+      }
+    },
+    "priority": [
+      "drivetrain",
+      "weapon",
+      "turret",
+      "sensor0",
+      "sensor45",
+      "sensor315",
+      "sensor*"
+    ],
+    "initialEquipment": {
+      "weapon": "weapon.cannon",
+      "mobility": "mobility.tracks"
+    },
+    "status": "implemented-verified"
+  },
+  {
+    "id": "P02",
+    "name": "Crazy",
+    "source": "02-crazy.bw",
+    "libraries": [
+      "core"
+    ],
+    "tier": "Dual",
+    "seed": 73,
+    "constraints": {
+      "drivetrain": {
+        "min": 25,
+        "max": 55
+      },
+      "turret": {
+        "min": 15,
+        "max": 35
+      },
+      "weapon": {
+        "min": 20,
+        "max": 50
+      },
+      "sensor*": {
+        "min": 0,
+        "max": 0,
+        "forcedZero": true
+      }
+    },
+    "priority": [
+      "weapon",
+      "turret",
+      "drivetrain"
+    ],
+    "initialEquipment": {
+      "weapon": "weapon.gatling",
+      "mobility": "mobility.wheels"
+    },
+    "status": "implemented-verified"
+  },
+  {
+    "id": "P03",
+    "name": "Tower",
+    "source": "03-tower.bw",
+    "libraries": [
+      "core",
+      "targeting",
+      "prediction"
+    ],
+    "tier": "Octa",
+    "seed": 0,
+    "constraints": {
+      "drivetrain": {
+        "min": 0,
+        "max": 0,
+        "forcedZero": true
+      },
+      "turret": {
+        "min": 25,
+        "max": 100
+      },
+      "weapon": {
+        "min": 25,
+        "max": 100
+      },
+      "sensor*": {
+        "min": 4,
+        "max": 20
+      }
+    },
+    "priority": [
+      "turret",
+      "weapon",
+      "sensor*"
+    ],
+    "initialEquipment": {
+      "weapon": "weapon.cannon",
+      "mobility": "mobility.tracks"
+    },
+    "status": "implemented-verified"
+  },
+  {
+    "id": "P04",
+    "name": "Sniper",
+    "source": "04-sniper.bw",
+    "libraries": [
+      "core",
+      "targeting",
+      "prediction"
+    ],
+    "tier": "Octa",
+    "seed": 107,
+    "constraints": {
+      "drivetrain": {
+        "min": 10,
+        "max": 35
+      },
+      "turret": {
+        "min": 25,
+        "max": 65
+      },
+      "weapon": {
+        "min": 25,
+        "max": 65
+      },
+      "sensor*": {
+        "min": 1,
+        "max": 8
+      }
+    },
+    "priority": [
+      "turret",
+      "weapon",
+      "sensor*",
+      "drivetrain"
+    ],
+    "initialEquipment": {
+      "weapon": "weapon.cannon",
+      "mobility": "mobility.tracks"
+    },
+    "status": "implemented-verified"
+  },
+  {
+    "id": "P05",
+    "name": "Cat and Mouse",
+    "source": "05-cat-and-mouse.bw",
+    "libraries": [
+      "core",
+      "targeting",
+      "geometry"
+    ],
+    "tier": "Quad",
+    "seed": 0,
+    "constraints": {
+      "drivetrain": {
+        "min": 25,
+        "max": 55
+      },
+      "turret": {
+        "min": 10,
+        "max": 30
+      },
+      "weapon": {
+        "min": 15,
+        "max": 35
+      },
+      "sensor*": {
+        "min": 1,
+        "max": 6
+      }
+    },
+    "priority": [
+      "drivetrain",
+      "sensor90",
+      "sensor270",
+      "sensor0",
+      "sensor*",
+      "weapon",
+      "turret"
+    ],
+    "initialEquipment": {
+      "weapon": "weapon.cannon",
+      "mobility": "mobility.tracks"
+    },
+    "status": "implemented-verified"
+  },
+  {
+    "id": "P06",
+    "name": "Hunter",
+    "source": "06-hunter.bw",
+    "libraries": [
+      "core",
+      "targeting",
+      "geometry",
+      "grid",
+      "prediction"
+    ],
+    "tier": "Octa",
+    "seed": 0,
+    "constraints": {
+      "drivetrain": {
+        "min": 25,
+        "max": 70
+      },
+      "turret": {
+        "min": 15,
+        "max": 60
+      },
+      "weapon": {
+        "min": 15,
+        "max": 50
+      },
+      "sensor*": {
+        "min": 2,
+        "max": 12
+      }
+    },
+    "priority": [
+      "sensor0",
+      "sensor45",
+      "sensor315",
+      "sensor90",
+      "sensor270",
+      "sensor*",
+      "drivetrain",
+      "turret",
+      "weapon"
+    ],
+    "status": "implemented-verified",
+    "initialEquipment": {
+      "weapon": "weapon.cannon",
+      "mobility": "mobility.tracks"
+    }
+  },
+  {
+    "id": "P07",
+    "name": "Sentinel",
+    "source": "07-sentinel.bw",
+    "libraries": [
+      "core",
+      "targeting"
+    ],
+    "tier": "Quad",
+    "seed": 0,
+    "status": "implemented-verified",
+    "initialEquipment": {
+      "weapon": "weapon.cannon",
+      "mobility": "mobility.tracks"
+    },
+    "constraints": {
+      "drivetrain": {
+        "min": 10,
+        "max": 25
+      },
+      "turret": {
+        "min": 15,
+        "max": 40
+      },
+      "weapon": {
+        "min": 20,
+        "max": 45
+      },
+      "sensor*": {
+        "min": 2,
+        "max": 6
+      }
+    },
+    "priority": [
+      "sensor*",
+      "turret",
+      "weapon",
+      "drivetrain"
+    ]
+  },
+  {
+    "id": "P08",
+    "name": "Skirmisher",
+    "source": "08-skirmisher.bw",
+    "libraries": [
+      "core",
+      "targeting"
+    ],
+    "tier": "Dual",
+    "seed": 0,
+    "status": "implemented-verified",
+    "initialEquipment": {
+      "weapon": "weapon.cannon",
+      "mobility": "mobility.tracks"
+    },
+    "constraints": {
+      "drivetrain": {
+        "min": 35,
+        "max": 60
+      },
+      "turret": {
+        "min": 15,
+        "max": 35
+      },
+      "weapon": {
+        "min": 15,
+        "max": 35
+      },
+      "sensor*": {
+        "min": 1,
+        "max": 4
+      }
+    },
+    "priority": [
+      "drivetrain",
+      "weapon",
+      "turret",
+      "sensor*"
+    ]
+  },
+  {
+    "id": "P09",
+    "name": "Wallflower",
+    "source": "09-wallflower.bw",
+    "libraries": [
+      "core",
+      "targeting"
+    ],
+    "tier": "Dual",
+    "seed": 0,
+    "status": "implemented-verified",
+    "initialEquipment": {
+      "weapon": "weapon.cannon",
+      "mobility": "mobility.tracks"
+    },
+    "constraints": {
+      "drivetrain": {
+        "min": 25,
+        "max": 55
+      },
+      "turret": {
+        "min": 10,
+        "max": 25
+      },
+      "weapon": {
+        "min": 15,
+        "max": 35
+      },
+      "sensor*": {
+        "min": 1,
+        "max": 6
+      }
+    },
+    "priority": [
+      "sensor90",
+      "sensor0",
+      "sensor*",
+      "drivetrain",
+      "weapon",
+      "turret"
+    ]
+  },
+  {
+    "id": "P10",
+    "name": "Prospector",
+    "source": "10-prospector.bw",
+    "libraries": [
+      "core",
+      "targeting"
+    ],
+    "tier": "Quad",
+    "seed": 0,
+    "status": "implemented-verified",
+    "initialEquipment": {
+      "weapon": "weapon.cannon",
+      "mobility": "mobility.tracks"
+    },
+    "constraints": {
+      "drivetrain": {
+        "min": 15,
+        "max": 45
+      },
+      "turret": {
+        "min": 10,
+        "max": 35
+      },
+      "weapon": {
+        "min": 15,
+        "max": 40
+      },
+      "sensor*": {
+        "min": 3,
+        "max": 10
+      }
+    },
+    "priority": [
+      "sensor*",
+      "drivetrain",
+      "turret",
+      "weapon"
+    ]
+  },
+  {
+    "id": "P11",
+    "name": "Gatekeeper",
+    "source": "11-gatekeeper.bw",
+    "libraries": [
+      "core",
+      "targeting",
+      "geometry"
+    ],
+    "tier": "Dual",
+    "seed": 0,
+    "status": "implemented-verified",
+    "initialEquipment": {
+      "weapon": "weapon.cannon",
+      "mobility": "mobility.tracks"
+    },
+    "constraints": {
+      "drivetrain": {
+        "min": 15,
+        "max": 35
+      },
+      "turret": {
+        "min": 20,
+        "max": 50
+      },
+      "weapon": {
+        "min": 20,
+        "max": 50
+      },
+      "sensor*": {
+        "min": 1,
+        "max": 6
+      }
+    },
+    "priority": [
+      "turret",
+      "weapon",
+      "sensor*",
+      "drivetrain"
+    ]
+  },
+  {
+    "id": "P12",
+    "name": "Duelist",
+    "source": "12-duelist.bw",
+    "libraries": [
+      "core",
+      "targeting"
+    ],
+    "tier": "Dual",
+    "seed": 0,
+    "status": "implemented-verified",
+    "initialEquipment": {
+      "weapon": "weapon.cannon",
+      "mobility": "mobility.tracks"
+    },
+    "constraints": {
+      "drivetrain": {
+        "min": 30,
+        "max": 55
+      },
+      "turret": {
+        "min": 20,
+        "max": 45
+      },
+      "weapon": {
+        "min": 15,
+        "max": 35
+      },
+      "sensor*": {
+        "min": 1,
+        "max": 4
+      }
+    },
+    "priority": [
+      "turret",
+      "drivetrain",
+      "weapon",
+      "sensor*"
+    ]
+  },
+  {
+    "id": "P13",
+    "name": "Survivor",
+    "source": "13-survivor.bw",
+    "libraries": [
+      "core",
+      "targeting"
+    ],
+    "tier": "Dual",
+    "seed": 0,
+    "status": "implemented-verified",
+    "initialEquipment": {
+      "weapon": "weapon.cannon",
+      "mobility": "mobility.tracks"
+    },
+    "constraints": {
+      "drivetrain": {
+        "min": 20,
+        "max": 50
+      },
+      "turret": {
+        "min": 10,
+        "max": 30
+      },
+      "weapon": {
+        "min": 15,
+        "max": 30
+      },
+      "sensor*": {
+        "min": 1,
+        "max": 5
+      }
+    },
+    "priority": [
+      "drivetrain",
+      "sensor*",
+      "weapon",
+      "turret"
+    ]
+  },
+  {
+    "id": "P14",
+    "name": "Ambusher",
+    "source": "14-ambusher.bw",
+    "libraries": [
+      "core",
+      "targeting",
+      "geometry"
+    ],
+    "tier": "Quad",
+    "seed": 0,
+    "status": "implemented-verified",
+    "initialEquipment": {
+      "weapon": "weapon.cannon",
+      "mobility": "mobility.tracks"
+    },
+    "constraints": {
+      "drivetrain": {
+        "min": 10,
+        "max": 30
+      },
+      "turret": {
+        "min": 25,
+        "max": 60
+      },
+      "weapon": {
+        "min": 25,
+        "max": 60
+      },
+      "sensor*": {
+        "min": 2,
+        "max": 8
+      }
+    },
+    "priority": [
+      "sensor*",
+      "turret",
+      "weapon",
+      "drivetrain"
+    ]
+  },
+  {
+    "id": "P15",
+    "name": "Trailblazer",
+    "source": "15-trailblazer.bw",
+    "libraries": [
+      "core",
+      "targeting"
+    ],
+    "tier": "Dual",
+    "seed": 0,
+    "status": "implemented-verified",
+    "initialEquipment": {
+      "weapon": "weapon.cannon",
+      "mobility": "mobility.tracks"
+    },
+    "constraints": {
+      "drivetrain": {
+        "min": 25,
+        "max": 55
+      },
+      "turret": {
+        "min": 15,
+        "max": 35
+      },
+      "weapon": {
+        "min": 15,
+        "max": 35
+      },
+      "sensor*": {
+        "min": 1,
+        "max": 5
+      }
+    },
+    "priority": [
+      "drivetrain",
+      "sensor0",
+      "sensor*",
+      "turret",
+      "weapon"
+    ]
+  }
+]

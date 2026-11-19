@@ -31,6 +31,27 @@ try {
   }
   if (groupIndex === null) console.log(`Syntax compilation passed: ${files.length} Luau source files`);
   if(syntaxOnly){state.destroy();state=null;process.exit(0);}
+  // Native mesh fixtures approach Luau Web's fixed heap. Load their actual
+  // production dependency graph, without compiling unrelated UI/server loaders.
+  // The full syntax pass and other groups still compile every source file.
+  if (groupIndex === 45) {
+    const byName = new Map([...sources].map(([file, source]) => [file.split('/').pop().replace('.luau',''), {file, source}]));
+    const needed = new Set();
+    function include(name) {
+      if (needed.has(name)) return;
+      const entry=byName.get(name);
+      if (!entry) throw new Error(`Missing fixture dependency: ${name}`);
+      needed.add(name);
+      for (const match of entry.source.matchAll(/require\(([^)]+)\)/g)) {
+        const dependency=match[1].match(/(?:\.|["'])(\w+)["']?$/)?.[1];
+        if (!dependency) throw new Error(`Unresolved fixture dependency: ${match[0]}`);
+        include(dependency);
+      }
+    }
+    const fixture=await readFile('tests/BulkAssetCollision.spec.luau','utf8');
+    for (const match of fixture.matchAll(/require\("(\w+)"\)/g)) include(match[1]);
+    for (const file of sources.keys()) if (!needed.has(file.split('/').pop().replace('.luau',''))) sources.delete(file);
+  }
   let bundle = await readFile('tests/RobloxMock.luau', 'utf8');
   bundle += '\nlocal loaders, cache = {}, {}\nlocal Shell = {}\nlocal require\n';
   for (const file of sources.keys()) {
@@ -107,6 +128,14 @@ try {
     ['Playground'],
     ['Aiming'],
     ['MouseModes'],
+    ['PlaygroundChat'],
+    ['BWCoreAPI'],
+    ['BWPersonalities'],
+    ['BWLargePrograms'],
+    ['ScannerTerrain'],
+    ['BWPersonalityFailures'],
+    ['ProvingGround'],
+    ['TerrainMaterials'],
   ];
   if (groupIndex === null) {
     const worldTests = spawnSync(process.execPath, ['--test', ...(await readdir('tests')).filter(name=>name.endsWith('.test.js')).sort().map(name=>'tests/'+name)], { stdio: 'inherit' });
@@ -131,11 +160,27 @@ try {
         const headless=suite==='RoyaleHeadlessServerIntegration';
         if(headless)setup=setup.replace('Heartbeat=heartbeat,IsStudio=function() return true end','Heartbeat=heartbeat,IsStudio=function() return false end');
         tests+='\ndo\nlocal headlessStartup='+String(headless)+'\n'+setup+await readFile('tests/RoyaleServerIntegration.spec.luau','utf8')+'\nend\n';
-      } else if (suite === 'Aiming' || suite === 'Playground' || suite === 'StudioAssetPlacement' || suite === 'WorldObjects' || suite === 'InGameEditorRuntime' || suite === 'PlayerWorlds' || suite === 'WorldElevation' || suite === 'StartingPositions' || suite === 'ImportedGeometry' || suite === 'FootprintSupport' || suite === 'TerrainFaces' || suite === 'BulkAssetCollision' || suite === 'BulkBuildingCollision') {
+      } else if (suite === 'ProvingGround' || suite === 'TerrainMaterials' || suite === 'BWPersonalityFailures' || suite === 'ScannerTerrain' || suite === 'BWLargePrograms' || suite === 'BWPersonalities' || suite === 'BWCoreAPI' || suite === 'Aiming' || suite === 'Playground' || suite === 'StudioAssetPlacement' || suite === 'WorldObjects' || suite === 'InGameEditorRuntime' || suite === 'PlayerWorlds' || suite === 'WorldElevation' || suite === 'StartingPositions' || suite === 'ImportedGeometry' || suite === 'FootprintSupport' || suite === 'TerrainFaces' || suite === 'BulkAssetCollision' || suite === 'BulkBuildingCollision') {
         const harness = await readFile('tests/ServerIntegration.spec.luau', 'utf8');
         const marker = 'Vector3.one=';
         if (!harness.includes(marker)) throw new Error('Transform harness marker changed');
         tests += '\ndo\n' + harness.slice(0, harness.indexOf(marker));
+        if(suite==='BWPersonalities'||suite==='BWPersonalityFailures'){
+          tests+='\nlocal failureOnly='+String(suite==='BWPersonalityFailures')+'\n';
+          const {createRequire}=await import('node:module');
+          const {build}=createRequire(import.meta.url)('../tools/build-bw-personalities.js');
+          const allProfiles=JSON.parse(await readFile('programs/personalities/profiles.json','utf8'));
+          const profiles=allProfiles;
+          tests+='\nlocal hunterSource='+JSON.stringify(build(allProfiles.find(p=>p.id==='P06')))+'\n';
+          tests+='\nlocal personalityMinimums={'+profiles.map(p=>'['+JSON.stringify(p.id)+']={'+Object.entries(p.constraints).map(([k,v])=>'['+JSON.stringify(k)+']='+v.min).join(',')+'}').join(',')+'}\n';
+          tests+='\nlocal personalityTiers={'+profiles.map(p=>'['+JSON.stringify(p.id)+']='+JSON.stringify(p.tier)).join(',')+'}\n';
+          tests+='\nlocal personalitySources={'+profiles.map(p=>'['+JSON.stringify(p.id)+']='+JSON.stringify(build(p))).join(',')+'}\n';
+        }
+        if(suite==='BWCoreAPI'){
+          const spec=await readFile('docs/BW_CORE_API_SPEC.md','utf8');
+          const examples=[...spec.matchAll(/```text\n([\s\S]*?)```/g)].map(match=>match[1]);
+          tests+='\nlocal coreApiExamples={'+examples.map(example=>JSON.stringify(example)).join(',')+'}\n';
+        }
         if(suite==='TerrainFaces'){
           const {loadFaces}=await import(pathToFileURL(resolve('tools/glb-collision.js')).href);
           const profile=await loadFaces('GLBs/forest/rocks-ramp.glb');
@@ -150,7 +195,7 @@ try {
           const lua=v=>v===null?'nil':typeof v==='object'?(Array.isArray(v)?'{'+v.map(lua).join(',')+'}':'{'+Object.entries(v).map(([k,n])=>'['+JSON.stringify(k)+']='+lua(n)).join(',')+'}'):JSON.stringify(v);
           tests+='\nlocal bulkItems='+lua(selected)+'\n';
         }
-        tests += await readFile(`tests/${suite==='BulkBuildingCollision'?'BulkAssetCollision':suite}.spec.luau`, 'utf8') + '\nend\n';
+        tests += await readFile(`tests/${suite==='BWPersonalityFailures'?'BWPersonalities':(suite==='BulkBuildingCollision')?'BulkAssetCollision':suite}.spec.luau`, 'utf8') + '\nend\n';
       } else if (suite === 'BuilderServerIntegration' || suite === 'BuilderPublishedIntegration' || suite === 'PlayerWorldServerIntegration' || suite === 'PlayerWorldPublishedIntegration' || suite === 'TeamWorldServerIntegration') {
         const {default:doc}=await import(pathToFileURL(resolve('tools/world-builder/document.js')).href);
         const {default:cat}=await import(pathToFileURL(resolve('tools/world-builder/catalog.js')).href);

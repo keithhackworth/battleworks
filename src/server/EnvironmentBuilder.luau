@@ -68,7 +68,11 @@ function Builder.build(arena,data,floor)
 		end
 	end
 	for i,tree in data.trees do
-		part(folder,"TreeTrunk",Vector3.new(tree.height,tree.radius*2,tree.radius*2),CFrame.new(tree.x,tree.height/2,tree.z)*CFrame.Angles(0,0,math.pi/2),Color3.fromRGB(100,72,44),Enum.Material.Wood,Enum.PartType.Cylinder,true)
+		if tree.box then
+   part(folder,"TreeTrunk",Vector3.new(tree.radius*2,tree.height,tree.radius*2),CFrame.new(tree.x,tree.height/2,tree.z),Color3.fromRGB(100,72,44),Enum.Material.Wood,Enum.PartType.Block,true).CanCollide=true
+  else
+   part(folder,"TreeTrunk",Vector3.new(tree.height,tree.radius*2,tree.radius*2),CFrame.new(tree.x,tree.height/2,tree.z)*CFrame.Angles(0,0,math.pi/2),Color3.fromRGB(100,72,44),Enum.Material.Wood,Enum.PartType.Cylinder,true)
+  end
 		for layer=1,2 do
 			local crown=part(folder,"TreeCrown",Vector3.new(6.5-layer,5,6.5-layer),CFrame.new(tree.x,tree.height-1+layer*1.7,tree.z),
 				if icy then Color3.fromRGB(218,235,237) elseif i%2==0 then Color3.fromRGB(66,126,61) else Color3.fromRGB(91,147,63),Enum.Material.Grass,Enum.PartType.Ball)

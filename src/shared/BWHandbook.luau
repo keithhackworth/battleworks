@@ -7,7 +7,7 @@ local Catalog=require(script.Parent.ComponentCatalog)
 local Handbook={}
 local function number(n) return string.format("%g",n) end
 local function command(name,signature,category,inputs,behavior,returns,device)
- return {name=name,signature=signature,cost=Hardware.Costs[category],inputs=inputs,behavior=behavior,returns=returns,device=device}
+ return {name=name,signature=signature,cost=Hardware.cost(category,"Bunny"),cycles=Hardware.IntrospectionCycles[category],inputs=inputs,behavior=behavior,returns=returns,device=device}
 end
 function Handbook.commands()
  local commands={}
@@ -42,13 +42,17 @@ function Handbook.commands()
    "Relative degrees: 0..180. Absolute to=pitch: -90..90 degrees, positive upward.",
    "Queue elevation on the existing turret device. Relative up/down uses the current mount angle when execution begins; absolute to= chooses the direction needed. Targets clamp to the installed mount's depression/elevation stops. Uses exactly traverse speed times turret bus performance, with no separate pitch speed. Does not aim shots or bypass cooldown/occupancy. Horizontal commands retain their existing meanings.",accepted,"turret")
  end
+ add("aim_at","aim_at(x, y, z, best_effort=true)","aim_at",
+  "Three finite positional world coordinates in studs, each within +/-100000. Optional boolean best_effort.",
+  "Queue a fixed coordinate on the existing turret device. Both axes move simultaneously at the same actual bus-limited traverse speed. Uses the current mount geometry and mechanical stops; no prediction, detection, tracking or privileged information. Actual shots still follow the physical barrel. Existing cancellation, timeout and authorization apply.",
+  "Standard acceptance with commandId. Query command_status: completed with completionReason mountLimited means the point is beyond mount stops; null means aligned within tolerance.","turret")
  add("fire","fire(best_effort=true)\nfire(seconds, best_effort=true)","fire",
   "No duration: one logical weapon activation. Or seconds: finite number from 0 to "..number(Limits.MaxFireSeconds)..". fire(0) fires nothing.",
   "Submit a weapon operation. A timed command holds the normal trigger for that duration, respecting reload, preparation, heat and cooldown. It does not guarantee a hit or bypass restrictions. CPU cost is paid once per submission, not per bullet. The thread continues while the weapon works.",accepted,"weapon")
  add("Scanner","Scanner(angle, best_effort=true)\nScanner(position=index, best_effort=true)","Scanner",
   "Choose ONE input: angle in degrees (0, 45, 90, 135, 180, 225, 270 or 315, normalized modulo 360), OR position=index with an integer 0..7. Positions map 0->0 degrees, 1->45, 2->90, 3->135, 4->180, 5->225, 6->270, 7->315. Scanner(position=4) equals Scanner(180). Expressions are allowed. Do not provide both angle and position. 0 degrees is chassis-forward, 90 right, 180 back, 270 left.",
   "Submit to that physical sensor, then suspend ONLY this thread until it acquires a snapshot. Other threads and devices continue. Queue rejection returns immediately. Finds all visible tanks, objects and walls in the cone, nearest first; cannot see through walls or tanks. Each sensor has its own queue and cooldown. Every completed sensor retains its own light event, so simultaneous scans cannot overwrite other lenses.",
-  'Success: {status: "success", reason: null, sensor, timestamp, range, count, detections}. detections is an immutable zero-indexed array of immutable dictionaries. Empty space is success with count=0 and an empty list. Failure: {status: "fail", reason: code, sensor}. See Radar tab for every field.',"sensor0 ... sensor315")
+  'Success: {status: "success", reason: null, sensor, timestamp, range, count, detections, terrain}. detections is an immutable zero-indexed array of immutable dictionaries. Empty space is success with count=0 and an empty list. Failure: {status: "fail", reason: code, sensor}. Terrain adds bounded footprint-lane samples, observed world elevation/change, local signed elevation_rate (rise per horizontal stud), slope_angle in degrees, edge_near/edge_far brackets and explicit unknowns. distance_to_edge is the lower bracket, not an exact edge. No extra CPU fee, hidden maps or automatic steering. Queryable water only; cosmetic water is unknown. See docs/SCANNER_TERRAIN.md for exact units and limits. See Radar tab for existing detection fields.',"sensor0 ... sensor315")
  add("print","print(value)","print",
   "One value: number, string, boolean, null, array or dictionary; expressions are allowed. No best_effort argument.",
   "Write a readable value to this tank's private IDE history, with source line, simulation timestamp and thread. Printing and automatic logs cost ZERO ticks, including debug-only variable/property reads and arithmetic used to display a value. An expression containing a real call such as Scanner(), forward(), command_status() or a wait executes normally and retains its full expression cost, so print cannot bypass gameplay costs. Saving a print result in a variable still pays the assignment cost. Generic formatting is bounded at "..number(Limits.MaxOutputBytes).." bytes; automatic scanner diagnostics list every detection separately. Log history rolls instead of ending the program. Excess output is rate-limited with an explicit notice, not a fatal error.",
@@ -83,13 +87,29 @@ function Handbook.commands()
   "commandId: number returned by a successful movement, turn or fire submission. IDs belong to this program run.",
   "Inspect accepted work without waiting. A successful QUERY does not mean the physical command succeeded. Check result.state and result.completionReason.",
   '{status: "success", reason: null, commandId, device, state, completionReason}. States: accepted, queued, running, completed, failed, cancelled. completionReason is null while pending/running and after normal completion; failed/cancelled commands carry a reason such as stuck or commandTimedOut. Unknown or expired ID: fail / invalidArgument. The most recent completed/failed/cancelled commands are retained in a rolling history; active and queued work is never evicted.',"none")
+ local reads={
+  {"get_weapon_speed","kind projectile, finite speed in studs/second and units; no hitscan or infinite speed is fabricated."},
+  {"get_current_coordinates","x, y, z in world studs, read now rather than from last network snapshot."},
+  {"get_weapon_type","weapon_type is the installed canonical ID, e.g. weapon.cannon or weapon.gatling."},
+  {"is_weapon_ready","ready boolean (or null if standalone timing unavailable), state and remaining_seconds; own heat/burst/overheat and native/effective interval/preparation metadata; no ammo magazine exists."},
+  {"get_turret_direction","actual world_direction/world_pitch and mount_yaw/mount_pitch, in degrees including chassis tilt and recoil; immutable world-space pivot, muzzle_position and direction xyz records."},
+  {"get_tank_direction","world_direction, the unchanged get_facing_direction convention: 0 north/-Z, 90 east/+X."},
+  {"get_drivetrain_type","drivetrain_type Tracked/Wheeled plus canonical drivetrain_id and mobility_id; no implicit pivot capability."},
+  {"get_bus_configuration","tier, zero-based buses array, devices keyed by real names with bus ID, percent allocation and effective performance."},
+  {"get_tank_state","coordinates, chassis, turret, motion, weapon/readiness/ammo, health, equipment, bus, scanners and simulation metadata."},
+ }
+ for _,entry in reads do
+  add(entry[1],entry[1].."()",entry[1],"No arguments. Read-only own tank only; no user/tank/world selectors.",
+   "Fresh immutable BW result at invocation after CPU charge. "..entry[2].." Field access pays ordinary read/access costs only. Readiness costs one tier-relative CPU cycle, full snapshot two; other metadata calls cost one tick except tank heading at 0.1. No enemies/maps or new movement permissions.",
+   "status success/reason null with "..entry[2].." Failure stateUnavailable if a trusted own context is missing/mismatched.","own tank")
+ end
  return commands
 end
 local function renderCommands(commands,names)
  local blocks={}
  for _,name in names do
   for _,entry in commands do if entry.name==name then
-   table.insert(blocks,"COMMAND: "..entry.name.."\n"..entry.signature.."\nBase CPU cost: "..number(entry.cost).." ticks • Device: "..entry.device.."\n\nINPUT\n"..entry.inputs.."\n\nHOW IT WORKS\n"..entry.behavior.."\n\nRETURNS\n"..entry.returns)
+   table.insert(blocks,"COMMAND: "..entry.name.."\n"..entry.signature.."\nBase CPU cost: "..number(entry.cost)..(if entry.cycles then " Bunny ticks ("..entry.cycles.." tier-relative CPU cycles)"else " ticks").." • Device: "..entry.device.."\n\nINPUT\n"..entry.inputs.."\n\nHOW IT WORKS\n"..entry.behavior.."\n\nRETURNS\n"..entry.returns)
   end end
  end
  return table.concat(blocks,"\n\n────────────────────────────\n\n")
@@ -119,9 +139,9 @@ Threads receive SEPARATE CPU budgets. One busy/waiting thread cannot spend anoth
 
 CPU TIME is different from DEVICE TIME. forward(100) costs %g tick to SUBMIT, then the drivetrain moves independently without spending ticks every step. Waiting in a queue also does not spend repeated CPU ticks. Reading the clock, printing values and automatic logging cost zero. Storing a result or executing real device/query/wait calls inside print still pays its normal cost.
 
-Safety still applies: at most %d source operations/thread/cycle, %g simulated seconds/program, %d source statements and %d lines. Zero-cost operations cannot hang the server.]],
+Safety still applies: at most %d source operations/thread/cycle, %g simulated seconds/program, a %d-byte technical upload bound. There is no source-statement or line-count gameplay ceiling. Zero-cost operations cannot hang the server.]],
  Hardware.CyclesPerSecond,1/Hardware.CyclesPerSecond,Hardware.CreditCycles,Hardware.MaxInstructionCredit,table.concat(tiers,"\n"),Hardware.Tiers.Bunny.ticks,Hardware.CyclesPerSecond,Hardware.Tiers.Bunny.ticks*Hardware.CyclesPerSecond,
- Hardware.Costs.forward,Hardware.MaxOperationsPerCycle,Limits.MaxProgramSeconds,Limits.MaxInstructions,Limits.MaxLines))
+ Hardware.Costs.forward,Hardware.MaxOperationsPerCycle,Limits.MaxProgramSeconds,Limits.MaxSourceBytes))
  add("buses","Buses & busy","Buses, device performance, queues and physical time",[[Each chassis bus has TWO independent roles:
 1. Run one BW instruction thread with its own CPU budget.
 2. Supply reserved performance allocations to its installed devices.
@@ -169,7 +189,7 @@ wait_for_clock(clock.time + 3)
 stop()
 
 steer_right(20) sets steering: wheel angle for wheels, relative tread intent for tracks. turn_right(20) changes chassis heading. Capabilities come from installed components, not the model name. forward(50) travels a finite distance; forward() drives until replaced/stopped or lifecycle timeout. An issuing thread can finish while its continuous drive remains active. The same physics, collision, coasting, bus performance, airborne restrictions and damage filters still apply.]])
- add("turret","Turret","Turret commands",renderCommands(commands,{"turret_left","turret_right","turret_up","turret_down"}))
+ add("turret","Turret","Turret commands",renderCommands(commands,{"turret_left","turret_right","turret_up","turret_down","aim_at"}))
  add("weapon","Weapons","Firing and weapon timing",renderCommands(commands,{"fire"})..string.format([[
 
 CURRENT FULL-PERFORMANCE TIMING
@@ -444,7 +464,12 @@ Completion means the requested travel/rotation was achieved, not that the tank i
 The debug speed HUD shows measured world speed against the allocation-limited drive target, rated engine speed, yaw rate and sliding/contact state. Physical surface regions can be configured independently from visible map terrain. The test arena now defaults to IceWind: parked tanks gently drift eastward (about1 stud/sec), with visibly icy ground. Powered grip exceeds the test wind, so driving/reversing can pull away from downwind walls. Uniform wind eases its push as downwind drift builds; it does not clamp faster movement. Rivers, buoyancy and general prop physics remain deferred. The internal force/impulse API is server-only and is not a new BW command.]])
  -- Each command has exactly one detailed home, plus a visible index at the
  -- top of that topic. Registry-only coverage is not enough: render every entry.
- local membership={movement={"forward","back","steer_left","steer_right","steer_center","stop","turn_left","turn_right"},turret={"turret_left","turret_right","turret_up","turret_down"},weapon={"fire"},radar={"Scanner"},
+ add("selfstate","Own state","Own state and hardware introspection",renderCommands(commands,{"get_weapon_speed","get_current_coordinates","get_weapon_type","is_weapon_ready","get_turret_direction","get_tank_direction","get_drivetrain_type","get_bus_configuration","get_tank_state"})..[[
+
+Snapshots use immutable dictionaries and zero-based arrays. Assign s = get_tank_state() on its own source line, then read s.coordinates.x or s.weapon.readiness.ready. Check s.scanner_count before reading s.scanners[0].cone_degrees.
+No field read repeats introspection charges. One CPU cycle costs your tier's ticks/cycle. A two-cycle snapshot can wait for credit; it reads AFTER that wait. Ordinary print does not waive this fee.
+Current weapons use finite-speed projectiles and unlimited ammo; wheel_count is null because the physics model does not define it. Standalone runtimes without a server clock return null tick/step_seconds. Scanner headings are chassis-relative fixed 45-degree mounts, not a freely steered beam; narrow cones leave gaps. Use actual steer/pivot capability when planning a sweep.]] )
+ local membership={selfstate={"get_weapon_speed","get_current_coordinates","get_weapon_type","is_weapon_ready","get_turret_direction","get_tank_direction","get_drivetrain_type","get_bus_configuration","get_tank_state"},movement={"forward","back","steer_left","steer_right","steer_center","stop","turn_left","turn_right"},turret={"turret_left","turret_right","turret_up","turret_down","aim_at"},weapon={"fire"},radar={"Scanner"},
   clock={"get_facing_direction","get_clock","wait_for_clock","wait_for","variable_has_changed"},queues={"command_status","clear_queue","abort_command"},examples={"print"}}
  local byName={}; for _,entry in commands do byName[entry.name]=entry end
  local directory={"COMMAND DIRECTORY (choose a topic tab)"}

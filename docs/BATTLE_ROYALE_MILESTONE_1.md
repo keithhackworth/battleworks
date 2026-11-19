@@ -60,6 +60,10 @@ The application shell, screen manager, private World Editor, Garage placeholders
 
 Private World Editor editing/saving remains available. Launching saved layouts into the arena requires Classic mode: Royale rejects arena replacement even when every player is in the menu, preserving the public pool and saved data.
 
+## Multiplayer chat
+
+The lower-left Chat dock uses native TextChatService rendering and managed input for the server's global channel. It persists on foot/in tanks, yields gameplay input while typing, and hides in the menu/editor. See [chat behavior and native validation](PLAYGROUND_CHAT.md).
+
 ## Terrain and hazards
 
 The default Playground includes a ravine, river, bridge and sloped overlook, with server-side environmental deaths and designated dry respawns. Unsafe voluntary exits are rejected with visible feedback; safe exits retain the jump-out at the current tank. See [terrain implementation and native acceptance](PLAYGROUND_TERRAIN.md). Explicitly authored worlds and Classic keep their existing layouts.

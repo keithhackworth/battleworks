@@ -1,0 +1,17 @@
+# P07 Sentinel — methodical sector coverage, not predictive tracking.
+# Scanning every sector equally wastes time when one approach is busy.
+# A small chassis sweep fills lens gaps, but exposes a predictable rhythm.
+sector = 0
+phase = "watch"
+print({personality: "Sentinel", phase: phase})
+while true:
+    observation = Scanner(sector * 45)
+    fired = engage(observation)
+    sector = sector + 1
+    if sector == 8:
+        sector = 0
+        phase = "coverage_sweep"
+        print({personality: "Sentinel", phase: phase})
+        turn_to(get_tank_direction().world_direction + 15)
+        phase = "watch"
+        print({personality: "Sentinel", phase: phase})

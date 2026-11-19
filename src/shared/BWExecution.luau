@@ -8,6 +8,7 @@ local Value=require(script.Parent.BWValue)
 local Devices=require(script.Parent.BWDevices)
 local Input=require(script.Parent.InputCommand)
 local Adapter=require(script.Parent.BWTankAdapter)
+local SelfState=require(script.Parent.BWSelfState)
 local R={}; R.__index=R
 local instructionCost
 -- Only side-effect-free display expressions are waived. An expression that
@@ -70,7 +71,7 @@ function R:log(t,text,line,kind,observation,angle)
 end
 function R:charge(t,category,cost)
  if (t.debugDepth or 0)>0 and (category=="read" or category=="access" or category=="arithmetic" or category=="comparison" or category=="logical") then return end
- cost=cost or Hardware.Costs[category] or 0
+ cost=cost or Hardware.cost(category,self.config.tier)
  -- A call can execute arbitrarily many statements. Suspend before charging;
  -- resumed evaluation retains its operands and never repeats side effects.
  while t.credit+1e-8<cost do coroutine.yield({kind="cost",required=cost}) end
@@ -96,6 +97,10 @@ end
 function R:_call(t,call,evaluate)
  local name=call.name; local line=call.line
  if call.userFunction then return self:invoke(t,call,evaluate) end
+ if SelfState.Names[name]then
+  self:charge(t,name)
+  return SelfState.read(name,self.state,self.config,self.time,self.services)
+ end
  if name=="get_facing_direction" then
   self:charge(t,name); return Value.result(nil,{world_direction=Adapter.heading(self.state.yaw)})
  end
@@ -155,7 +160,7 @@ function R:_call(t,call,evaluate)
 end
 function R:submit(t,instruction,line)
  local name=instruction.op; self:charge(t,name)
- local device=if name=="Scanner" then "sensor"..tostring(instruction.value) elseif name=="fire" then "weapon" elseif name:sub(1,6)=="turret" then "turret" else "drivetrain"
+ local device=if name=="Scanner" then "sensor"..tostring(instruction.value) elseif name=="fire" then "weapon" elseif name=="aim_at"or name:sub(1,6)=="turret" then "turret" else "drivetrain"
  local result=self.devices:submit(device,instruction,self.time,t.id)
  if result.status=="fail" then
   if name=="Scanner" then result=Value.result(result.reason,{sensor=instruction.value}) end
@@ -205,7 +210,7 @@ function R:invoke(t,call,evaluate)
  t.instructions=fn.instructions; t.index=1
  while t.instructions[t.index] and not frame.returned do
   local n=t.instructions[t.index]; t.line=n.line; t.text=n.text
-  local required=instructionCost(n)
+  local required=instructionCost(n,self.config.tier)
   if required>Hardware.MaxInstructionCredit then Commands.error(n.line,"Instruction exceeds maximum CPU reservation.") end
   t.reservation=required
   while t.credit+1e-8<required do coroutine.yield({kind="cost",required=required}) end
@@ -275,48 +280,50 @@ function R:ready(p,t)
 end
 -- Reserve a bounded worst-case cost before beginning a source instruction. Ordinary
 -- assignments/decisions therefore cannot be split by CPU exhaustion or interleaved writes.
-local function expressionCost(n,debug)
+local function expressionCost(n,debug,tier)
+ local function estimate(child,debugOnly)return expressionCost(child,debugOnly,tier)end
  if not n then return 0 end
  local k=n.kind; local costs=Hardware.Costs
  local function cost(category) return if debug then 0 else costs[category] end
  if k=="variable" then return if n.constParameter then 0 else cost("read") end
- if k=="index" then return expressionCost(n.array,debug)+expressionCost(n.index,debug)+cost("access") end
- if k=="group" then return expressionCost(n.expression,debug) end
- if k=="unary" then return expressionCost(n.operand,debug)+(if n.op=="not" then cost("logical") else cost("arithmetic")) end
+ if k=="index" then return estimate(n.array,debug)+estimate(n.index,debug)+cost("access") end
+ if k=="group" then return estimate(n.expression,debug) end
+ if k=="unary" then return estimate(n.operand,debug)+(if n.op=="not" then cost("logical") else cost("arithmetic")) end
  if k=="binary" then
   if n.op=="and" or n.op=="or" then
    local known,value=Expression.constant(n.left)
-   if known and ((n.op=="and" and value==false) or (n.op=="or" and value==true)) then return expressionCost(n.left,debug)+cost("logical") end
+   if known and ((n.op=="and" and value==false) or (n.op=="or" and value==true)) then return estimate(n.left,debug)+cost("logical") end
   end
   local category=if n.op=="and" or n.op=="or" then "logical" elseif n.op=="==" or n.op=="!=" or n.op=="<" or n.op=="<=" or n.op==">" or n.op==">=" then "comparison" else "arithmetic"
-  return expressionCost(n.left,debug)+expressionCost(n.right,debug)+cost(category)
+  return estimate(n.left,debug)+estimate(n.right,debug)+cost(category)
  end
  local total=0
  if k=="call" then
-  total=if n.name=="wait_for" or n.name=="variable_has_changed" or n.name=="wait_for_clock" then costs.sync elseif n.name=="clear_queue" or n.name=="abort_command" or n.name=="command_status" then costs.queue else costs[n.name] or 0
+  total=if n.name=="wait_for" or n.name=="variable_has_changed" or n.name=="wait_for_clock" then costs.sync elseif n.name=="clear_queue" or n.name=="abort_command" or n.name=="command_status" then costs.queue else Hardware.cost(n.name,tier)
   if n.userFunction then total+=(n.mutableParameters or 0)*costs.write end
-  for _,arg in n.args do total+=expressionCost(arg.expression,n.name=="print" and debugOnly(arg.expression)) end
- elseif k=="array" then for _,item in n.items do total+=expressionCost(item,debug) end
- elseif k=="dictionary" then for _,entry in n.entries do total+=expressionCost(entry.expression,debug) end end
+  for _,arg in n.args do total+=estimate(arg.expression,n.name=="print" and debugOnly(arg.expression)) end
+ elseif k=="array" then for _,item in n.items do total+=estimate(item,debug) end
+ elseif k=="dictionary" then for _,entry in n.entries do total+=estimate(entry.expression,debug) end end
  return total
 end
-instructionCost=function(n)
+instructionCost=function(n,tier)
+ local function estimate(child,debugOnly)return expressionCost(child,debugOnly,tier)end
  local costs=Hardware.Costs
- if n.op=="$return" then return expressionCost(n.expression) end
- if n.op=="$assign" then return expressionCost(n.expression)+costs.write end
- if n.op=="$set" then return expressionCost(n.targetExpression.array)+expressionCost(n.targetExpression.index)+expressionCost(n.expression)+costs.write end
- if n.op=="$while" then return costs.loop+expressionCost(n.condition) end
- if n.op=="$branch" then return costs.branch+expressionCost(n.condition) end
- if n.op=="$switch" then return costs.switch+expressionCost(n.expression) end
- if n.op=="$print" then return costs.print+expressionCost(n.expression,debugOnly(n.expression)) end
- if n.op=="$call" then return expressionCost(n.expression) end
- if n.call then return expressionCost(n.call) end
- return costs[n.op] or 0
+ if n.op=="$return" then return estimate(n.expression) end
+ if n.op=="$assign" then return estimate(n.expression)+costs.write end
+ if n.op=="$set" then return estimate(n.targetExpression.array)+estimate(n.targetExpression.index)+estimate(n.expression)+costs.write end
+ if n.op=="$while" then return costs.loop+estimate(n.condition) end
+ if n.op=="$branch" then return costs.branch+estimate(n.condition) end
+ if n.op=="$switch" then return costs.switch+estimate(n.expression) end
+ if n.op=="$print" then return costs.print+estimate(n.expression,debugOnly(n.expression)) end
+ if n.op=="$call" then return estimate(n.expression) end
+ if n.call then return estimate(n.call) end
+ return Hardware.cost(n.op,tier)
 end
 function R:runThread(t)
  local spec=Hardware.Tiers[self.config.tier]
  local nextInstruction=t.instructions[t.index]
- local required=math.max(t.reservation or 0,if t.pending then t.pending.required or 0 else 0,if nextInstruction then instructionCost(nextInstruction) else 0)
+ local required=math.max(t.reservation or 0,if t.pending then t.pending.required or 0 else 0,if nextInstruction then instructionCost(nextInstruction,self.config.tier) else 0)
  if required>Hardware.MaxInstructionCredit then Commands.error(nextInstruction.line,"Instruction exceeds maximum CPU reservation.") end
  t.credit=math.min(math.max(spec.ticks*Hardware.CreditCycles,required),t.credit+spec.ticks)
  local operations=0
@@ -330,7 +337,7 @@ function R:runThread(t)
    local n=t.instructions[t.index]
    if not n then t.state="finished"; return end
    t.line=n.line; t.text=n.text
-   if t.credit+1e-8<instructionCost(n) then t.state="waiting"; t.waitReason="cpuBudget"; return end
+   if t.credit+1e-8<instructionCost(n,self.config.tier) then t.state="waiting"; t.waitReason="cpuBudget"; return end
    t.waitReason=nil; t.coroutine=coroutine.create(function() self:instruction(t,n) end)
   end
   local ok,yielded=coroutine.resume(t.coroutine)

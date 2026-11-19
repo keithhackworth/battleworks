@@ -4,6 +4,7 @@ local Config=require(Shared.ScannerConfig)
 local Components=require(Shared.VehicleComponents)
 local Geometry=require(Shared.ScannerGeometry)
 local Value=require(Shared.BWValue)
+local Terrain=require(script.Parent.ScannerTerrain)
 local Scanner={}
 -- Only queryable, server-allowlisted geometry reaches classification. Metadata
 -- distinguishes scenery from structural walls without exposing occluded objects.
@@ -54,12 +55,16 @@ function Scanner:execute(source,angle,time,hardware)
 	local state=source.state
  local yaw=state.yaw -- one authoritative orientation for this entire observation
 	local origin=state.position+Vector3.new(0,originHeight,0)
-	local parts,records=self.scene()
+	local parts,records,terrainParts=self.scene()
 	local allowed,physical={},{}
 	for _,p in parts do
 		if p~=source.hitbox and p.CanQuery~=false then allowed[p]=true; table.insert(physical,p) end
 	end
-	local overlap=OverlapParams.new(); overlap.FilterType=Enum.RaycastFilterType.Include
+	-- Ground is an occluder, not an obstacle detection. Keep holes/bridges real
+ -- without teaching BW programs that every visible grass patch is a wall.
+ local present={};for _,p in physical do present[p]=true end
+ for _,p in terrainParts or{}do if p~=source.hitbox and p.CanQuery~=false and not present[p]then table.insert(physical,p);present[p]=true end end
+ local overlap=OverlapParams.new(); overlap.FilterType=Enum.RaycastFilterType.Include
 	overlap.FilterDescendantsInstances=physical; overlap.RespectCanCollide=false; overlap.MaxParts=Config.MaxSpatialParts+1
 	local candidates=self.world:GetPartBoundsInRadius(origin,range,overlap)
 	if #candidates>Config.MaxSpatialParts then return nil,"scannerBusy" end
@@ -118,13 +123,16 @@ function Scanner:execute(source,angle,time,hardware)
    point=Value.dictionary({x=hit.Position.X,y=hit.Position.Y,z=hit.Position.Z},true)},true))
  end
  local nearest=detections[1] or {}
+ local groundParts
+ if terrainParts then groundParts={};for _,p in terrainParts do if p~=source.hitbox then table.insert(groundParts,p)end end end
+ local terrain,terrainCasts=Terrain.observe(self.world,groundParts,records,state,angle,range,cone,origin,sensorHardware,Config.MaxRaycasts-casts)
  -- Nearest fields remain as conveniences for existing programs; detections is
  -- the authoritative complete visible-object list, zero-indexed in BW.
- local result=Value.result(nil,{sensor=angle,timestamp=time,range=range,count=#detections,detections=Value.array(detections),
+ local result=Value.result(nil,{terrain=terrain,sensor=angle,timestamp=time,range=range,count=#detections,detections=Value.array(detections),
   type=nearest.type or Value.Null,distance=nearest.distance or Value.Null,relative_direction=nearest.relative_direction or Value.Null,world_direction=nearest.world_direction or Value.Null,
   player=nearest.player or Value.Null,relation=nearest.relation or Value.Null,point=nearest.point or Value.Null,
   object_id=nearest.object_id or Value.Null,name=nearest.name or Value.Null})
-	self.completed+=1; self.lastRaycasts=casts
+	self.completed+=1; self.lastRaycasts=casts+terrainCasts
 	return Value.observation(result,time,origin,yaw)
 end
 return Scanner

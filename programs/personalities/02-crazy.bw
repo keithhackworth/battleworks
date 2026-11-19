@@ -1,0 +1,22 @@
+# P02 Crazy — no scans, no target checks, no alignment checks.
+# A better random generator could avoid repeating recognizable routes.
+# Try comparing short and long movement pulses on rough ground.
+seed = 73
+phase = "chaos"
+print({personality: "Crazy", phase: phase})
+with thread(1):
+    while true:
+        seed = random_step(seed)
+        turret_right(to=seed * 360 / 997)
+        turn_to(seed * 360 / 997)
+        progress = travel(3 + seed / 80)
+with thread(2):
+    while true:
+        ready = is_weapon_ready()
+        if ready.ready == true:
+            if ready.operation == "Heat":
+                await_command(fire(ready.max_burst_seconds))
+            else:
+                await_command(fire())
+        else:
+            wait_for_clock(get_clock().time + 0.1)
