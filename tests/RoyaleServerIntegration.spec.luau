@@ -92,6 +92,10 @@ network:FindFirstChild("BWHardware").OnServerEvent:Fire(second,{},a,epochA)
 network:FindFirstChild("BWHardware").OnServerEvent:Fire(first,{tier="Octa"},a,epochA)
 local move={throttle=1,steer=0,fire=false,aimMode="Rate",turretX=1,turretY=0}
 local neutral=require("InputCommand").neutral()
+local authorizedPitch=snapshots[a].turretPitch
+input.OnServerEvent:Fire(second,{throttle=0,steer=0,fire=true,aimMode="World",aim=Vector3.new(0,100,-100)},a,epochA)
+bwRun.OnServerEvent:Fire(second,"turret_up(to=20)",1,a,epochA);advance(4)
+check(snapshots[a].turretPitch==authorizedPitch and not snapshots[a].bwRunning,"XYZ aiming and new BW elevation cannot bypass public occupancy authorization")
 local before=snapshots[a].position
 input.OnServerEvent:Fire(second,move,a,epochA);bwRun.OnServerEvent:Fire(second,"forward(10)",1,a,epochA);advance(8)
 check((snapshots[a].position-before).Magnitude<.001 and not snapshots[a].bwRunning,"non-occupants cannot drive, fire or execute BW against public tanks")

@@ -37,6 +37,11 @@ function Handbook.commands()
    "Choose ONE: relative degrees from 0 to "..number(Limits.MaxRelativeAngle)..", OR to=world heading from -"..number(Limits.MaxAbsoluteAngle).." to "..number(Limits.MaxAbsoluteAngle).." (normalized modulo 360). Finite numbers/expressions only.",
    "Rotate "..(if turret then "the turret" else "the chassis")..(if left then " counterclockwise (left)." else " clockwise (right).").." Relative rotation starts from the actual heading when this device begins the command, including full revolutions and crossing north. Absolute turns honor the chosen direction even when it takes the longer path. to=360 is north; use a relative 360 for a full revolution. World headings: 0 north, 90 east, 180 south, 270 west; independent of camera"..(if turret then " and chassis orientation. Recoil affects actual barrel aim." else ". Boomer can pivot; Rattler must drive a curved car-style path to turn, and cannot steer in the air."),accepted,if turret then "turret" else "drivetrain")
  end
+ for _,name in {"turret_up","turret_down"}do
+  add(name,name.."(degrees, best_effort=true)\n"..name.."(to=pitch, best_effort=true)",name,
+   "Relative degrees: 0..180. Absolute to=pitch: -90..90 degrees, positive upward.",
+   "Queue elevation on the existing turret device. Relative up/down uses the current mount angle when execution begins; absolute to= chooses the direction needed. Targets clamp to the installed mount's depression/elevation stops. Uses exactly traverse speed times turret bus performance, with no separate pitch speed. Does not aim shots or bypass cooldown/occupancy. Horizontal commands retain their existing meanings.",accepted,"turret")
+ end
  add("fire","fire(best_effort=true)\nfire(seconds, best_effort=true)","fire",
   "No duration: one logical weapon activation. Or seconds: finite number from 0 to "..number(Limits.MaxFireSeconds)..". fire(0) fires nothing.",
   "Submit a weapon operation. A timed command holds the normal trigger for that duration, respecting reload, preparation, heat and cooldown. It does not guarantee a hit or bypass restrictions. CPU cost is paid once per submission, not per bullet. The thread continues while the weapon works.",accepted,"weapon")
@@ -164,7 +169,7 @@ wait_for_clock(clock.time + 3)
 stop()
 
 steer_right(20) sets steering: wheel angle for wheels, relative tread intent for tracks. turn_right(20) changes chassis heading. Capabilities come from installed components, not the model name. forward(50) travels a finite distance; forward() drives until replaced/stopped or lifecycle timeout. An issuing thread can finish while its continuous drive remains active. The same physics, collision, coasting, bus performance, airborne restrictions and damage filters still apply.]])
- add("turret","Turret","Turret commands",renderCommands(commands,{"turret_left","turret_right"}))
+ add("turret","Turret","Turret commands",renderCommands(commands,{"turret_left","turret_right","turret_up","turret_down"}))
  add("weapon","Weapons","Firing and weapon timing",renderCommands(commands,{"fire"})..string.format([[
 
 CURRENT FULL-PERFORMANCE TIMING
@@ -439,7 +444,7 @@ Completion means the requested travel/rotation was achieved, not that the tank i
 The debug speed HUD shows measured world speed against the allocation-limited drive target, rated engine speed, yaw rate and sliding/contact state. Physical surface regions can be configured independently from visible map terrain. The test arena now defaults to IceWind: parked tanks gently drift eastward (about1 stud/sec), with visibly icy ground. Powered grip exceeds the test wind, so driving/reversing can pull away from downwind walls. Uniform wind eases its push as downwind drift builds; it does not clamp faster movement. Rivers, buoyancy and general prop physics remain deferred. The internal force/impulse API is server-only and is not a new BW command.]])
  -- Each command has exactly one detailed home, plus a visible index at the
  -- top of that topic. Registry-only coverage is not enough: render every entry.
- local membership={movement={"forward","back","steer_left","steer_right","steer_center","stop","turn_left","turn_right"},turret={"turret_left","turret_right"},weapon={"fire"},radar={"Scanner"},
+ local membership={movement={"forward","back","steer_left","steer_right","steer_center","stop","turn_left","turn_right"},turret={"turret_left","turret_right","turret_up","turret_down"},weapon={"fire"},radar={"Scanner"},
   clock={"get_facing_direction","get_clock","wait_for_clock","wait_for","variable_has_changed"},queues={"command_status","clear_queue","abort_command"},examples={"print"}}
  local byName={}; for _,entry in commands do byName[entry.name]=entry end
  local directory={"COMMAND DIRECTORY (choose a topic tab)"}

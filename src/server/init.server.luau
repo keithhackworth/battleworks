@@ -469,7 +469,7 @@ local function launchShell(id, tank, origin, direction, deferEffects)
 	tank.state.weaponShotSerial=(tank.state.weaponShotSerial or 0)+1
 	local tuning = Components.get(tank.state).Weapon
  local airborne,ground=Simulation.projectileFlight(tank.state)
- local flight={airborne=airborne,findGround=if worldObjects then function(position,heading,range,radius,baseline)
+ local flight={physical=true,muzzleHeight=Components.get(tank.state).Turret.MuzzleHeight,airborne=airborne,findGround=if worldObjects then function(position,heading,range,radius,baseline)
   return worldObjects:projectileGround(position,heading,range,radius,baseline)
  end else nil}
 	local shell, blocked = Projectiles.launch(workspace,origin,direction,{tank.hitbox,shellFolder},tuning,ground,flight)

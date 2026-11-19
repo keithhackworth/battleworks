@@ -2,10 +2,11 @@
 local Limits=require(script.Parent.BWConfig)
 local C={}
 C.special={get_clock=true,get_facing_direction=true,wait_for_clock=true,wait_for=true,variable_has_changed=true,clear_queue=true,abort_command=true,command_status=true}
+C.elevation={turret_up=true,turret_down=true}
 C.moves={forward=true,back=true}
 C.steering={steer_left=true,steer_right=true,steer_center=true}
 C.turns={turn_left=true,turn_right=true,turret_left=true,turret_right=true}
-function C.known(name) return C.special[name] or C.moves[name] or C.turns[name] or C.steering[name] or name=="stop" or name=="fire" or name=="Scanner" or name=="print" end
+function C.known(name) return C.special[name] or C.moves[name] or C.turns[name] or C.elevation[name] or C.steering[name] or name=="stop" or name=="fire" or name=="Scanner" or name=="print" end
 function C.error(line,message) error({bwError=true,line=line,message=message},0) end
 function C.signature(call,functions)
  local fn=functions and functions[call.name]
@@ -38,7 +39,7 @@ function C.signature(call,functions)
 			if value then C.error(call.line,"Use one input: positional value, to=heading, or Scanner position=index.") end
 			value=true
 			if key=="position" and call.name~="Scanner" then C.error(call.line,"Only Scanner supports position=index.") end
-			if key=="to" and not C.turns[call.name] then C.error(call.line,"Only chassis/turret turns support to=heading.") end
+			if key=="to" and not (C.turns[call.name] or C.elevation[call.name]) then C.error(call.line,"Only chassis/turret turns support to=heading.") end
 		elseif key~="best_effort" or call.name=="print" then C.error(call.line,"Unknown argument '"..key.."'.") end
 	end
 	if not value and call.name~="fire" and not C.moves[call.name] then C.error(call.line,"Expected a value for "..call.name..".") end
@@ -59,6 +60,10 @@ function C.validate(name,key,value,line)
         if n%45~=0 then C.error(line,string.format("invalidSensor: use mounted angles at 45 degree increments (nearby %d or %d).",math.floor(n/45)*45,(math.ceil(n/45)*45)%360)) end
         return n
     end
+ if C.elevation[name]then
+  if (key=="to" and math.abs(value)>90)or (key~="to" and (value<0 or value>180))then C.error(line,"Elevation expects 0..180 relative degrees or to=-90..90.")end
+  return value
+ end
 	local absolute=key=="to"
 	local limit=if absolute then Limits.MaxAbsoluteAngle elseif C.moves[name] then Limits.MaxDistance elseif C.turns[name] then Limits.MaxRelativeAngle elseif C.steering[name] then 180 else Limits.MaxFireSeconds
 	if (not absolute and value<0) or math.abs(value)>limit then C.error(line,string.format("Argument must be %s to %g.",if absolute then tostring(-limit) else "0",limit)) end

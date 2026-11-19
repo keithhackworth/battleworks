@@ -54,4 +54,11 @@ function Adapter.turn(state,sign,remaining,turret,dt)
 	end
 	return command
 end
+function Adapter.pitch(state,sign,remaining,dt)
+ local command=Command.neutral()
+ if remaining<=Limits.AngleTolerance then return command end
+ local speed=Components.get(state).Turret.TraverseSpeed*(state.turretPerformance or 1)
+ command.turretY=sign*math.min(1,remaining/math.max(1e-6,speed*dt))
+ return command
+end
 return Adapter

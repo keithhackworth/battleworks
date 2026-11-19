@@ -12,7 +12,7 @@ C.AcquisitionSeconds=Catalog["sensor.standard"].Properties.Acquisition
 C.Tiers={}
 for _,entry in Catalog do if entry.Type=="Computer" then C.Tiers[entry.Properties.Tier]=entry.Properties end end
 C.Costs={read=0.1,write=0.2,arithmetic=0.2,comparison=0.2,logical=0.1,access=0.1,branch=1,loop=1,switch=2,print=0,sync=0.2,queue=1,
- steer_left=1,steer_right=1,steer_center=1,stop=1,forward=1,back=1,turn_left=1,turn_right=1,turret_left=1,turret_right=1,Scanner=1,fire=2,get_clock=0,get_facing_direction=0.1,call=0}
+ steer_left=1,steer_right=1,steer_center=1,stop=1,forward=1,back=1,turn_left=1,turn_right=1,turret_left=1,turret_right=1,turret_up=1,turret_down=1,Scanner=1,fire=2,get_clock=0,get_facing_direction=0.1,call=0}
 C.TankTiers={}
 for id,assembly in Assemblies do C.TankTiers[id]=Catalog[assembly.Computer].Properties.Tier end
 C.Angles={0,45,90,135,180,225,270,315}

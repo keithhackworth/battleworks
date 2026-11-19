@@ -105,6 +105,8 @@ try {
     ['RoyaleTeamClientIntegration'],
     ['RoyaleHeadlessServerIntegration'],
     ['Playground'],
+    ['Aiming'],
+    ['MouseModes'],
   ];
   if (groupIndex === null) {
     const worldTests = spawnSync(process.execPath, ['--test', ...(await readdir('tests')).filter(name=>name.endsWith('.test.js')).sort().map(name=>'tests/'+name)], { stdio: 'inherit' });
@@ -129,7 +131,7 @@ try {
         const headless=suite==='RoyaleHeadlessServerIntegration';
         if(headless)setup=setup.replace('Heartbeat=heartbeat,IsStudio=function() return true end','Heartbeat=heartbeat,IsStudio=function() return false end');
         tests+='\ndo\nlocal headlessStartup='+String(headless)+'\n'+setup+await readFile('tests/RoyaleServerIntegration.spec.luau','utf8')+'\nend\n';
-      } else if (suite === 'Playground' || suite === 'StudioAssetPlacement' || suite === 'WorldObjects' || suite === 'InGameEditorRuntime' || suite === 'PlayerWorlds' || suite === 'WorldElevation' || suite === 'StartingPositions' || suite === 'ImportedGeometry' || suite === 'FootprintSupport' || suite === 'TerrainFaces' || suite === 'BulkAssetCollision' || suite === 'BulkBuildingCollision') {
+      } else if (suite === 'Aiming' || suite === 'Playground' || suite === 'StudioAssetPlacement' || suite === 'WorldObjects' || suite === 'InGameEditorRuntime' || suite === 'PlayerWorlds' || suite === 'WorldElevation' || suite === 'StartingPositions' || suite === 'ImportedGeometry' || suite === 'FootprintSupport' || suite === 'TerrainFaces' || suite === 'BulkAssetCollision' || suite === 'BulkBuildingCollision') {
         const harness = await readFile('tests/ServerIntegration.spec.luau', 'utf8');
         const marker = 'Vector3.one=';
         if (!harness.includes(marker)) throw new Error('Transform harness marker changed');

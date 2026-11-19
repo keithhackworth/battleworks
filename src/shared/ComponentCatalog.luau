@@ -17,10 +17,10 @@ add("mobility.tracks","Mobility","Differential tracks",{LongitudinalGrip=1,Later
  Suspension={Bob=0.38,Pitch=0.05,Roll=0.035,Speed=24,Frequency=8,RollFrequency=0.8,Response=8,Spring=150,Damping=12}}, {Steer=true,Pivot=true})
 add("mobility.wheels","Mobility","Steering wheels",{LongitudinalGrip=1,LateralGrip=1,YawAcceleration=120,Kind="Wheeled",Motion="Inertial",MaxSteer=0.55,Wheelbase=5.2,MaxYawRate=1.9,SteeringResponse=10,Inertia=inertia,
  Suspension={Bob=0,Pitch=0,Roll=0,Speed=24,Frequency=8,RollFrequency=0.8,Response=8,Spring=150,Damping=12}}, {Steer=true,Pivot=false})
-add("turret.standard","Turret","Toy turret",{TraverseSpeed=3.5,PitchSpeed=1.1,MinPitch=math.rad(-12),MaxPitch=math.rad(30),MuzzleHeight=3.6})
-add("weapon.cannon","Weapon","Cough cannon",{WeaponType="Cannon",Operation="Windup",Visual={Kind="Cannon",Swelling=true,Recoil=1},PreparationImpulse=0.6,FireWindup=0.20,Cooldown=0.65,Damage=25,Range=320,MuzzleOffset=7,ShellSpeed=24,ShellRadius=0.65,
+add("turret.standard","Turret","Toy turret",{TraverseSpeed=3.5,MinPitch=math.rad(-15),MaxPitch=math.rad(30),MuzzleHeight=3.6})
+add("weapon.cannon","Weapon","Cough cannon",{WeaponType="Cannon",MinPitch=math.rad(-12),Operation="Windup",Visual={Kind="Cannon",Swelling=true,Recoil=1},PreparationImpulse=0.6,FireWindup=0.20,Cooldown=0.65,Damage=25,Range=320,MuzzleOffset=7,ShellSpeed=24,ShellRadius=0.65,
  Aim={YawKick=math.rad(8),PitchKick=math.rad(6),MaxYaw=math.rad(12),MaxPitch=math.rad(9),Recovery=5,HeatScale=0,HeatReference=3}})
-add("weapon.gatling","Weapon","Jackhammer Gatling",{WeaponType="Gatling",Operation="Heat",Visual={Kind="Gatling",Swelling=false,Recoil=0.65},
+add("weapon.gatling","Weapon","Jackhammer Gatling",{WeaponType="Gatling",MinPitch=math.rad(-15),Operation="Heat",Visual={Kind="Gatling",Swelling=false,Recoil=0.65},
 		Cooldown = 0.1, Damage = 6, Range = 320,
 		MuzzleOffset = 7, ShellSpeed = 85, ShellRadius = 0.22,
 		Trajectory = table.freeze({ Kind = "DescendThenLevel", DescentAngle = math.rad(35), LevelingDistance = 6 }),

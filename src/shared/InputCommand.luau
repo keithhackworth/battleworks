@@ -1,5 +1,5 @@
 -- One intent contract for desktop, touch, gamepad, and future server controllers.
--- World aim preserves desktop behavior; Rate uses normalized turretX/Y axes.
+-- World carries a 3D target; Rate uses normalized turretX/Y axes.
 local Command = {}
 function Command.neutral()
 	return { throttle = 0, steer = 0, aim = Vector3.new(0, 0, -1), fire = false,
@@ -25,7 +25,7 @@ function Command.validate(value)
 		if typeof(value.aim) ~= "Vector3" or not finite(value.aim.X)
 			or not finite(value.aim.Y) or not finite(value.aim.Z) then return nil end
 		result.aimMode = "World"
-		result.aim = Vector3.new(value.aim.X, 0, value.aim.Z)
+		result.aim = Vector3.new(value.aim.X, value.aim.Y, value.aim.Z)
 	else
 		return nil
 	end

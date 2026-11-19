@@ -10,6 +10,8 @@
 
 **Playground geography:** the default arena includes a ravine, river, unguarded bridge and sloped overlook. Falls destroy tanks and respawn infantry; tanks replenish normally. See [terrain, hazards and two-player checks](docs/PLAYGROUND_TERRAIN.md).
 
+**3D aiming:** use the controller icon beside the input selector for Mouse Points, Mouse Direct, or Mouse Joystick. Hold Alt for UI in Direct; press C to recenter Joystick. Both axes share turret bus speed. Cannon/Gatling depression stops are −12°/−15° relative to the mount. [Controls, BW elevation and validation](docs/3D_AIMING.md).
+
 ## Offline worlds and Studio selection
 
 Build: `node tools/build-world.js worlds/example.json --output build/worlds/example.json`.

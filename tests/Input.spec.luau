@@ -40,9 +40,9 @@ command.fire = true
 local origin, direction = Simulation.tryFire(state, command)
 check(origin ~= nil and near(direction.Magnitude, 1) and direction.Y < 0, "server shot includes pitch")
 check(Simulation.tryFire(state, command) == nil, "server cooldown remains authoritative")
-command.aimMode = "World"; command.aim = Vector3.new(0, 0, -100)
+command.aimMode = "World"; command.aim = Vector3.new(0, 30, -100)
 Simulation.step(state, command, Config.Step)
-check(state.turretPitch == 0, "desktop restores horizontal aim")
+check(state.turretPitch>pitch and state.turretPitch<=pitch+Config.TurretSpeed*Config.Step+1e-6, "desktop moves toward target elevation at the shared mechanical rate")
 state.health = 0
 check(Simulation.tryFire(state, command) == nil, "dead tanks cannot fire")
 local Touch = require("TouchInput")

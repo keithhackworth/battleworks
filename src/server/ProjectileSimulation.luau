@@ -15,7 +15,7 @@ function Projectiles.new(origin, direction, exclusions, tuning, groundY, flight)
 	local shell = { position = origin, direction = direction.Unit, remaining = tuning.Range, speed = tuning.ShellSpeed, radius = tuning.ShellRadius, damage = tuning.Damage, muzzleOffset = tuning.MuzzleOffset,
 		ray = ray, overlap = overlap, done = false }
 	if tuning.Trajectory and (not flight or flight.airborne) then
-		shell.trajectory=Trajectory.new(origin,direction,(groundY or 0)+Config.MuzzleHeight,tuning.Trajectory)
+		shell.trajectory=Trajectory.new(origin,direction,(groundY or 0)+(flight and flight.muzzleHeight or Config.MuzzleHeight),tuning.Trajectory,flight and flight.physical)
 		shell.pathDistance=0
 		shell.position,shell.direction=Trajectory.sample(shell.trajectory,0)
 	end
@@ -106,7 +106,7 @@ function Projectiles.launch(world, pivot, direction, exclusions, tuning, groundY
   if flight and flight.findGround then
    levelGround=flight.findGround(shell.position,direction,shell.remaining,shell.radius,levelGround) or levelGround
   end
-		shell.trajectory=Trajectory.new(shell.position,direction,levelGround+Config.MuzzleHeight,tuning.Trajectory)
+		shell.trajectory=Trajectory.new(shell.position,direction,levelGround+(flight and flight.muzzleHeight or Config.MuzzleHeight),tuning.Trajectory,flight and flight.physical)
 		shell.pathDistance=0
 		shell.position,shell.direction=Trajectory.sample(shell.trajectory,0)
 	end

@@ -38,11 +38,12 @@ UIS.GetMouseLocation=function() return Vector2.new(100,100) end
 local Renderer=require("TankRenderer")
 local renderers={}
 local effects=0
+local effectOrigin,effectDirection
 Renderer.new=function(id,kind,weapon)
  local renderer={tankType=kind,weaponId=weapon,update=function() end,resetPose=function(self,state) self.position=state.position end,destroy=function(self) self.destroyed=true end}
  table.insert(renderers,renderer);return renderer
 end
-Renderer.shot=function() effects+=1 end
+Renderer.shot=function(origin,direction)effects+=1;effectOrigin=origin;effectDirection=direction end
 local humanoid={Health=100}
 player.Character={FindFirstChildOfClass=function()return humanoid end}
 local client=require("RoyaleClient").start()
@@ -121,6 +122,7 @@ remotes.RoyaleControl.OnClientEvent:Fire({revision=99,mode="OnFoot"})
 local effectsBefore=effects
 remotes.Shot.OnClientEvent:Fire("public:1",Vector3.zero,Vector3.new(0,0,-1),"Boomer",0)
 check(effects==effectsBefore+1,"on-foot clients continue seeing shared battle firing effects")
+check(effectOrigin==Vector3.zero and effectDirection.Z== -1,"shot effects retain authoritative release origin/direction")
 check(#renderers==1,"public tank renderer persists through all occupancy changes")
 if run:IsStudio()then
  local redraw={Name="RedrawMap",IsA=function(_,kind)return kind=="RemoteEvent"end,FireServer=function(_,...)table.insert(requests,{name="RedrawMap",args={...}})end}
@@ -172,5 +174,11 @@ remotes.RoyaleControl.OnClientEvent:Fire({revision=109,mode="Tank",selected="pub
 check(named("RoyaleNotice").Visible and string.find(named("RoyaleNotice").Text,"Cannot exit"),"unsafe-exit reason is visible in battlefield UI")
 remotes.RoyaleControl.OnClientEvent:Fire({revision=110,mode="OnFoot"})
 check(not named("RoyaleNotice").Visible,"next control acknowledgment clears old hazard feedback")
+remotes.RoyaleControl.OnClientEvent:Fire({revision=111,mode="Tank",selected="public:1",epoch=22})
+named("MouseAimSelector").Activated:Fire();named("Mouse Direct").Activated:Fire()
+check(named("MouseAimSelector"):GetAttribute("MouseAimMode")=="Mouse Direct","in-game selector changes mouse preference")
+exitAndEnter(112,24)
+check(named("MouseAimSelector"):GetAttribute("MouseAimMode")=="Mouse Direct","mouse preference persists across public tank lease/death-style control changes")
+named("MouseAimSelector").Activated:Fire();named("Mouse Points").Activated:Fire()
 Instance.new=savedNew;game.GetService=originalService
 print(string.format("Battle Royale production client transitions passed: %d assertions",count))

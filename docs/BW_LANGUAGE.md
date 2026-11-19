@@ -1,6 +1,6 @@
 # BattleWorks BW Language Handbook
 
-Current implementation: **2026-11-09**.
+Current implementation: **2026-11-19**.
 
 BW is BattleWorks' small, server-authoritative tank programming language. Programs control the same movement, turret, weapon and scanner devices used by the game. They do not replace tank physics.
 
@@ -485,8 +485,10 @@ Rotate clockwise using the corresponding relative or absolute semantics. `turn_r
 | --- | --- | ---: |
 | `turret_left(degrees)` / `turret_left(to=heading)` | Relative or absolute rotation | 1 |
 | `turret_right(degrees)` / `turret_right(to=heading)` | Relative or absolute rotation | 1 |
+| `turret_up(degrees)` / `turret_up(to=pitch)` | Relative or absolute elevation | 1 |
+| `turret_down(degrees)` / `turret_down(to=pitch)` | Relative or absolute elevation | 1 |
 
-Both support `best_effort=true`, use the turret pipeline and return acceptance/failure dictionaries with `commandId` on acceptance.
+All support `best_effort=true`, use the turret pipeline and return acceptance/failure dictionaries with `commandId` on acceptance.
 
 ### turret_left(degrees) / turret_left(to=heading)
 
@@ -499,6 +501,21 @@ Rotate the actual turret counterclockwise. Absolute headings are world-relative,
 **Input:** same ranges as `turret_left`.
 
 Rotate clockwise. The specified direction is honored for absolute targets; it is not automatically the shortest route. It can operate concurrently with drivetrain or weapon commands.
+
+### turret_up(degrees) / turret_down(degrees) / to=pitch
+
+Relative input: 0..180 degrees. Up raises the barrel, down depresses it, starting from the actual mount setpoint when the queued command begins. Absolute `to=pitch`: −90..90 degrees, positive up; either command chooses the direction needed. Requested targets clamp to effective weapon/mount stops. Standard cannon depression is −12°, Gatling −15°, and elevation is 30°. These are **relative to the mount**, including chassis tilt, not the world horizon.
+
+Both axes use the same traverse speed multiplied by turret bus performance; no separate pitch speed exists. Elevation shares the turret FIFO, so issue horizontal/elevation commands sequentially or wait on command status as appropriate. Existing horizontal commands hold the current elevation. Other devices may operate concurrently. Normal acceptance, best-effort, stuck/timeout, occupancy and cleanup rules apply.
+
+```text
+raise = turret_up(to=20)
+clock = get_clock()
+wait_for_clock(clock.time + 1)
+lower = turret_down(10)
+```
+
+For mouse modes, physical muzzle geometry and native acceptance checks see [3D aiming](3D_AIMING.md).
 
 ## Weapon command
 

@@ -100,7 +100,7 @@ for _=1,60 do rattler:update(rs,1/60) end
 check(rattler.rotorSpeed<speed*0.01,"rotor coasts down after firing stops")
 rs.position=Vector3.new(0,24,0); rs.bodyPitch=0; rs.bodyRoll=0
 rattler:resetPose(rs); rattler:update(rs,1/60)
-check(math.abs(rattler.muzzleFrame.LookVector.Y+math.sin(math.rad(35)))<1e-5,"airborne Gatling assembly visibly points down at configured launch angle")
+check(math.abs(rattler.muzzleFrame.LookVector.Y-math.sin(rs.turretPitch or 0))<1e-5,"airborne Gatling assembly retains actual mount elevation without forced descent")
 rs.position=Vector3.new(0,10,0)
 rs.bodyPitch=0; rs.bodyRoll=0; rs.aimRecoilYaw=0.06; rs.aimRecoilPitch=-0.03
 rattler:resetPose(rs); rattler:update(rs,1/60)
@@ -113,7 +113,7 @@ check(math.abs(rattler.muzzleFrame.LookVector.Y)<1e-6,"grounded bridge Gatling v
 rs.position=Vector3.new(0,18,0);rs.lift=6
 rattler:resetPose(rs);rattler:update(rs,1/60)
 local _,bridgeAim=Sim.shotPose(rs)
-check(bridgeAim.Y<0 and (rattler.muzzleFrame.LookVector-bridgeAim).Magnitude<1e-6,"airborne bridge barrel matches support-relative authoritative aim")
+check(math.abs(bridgeAim.Y)<1e-6 and (rattler.muzzleFrame.LookVector-bridgeAim).Magnitude<1e-6,"airborne bridge barrel retains horizontal physical aim rather than auto depression")
 rs.groundHeight=nil;rs.position=Vector3.new(0,10,0);rs.lift=10
 local beforeSpoke=named(rattler,"WheelSpoke")[1].CFrame.Position
 rs.speed=10; rs.steeringAngle=0.4

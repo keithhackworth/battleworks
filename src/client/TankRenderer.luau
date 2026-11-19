@@ -217,9 +217,9 @@ function Renderer:update(state, dt)
 	self.bodyRoll = (self.bodyRoll or 0)+((state.bodyRoll or 0)-(self.bodyRoll or 0))*suspensionAlpha
 	local base = CFrame.new(self.position) * CFrame.Angles(0, self.yaw, 0)
 	local body = base * CFrame.new(0, 2.1+self.bounce, 0) * CFrame.Angles(self.bodyPitch, 0, self.bodyRoll)
-	local turret = CFrame.new(self.position + Vector3.new(0, Config.MuzzleHeight+self.bounce, 0)) * CFrame.Angles(0, self.yaw, 0) * CFrame.Angles(self.bodyPitch, 0, self.bodyRoll) * CFrame.Angles(0, self.turretYaw-self.yaw, 0)
+	local turret = CFrame.new(self.position + Vector3.new(0, self.components.Turret.MuzzleHeight+self.bounce, 0)) * CFrame.Angles(0, self.yaw, 0) * CFrame.Angles(self.bodyPitch, 0, self.bodyRoll) * CFrame.Angles(0, self.turretYaw-self.yaw, 0)
 	if self.components.Mobility.Motion=="Inertial" or self.jackhammer then
-		local pivotHeight=Config.MuzzleHeight+self.bounce
+		local pivotHeight=self.components.Turret.MuzzleHeight+self.bounce
 		local roll=if self.jackhammer then RattlerVisual.rock(self,state,dt) else self.bodyRoll
 		-- One common pose for wheels, hull and turret, rocking about the weapon
 		-- mount so presentation cannot move the authoritative muzzle origin.

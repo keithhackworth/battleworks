@@ -5,11 +5,11 @@ local Drive = require(script.Parent.RattlerDrive)
 local Motion = require(script.Parent.VehicleMotion)
 local Surface = require(script.Parent.SurfacePhysics)
 local Contacts = require(script.Parent.VehicleContacts)
-local Trajectory = require(script.Parent.ProjectileTrajectory)
 local Config = require(script.Parent.TankConfig)
 local Environment = require(script.Parent.Environment)
 local TurretRecoil = require(script.Parent.TurretRecoil)
 local Recoil = require(script.Parent.RattlerRecoil)
+local Aim=require(script.Parent.TurretAim)
 local Simulation = {}
 function Simulation.new(position, tankType, seed, assembly)
     local c=if assembly then (if assembly.Resolved then assembly else Components.resolve(assembly)) else Components.get(tankType)
@@ -33,23 +33,9 @@ function Simulation.projectileFlight(state)
 end
 -- World-space barrel direction after chassis pitch/roll and actual turret aim.
 function Simulation.shotPose(state)
-	local yaw,pitch = Simulation.turretAngles(state)
-	local direction = Simulation.forward(yaw,pitch)
-	local c, s = math.cos(state.yaw), math.sin(state.yaw)
-	local x, y, z = c*direction.X-s*direction.Z, direction.Y, s*direction.X+c*direction.Z
-	local cr, sr = math.cos(state.bodyRoll or 0), math.sin(state.bodyRoll or 0)
-	x, y = cr*x-sr*y, sr*x+cr*y
-	local cp, sp = math.cos(state.bodyPitch or 0), math.sin(state.bodyPitch or 0)
-	y, z = cp*y-sp*z, sp*y+cp*z
-	local vehicle=Components.get(state)
-	local pivot=state.position+Vector3.new(0,vehicle.Turret.MuzzleHeight+(state.bounce or 0),0)
-	local actual=Vector3.new(c*x+s*z,y,-s*x+c*z).Unit
-	local weapon=vehicle.Weapon
- local airborne,ground=Simulation.projectileFlight(state)
-	if weapon.Trajectory and airborne then
-		actual=Trajectory.launchDirection(pivot,actual,ground+Config.MuzzleHeight,weapon.MuzzleOffset,weapon.Trajectory)
-	end
-	return pivot,actual
+ local yaw,pitch=Simulation.turretAngles(state)
+ local relative=yaw-state.yaw
+ return Aim.pivot(state),Aim.toWorld(state,Simulation.forward(relative,pitch)).Unit
 end
 local function suspension(state, dt)
  local tuning=Components.get(state).Mobility.Suspension
@@ -135,21 +121,7 @@ function Simulation.step(state, command, dt, mapSize, environment, deferContacts
      state.bodyPitch+=state.groundPitch or 0; state.bodyRoll+=state.groundRoll or 0
     end
     if state.health<=0 then return end
-	if command.aimMode == "Rate" then
-		-- Positive X aims right; positive Y elevates the cannon.
-		state.turretYaw -= command.turretX * turret.TraverseSpeed * (state.turretPerformance or 1) * dt
-		state.turretPitch = math.clamp(state.turretPitch + command.turretY * turret.PitchSpeed * (state.turretPerformance or 1) * dt,
-			turret.MinPitch, turret.MaxPitch)
-	else
-		local delta = command.aim - state.position
-		if delta.Magnitude > 0.01 then
-			local desired = math.atan2(-delta.X, -delta.Z)
-			local difference = math.atan2(math.sin(desired - state.turretYaw), math.cos(desired - state.turretYaw))
-			state.turretYaw += math.clamp(difference, -turret.TraverseSpeed * (state.turretPerformance or 1) * dt, turret.TraverseSpeed * (state.turretPerformance or 1) * dt)
-		end
-		-- Desktop retains its original horizontal mouse aiming.
-		state.turretPitch = 0
-	end
+ Aim.step(state,command,dt)
 end
 function Simulation.tryFire(state, command)
 	if state.health <= 0 or not command.fire or state.cooldown > 0 or (state.weaponPerformance or 1)<=0 then return nil end

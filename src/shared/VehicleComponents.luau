@@ -64,7 +64,16 @@ function C.resolve(assembly,catalog)
   assert(out.Mobility.MaxSteer<math.pi/2,"Wheel steering must stay below 90 degrees")
   for _,k in {"Wheelbase","MaxYawRate","SteeringResponse"} do positive(out.Mobility,k) end
  else positive(out.Mobility,"TurnSpeed") end
- for _,k in {"TraverseSpeed","PitchSpeed","MuzzleHeight"} do positive(out.Turret,k) end
+ -- Weapon clearance and mount travel both constrain the physical barrel.
+ for _,key in {"MinPitch","MaxPitch"}do
+  local limit=out.Weapon[key]
+  assert(limit==nil or (type(limit)=="number"and limit>=-math.pi/2 and limit<=math.pi/2),"Invalid weapon elevation limit")
+ end
+ out.Turret.MinPitch=math.max(out.Turret.MinPitch,out.Weapon.MinPitch or out.Turret.MinPitch)
+ out.Turret.MaxPitch=math.min(out.Turret.MaxPitch,out.Weapon.MaxPitch or out.Turret.MaxPitch)
+ -- Compatibility alias only: elevation always shares traverse speed and bus.
+ out.Turret.PitchSpeed=out.Turret.TraverseSpeed
+ for _,k in {"TraverseSpeed","MuzzleHeight"} do positive(out.Turret,k) end
  assert(out.Turret.MinPitch<=out.Turret.MaxPitch,"Invalid turret limits")
  for _,k in {"Recovery","HeatReference"} do positive(out.Weapon.Aim,k) end
  for _,k in {"MaxYaw","MaxPitch","YawKick","PitchKick","HeatScale"} do nonnegative(out.Weapon.Aim,k) end

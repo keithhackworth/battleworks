@@ -13,6 +13,10 @@ function Controller.new(gui, onRelease)
 		Touch = require(script.Parent.TouchInput).new(gui, { turretDeadZone = 0.15, driveDeadZone = 0.15 }),
 		Gamepad = require(script.Parent.GamepadInput).new(),
 	}
+ self.mouseView=require(script.Parent.MouseAimView).new(gui,function(mode)self:setMouseMode(mode)end,function(blocked)
+  self.providers.KeyboardMouse:setUIBlocked(blocked)
+  self.onRelease(Command.neutral())
+ end)
 	local button = Instance.new("TextButton")
 	button.Name = "InputMode"; button.AnchorPoint = Vector2.new(1, 0)
 	button.Position = UDim2.new(1, -8, 0, 4); button.Size = UDim2.fromOffset(194, 40)
@@ -82,6 +86,9 @@ function Controller:setPreference(preference)
 	self:release()
 	self:refreshMode()
 end
+function Controller:setMouseMode(mode)
+ self:release();self.providers.KeyboardMouse:setMode(mode);self.mouseView:select(mode)
+end
 function Controller:release()
 	for _, provider in self.providers do provider:reset() end
 	self.onRelease(Command.neutral())
@@ -99,6 +106,7 @@ function Controller:refreshSuspension()
 	local suspended = self.externalControl or not self.focused or self.menuOpen or UIS:GetFocusedTextBox() ~= nil
 	if suspended ~= self.suspended then
 		self.suspended = suspended
+  if suspended and self.mouseView then self.mouseView:open(false)end
 		self:release()
 		for name, provider in self.providers do provider:setActive(name == self.mode and not suspended) end
 	end
@@ -117,10 +125,12 @@ function Controller:refreshMode()
 		for name, provider in self.providers do provider:setActive(name == resolved and not self.suspended) end
 		if self.characterControl==false or (resolved == "Touch" and not self.characterControl) then self:disableDefaultMovement() end
 	end
+ self.mouseView:setVisible(resolved=="KeyboardMouse")
 	self.button.Text = "Input: " .. self.preference .. (if self.preference == "Auto" then " / " .. self.mode else "") .. "  ›"
 end
-function Controller:sample(camera)
-	local command = if self.suspended then Command.neutral() else self.providers[self.mode]:sample(camera)
+function Controller:sample(camera,context,dt)
+	local command = if self.suspended then Command.neutral() else self.providers[self.mode]:sample(camera,context,dt)
+ self.mouseView:update(self.providers.KeyboardMouse,self.mode=="KeyboardMouse"and not self.suspended)
 	self.providers.Touch:showDebug(command, self.mode)
 	return command
 end

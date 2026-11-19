@@ -61,7 +61,7 @@ gui.ScreenInsets = Enum.ScreenInsets.CoreUISafeInsets
 gui.Name = "TankHUD"; gui.ResetOnSpawn = false; gui.Parent = player:WaitForChild("PlayerGui")
 gui.Enabled=false
 local label = Instance.new("TextLabel")
-label.Size = UDim2.new(1, -210, 0, 44); label.BackgroundColor3 = Color3.fromRGB(24, 31, 35)
+label.Size = UDim2.new(1, -260, 0, 44); label.BackgroundColor3 = Color3.fromRGB(24, 31, 35)
 label.BackgroundTransparency = 0.15; label.TextColor3 = Color3.fromRGB(237, 235, 218)
 label.Font = Enum.Font.GothamMedium; label.TextSize = 14; label.TextWrapped = true; label.Parent = gui
 label.Text = "BATTLEWORKS  /  Connecting to tank server…"
@@ -132,16 +132,8 @@ shot.OnClientEvent:Connect(function(id, origin, direction, tankType, generation,
 	if renderer and (generation or 0)<renderer.generation then return end
 	local matches = renderer and renderer.tankType == (tankType or "Boomer") and renderer.generation == (generation or 0) and (not weaponId or renderer.weaponId==weaponId)
 	if matches and renderer.gatling then renderer:fire(rock) end
-	if matches and renderer.position and renderer.muzzleFrame then
-		-- Use the rendered barrel tip, including its bounce and recoil, so the
-		-- sparks stay attached to the opening despite snapshot smoothing.
-		if renderer.gatling then
-			direction = renderer.muzzleFrame.LookVector; origin = renderer.muzzleFrame.Position
-		else
-			direction = renderer.cannon.CFrame.RightVector
-			origin = renderer.cannon.CFrame.Position + direction*3
-		end
-	end
+ -- Shot effects use the authoritative release muzzle and direction.
+
 	Renderer.shot(origin, direction, tankType,weaponId)
 end)
 local elapsed, debugElapsed = 0, 0
@@ -178,9 +170,9 @@ RunService:BindToRenderStep("BattleWorksFrame", Enum.RenderPriority.Camera.Value
 		if own.smokeBurst then status..=" / SMOKE" end
 		label.Text = string.format("%s / HP %d / %s",own.tankType or "Boomer",own.health,status)..(if battleState.winner=="Draw" then " / DRAW!" elseif battleState.winner then " / "..battleState.winner.." WINS!" else "")
 	end
-	local command = controller:sample(camera)
 	elapsed += dt
 	if elapsed >= 1 / 30 then
+  local command=controller:sample(camera,{state=own,id=selectedId},elapsed)
 		elapsed %= 1 / 30
 		if own and driving then input:FireServer(command,selectedId,controlEpoch) end
 	end

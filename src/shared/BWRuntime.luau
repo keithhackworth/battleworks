@@ -7,6 +7,7 @@ local DamageConfig=require(script.Parent.DamageEffectsConfig)
 local Limits=require(script.Parent.BWConfig)
 local Adapter=require(script.Parent.BWTankAdapter)
 local Command=require(script.Parent.InputCommand)
+local Components=require(script.Parent.VehicleComponents)
 local Runtime={}
 Runtime.__index=Runtime
 function Runtime.new(instructions,state,services)
@@ -85,8 +86,19 @@ local function begin(instruction,state)
 	elseif op=="fire" then c.kind="fire"; c.timeout=Limits.MaxFireSeconds+5
 	else
 		c.kind="turn"; c.turret=op:find("turret",1,true)==1
-		c.lastAngle=Adapter.angle(state,c.turret); c.startHeading=c.lastAngle
-		c.sign,c.target=Adapter.rotation(instruction,c.lastAngle)
+		c.pitch=op=="turret_up"or op=="turret_down"
+  if c.pitch then
+   c.lastAngle=state.turretPitch
+   local sign=if op=="turret_up"then 1 else -1
+   local desired=if instruction.absolute then math.rad(instruction.value)else c.lastAngle+sign*math.rad(instruction.value)
+   local mount=Components.get(state).Turret
+   local goal=math.clamp(desired,mount.MinPitch,mount.MaxPitch)
+   c.sign=if goal>=c.lastAngle then 1 else -1;c.target=math.abs(goal-c.lastAngle)
+  else
+   c.lastAngle=Adapter.angle(state,c.turret)
+   c.sign,c.target=Adapter.rotation(instruction,c.lastAngle)
+  end
+  c.startHeading=c.lastAngle
 		c.timeout=math.min(Limits.MaxInstructionSeconds,math.max(12,c.target/0.6*3+5))
 	end
 	return c
@@ -185,8 +197,9 @@ function Runtime:_step(state,dt)
             c.progress=delta.X*c.axis.X+delta.Z*c.axis.Z
         end
 	else
-		local angle=Adapter.angle(state,c.turret)
-		if not c.turret and state.motionYawTravel~=nil then c.progress=(state.motionYawTravel-c.startYawTravel)*c.sign
+		local angle=if c.pitch then state.turretPitch else Adapter.angle(state,c.turret)
+		if c.pitch then c.progress+=(angle-c.lastAngle)*c.sign
+  elseif not c.turret and state.motionYawTravel~=nil then c.progress=(state.motionYawTravel-c.startYawTravel)*c.sign
         else c.progress+=Adapter.delta(c.lastAngle,angle)*c.sign end
 		c.lastAngle=angle
 	end
@@ -202,6 +215,7 @@ function Runtime:_step(state,dt)
 		else string.format("Turned %.1f / %.1f degrees",math.deg(c.progress),math.deg(c.target))
 	if immobilized then self.message="Temporarily immobilized; retaining movement target."; return Command.neutral() end
 	if c.kind=="move" then return Adapter.move(state,c.sign,remaining,dt) end
+ if c.pitch then return Adapter.pitch(state,c.sign,remaining,dt)end
 	return Adapter.turn(state,c.sign,remaining,c.turret,dt)
 end
 function Runtime:step(state,dt)

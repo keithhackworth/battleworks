@@ -7,6 +7,12 @@ local tuning=Definitions.Rattler.Weapon
 local count=0
 local function check(ok,message) assert(ok,message); count+=1 end
 local function near(a,b) return math.abs(a-b)<1e-5 end
+-- Legacy curve fixtures explicitly request a descending barrel direction.
+-- Production no longer manufactures that direction from altitude alone.
+local function descending(state)
+ local pivot,direction=Sim.shotPose(state)
+ return pivot,Path.launchDirection(pivot,direction,(state.groundPlaneY or 0)+Config.MuzzleHeight,tuning.MuzzleOffset,tuning.Trajectory)
+end
 local empty={GetPartBoundsInRadius=function() return {} end,Spherecast=function() return nil end}
 for _,degrees in {35,40} do
  local settings={DescentAngle=math.rad(degrees),LevelingDistance=6}
@@ -41,7 +47,7 @@ for _,degrees in {35,40} do
 end
 for _,altitude in {0,0.1,1,3,6,24} do
  local state=Sim.new(Vector3.new(0,altitude,0),"Rattler");state.lift=altitude
- local pivot,direction=Sim.shotPose(state)
+ local pivot,direction=descending(state)
  local shell=Projectiles.launch(empty,pivot,direction,{},tuning)
  check(shell.position.Y>=Config.MuzzleHeight-1e-5,"low-altitude barrel never places muzzle below standard plane")
  check(near(shell.remaining,tuning.Range-tuning.MuzzleOffset),"muzzle sweep retains original range accounting")
@@ -63,7 +69,7 @@ do
  check(near(shell.position.Y,2) and near(shell.direction.Y,0),"already-low projectile fires horizontally at its current height")
  local floorY=17
  local raised=Sim.new(Vector3.new(0,floorY+24,0),"Rattler"); raised.groundPlaneY=floorY;raised.lift=24
- local pivot,direction=Sim.shotPose(raised)
+ local pivot,direction=descending(raised)
  local shell=Projectiles.launch(empty,pivot,direction,{},tuning,floorY)
  Projectiles.step(empty,shell,2)
  check(near(shell.position.Y,floorY+Config.MuzzleHeight),"level height follows standard tank geometry plus actual arena floor height")
@@ -97,7 +103,7 @@ local function worldFor(objects)
 end
 local function launched(world)
  local state=Sim.new(Vector3.new(0,24,0),"Rattler");state.lift=24
- local origin,direction=Sim.shotPose(state)
+ local origin,direction=descending(state)
  return Projectiles.launch(world,origin,direction,{},tuning)
 end
 local wall={position=Vector3.new(0,15,-20),size=Vector3.new(12,30,2)}
@@ -164,11 +170,11 @@ do
  local _,up=Sim.shotPose(standing)
  check(up.Y>0,"grounded Gatling preserves player barrel elevation")
  local hopping=Sim.new(Vector3.new(0,18,0),"Rattler")
- hopping.groundHeight=12;hopping.groundPlaneY=0;hopping.lift=6
+ hopping.groundHeight=12;hopping.groundPlaneY=0;hopping.lift=6;hopping.turretPitch=-.18
  pivot,aim=Sim.shotPose(hopping);airborne,ground=Sim.projectileFlight(hopping)
- check(airborne and aim.Y<0,"airborne Gatling retains descending shot pose")
+ check(airborne and aim.Y<0,"airborne Gatling respects the manually depressed barrel")
  local find=function(origin,direction,range,radius,baseline)return objects:projectileGround(origin,direction,range,radius,baseline)end
- local airborneShell=Projectiles.launch(bridgeWorld,pivot,aim,{},tuning,ground,{airborne=airborne,findGround=find})
+ local airborneShell=Projectiles.launch(bridgeWorld,pivot,aim,{},tuning,ground,{physical=true,airborne=airborne,findGround=find})
  check(airborneShell.trajectory and near(airborneShell.trajectory.levelHeight,12+Config.MuzzleHeight),"airborne curve levels at bridge-relative muzzle height, not global floor")
  for _=1,120 do targetHit=Projectiles.step(bridgeWorld,airborneShell,1/60);if targetHit then break end end
  check(targetHit and targetHit.Instance==enemy and near(airborneShell.direction.Y,0),"hopping bridge shot clears its deck and hits bridge opponent after leveling")

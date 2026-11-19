@@ -27,8 +27,11 @@ function Trajectory.launchDirection(pivot,direction,levelHeight,muzzleOffset,set
 	end
 	return flat*math.cos(low)+Vector3.new(0,-math.sin(low),0)
 end
-function Trajectory.new(origin,direction,levelHeight,settings)
+function Trajectory.new(origin,direction,levelHeight,settings,physical)
 	local flat=heading(direction)
+ if physical and (direction.Y>=-EPSILON or origin.Y<=levelHeight+EPSILON)then
+  return {origin=origin,heading=direction.Unit,angle=0,straight=0,arc=0,levelHeight=origin.Y}
+ end
 	local angle=math.atan2(math.max(0,-direction.Y),Vector3.new(direction.X,0,direction.Z).Magnitude)
 	if origin.Y<=levelHeight+EPSILON or angle<=EPSILON then
 		return {origin=origin,heading=flat,angle=0,straight=0,arc=0,levelHeight=origin.Y}
@@ -36,7 +39,8 @@ function Trajectory.new(origin,direction,levelHeight,settings)
 	local r=radius(settings)
 	local available=origin.Y-levelHeight
 	-- Also handle direct callers starting midway through a leveling curve.
-	angle=math.min(angle,math.acos(math.clamp(1-available/r,-1,1)))
+ if physical then r=math.min(r,available/math.max(EPSILON,1-math.cos(angle)))
+ else angle=math.min(angle,math.acos(math.clamp(1-available/r,-1,1)))end
 	local drop=r*(1-math.cos(angle))
 	local straight=math.max(0,(available-drop)/math.sin(angle))
 	return {origin=origin,heading=flat,angle=angle,radius=r,straight=straight,arc=r*angle,levelHeight=levelHeight}
