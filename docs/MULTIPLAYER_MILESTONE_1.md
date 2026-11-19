@@ -1,5 +1,7 @@
 # Multiplayer Milestone 1
 
+The behavior below describes **Classic** mode. Battle Royale is now the default startup; select `GameMode=Classic` to use this workflow. See [Battle Royale Milestone 1](BATTLE_ROYALE_MILESTONE_1.md) for public tanks and on-foot admission.
+
 A second battle participant entering from Play BattleWorks promotes the running
 solo test to a shared battle. Players at Main Menu do not participate; see
 [application shell](APPLICATION_SHELL.md).

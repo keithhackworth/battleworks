@@ -1,10 +1,14 @@
 # BattleWorks: Boomer and Rattler
 
+**Battle Royale Milestone 1 (default):** join on foot, approach an arena-owned Bunny tank and use **E / controller X / touch** to enter. Use **F / controller B / Exit Tank** to get out and switch. Tanks share authoritative combat and replenish after destruction. Use **Main Menu** on foot or in a tank to take a break; **The Playground** returns to the same running arena on foot. Set **ServerStorage → BattleWorksStudio → GameMode = Classic** for owned collections and the saved-world launch workflow. See [architecture, configuration and two-player acceptance](docs/BATTLE_ROYALE_MILESTONE_1.md).
+
 **In-game World Builder:** Main Menu → World Editor now opens a private desktop authoring scene with a hierarchical 3D asset palette, drag placement, transform anchors, properties, undo/redo and v2 JSON export. Move objects vertically with the green Y handle; Tilt X/Z and height/pitch/roll fields support ramps and raised bridge decks. **My Worlds / Save & Play** saves layouts privately to the BattleWorks HTTP service, including durable Studio saves, and launches them without commands. Published play uses a separate reserved battle server. See [one-time HTTP/secret setup and JSON backup transfer](docs/HTTP_WORLD_STORAGE.md). See [workflow, limitations and native validation](docs/IN_GAME_WORLD_BUILDER.md).
 
-**Application shell:** start at Main Menu, choose **Play BattleWorks → Enter Battle**, and return using **Main Menu** in the battle HUD (or Xbox B outside text entry). The menu uses a static local battlefield view; no replay or background battle runs. See [shell architecture and Studio checklist](docs/APPLICATION_SHELL.md).
+**Application shell (Classic):** start at Main Menu, choose **Play BattleWorks → Enter Battle**, and return using **Main Menu** in the battle HUD (or Xbox B outside text entry). The menu uses a static local battlefield view; no replay or background battle runs. See [shell architecture and Studio checklist](docs/APPLICATION_SHELL.md).
 
 **Multiplayer Milestone 1:** players share the authoritative battle, retain their owned tank collections, damage one another and respawn automatically. See [multiplayer behavior and Studio acceptance](docs/MULTIPLAYER_MILESTONE_1.md).
+
+**Playground geography:** the default arena includes a ravine, river, unguarded bridge and sloped overlook. Falls destroy tanks and respawn infantry; tanks replenish normally. See [terrain, hazards and two-player checks](docs/PLAYGROUND_TERRAIN.md).
 
 ## Offline worlds and Studio selection
 

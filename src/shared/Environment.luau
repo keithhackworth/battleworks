@@ -1,6 +1,7 @@
 local DefaultFootprint=require(script.Parent.ComponentCatalog)["chassis.standard"].Properties
 -- Deterministic terrain descriptions shared by rendering and authoritative movement.
 local Environment = {}
+local Playground=require(script.Parent.PlaygroundTerrain)
 local Surface=require(script.Parent.SurfacePhysics)
 local Motion=require(script.Parent.VehicleMotion)
 local WorldGeometry=require(script.Parent.WorldObjectGeometry)
@@ -72,6 +73,7 @@ function Environment.create(size,weather)
 end
 function Environment.sample(data,x,z,maxHeight)
 	local height,kind,speed=0,if data.weather=="IceWind" then "Ice" else "Grass",1
+ if data.playground then return Playground.sample(data.playground,x,z),"Grass",1 end
  local supportingSurface
 	for _,zone in data.zones do
 		if inside(zone,x,z) and data.weather~="IceWind" then kind=zone.kind; speed=zone.speed end
@@ -100,6 +102,7 @@ function Environment.blocked(data,x,z,radius)
 end
 function Environment.pose(data,position,yaw,footprint)
  local shape=footprint or DefaultFootprint
+ if data.playground then return Playground.pose(data.playground,position,yaw,shape)end
  local structural=data.worldObjects and data.worldObjects.footprintSupport
  local structureHeight,structurePitch,structureRoll
  if structural then

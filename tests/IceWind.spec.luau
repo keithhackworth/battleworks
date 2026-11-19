@@ -1,4 +1,4 @@
- -- This runs the real server with its new live IceWind preset and checks
+ -- This runs the real server with the explicitly selected IceWind preset and checks
  -- authoritative snapshots, actual renderer geometry and map redraw.
  local icyArena,icyFloor
  for _,p in created do if p.Name=="Arena" then icyArena=p elseif p.Name=="Floor" then icyFloor=p end end

@@ -18,7 +18,8 @@ local definitions={
  Preferences=require(script.Parent.ShellPreferences),Manuals=require(script.Parent.ShellManuals),
  Battle=require(script.Parent.ShellBattle),
 }
-function Shell.new(playerGui,arena,session,gameplay,presenter,editorAssets,worldRequest)
+function Shell.new(playerGui,arena,session,gameplay,presenter,editorAssets,worldRequest,options)
+ options=options or {}
  startup("creating shell GUI")
  local gui=Instance.new("ScreenGui"); gui.Name="BattleWorksShell"; gui.ResetOnSpawn=false
  gui.DisplayOrder=100; gui.ScreenInsets=Enum.ScreenInsets.CoreUISafeInsets; gui.ZIndexBehavior=Enum.ZIndexBehavior.Sibling
@@ -29,7 +30,7 @@ function Shell.new(playerGui,arena,session,gameplay,presenter,editorAssets,world
  local content=Instance.new("Frame"); content.Name="Screens"; content.BackgroundTransparency=1
  content.Size=UDim2.fromScale(1,1); content.Parent=gui
  local self=setmetatable({gui=gui,background=background,session=session,gameplay=gameplay},Shell)
- local context={parent=content,session=session,gameplay=gameplay,trace=startup,worldRequest=worldRequest,
+ local context={royale=options.royale==true,parent=content,session=session,gameplay=gameplay,trace=startup,worldRequest=worldRequest,
   editorAssets=if type(editorAssets)=="function" then nil else editorAssets,
   getEditorAssets=if type(editorAssets)=="function" then editorAssets else function() return editorAssets end}
  context.join=function() session:join() end
@@ -59,6 +60,7 @@ function Shell.new(playerGui,arena,session,gameplay,presenter,editorAssets,world
    return Enum.ContextActionResult.Pass
   end
   if self.manager.current=="Battle" then
+   if context.royale then return Enum.ContextActionResult.Pass end
    if input.KeyCode==Enum.KeyCode.ButtonB then
     if state==Enum.UserInputState.Begin then context.home() end
     return Enum.ContextActionResult.Sink

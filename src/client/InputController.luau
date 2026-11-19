@@ -36,7 +36,7 @@ function Controller.new(gui, onRelease)
 	local player = Players.LocalPlayer
 	self.playerGui = player:WaitForChild("PlayerGui")
 	self.playerGui.ChildAdded:Connect(function(child)
-		if self.mode == "Touch" then self:hideDefaultTouch(child) end
+  if self.characterControl==false or (self.mode == "Touch" and not self.characterControl) then self:hideDefaultTouch(child) end
 	end)
 	self:refreshMode()
 	-- PlayerModule may arrive after our LocalScript. Never block tank startup on it.
@@ -46,7 +46,7 @@ function Controller.new(gui, onRelease)
 		local ok, controls = pcall(function() return require(module):GetControls() end)
 		if ok then
 			self.controls = controls
-			if self.mode == "Touch" then self:disableDefaultMovement() end
+			if self.characterControl==false or (self.mode == "Touch" and not self.characterControl) then self:disableDefaultMovement() end
 		else
 			warn("BattleWorks: could not access default movement controls", controls)
 		end
@@ -62,14 +62,14 @@ function Controller:hideDefaultTouch(child)
 end
 function Controller:disableDefaultMovement()
 	if self.controls then
-		self.restoreMovement = self.controls.controlsEnabled ~= false
+		if not self.movementDisabled then self.restoreMovement = self.controls.controlsEnabled ~= false;self.movementDisabled=true end
 		self.controls:Disable()
 	end
 	for _, child in self.playerGui:GetChildren() do self:hideDefaultTouch(child) end
 end
 function Controller:restoreDefaultMovement()
 	if self.controls and self.restoreMovement then self.controls:Enable() end
-	self.restoreMovement = false
+	self.restoreMovement = false;self.movementDisabled=false
 	for gui, enabled in self.hiddenTouchGuis do
 		if gui.Parent then gui.Enabled = enabled end
 	end
@@ -85,6 +85,11 @@ end
 function Controller:release()
 	for _, provider in self.providers do provider:reset() end
 	self.onRelease(Command.neutral())
+end
+function Controller:setCharacterControl(enabled)
+ self.characterControl=enabled==true
+ if self.characterControl then self:restoreDefaultMovement()else self:disableDefaultMovement()end
+ self:setExternalControl(self.characterControl)
 end
 function Controller:setExternalControl(enabled)
 	self.externalControl=enabled==true
@@ -110,7 +115,7 @@ function Controller:refreshMode()
 		if self.mode == "Touch" then self:restoreDefaultMovement() end
 		self.mode = resolved
 		for name, provider in self.providers do provider:setActive(name == resolved and not self.suspended) end
-		if resolved == "Touch" then self:disableDefaultMovement() end
+		if self.characterControl==false or (resolved == "Touch" and not self.characterControl) then self:disableDefaultMovement() end
 	end
 	self.button.Text = "Input: " .. self.preference .. (if self.preference == "Auto" then " / " .. self.mode else "") .. "  ›"
 end

@@ -1,6 +1,7 @@
 -- Seeded, weapon-powered hops and world-space inertia. No animation-driven lift.
 local Components = require(script.Parent.VehicleComponents)
 local Motion = require(script.Parent.VehicleMotion)
+local MaxStep=require(script.Parent.WorldObjectGeometry).MaxStep
 local Recoil = {}
 local EPSILON = 1e-6
 local function random(state)
@@ -95,7 +96,7 @@ function Recoil.step(state,dt,ground)
 	end
 	local height=state.position.Y
 	local velocity=Motion.ensure(state).Y
-	local wasAirborne=Recoil.airborne(state)
+	local wasAirborne=Recoil.airborne(state)or height>ground+MaxStep
 	if not wasAirborne then
 		height=ground; velocity=0
 	else
@@ -109,8 +110,11 @@ function Recoil.step(state,dt,ground)
 			state.bounceVelocity=(state.bounceVelocity or 0)-math.min(math.abs(velocity)*Config.LandingCompression,Config.MaxLandingImpulse)
 			height=ground; velocity=0; state.dropThrough=false; state.pendingRecoil=nil
 		else
-			height=math.min(nextHeight,ground+Config.MaxLift)
-			if nextHeight>=ground+Config.MaxLift then velocity=math.min(0,velocity) end
+			-- Recoil height limits must not teleport a chassis downward when
+   -- ground disappears at a cliff. Preserve current altitude during descent.
+   local ceiling=math.max(height,ground+Config.MaxLift)
+   height=math.min(nextHeight,ceiling)
+			if nextHeight>=ceiling then velocity=math.min(0,velocity) end
 		end
 	end
 	state.lift=math.max(0,height-ground)

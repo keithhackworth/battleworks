@@ -54,15 +54,21 @@
         "$className": "Configuration",
         "WorldStorageProvider": {
           "$className": "StringValue",
-          "$properties": { "Value": "Http" }
+          "$properties": {
+            "Value": "Http"
+          }
         },
         "TeamTestMode": {
           "$className": "BoolValue",
-          "$properties": { "Value": false }
+          "$properties": {
+            "Value": false
+          }
         },
         "TeamTestHostUserId": {
           "$className": "StringValue",
-          "$properties": { "Value": "0" }
+          "$properties": {
+            "Value": "0"
+          }
         },
         "SelectedWorld": {
           "$path": "worlds/selected-world.model.json"
@@ -75,6 +81,24 @@
         },
         "EditorAssetCatalog": {
           "$path": "assets/editor-catalog.model.json"
+        },
+        "GameMode": {
+          "$className": "StringValue",
+          "$properties": {
+            "Value": "BattleRoyale"
+          }
+        },
+        "PublicTankCount": {
+          "$className": "IntValue",
+          "$properties": {
+            "Value": 6
+          }
+        },
+        "PublicTankReplenishDelay": {
+          "$className": "NumberValue",
+          "$properties": {
+            "Value": 5
+          }
         }
       },
       "BattleWorksAssets": {

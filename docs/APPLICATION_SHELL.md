@@ -1,5 +1,9 @@
 # BattleWorks application shell
 
+Battle Royale reuses this shell: **Main Menu** is available on foot and in tanks, and its first option is **The Playground**, which rejoins the same arena on foot. Leaving releases occupancy and stops active commands; other players continue. Controller B remains tank exit during Royale gameplay.
+
+The lobby workflow below describes **Classic** mode. Battle Royale is now the default startup; select `GameMode=Classic` to use this workflow. See [Battle Royale Milestone 1](BATTLE_ROYALE_MILESTONE_1.md) for public tanks and on-foot admission.
+
 Players arrive at the Main Menu. Play BattleWorks opens the lobby; Enter Battle
 requests admission to the existing simulator. Main Menu in the battle HUD (or
 Xbox B when no text field is focused) leaves the battle and returns home.

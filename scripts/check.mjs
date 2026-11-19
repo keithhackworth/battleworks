@@ -4,7 +4,8 @@ import { resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { spawnSync } from 'node:child_process';
 const runtime = process.argv[2];
-const groupIndex = process.argv[3] === undefined ? null : Number(process.argv[3]);
+const syntaxOnly=process.argv[3]==='--syntax';
+const groupIndex = syntaxOnly || process.argv[3] === undefined ? null : Number(process.argv[3]);
 if (!runtime) throw new Error('Usage: node scripts/check.mjs /path/to/luau-web/src/index.js');
 const { LuauState } = await import(pathToFileURL(resolve(runtime)).href);
 const editorExports=[];
@@ -29,6 +30,7 @@ try {
     if (file === 'src/server/init.server.luau') sources.set('src/server/ServerEntrypoint.luau', source);
   }
   if (groupIndex === null) console.log(`Syntax compilation passed: ${files.length} Luau source files`);
+  if(syntaxOnly){state.destroy();state=null;process.exit(0);}
   let bundle = await readFile('tests/RobloxMock.luau', 'utf8');
   bundle += '\nlocal loaders, cache = {}, {}\nlocal Shell = {}\nlocal require\n';
   for (const file of sources.keys()) {
@@ -36,6 +38,7 @@ try {
     const namespace=file.includes('/shell/')?'Shell':file.includes('/shared/')?'Shared':'Client';
     bundle += `${namespace}[${JSON.stringify(name)}]=${JSON.stringify(name)}\n`;
   }
+  bundle += '\nClient.shell=Shell\n';
   for (const [file, originalSource] of sources) {
     // Preserve historical weapon baselines as explicit assembly data, without
     // changing production simulation modules. Group14 preserves an explicit swap
@@ -46,7 +49,7 @@ try {
         ? await readFile('tests/fixtures/SwappedVehicleAssemblies.luau', 'utf8') : originalSource;
     const name = file.split('/').pop().replace('.luau', '');
     const parent = file.includes('/shell/') ? 'Shell' : file.includes('/shared/') ? 'Shared' : 'Client';
-    bundle += `\nloaders[${JSON.stringify(name)}] = function()\nlocal script = { Parent = ${parent}, BWController = "BWController", LocalBattle = "LocalBattle", WorldTestContext = "WorldTestContext", StudioWorldSelector = "StudioWorldSelector", StudioAssetPlacement = "StudioAssetPlacement", WorldObjects = "WorldObjects", DirectionalScanner = "DirectionalScanner", ManualScanner = "ManualScanner", EnvironmentBuilder = "EnvironmentBuilder", PlayerWorldStorage = "PlayerWorldStorage", PlayerWorldService = "PlayerWorldService", EditorAssetCatalog = "EditorAssetCatalog", PracticeTargets = "PracticeTargets", ProjectileSimulation = "ProjectileSimulation" }\n${source}\nend\n`;
+    bundle += `\nloaders[${JSON.stringify(name)}] = function()\nlocal script = { Parent = ${parent}, PlaygroundBuilder = "PlaygroundBuilder", RoyaleCharacters = "RoyaleCharacters", BattleRoyale = "BattleRoyale", BWController = "BWController", LocalBattle = "LocalBattle", WorldTestContext = "WorldTestContext", StudioWorldSelector = "StudioWorldSelector", StudioAssetPlacement = "StudioAssetPlacement", WorldObjects = "WorldObjects", DirectionalScanner = "DirectionalScanner", ManualScanner = "ManualScanner", EnvironmentBuilder = "EnvironmentBuilder", PlayerWorldStorage = "PlayerWorldStorage", PlayerWorldService = "PlayerWorldService", EditorAssetCatalog = "EditorAssetCatalog", PracticeTargets = "PracticeTargets", ProjectileSimulation = "ProjectileSimulation" }\n${source}\nend\n`;
   }
   bundle += `\nloaders.EditorState=function()\n${await readFile('studio/world-builder/EditorState.luau','utf8')}\nend\n`;
   bundle += '\nrequire = function(name)\nif name == "PlayerModule" then return { GetControls = function() return defaultControls end } end\nif cache[name] == nil then cache[name] = assert(loaders[name], "Unknown module " .. tostring(name))() end\nreturn cache[name]\nend\n';
@@ -96,9 +99,15 @@ try {
     ['FootprintSupport'],
     ['TerrainFaces'],
     ['BulkAssetCollision'],
+    ['RoyaleServerIntegration'],
+    ['RoyaleClientIntegration'],
+    ['BulkBuildingCollision'], // isolate large native geometry fixtures in Luau Web's fixed heap
+    ['RoyaleTeamClientIntegration'],
+    ['RoyaleHeadlessServerIntegration'],
+    ['Playground'],
   ];
   if (groupIndex === null) {
-    const worldTests = spawnSync(process.execPath, ['--test', 'tests/world-compiler.test.js', 'tests/asset-persistence.test.js', 'tests/world-builder.test.js', 'tests/asset-paths.test.js', 'tests/ingame-editor.test.js'], { stdio: 'inherit' });
+    const worldTests = spawnSync(process.execPath, ['--test', ...(await readdir('tests')).filter(name=>name.endsWith('.test.js')).sort().map(name=>'tests/'+name)], { stdio: 'inherit' });
     if (worldTests.error) throw worldTests.error;
     if (worldTests.status !== 0) throw new Error('World compiler tests failed');
     state.destroy(); state = null;
@@ -111,7 +120,16 @@ try {
     if (!group) throw new Error('Invalid test group');
     let tests = '';
     for (const suite of group) {
-      if (suite === 'StudioAssetPlacement' || suite === 'WorldObjects' || suite === 'InGameEditorRuntime' || suite === 'PlayerWorlds' || suite === 'WorldElevation' || suite === 'StartingPositions' || suite === 'ImportedGeometry' || suite === 'FootprintSupport' || suite === 'TerrainFaces' || suite === 'BulkAssetCollision') {
+      if(suite==='RoyaleTeamClientIntegration'){
+        const source=await readFile('tests/RoyaleClientIntegration.spec.luau','utf8');
+        tests+='\ndo\n'+source.replace('IsStudio=function() return false end','IsStudio=function() return true end')+'\nend\n';
+      } else if(suite==='RoyaleServerIntegration'||suite==='RoyaleHeadlessServerIntegration'){
+        const harness=await readFile('tests/ServerIntegration.spec.luau','utf8');
+        let setup=harness.slice(0,harness.indexOf(' require("ServerEntrypoint")'));
+        const headless=suite==='RoyaleHeadlessServerIntegration';
+        if(headless)setup=setup.replace('Heartbeat=heartbeat,IsStudio=function() return true end','Heartbeat=heartbeat,IsStudio=function() return false end');
+        tests+='\ndo\nlocal headlessStartup='+String(headless)+'\n'+setup+await readFile('tests/RoyaleServerIntegration.spec.luau','utf8')+'\nend\n';
+      } else if (suite === 'Playground' || suite === 'StudioAssetPlacement' || suite === 'WorldObjects' || suite === 'InGameEditorRuntime' || suite === 'PlayerWorlds' || suite === 'WorldElevation' || suite === 'StartingPositions' || suite === 'ImportedGeometry' || suite === 'FootprintSupport' || suite === 'TerrainFaces' || suite === 'BulkAssetCollision' || suite === 'BulkBuildingCollision') {
         const harness = await readFile('tests/ServerIntegration.spec.luau', 'utf8');
         const marker = 'Vector3.one=';
         if (!harness.includes(marker)) throw new Error('Transform harness marker changed');
@@ -122,14 +140,15 @@ try {
           const lua=v=>Array.isArray(v)?'{'+v.map(lua).join(',')+'}':JSON.stringify(v);
           tests+='\nlocal nativeProfile={faces='+lua(profile.faces)+',sourceSize='+lua(profile.sourceSize)+'}\n';
         }
-        if(suite==='BulkAssetCollision'){
+        if(suite==='BulkAssetCollision'||suite==='BulkBuildingCollision'){
           const {decodeCatalogModel}=await import(pathToFileURL(resolve('tools/catalog-chunks.js')).href);
           const items=decodeCatalogModel(JSON.parse(await readFile('assets/editor-catalog.model.json','utf8')));
-          const selected=items.filter(i=>['Forest/bridge','Forest/fence','Surburban/fence','Surburban/building-type-a'].includes(i.model));
+          const models=suite==='BulkAssetCollision'?['Forest/bridge','Forest/fence']:['Surburban/fence','Surburban/building-type-a'];
+          const selected=items.filter(i=>models.includes(i.model));
           const lua=v=>v===null?'nil':typeof v==='object'?(Array.isArray(v)?'{'+v.map(lua).join(',')+'}':'{'+Object.entries(v).map(([k,n])=>'['+JSON.stringify(k)+']='+lua(n)).join(',')+'}'):JSON.stringify(v);
           tests+='\nlocal bulkItems='+lua(selected)+'\n';
         }
-        tests += await readFile(`tests/${suite}.spec.luau`, 'utf8') + '\nend\n';
+        tests += await readFile(`tests/${suite==='BulkBuildingCollision'?'BulkAssetCollision':suite}.spec.luau`, 'utf8') + '\nend\n';
       } else if (suite === 'BuilderServerIntegration' || suite === 'BuilderPublishedIntegration' || suite === 'PlayerWorldServerIntegration' || suite === 'PlayerWorldPublishedIntegration' || suite === 'TeamWorldServerIntegration') {
         const {default:doc}=await import(pathToFileURL(resolve('tools/world-builder/document.js')).href);
         const {default:cat}=await import(pathToFileURL(resolve('tools/world-builder/catalog.js')).href);
@@ -163,7 +182,7 @@ try {
           setup = setup.replace('workspace:SetAttribute("SoloTankPairs",true)', 'workspace:SetAttribute("SoloTankPairs",nil)');
         }
         if (suite === 'ShellServerIntegration') setup=setup.replace(' session.OnServerEvent:Fire(first,"Enter",1)\n session.OnServerEvent:Fire(second,"Enter",1)\n','');
-        if (suite === 'IceWind') setup = setup.replace('workspace:SetAttribute("ArenaWeather","Normal")', 'workspace:SetAttribute("ArenaWeather",nil)');
+        if (suite === 'IceWind') setup = setup.replace('workspace:SetAttribute("ArenaWeather","Normal")', 'workspace:SetAttribute("ArenaWeather","IceWind")');
         tests += '\ndo\n' + setup;
         tests += await readFile(`tests/${suite}.spec.luau`, 'utf8') + '\nend\n';
       } else tests += '\ndo\n' + await readFile(`tests/${suite}.spec.luau`, 'utf8') + '\nend\n';

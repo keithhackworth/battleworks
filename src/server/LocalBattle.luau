@@ -58,18 +58,26 @@ function Battle.select(battle,kind)
 	if not BW.running(nextTank) then BW.clearInputs(nextTank) end
 	return true
 end
-function Battle.damage(battle,victim,source,damage,weaponType,position)
-	-- Damage is called only from authoritative projectile impacts.
-	if not source or source==victim or (source.owner~=victim.owner and not battle.multiplayer) or victim.state.health<=0 or type(damage)~="number" or damage~=damage or damage<=0 or damage==math.huge then return false end
+local function applyDamage(battle,victim,source,damage,weaponType,position)
 	if not victim.effects then victim.effects=Effects.new(victim.state) end
 	local applied=math.min(victim.state.health,damage)
 	victim.state.health=math.max(0,victim.state.health-applied)
-	Effects.record(victim.effects,victim.state,weaponType or Components.get(source.state).Weapon.WeaponType,applied,position)
+	Effects.record(victim.effects,victim.state,weaponType or "Cannon",applied,position)
 	if victim.state.health==0 then
 		BW.stop(victim,"Tank destroyed."); BW.clearInputs(victim)
 		victim.hitbox.CanQuery=false; victim.state.scanVisual=nil; victim.state.scanBW=nil; victim.state.scanManual=nil; victim.state.manualScannerActive=false
-		if not battle.multiplayer then battle.winner=if source.state.health>0 then source.kind else "Draw" end
+		if not battle.multiplayer then battle.winner=if source and source.state.health>0 then source.kind else "Draw" end
 	end
 	return true
+end
+function Battle.damage(battle,victim,source,damage,weaponType,position)
+ -- Projectile authority and friendly/solo rules stay at this boundary.
+ if not source or source==victim or (source.owner~=victim.owner and not battle.multiplayer) or victim.state.health<=0 or type(damage)~="number" or damage~=damage or damage<=0 or damage==math.huge then return false end
+ return applyDamage(battle,victim,source,damage,weaponType or Components.get(source.state).Weapon.WeaponType,position)
+end
+function Battle.environmentDamage(battle,victim)
+ -- Server-only environmental death shares damage effects and dead-state cleanup.
+ if victim.state.health<=0 then return false end
+ return applyDamage(battle,victim,nil,victim.state.health,"Cannon",victim.state.position)
 end
 return Battle

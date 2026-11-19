@@ -2,8 +2,14 @@
 local Players=game:GetService("Players")
 local Run=game:GetService("RunService")
 local function startup(stage) if Run:IsStudio() then print("[BattleWorks startup/client] "..stage) end end
-startup("client started (height and tilt v6)")
+startup("client started (Royale startup v1)")
 local network=game.ReplicatedStorage:WaitForChild("TankNetwork")
+if network:GetAttribute("GameMode")=="BattleRoyale" then
+ startup("initializing Battle Royale client")
+ require(script.RoyaleClient).start()
+ startup("Battle Royale client ready")
+ return
+end
 local remote=network:WaitForChild("BattleSession")
 local Session=require(script.shell.GameplaySession)
 local Shell=require(script.shell.ApplicationShell)

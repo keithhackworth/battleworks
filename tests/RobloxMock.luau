@@ -74,6 +74,7 @@ function Instance.new(class)
 	return object
 end
 local workspace = Instance.new("Folder")
+workspace:SetAttribute("BattleWorksGameMode","Classic") -- explicit historical-mode regression baseline
 local UIS = { PreferredInput = "KeyboardAndMouse", TouchEnabled = true, focusedTextBox = nil }
 for _, key in { "InputBegan", "InputChanged", "InputEnded", "TouchMoved", "TouchEnded", "WindowFocusReleased", "WindowFocused", "TextBoxFocused", "TextBoxFocusReleased", "GamepadDisconnected" } do UIS[key] = signal() end
 UIS.preferredSignal = signal()

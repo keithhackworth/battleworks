@@ -12,7 +12,10 @@ function Objects.new()
 end
 function Objects:sync(record)
  local live=not record.destroyed
- for _,proxy in record.proxies do proxy.CanQuery=live and (record.solid or record.destructible) end
+ for _,proxy in record.proxies do
+  proxy.CanQuery=live and (record.solid or record.destructible)
+  if self.characterCollision then proxy.CanCollide=live and record.solid end
+ end
  for part,transparency in record.visuals do part.Transparency=if live then transparency else 1 end
  record.model:SetAttribute("WorldObjectId",record.id)
  record.model:SetAttribute("Health",record.health); record.model:SetAttribute("MaxHealth",record.maxHealth)

@@ -7,10 +7,11 @@ local Shared = ReplicatedStorage:WaitForChild("Shared")
 local Config = require(Shared.TankConfig)
 local ArenaLayout = require(Shared.ArenaLayout)
 local Environment = require(Shared.Environment)
+local Playground=require(Shared.PlaygroundTerrain)
 local WorldSettings = require(Shared.WorldSettings)
 local EnvironmentBuilder = require(script.EnvironmentBuilder)
 local mapSize = Vector2.new(Config.ArenaLimit*2, Config.ArenaLimit*2)
-local weather=workspace:GetAttribute("ArenaWeather") or "IceWind"
+local weather=workspace:GetAttribute("ArenaWeather") or "Normal"
 local environment
 local singleModelWorld=false
 local worldObjects
@@ -35,7 +36,13 @@ local PracticeTargets = require(script.PracticeTargets)
 local VehicleContacts=require(Shared.VehicleContacts)
 local Projectiles = require(script.ProjectileSimulation)
 local Debris = game:GetService("Debris")
-Players.CharacterAutoLoads = false
+local storage=game:GetService("ServerStorage")
+local studioConfiguration=if storage then storage:FindFirstChild("BattleWorksStudio") else nil
+local RoyaleConfig=require(Shared.BattleRoyaleConfig)
+local gameMode=RoyaleConfig.mode(studioConfiguration,workspace:GetAttribute("BattleWorksGameMode"))
+local isRoyale=gameMode=="BattleRoyale"
+local royale
+Players.CharacterAutoLoads = false -- enable native spawns after arena/pool initialization
 local network = Instance.new("Folder")
 network.Name = "TankNetwork"
 local function remote(name)
@@ -49,6 +56,8 @@ local selectTank = remote("SelectTank")
 local bwRun,bwStop = remote("BWRun"),remote("BWStop")
 local resetBattle = remote("ResetBattle")
 local battleSession = remote("BattleSession")
+local royaleControl=remote("RoyaleControl")
+network:SetAttribute("GameMode",gameMode)
 local sessions = {}
 local playerWorlds
 local bwOutput=remote("BWOutput")
@@ -61,8 +70,6 @@ local shells = {}
 local editorPreview=workspace:FindFirstChild("BattleWorksEditorPreview"); if editorPreview then editorPreview:Destroy() end
 local arena = Instance.new("Folder")
 arena.Name = "Arena"; arena.Parent = workspace
-local storage=game:GetService("ServerStorage")
-local studioConfiguration=if storage then storage:FindFirstChild("BattleWorksStudio") else nil
 local editorMetadata=if studioConfiguration then studioConfiguration:FindFirstChild("EditorAssetCatalog") else nil
 if editorMetadata then
  startup("publishing editor asset library")
@@ -85,6 +92,9 @@ local function createEnvironment(size)
  local data=Environment.create(size,weather)
  if singleModelWorld then data.rocks={}; data.logs={}; data.trees={}; data.zones={} end
  if worldSettings then data.zones=table.clone(worldSettings.zones);data.startPositions=worldSettings.spawns end
+ if isRoyale and not worldSettings then
+  data.playground=Playground.create(size);data.rocks={};data.logs={};data.trees={};data.zones={}
+ end
  data.worldObjects=worldObjects
  return data
 end
@@ -105,17 +115,18 @@ end
 local floor = part("Floor", Vector3.new(240, 1, 240), Vector3.new(0, -0.5, 0), Color3.fromRGB(100, 112, 86))
 floor.Material = Enum.Material.Concrete
 floor.Transparency = 0
-floor.CanCollide = false -- anchored, scripted tanks need no supporting physics
+floor.CanCollide = isRoyale -- native characters need ground; scripted tanks remain non-collidable
 floor.CanTouch = false
 floor.CanQuery = true -- downward combat rays should still hit the ground
 floor.Material = Enum.Material.Grass
 EnvironmentBuilder.build(arena,environment,floor)
+if environment.playground then require(script.PlaygroundBuilder).build(arena,environment.playground,floor)end
 if worldSettings then
  floor.Size=Vector3.new(mapSize.X+10,1,mapSize.Y+10)
  floor.Material=Enum.Material[worldSettings.ground.material]
  floor.Color=Color3.fromRGB(table.unpack(worldSettings.ground.color))
 end
-if not singleModelWorld then
+if not singleModelWorld and not environment.playground then
  local stick=part("CenterStick",Vector3.new(10,1,1),Vector3.new(0,.5,0),Color3.fromRGB(125,79,40))
  stick.Shape=Enum.PartType.Cylinder; stick.Material=Enum.Material.Wood
  stick.CanCollide=false; stick.CanTouch=false; stick.CanQuery=false
@@ -135,6 +146,7 @@ local function buildTargets(size)
 	local count = math.clamp(math.floor((size.X-10)/9),1,5)
 	for i = 1, count do
 		local p = part("Target", Vector3.new(7, 7, 5), Vector3.new((i-(count+1)/2)*math.min(18,(size.X-10)/count), 3.5, -size.Y*65/230), Color3.fromRGB(210, 102, 60))
+		if environment.playground then p.Position=Vector3.new(38+(i-1)*16,3.5,-90)end
 		local target = PracticeTargets.new(p)
         target.collisionId="target:"..i
 		targets[p] = target
@@ -199,7 +211,14 @@ local function findSpawn(tank)
  for _,other in tanks do
   if other~=tank and not other.state.waitingForSpawn then table.insert(bodies,VehicleContacts.body("spawn-tank",other.state,Components.get(other.state).Chassis)) end
  end
+ if isRoyale then
+  for _,player in Players:GetPlayers()do
+   local root=player.Character and player.Character:FindFirstChild("HumanoidRootPart")
+   if root and not root.Anchored and player.UserId~=tank.characterUserId then table.insert(bodies,VehicleContacts.box("spawn-character",root.Position-Vector3.new(0,3,0),3,3,0,6))end
+  end
+ end
  local preferred,yaw=Battle.pose(mapSize,tank.spawnIndex,tank.kind)
+ if environment.playground then preferred=environment.playground.spawns[(tank.spawnIndex-1)%#environment.playground.spawns+1]end
  if worldSettings then
   -- Use authored headings/anchors, then the same bounded fallback search.
   for _,spawn in worldSettings.spawns do
@@ -209,14 +228,35 @@ local function findSpawn(tank)
   if ok then preferred,yaw=position,heading end
  end
  local function clear(p)
+  if environment.playground and not Playground.safe(environment.playground,p,7)then return false end
   if math.abs(p.X)>mapSize.X/2-7 or math.abs(p.Z)>mapSize.Y/2-7 then return false end
   for _,body in bodies do if not body.plane and WorldSettings.blocked(p,body,7) then return false end end
   return true
  end
+ local function supported(p)
+  if tank.characterUserId~=nil then
+   local height=Environment.sample(environment,p.X,p.Z,p.Y+1.5)
+   return Vector3.new(p.X,height,p.Z)
+  end
+  return p
+ end
+ if tank.preferred then preferred=tank.preferred end
+ preferred=supported(preferred)
+ if environment.playground then
+  if not tank.characterUserId and clear(preferred)then return preferred,yaw end
+  for _,entry in environment.playground.entries do if clear(entry)then return entry,yaw end end
+  return nil -- keep retrying rather than spawning over the ravine or a tank
+ end
  if clear(preferred) then return preferred,yaw end
+ if isRoyale then
+  for distance=14,56,14 do for _,offset in {{1,0},{-1,0},{0,1},{0,-1},{1,1},{-1,1},{1,-1},{-1,-1}}do
+   local p=supported(preferred+Vector3.new(offset[1]*distance,0,offset[2]*distance))
+   if clear(p)then return p,yaw end
+  end end
+ end
  for z=-mapSize.Y/2+7,mapSize.Y/2-7,14 do
   for x=-mapSize.X/2+7,mapSize.X/2-7,14 do
-   local p=Vector3.new(x,0,z)
+   local p=supported(Vector3.new(x,0,z))
    if clear(p) then return p,yaw end
   end
  end
@@ -237,10 +277,66 @@ local function enterMultiplayer()
   end
  end
 end
-local function owned(player,id)
+local function owned(player,id,epoch)
+ if royale then return royale:controlled(player,id,epoch)end
 	if id~=nil and type(id)~="string" then return nil end
 	local battle=battles[player.UserId]
 	return battle and battle.tanks[id or battle.selected]
+end
+local function createTank(id,player,kind,index,assembly)
+ local owner=if player then player.UserId else 0
+
+		local size=Components.get(kind).Chassis.Hitbox
+		local hitbox=part("TankHitbox",Vector3.new(size.X,size.Y,size.Z),Vector3.zero,Color3.new())
+		hitbox.Transparency=1; hitbox.CanCollide=false
+		hitbox:SetAttribute("OwnerId",owner); hitbox:SetAttribute("TankId",id)
+		local tank={assembly=assembly,public=player==nil,owner=owner,playerName=(if player then player.Name else "Arena"),kind=kind,seed=(math.abs(owner)+(if not player then index*104729 else 0)+(if kind=="Rattler" then 7919 else 0))%2147483646+1,hitbox=hitbox,lastPacket=0}
+		tank.worldSettings=worldSettings; tank.worldObjects=worldObjects
+  tank.spawnIndex=index; tank.findSpawn=if not player or multiplayer or (worldSettings and WorldSettings.numbered(worldSettings)) then findSpawn else nil
+		if not Battle.resetTank(tank,mapSize,index,"Battle started.") then
+   if not player then hitbox:Destroy();return nil end
+   -- A full authored map leaves the player waiting for a free spawn, with no
+   -- targetable or controllable body. Retry through the normal respawn path.
+   tank.findSpawn=function() return Battle.pose(mapSize,index,tank.kind) end
+   Battle.resetTank(tank,mapSize,index,"Waiting for a safe spawn.")
+   tank.findSpawn=findSpawn; tank.state.health=0; tank.hitbox.CanQuery=false
+   tank.state.waitingForSpawn=true
+   tank.respawnAt=simulationTime+3
+  end
+        if player then tank.state.generation=sessions[owner].generation end
+		tanks[id]=tank
+  local function sendOutput(event)
+   local recipient=if tank.public then Players:GetPlayerByUserId(tank.occupant or -1) else player
+   if recipient then bwOutput:FireClient(recipient,id,tank.state.generation,tank.bwRunRequestId or 0,event,tank.state.controlEpoch)end
+  end
+		tank.bwServices={
+			getClock=function() return simulationTime end,
+            cancelWeapon=function() tank.pendingShot=nil; tank.rattlerShot=false end,
+            scan=function(angle,performance,time,hardware)
+				local observation,err=scanner:execute(tank,angle,simulationTime,hardware)
+				if observation then publishScan(tank,angle,observation,false) end
+				return observation,err
+			end,
+            onEvent=function(event)
+                if event.kind~="scan" and event.kind~="print" then sendOutput(event) end
+            end,
+			onValue=function(observation,line,angle,thread)
+                local value=observation.value
+                local text=ScannerValues.format(value)
+                if value.detections then
+                    local lines={string.format("%d detections • range %.6g studs",value.count,value.range)}
+                    for index,detection in value.detections do table.insert(lines,string.format("[%d] %s",index-1,ScannerValues.format(detection))) end
+                    text=table.concat(lines,"\n")
+                end
+				sendOutput(
+					{thread=thread,kind="scan",angle=angle,text=text,timestamp=observation.timestamp,line=line})
+			end,
+			onPrint=function(text,line,thread)
+				sendOutput(
+					{thread=thread,kind="print",text=text,timestamp=simulationTime,line=line})
+			end,
+		}
+ return tank
 end
 local function addPlayer(player)
 	if battles[player.UserId] then return end
@@ -251,59 +347,17 @@ local function addPlayer(player)
  while used[spawnCount] do spawnCount+=1 end
 	local battle=Battle.new(player.UserId,spawnCount); battles[player.UserId]=battle
  battle.multiplayer=multiplayer
-	for _,kind in {"Boomer","Rattler"} do
-		local id=Battle.id(player.UserId,kind)
-		local size=Components.get(kind).Chassis.Hitbox
-		local hitbox=part("TankHitbox",Vector3.new(size.X,size.Y,size.Z),Vector3.zero,Color3.new())
-		hitbox.Transparency=1; hitbox.CanCollide=false
-		hitbox:SetAttribute("OwnerId",player.UserId); hitbox:SetAttribute("TankId",id)
-		local tank={owner=player.UserId,playerName=player.Name,kind=kind,seed=(math.abs(player.UserId)+(if kind=="Rattler" then 7919 else 0))%2147483646+1,hitbox=hitbox,lastPacket=0}
-		tank.worldSettings=worldSettings; tank.worldObjects=worldObjects
-  tank.spawnIndex=spawnCount; tank.findSpawn=if multiplayer or (worldSettings and WorldSettings.numbered(worldSettings)) then findSpawn else nil
-		if not Battle.resetTank(tank,mapSize,spawnCount,"Battle started.") then
-   -- A full authored map leaves the player waiting for a free spawn, with no
-   -- targetable or controllable body. Retry through the normal respawn path.
-   tank.findSpawn=function() return Battle.pose(mapSize,spawnCount,tank.kind) end
-   Battle.resetTank(tank,mapSize,spawnCount,"Waiting for a safe spawn.")
-   tank.findSpawn=findSpawn; tank.state.health=0; tank.hitbox.CanQuery=false
-   tank.state.waitingForSpawn=true
-   tank.respawnAt=simulationTime+3
-  end
-        tank.state.generation=sessions[player.UserId].generation
-		tanks[id]=tank; battle.tanks[id]=tank
-		tank.bwServices={
-			getClock=function() return simulationTime end,
-            cancelWeapon=function() tank.pendingShot=nil; tank.rattlerShot=false end,
-            scan=function(angle,performance,time,hardware)
-				local observation,err=scanner:execute(tank,angle,simulationTime,hardware)
-				if observation then publishScan(tank,angle,observation,false) end
-				return observation,err
-			end,
-            onEvent=function(event)
-                if event.kind~="scan" and event.kind~="print" then bwOutput:FireClient(player,id,tank.state.generation,tank.bwRunRequestId or 0,event) end
-            end,
-			onValue=function(observation,line,angle,thread)
-                local value=observation.value
-                local text=ScannerValues.format(value)
-                if value.detections then
-                    local lines={string.format("%d detections • range %.6g studs",value.count,value.range)}
-                    for index,detection in value.detections do table.insert(lines,string.format("[%d] %s",index-1,ScannerValues.format(detection))) end
-                    text=table.concat(lines,"\n")
-                end
-				bwOutput:FireClient(player,id,tank.state.generation,tank.bwRunRequestId or 0,
-					{thread=thread,kind="scan",angle=angle,text=text,timestamp=observation.timestamp,line=line})
-			end,
-			onPrint=function(text,line,thread)
-				bwOutput:FireClient(player,id,tank.state.generation,tank.bwRunRequestId or 0,
-					{thread=thread,kind="print",text=text,timestamp=simulationTime,line=line})
-			end,
-		}
-	end
+	for _,kind in {"Boomer","Rattler"}do
+  local id=Battle.id(player.UserId,kind)
+  battle.tanks[id]=createTank(id,player,kind,spawnCount)
+ end
 end
+
 -- Presence in the experience is separate from participation in a battle.
 local function registerPlayer(player)
  if not sessions[player.UserId] then sessions[player.UserId]={lastRequest=0,lastEnter=-math.huge,generation=0} end
  if playerWorlds then playerWorlds:register(player) end
+ if royale then royale:register(player)end
 end
 local function leaveBattle(player)
  local battle=battles[player.UserId]
@@ -318,12 +372,13 @@ local function leaveBattle(player)
 end
 Players.PlayerAdded:Connect(registerPlayer)
 Players.PlayerRemoving:Connect(function(player)
- leaveBattle(player)
+ if royale then royale:remove(player)else leaveBattle(player)end
  sessions[player.UserId]=nil
  if playerWorlds then playerWorlds:remove(player) end
 end)
 for _,player in Players:GetPlayers() do registerPlayer(player) end
 battleSession.OnServerEvent:Connect(function(player,action,requestId)
+ if isRoyale then return end
  local session=sessions[player.UserId]
  if not session or (action~="Enter" and action~="Leave") or type(requestId)~="number"
   or requestId~=requestId or requestId%1~=0 or requestId<1 or requestId>1000000000 or requestId<=session.lastRequest then return end
@@ -345,9 +400,9 @@ battleSession.OnServerEvent:Connect(function(player,action,requestId)
  end
  battleSession:FireClient(player,requestId,battles[player.UserId]~=nil)
 end)
-input.OnServerEvent:Connect(function(player,value,id)
+input.OnServerEvent:Connect(function(player,value,id,epoch)
 	local battle=battles[player.UserId]
-	local tank=owned(player,id)
+	local tank=owned(player,id,epoch)
 	local now=os.clock()
 	if not tank or (id and id~=battle.selected) or tank.state.health<=0 or BWController.running(tank) or now-tank.lastPacket<1/60 then return end
 	tank.lastPacket=now
@@ -358,6 +413,7 @@ input.OnServerEvent:Connect(function(player,value,id)
 	end
 end)
 selectTank.OnServerEvent:Connect(function(player,kind)
+ if isRoyale then return end
 	local battle=battles[player.UserId]
 	if not battle or (kind~="Boomer" and kind~="Rattler") then return end
  Battle.select(battle,kind)
@@ -367,8 +423,8 @@ local function acceptBWRequest(tank,id)
 	tank.lastBWRequest=id; tank.state.bwRequestId=id
 	return true
 end
-bwRun.OnServerEvent:Connect(function(player,source,requestId,id)
-	local tank=owned(player,id)
+bwRun.OnServerEvent:Connect(function(player,source,requestId,id,epoch)
+	local tank=owned(player,id,epoch)
 	local now=os.clock()
 	if not tank or not acceptBWRequest(tank,requestId) then return end
 	if now-(tank.lastBWRun or -math.huge)<0.5 then
@@ -378,16 +434,20 @@ bwRun.OnServerEvent:Connect(function(player,source,requestId,id)
 	tank.lastBWRun=now
 	BWController.start(tank,source)
 end)
-bwStop.OnServerEvent:Connect(function(player,requestId,id)
-	local tank=owned(player,id)
+bwStop.OnServerEvent:Connect(function(player,requestId,id,epoch)
+	local tank=owned(player,id,epoch)
 	if tank and acceptBWRequest(tank,requestId) then BWController.stop(tank,"Stopped by player.") end
 end)
-bwHardware.OnServerEvent:Connect(function(player,configuration,id)
- local tank=owned(player,id); if not tank then return end
+bwHardware.OnServerEvent:Connect(function(player,configuration,id,epoch)
+ local tank=owned(player,id,epoch); if not tank then return end
  local now=os.clock(); if now-(tank.lastHardwareRequest or -math.huge)<0.25 then return end
  tank.lastHardwareRequest=now
+ if isRoyale and (type(configuration)~="table" or configuration.tier~="Bunny")then
+  bwRuntimeState:FireClient(player,id,{controlEpoch=tank.state.controlEpoch,configuration=Hardware.copy(tank.hardware),configurationResult="Public tanks use Bunny hardware."})
+  return
+ end
  local ok,reason=BWController.configure(tank,configuration)
- bwRuntimeState:FireClient(player,id,{configuration=Hardware.copy(tank.hardware or Hardware.forTank(tank.state)),configurationResult=if ok then "success" else reason})
+ bwRuntimeState:FireClient(player,id,{configuration=Hardware.copy(tank.hardware or Hardware.forTank(tank.state)),configurationResult=if ok then "success" else reason,controlEpoch=tank.state.controlEpoch})
 end)
 local shellFolder = Instance.new("Folder")
 shellFolder.Name = "ArtilleryShells"; shellFolder.Parent = workspace
@@ -453,9 +513,9 @@ local function updateShells(now)
    end
 			for _, other in tanks do
 				if other.hitbox == hit.Instance then
-					local battle=battles[other.owner]
+					local battle=if other.public then royale.battle else battles[other.owner]
 					if Battle.damage(battle,other,tanks[shell.owner],shell.damage,shell.weaponType,hit.Position) and multiplayer and other.state.health<=0 then
-                        other.respawnAt=simulationTime+3
+                        if other.public then royale:destroyed(other)else other.respawnAt=simulationTime+3 end
                     end
 				end
 			end
@@ -480,6 +540,7 @@ local function reset(battle,reason)
 	for _,tank in battle.tanks do Battle.resetTank(tank,mapSize,battle.index,reason) end
 end
 resetBattle.OnServerEvent:Connect(function(player)
+ if isRoyale then return end
 	local battle=battles[player.UserId]
 	if not battle or os.clock()-(battle.lastReset or -math.huge)<0.5 then return end
 	battle.lastReset=os.clock()
@@ -494,7 +555,7 @@ if RunService:IsStudio() then
 	local redraw = remote("RedrawMap")
 	local lastRedraw = -math.huge
 	redraw.OnServerEvent:Connect(function(player, size)
-		if worldSettings or not battles[player.UserId] or not ArenaLayout.validSize(size) or os.clock()-lastRedraw < 1 then return end
+		if isRoyale or worldSettings or not battles[player.UserId] or not ArenaLayout.validSize(size) or os.clock()-lastRedraw < 1 then return end
 		lastRedraw = os.clock(); mapSize = size
   if worldObjects then worldObjects:reset() end
 		environment=createEnvironment(size); EnvironmentBuilder.build(arena,environment,floor)
@@ -516,6 +577,7 @@ end
 -- Player worlds are installed only into an empty battlefield. Published launches
 -- use a fresh reserved server; Studio uses this same path without teleporting.
 local function installPlayerWorld(player,document,specs,settings)
+ assert(not isRoyale,"Loading saved worlds into the arena requires Classic game mode. Your saved world is unchanged.")
  assert(sessions[player.UserId] and not next(battles),"The battlefield is busy. Leave combat on every Studio client before testing a world.")
  local candidate=require(script.WorldObjects).new()
  local staging=Instance.new("Folder")
@@ -577,6 +639,45 @@ if editorMetadata then
   return playerWorlds:request(player,action,payload)
  end
 end
+if isRoyale then
+ multiplayer=true
+ local settings=RoyaleConfig.settings(studioConfiguration)
+ local Characters=require(script.RoyaleCharacters).new(function(preferred,player)
+  return findSpawn({kind="Boomer",spawnIndex=1,characterUserId=player and player.UserId,preferred=preferred or Vector3.new(0,0,mapSize.Y*.35)})
+ end)
+ -- Only native characters collide with this geometry: tank bodies/art remain
+ -- anchored/non-collidable and continue through VehicleContacts exclusively.
+ for _,p in arena:GetDescendants()do
+  if p:IsA("BasePart")and (p.Name=="Boundary" or p.Name=="Rock" or p.Name=="FallenLog" or p.Name=="TreeTrunk")then p.CanCollide=true end
+ end
+ if worldObjects then worldObjects.characterCollision=true;for _,record in worldObjects.records do worldObjects:sync(record)end end
+ royale=require(script.BattleRoyale).new({count=settings.count,delay=settings.delay,tanks=tanks,characters=Characters,
+  hazard=function(position)return environment.playground and Playground.hazard(environment.playground,position)end,
+  safeExit=function(tank)
+   if not environment.playground then return true end
+   local p=tank.state.position
+   local v=require(Shared.VehicleMotion).ensure(tank.state)
+   local landing=p+Vector3.new(v.X,0,v.Z)*.7
+   return Playground.safe(environment.playground,p,5,true)and Playground.safe(environment.playground,landing,5,true)
+  end,
+  clock=function()return simulationTime end,create=function(id,kind,index,assembly)return createTank(id,nil,kind,index,assembly)end,remove=removeTank,
+  admit=function(player,member)battles[player.UserId]={owner=player.UserId,index=player.UserId,tanks={},multiplayer=true,royale=true,controlRevision=member.revision}end,
+  depart=function(player)battles[player.UserId]=nil end,
+  select=function(player,tank,member)local battle=battles[player.UserId];battle.tanks={};battle.selected=if tank then tank.id else nil;battle.controlRevision=member.revision;if tank then battle.tanks[tank.id]=tank end end,
+  notify=function(player,reading)royaleControl:FireClient(player,reading)end,
+ })
+ for _,player in Players:GetPlayers()do royale:register(player)end
+ Players.CharacterAutoLoads=true
+ for _,player in Players:GetPlayers()do
+  if not player.Character then task.spawn(function()
+   if sessions[player.UserId] and not player.Character then
+    local ok,reason=pcall(player.LoadCharacterAsync,player)
+    if not ok then warn("BattleWorks character spawn failed: "..tostring(reason))end
+   end
+  end)end
+ end
+ royaleControl.OnServerEvent:Connect(function(player,...)royale:request(player,...)end)
+end
 startup("arena and battle services ready")
 local accumulator, snapshotClock = 0, 0
 RunService.Heartbeat:Connect(function(dt)
@@ -584,9 +685,10 @@ RunService.Heartbeat:Connect(function(dt)
 	while accumulator >= Config.Step do
 		accumulator -= Config.Step
 		local now = os.clock()
+  if royale then royale:step()end
 		for p, target in targets do PracticeTargets.update(p, target, now, tanks) end
 		for id, tank in tanks do
-			if tank.respawnAt and simulationTime>=tank.respawnAt then
+			if not tank.public and tank.respawnAt and simulationTime>=tank.respawnAt then
                 if not Battle.resetTank(tank,mapSize,battles[tank.owner].index,"Respawned.") then tank.respawnAt=simulationTime+1 end
             end
             DamageEffects.step(tank.effects,tank.state,Config.Step)
@@ -608,7 +710,7 @@ RunService.Heartbeat:Connect(function(dt)
 		-- BW gets first use of the shared query budget. Manual sweeps run only for
 		-- the selected living tank without an active program, never into BW output.
 		for id,tank in tanks do
-			local battle=battles[tank.owner]
+			local battle=battles[tank.occupant or tank.owner]
 			ManualScanner.step(tank,battle and battle.selected==id and not BWController.running(tank),simulationTime,Config.Step,
 				function(angle)
                     local sensor=math.floor((angle%360+22.5)/45)%8*45
@@ -629,7 +731,7 @@ RunService.Heartbeat:Connect(function(dt)
 		for id,tank in tanks do
 			local command=tank.tickCommand
 			tank.state.groundPlaneY=floor.Position.Y+floor.Size.Y/2
-            if not tank.state.waitingForSpawn then
+            if not tank.state.waitingForSpawn and not tank.state.publicRetired then
                 Simulation.step(tank.state, command, Config.Step, mapSize, environment,true)
                 table.insert(contactBodies,VehicleContacts.body(id,tank.state,Components.get(tank.state).Chassis))
             end
@@ -690,13 +792,13 @@ RunService.Heartbeat:Connect(function(dt)
                 for id,tank in battle.tanks do
                     if simulationTime-(tank.lastDiagnostics or -math.huge)>=0.2 then
                         tank.lastDiagnostics=simulationTime
-                        bwRuntimeState:FireClient(player,id,{generation=tank.state.generation,requestId=tank.bwRunRequestId or 0,configuration=Hardware.copy(tank.hardware or Hardware.forTank(tank.state)),runtime=if tank.bw then tank.bw:diagnostics() else nil})
+                        bwRuntimeState:FireClient(player,id,{generation=tank.state.generation,requestId=tank.bwRunRequestId or 0,configuration=Hardware.copy(tank.hardware or Hardware.forTank(tank.state)),runtime=if tank.bw then tank.bw:diagnostics() else nil,controlEpoch=tank.state.controlEpoch})
                     end
                 end
             end
         end
         local battleStates={}
-		for owner,battle in battles do battleStates[tostring(owner)]={selected=battle.selected,winner=battle.winner,multiplayer=battle.multiplayer} end
+		for owner,battle in battles do battleStates[tostring(owner)]={selected=battle.selected,winner=battle.winner,multiplayer=battle.multiplayer,royale=battle.royale,controlRevision=battle.controlRevision} end
 		snapshot:FireAllClients(states,battleStates)
 	end
 end)

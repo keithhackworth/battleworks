@@ -108,5 +108,10 @@ do
  check(r.health==144 and Projectiles.step(world,shell,1/60)==nil,"existing rapid-fire damage applied once and spent projectile cannot hit again")
  mt.__index=oldIndex
 end
+registry:reset();registry.characterCollision=true;registry:sync(r)
+check(r.proxy.CanCollide and m.mesh.CanCollide~=true,"Royale native character support uses authoritative collider parts, without enabling decorative mesh query cover")
+registry:impact({Instance=r.proxy},r.health,{})
+check(not r.proxy.CanCollide and not r.proxy.CanQuery,"destruction removes native character support and authoritative tank queries together")
+registry:reset();check(r.proxy.CanCollide,"reset restores native character support without extra colliders")
 CFrame.new=saveNew; CFrame.Angles=saveAngles; CFrame.lookAt=saveLookAt
 print(string.format("Imported world object suite passed: %d assertions",checks))
