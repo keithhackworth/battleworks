@@ -148,10 +148,12 @@ Safety still applies: at most %d source operations/thread/cycle, %g simulated se
 
 A device belongs to exactly one bus. A bus can host several devices, but their configured allocation percentages must total no more than 100%. Idle devices do not donate their reserved allocation. Multiple devices on one bus CAN operate at the same time; they do not take turns using the bus. ANY thread can issue a command to ANY device, including one on a different bus.
 
-Effective performance = 1 - (1 - allocation/100)^2
+Turret, weapon and scanner performance = 1 - (1 - allocation/100)^2
 25% allocation -> 43.75% performance
 50% -> 75%; 75% -> 93.75%; 100% -> 100%
 0% -> deviceDisabled; the device cannot operate.
+
+Drivetrain uses a separate speed curve:0% is unpowered,5% gives15 forward studs/sec before terrain/tracked modifiers,100% retains the installed rated maximum. Below5% speed is linear from zero; above5% it eases to the maximum with the bus exponent. Reverse/turn keep their own ratings with the same drivetrain fraction.
 
 The drivetrain's speed cap, turret rotation rate and weapon preparation/recharge timing depend on performance. Acceleration, recoil, steering geometry, collisions, projectile speed and damage remain normal tank physics. Lower performance makes weapon intervals/preparation LONGER. Radar RANGE currently stays at 150 studs at 100% distance effectiveness, independently of bus allocation; acquisition time still depends on performance. Future equipment configuration can change radar hardware range.
 
@@ -469,6 +471,21 @@ The debug speed HUD shows measured world speed against the allocation-limited dr
 Snapshots use immutable dictionaries and zero-based arrays. Assign s = get_tank_state() on its own source line, then read s.coordinates.x or s.weapon.readiness.ready. Check s.scanner_count before reading s.scanners[0].cone_degrees.
 No field read repeats introspection charges. One CPU cycle costs your tier's ticks/cycle. A two-cycle snapshot can wait for credit; it reads AFTER that wait. Ordinary print does not waive this fee.
 Current weapons use finite-speed projectiles and unlimited ammo; wheel_count is null because the physics model does not define it. Standalone runtimes without a server clock return null tick/step_seconds. Scanner headings are chassis-relative fixed 45-degree mounts, not a freely steered beam; narrow cones leave gaps. Use actual steer/pivot capability when planning a sweep.]] )
+ add("tank-source","Tank source","Complete tank programs and ordinary helper functions",[[The BW IDE shows a tank's complete editable source, including all function definitions. There is no hidden personality intelligence or runtime import needed to execute that document.
+
+BUILT-IN COMMANDS VERSUS YOUR FUNCTIONS
+forward, steer_left, Scanner and fire are engine commands listed in the command directory. A name such as travel is not an extra engine command: it is an ordinary BW function declared with function travel(distance): in the same displayed program. Marauder calls that function to submit movement, wait through normal queues, observe progress and recover if blocked. turn_to and await_command are ordinary functions too. Scroll to their definitions to inspect or edit what they do.
+
+A call without its function definition is invalid. The complete source delivered to the IDE contains every required definition and is parsed by the same public BW compiler. Any player can write their own helpers. Function body operations pay the ordinary CPU/device costs; there is no privileged mapping, pathfinding or hidden enemy access.
+
+SOURCE AND DRAFTS
+Entering a tank replaces an untouched demo with its full program. The title identifies the tank program. If you edited a local draft, it is preserved and labeled local draft; Tank code loads the latest complete authoritative program as an undoable edit. Runtime highlighting appears only when the visible document matches the running source. Run submits that entire document. The code in the IDE is one self-contained program, not an unexplained snippet relying on files the player cannot see.]])
+ add("aliases","Command aliases","Immutable aliases for built-in commands",[[CONST turn_command_left = turn_left
+turn_command_left(20)
+
+A top-level CONST or const can name an existing built-in command without executing it. Calls expand to that command at compile time, preserving positional/named arguments, validation, return values, device queues and CPU costs. The declaration has no runtime fee. Alias chains are allowed after their target alias is declared.
+
+Aliases are immutable and are not runtime function values. They cannot be assigned, passed as ordinary arguments, stored in arrays, shadowed or declared inside functions/branches. Runtime hardware-dependent choice belongs in an ordinary BW function. steer_left(20) sets a wheel angle; turn_left(20) requests a chassis heading change. Declaring one as an alias for the other does not make their physical meanings identical.]])
  local membership={selfstate={"get_weapon_speed","get_current_coordinates","get_weapon_type","is_weapon_ready","get_turret_direction","get_tank_direction","get_drivetrain_type","get_bus_configuration","get_tank_state"},movement={"forward","back","steer_left","steer_right","steer_center","stop","turn_left","turn_right"},turret={"turret_left","turret_right","turret_up","turret_down","aim_at"},weapon={"fire"},radar={"Scanner"},
   clock={"get_facing_direction","get_clock","wait_for_clock","wait_for","variable_has_changed"},queues={"command_status","clear_queue","abort_command"},examples={"print"}}
  local byName={}; for _,entry in commands do byName[entry.name]=entry end
@@ -496,5 +513,18 @@ Current weapons use finite-speed projectiles and unlimited ammo; wheel_count is 
  end
  sections[1].body=table.concat(directory,"\n").."\n\nCPU CYCLES AND TICKS\n\n"..sections[1].body
  return sections
+end
+Handbook.DownloadUrl="https://groupboard.app/battleworks/manual.html"
+Handbook.ExportFilename="BattleWorks-BW-Manual.txt"
+function Handbook.exportText()
+ local lines={"BATTLEWORKS BW LANGUAGE AND TANK PROGRAMMING MANUAL", "Filename: "..Handbook.ExportFilename,
+  "Complete reference for player-authored BW programs. This is BW syntax, not Luau or Python.",
+  "Use only documented APIs. A tank program must include every helper function it calls. No hidden maps, enemy positions or navigation helpers are available.",""}
+ local sections=Handbook.sections()
+ table.insert(lines,"CONTENTS")
+ for i,section in sections do table.insert(lines,tostring(i)..". "..section.title)end
+ for i,section in sections do table.insert(lines,"\n================================================================\n"..i..". "..section.title.."\n================================================================\n"..section.body)end
+ table.insert(lines,require(script.Parent.BWManualAppendix))
+ return table.concat(lines,"\n").."\n"
 end
 return table.freeze(Handbook)

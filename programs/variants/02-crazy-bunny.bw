@@ -1,0 +1,31 @@
+# Crazy, single-thread edition: independent hardware queues share one CPU.
+# Our simple random walk could remember where it recently got stuck.
+# A timed direction change is easy to follow; could motion feedback do better?
+seed = 73
+next_turn = 0
+phase = "chaos"
+while true:
+    ready = is_weapon_ready()
+    if ready.ready:
+        if ready.operation == "Heat":
+            fire(ready.max_burst_seconds)
+        else:
+            fire()
+    now = get_clock().time
+    if now >= next_turn:
+        seed = random_step(seed)
+        abort_command("turret")
+        turret_right(to=seed * 360 / 997)
+        abort_command("drivetrain")
+        forward()
+        hardware = get_tank_state()
+        if hardware.motion.drivetrain_type == "Wheeled":
+            if seed < 498:
+                steer_left(15)
+            else:
+                steer_right(15)
+        else:
+            turn_right(to=seed * 360 / 997)
+            forward(3 + seed / 80)
+        next_turn = now + 4
+    wait_for_clock(get_clock().time + 0.1)

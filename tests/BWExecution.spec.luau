@@ -188,7 +188,7 @@ end
 do
  local Controller=require("BWController")
  local tank={state=Sim.new(Vector3.zero),command=require(Shared.InputCommand).neutral()}
- local valid,reason=Controller.configure(tank,H.default("Bunny")); check(valid and tank.state.drivePerformance==H.performance(40),"server applies validated hardware")
+ local valid,reason=Controller.configure(tank,H.default("Bunny")); check(valid and tank.state.drivePerformance==H.devicePerformance("drivetrain",40,require("VehicleComponents").get(tank.state)),"server applies validated hardware")
  local invalid=H.default("Bunny"); invalid.devices.turret.bus=2
  check(not Controller.configure(tank,invalid) and tank.hardware.tier=="Bunny","invalid config rejected unchanged")
  Controller.start(tank,'wait_for(ready)'); check(not Controller.configure(tank,H.default("Dual")),"no live hardware mutation")
@@ -334,3 +334,17 @@ do
  check(not Parser.parse('get_facing_direction(1)') and not Parser.parse('get_facing_direction(to=90)'),"facing query takes no arguments")
 end
 print("BW facing direction coverage passed: "..checks.." assertions")
+-- CPU decisions are budgeted at10Hz; an accepted continuous drive still emits
+-- movement on every60Hz device step, including all ticks between CPU grants.
+do
+ local r,s=runtime('forward()\nwait_for_clock(get_clock().time + 2)\nstop()',"Bunny")
+ local consecutive,longest=0,0
+ for _=1,180 do
+  local input=r:step(s,1/60)
+  consecutive=if input.throttle==1 then consecutive+1 else 0
+  longest=math.max(longest,consecutive)
+  Sim.step(s,input,1/60)
+ end
+ check(longest>=115,"single-thread CPU waits do not pulse an active drivetrain between scheduling cycles")
+ check(r.status=="completed","continuous drive test stops through ordinary command scheduling")
+end

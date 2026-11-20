@@ -182,3 +182,30 @@ for id in personalitySources do
 end
 end
 print((if failureOnly then "BW personality scanner failures passed: "else "BW personalities passed: ")..count.." assertions")
+
+-- Exercise the actual player-written heading helper against both drivetrain
+-- solvers. Wheels must steer while rolling, tracks keep their turning command.
+if not failureOnly then
+ for _,kind in {"Boomer","Rattler"}do
+  local state=Sim.new(Vector3.zero,kind);local hardware=Hardware.default("Bunny",Components.get(state))
+  local tank={state=state,hardware=hardware};Controller.applyHardware(tank)
+  local clock=0;local usedSteer,usedTurn=false,false
+  local vm=VM.new(assert(Parser.parse(steeringSource)),state,{getOwnTank=function()return tank,clock,math.floor(clock*60),1/60 end},hardware)
+  for i=1,2100 do
+   clock=i/60;local input=vm:step(state,1/60)
+   local active=vm.devices.devices.drivetrain.active
+   if active then
+    local op=active.instruction.op
+    if op=="turn_left"or op=="turn_right"then usedTurn=true end
+   end
+   usedSteer=usedSteer or state.steeringAngle~=nil and math.abs(state.steeringAngle)>.001
+   Sim.step(state,input,1/60,Vector2.new(2000,2000))
+   if vm.status~="running"then break end
+  end
+  local error=math.abs((-math.deg(state.yaw)-90+180)%360-180)
+  check(vm.status=="completed"and error<8,"shared BW helper reaches requested heading with actual "..kind.." physics, error="..error)
+  if kind=="Rattler"then check(usedSteer and not usedTurn,"wheeled heading helper uses actual steering with no turn command")
+  else check(usedTurn,"tracked heading helper retains normal turn command")end
+ end
+ print("Personality drivetrain steering tests passed: "..count.." assertions")
+end

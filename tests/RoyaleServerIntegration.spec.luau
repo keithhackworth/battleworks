@@ -3,6 +3,8 @@
 check(require("BattleRoyaleConfig").mode(nil,nil)=="BattleRoyale","production startup defaults to Royale even without a configuration object")
 check(require("BattleRoyaleConfig").mode(nil,"Classic")=="Classic","explicit Classic startup remains available")
 check(not pcall(require("BattleRoyaleConfig").mode,nil,"bad"),"invalid startup configuration fails clearly")
+require("BattleRoyaleConfig").TankCount=6
+require("BattleRoyaleConfig").Personalities=false -- legacy public-pool regression; autonomous default covered separately
 workspace:SetAttribute("BattleWorksGameMode","BattleRoyale")
 workspace:SetAttribute("ArenaWeather",nil) -- exercise the production default
 local controls={}

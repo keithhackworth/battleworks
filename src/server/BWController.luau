@@ -1,6 +1,7 @@
 -- Server-only ownership and lifecycle glue around the pure BW runtime.
 local Shared=game.ReplicatedStorage.Shared
 local Parser=require(Shared.BWParser)
+local Limits=require(Shared.BWConfig)
 local Runtime=require(Shared.BWExecution)
 local Hardware=require(Shared.BWChassis)
 local Components=require(Shared.VehicleComponents)
@@ -44,16 +45,19 @@ function Controller.reject(tank,message,line)
 	return false
 end
 function Controller.start(tank,source)
+ tank.state.bwProgramSerial=(tank.state.bwProgramSerial or 0)+1
 	if tank.state.manualScannerActive then tank.sensorScanTimes=nil end -- hand off immediately to explicit BW
 	tank.state.manualScannerActive=false; tank.state.scanManual=nil; tank.state.scanVisual=nil; tank.state.scanBW=nil
 	tank.bwRunRequestId=tank.lastBWRequest or 0; tank.state.bwRunRequestId=tank.bwRunRequestId
 	tank.state.bwRequestId=tank.lastBWRequest or 0
 	Controller.stop(tank,"Replaced by a new program.")
 	cleanup(tank)
+	tank.bwSource=if type(source)=="string"and#source<=Limits.MaxSourceBytes then source else nil
 	local instructions,err=Parser.parse(source)
 	if not instructions or tank.state.health<=0 then
 		return Controller.reject(tank,if err then err.message else "Tank is destroyed; reset the battle.",if err then err.line else 0)
 	end
+	tank.bwSource=source
 	tank.hardware=tank.hardware or Hardware.forTank(tank.state)
  Controller.applyHardware(tank)
  tank.bw=Runtime.new(instructions,tank.state,tank.bwServices,tank.hardware)
@@ -66,7 +70,7 @@ function Controller.applyHardware(tank)
  Components.withComputer(tank.state,tank.hardware.tier)
  local devices=tank.hardware.devices
  for name,field in {drivetrain="drivePerformance",turret="turretPerformance",weapon="weaponPerformance"} do
-  tank.state[field]=if devices[name] then Hardware.performance(devices[name].allocation,Components.get(tank.state).Bus) else 0
+  tank.state[field]=if devices[name] then Hardware.devicePerformance(name,devices[name].allocation,Components.get(tank.state)) else 0
  end
 end
 function Controller.configure(tank,configuration)

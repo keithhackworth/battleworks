@@ -1,0 +1,45 @@
+local IDE=require("BWIDE")
+local Config=require("BWConfig")
+local count=0
+local function check(ok,message)count+=1;assert(ok,message)end
+local ui=IDE.new(Instance.new("PlayerGui"),function()return 1 end,function()return 2 end)
+local function source(id,text,epoch,serial)
+ ui:receiveRuntime(id,{generation=0,requestId=0,controlEpoch=epoch,source={text=text,name="Marauder",kind="Personality",programSerial=serial}})
+end
+ui:bind("public:1");ui:setControlEpoch(3)
+source("public:1","# Marauder\nforward(20)\nstop()",3,1)
+check(ui.editor.Text=="# Marauder\nforward(20)\nstop()"and ui.titleBar.Text:find("Marauder",1,true),"untouched demo becomes authoritative personality source on entry")
+ui:update({generation=0,controlEpoch=3,bwProgramSerial=1,bwRunning=true,bwProgramKind="Personality",bwLine=2,bwIndex=1,bwCount=2})
+check(ui.executionHighlight.Visible and ui.execution.Text:find("Running line 2",1,true),"authoritative personality source drives matching execution highlight without a local Run")
+ui.editorController.smartPaste=false
+ui.editor.Text="eeeeeeee"..ui.editor.Text;ui.editor:GetPropertyChangedSignal("Text"):Fire()
+source("public:1","# Marauder new\nforward(30)",3,2)
+check(ui.editor.Text:sub(1,8)=="eeeeeeee"and ui.titleBar.Text:find("local draft",1,true),"deliberate local edits survive authoritative source refresh")
+ui.tankCode.Activated:Fire()
+check(ui.editor.Text=="# Marauder new\nforward(30)"and not ui.dirtyDrafts["public:1"],"Tank code explicitly restores latest real source")
+ui.editorController:key("undo")
+check(ui.editor.Text:sub(1,8)=="eeeeeeee","loading tank code remains undoable")
+ui:bind("public:2");ui:setControlEpoch(3)
+source("public:2","# Crazy\nfire(1)",3,1)
+check(ui.editor.Text=="# Crazy\nfire(1)","different tank loads its own program")
+ui:bind("public:1");ui:setControlEpoch(5)
+source("public:1","# Marauder newest\nforward(40)",5,3)
+check(ui.editor.Text:sub(1,8)=="eeeeeeee","switching back preserves that tank's edited draft")
+ui.tankCode.Activated:Fire()
+check(ui.editor.Text=="# Marauder newest\nforward(40)","reload after new lease uses current tank source rather than old run")
+ui.editor.Text="# My program\nforward(2)";ui.editor:GetPropertyChangedSignal("Text"):Fire()
+ui:receiveRuntime("public:1",{generation=0,requestId=1,controlEpoch=5,source={text=ui.editor.Text,name="Editor program",kind="Player",programSerial=4}})
+check(not ui.dirtyDrafts["public:1"],"confirmed player source is accurately labeled as current code")
+ui:setControlEpoch(7)
+source("public:1","# Built-in personality\nforward(10)",7,5)
+check(ui.editor.Text=="# My program\nforward(2)"and ui.dirtyDrafts["public:1"],"confirmed custom program remains a preserved draft when built-in source returns")
+local formats=0;local setOutput=ui.setOutput
+ui.setOutput=function(self,...)formats+=1;return setOutput(self,...)end
+local stable={generation=0,controlEpoch=5,bwStatus="stopped",bwMessage="Ready",bwRequestId=0}
+ui:update(stable)
+for _=1,100 do ui:update(table.clone(stable))end
+check(formats==1,"unchanged snapshots do not repeatedly concatenate and page large log text")
+stable.bwMessage="Changed";ui:update(stable)
+check(formats==2,"meaningful status changes still refresh output immediately")
+ui:destroy()
+print("BW authoritative tank source passed: "..count.." assertions")

@@ -1,6 +1,6 @@
 # BattleWorks: Boomer and Rattler
 
-**Battle Royale Milestone 1 (default):** join on foot, approach an arena-owned Bunny tank and use **E / controller X / touch** to enter. Use **F / controller B / Exit Tank** to get out and switch. Tanks share authoritative combat and replenish after destruction. Use **Main Menu** on foot or in a tank to take a break; **The Playground** returns to the same running arena on foot. Set **ServerStorage → BattleWorksStudio → GameMode = Classic** for owned collections and the saved-world launch workflow. See [architecture, configuration and two-player acceptance](docs/BATTLE_ROYALE_MILESTONE_1.md).
+**Battle Royale Milestone 1 (default):** join on foot, approach one of15 arena-owned Bunny personality tanks and use **E / controller X / touch** to enter. Use **F / controller B / Exit Tank** to get out and switch. Tanks start in Auto; entering selects Manual. Use the bottom Auto/Manual switch to change control; exiting or replenishing restores the personality. Random builds share their single-thread bus evenly. Tanks share authoritative combat and replenish after destruction. Use **Main Menu** on foot or in a tank to take a break; **The Playground** returns to the same running arena on foot. Set **ServerStorage → BattleWorksStudio → GameMode = Classic** for owned collections and the saved-world launch workflow. See [architecture, configuration and two-player acceptance](docs/BATTLE_ROYALE_MILESTONE_1.md).
 
 **In-game World Builder:** Main Menu → World Editor now opens a private desktop authoring scene with a hierarchical 3D asset palette, drag placement, transform anchors, properties, undo/redo and v2 JSON export. Move objects vertically with the green Y handle; Tilt X/Z and height/pitch/roll fields support ramps and raised bridge decks. **My Worlds / Save & Play** saves layouts privately to the BattleWorks HTTP service, including durable Studio saves, and launches them without commands. Published play uses a separate reserved battle server. See [one-time HTTP/secret setup and JSON backup transfer](docs/HTTP_WORLD_STORAGE.md). See [workflow, limitations and native validation](docs/IN_GAME_WORLD_BUILDER.md).
 
@@ -17,6 +17,8 @@
 **Playground chat:** use the lower-left Chat button or Enter for Roblox-managed global text chat on foot or in tanks. Typing releases gameplay controls; short touch screens use a modal layout. Roblox eligibility, filtering and moderation remain authoritative. See [chat architecture and native multiplayer checklist](docs/PLAYGROUND_CHAT.md).
 
 **BW core self APIs:** fresh own-tank/hardware snapshots, physical versus bus-limited performance, readiness, coordinates and direction reads are available in BW. See the [exact Stage 1 API contract](docs/BW_CORE_API_SPEC.md) and [roadmap/test evidence](docs/BW_ROADMAP_CHECKLIST.md). Personality programs and a living Playground are later stages.
+
+**Complete tank code and manual:** the BW IDE loads a personality's entire runnable source, including helper functions. Edited drafts are preserved; **Tank code** reloads the real source. Handbook → **Download .txt** provides the full selectable reference and [browser download](https://groupboard.app/battleworks/manual.html). See [export maintenance](docs/BW_MANUAL_EXPORT.md) and [memory-retention audit](docs/PLAYGROUND_MEMORY.md).
 
 ## Offline worlds and Studio selection
 

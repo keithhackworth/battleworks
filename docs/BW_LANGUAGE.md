@@ -1067,3 +1067,18 @@ BW cannot directly invoke the server's force/impulse APIs. Those are internal si
 `aim_at(x, y, z, best_effort=true)` queues a fixed world point on the ordinary turret device at1 submission tick plus expression costs. Both axes use the same existing bus-limited traverse speed and mount stops. `command_status(id).completionReason == "mountLimited"` reports unreachable elevation after settling at the stop. It performs no sensing, prediction or tracking. Existing own turret reads now include immutable pivot/muzzle/direction records; readiness includes native heat/burst and interval/preparation timing, at unchanged introspection fees. See [exact API contract](BW_CORE_API_SPEC.md).
 
 Scanner successes additionally include immutable terrain/elevation observations at the existing cost. See [exact terrain schema, units and unknowns](SCANNER_TERRAIN.md). No scan_ground command or automatic movement decisions exist. Technical compilation guards are1 second and250,000 analysis updates; recursive call depth remains50. Function definitions remain top level; nested function calls and recursion are supported.
+
+## Immutable command aliases
+
+A top-level `CONST` (or `const`) can name an existing BW built-in without calling it:
+
+```text
+CONST turn_command_left = turn_left
+CONST wheel_left = steer_left
+turn_command_left(20)
+wheel_left(15)
+```
+
+Aliases are expanded at compile time. Calling an alias uses the original command's positional/named arguments, validation, result, queues and CPU costs; declaration adds no runtime fee. Alias chains are allowed after the target alias is declared. Names are immutable, cannot shadow built-ins/functions or be reassigned, and cannot be used as ordinary values/arguments/array elements. These are command aliases, not runtime function objects: user-function references, conditional reassignment and aliases declared inside functions/branches are not supported. Declare aliases before use. For hardware-dependent behavior, write an ordinary BW function which branches on own-state hardware.
+
+`steer_left(20)` means a20-degree **wheel steering setpoint**; `turn_left(20)` requests a20-degree **chassis heading change**. They are not interchangeable physical operations. Wheeled vehicles must be rolling to turn. The personality `turn_to(heading)` helper now drives and adjusts steering from observed own heading for wheels, centers the wheels and stops at the target or a bounded deadline. Tracked vehicles continue using `turn_right(to=heading)`. No privileged navigation or automatic pathfinding is added. Existing player turn commands remain backward compatible.

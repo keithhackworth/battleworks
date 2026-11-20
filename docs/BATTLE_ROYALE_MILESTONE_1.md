@@ -9,7 +9,7 @@ In Edit mode, under **ServerStorage → BattleWorksStudio**:
 | Setting | Default | Behavior |
 | --- | --- | --- |
 | GameMode | BattleRoyale | Use Classic for the existing lobby, owned collections and saved-world launch workflow. Restart Play after changing. |
-| PublicTankCount | 6 | Integer 2–16; pool slots retry when the world has no safe spawn. |
+| PublicTankCount | 15 | Integer 2–16; pool slots retry when the world has no safe spawn. |
 | PublicTankReplenishDelay | 5 | Seconds, 1–60, from destruction to retirement/replacement. |
 
 Workspace attribute `BattleWorksGameMode` can explicitly override GameMode with `Classic` or `BattleRoyale` for development/tests. Historical test fixtures explicitly select Classic. Published places also default to BattleRoyale if configuration is absent. World selection, source assets and the existing loaded-world simulation are reused. The default arena uses Normal weather (grass, no wind). Set Workspace attribute `ArenaWeather=IceWind` explicitly to select the optional ice/wind preset.
@@ -18,7 +18,7 @@ Workspace attribute `BattleWorksGameMode` can explicitly override GameMode with 
 - Enter: approach within 12 studs and use **E**, **controller X**, or the native touch proximity button. Prompt hold is 0.2 seconds; availability is server-controlled and distance is independently validated.
 - In tank: existing keyboard/mouse, touch and gamepad input providers, aiming, firing, HUD and battlefield camera.
 - Exit: **F**, **controller B** outside text entry, or **Exit Tank** in the HUD. Text entry is protected from the keyboard/gamepad exit binding.
-- BW Editor remains accessible while occupying a tank. Supported programs use the current Bunny CPU/bus limits; hardware allocation editing remains supported, while computer upgrades are rejected in this mode.
+- BW Editor remains accessible while occupying a tank. Supported programs use the current Bunny CPU/bus limits; personality tanks keep fixed equal-share bus hardware; legacy nonautonomous pools still support allocation editing. Computer upgrades are rejected in this mode.
 
 The repeating pool variety is tracked/cannon, wheeled/Gatling, tracked/Gatling and wheeled/cannon. All use the existing standard chassis, installed drivetrain/mobility/weapon components and **Bunny computer**. No new weapon or physics model was added. Computer hardware/bus configuration resets on release; health, position, turret pose, heat and existing physical momentum are retained.
 
@@ -72,12 +72,12 @@ The default Playground includes a ravine, river, bridge and sloped overlook, wit
 
 Automated production-server tests cover admission, all hardware combinations, non-overlapping spawns, proximity, simultaneous entry, unauthorized/malformed actions, stale input/requests/leases, exit/switching, abandonment, actual cross-player projectile damage, destruction, blocked replenishment, character death/rejoin, disconnect while moving/firing/running BW and late join. Production-client tests cover on-foot rendering, character/tank camera handoff, keyboard, touch, gamepad, focus loss, stale messages and repeated transitions without duplicate widgets/renderers. Existing Classic, world/editor, contact, input, BW and multiplayer assertions remain intact.
 
-Native Roblox character physics, proximity UI, avatar loading, actual cross-device network delivery and camera feel still require Studio/published acceptance. On-foot weapon/infantry damage and tank-versus-avatar impacts are not implemented; this milestone provides tank combat with native on-foot traversal. This is a continuous pool, not a Battle Royale match/elimination system. CPU upgrades, custom tanks and unattended AI are intentionally absent. No matchmaking/friend-server placement is added; testers must join the same actual server.
+Native Roblox character physics, proximity UI, avatar loading, actual cross-device network delivery and camera feel still require Studio/published acceptance. On-foot weapon/infantry damage and tank-versus-avatar impacts are not implemented; this milestone provides tank combat with native on-foot traversal. This is a continuous pool, not a Battle Royale match/elimination system. CPU upgrades and custom tanks remain absent; the later fifteen-personality follow-up adds unattended Auto as described in the proving-ground guide. No matchmaking/friend-server placement is added; testers must join the same actual server.
 
 ### Exact two-player acceptance
 
-1. Sync current source and set GameMode=BattleRoyale, PublicTankCount=6, delay=5. Clear a conflicting Workspace mode override. Use **Test → Server & Clients → 2 clients**, or have Keith and Shane join the same published server. Neither should see a menu or automatically occupy a tank.
-2. Confirm each has a visible normal avatar, native movement/jump/camera and six visible public tanks. Walk/touch/gamepad to a tank. Verify the E/X/touch prompt appears and available weapon/mobility combinations match their art.
+1. Sync current source and set GameMode=BattleRoyale, PublicTankCount=15, delay=5. Clear a conflicting Workspace mode override. Use **Test → Server & Clients → 2 clients**, or have Keith and Shane join the same published server. Neither should see a menu or automatically occupy a tank.
+2. Confirm each has a visible normal avatar, native movement/jump/camera and fifteen visible public tanks. Walk/touch/gamepad to a tank. Verify the E/X/touch prompt appears and available weapon/mobility combinations match their art.
 3. Enter separate tanks. Check avatars disappear, default character movement stops, tank controls/camera/HUD activate once and both clients see each other's body/turret movement. Try simultaneous entry into one tank: only one may win.
 4. Fire cannon and Gatling across players; verify authoritative health and effects agree. Confirm hidden avatars do not create invisible projectile cover at their old entry spots.
 5. Exit while driving/firing or while running BW. Verify held input and pending preparation stop, avatar jumps out above the tank and camera/default touch controls return, and the abandoned tank retains health/location. Walk to another tank and switch; the other tester can take the abandoned tank. Programs must not transfer.
@@ -110,3 +110,5 @@ Studio clients may have IsStudio=true while cloud Team Test servers have IsStudi
 Tank artwork is client-rendered from authoritative snapshots. Studio's Server view consequently shows invisible TankHitbox parts, not the rendered tanks. Check the player/client windows for visible tanks. If those remain empty after sync and a full test restart, inspect that client's Output for errors; the startup markers now include “initializing Battle Royale client” and “Battle Royale client ready.”
 
 Regression groups46/47 cover a Studio client without RedrawMap, late optional tool discovery, and an empty non-Studio server followed by joining players. Existing published-client and Classic client integration checks remain covered.
+
+Current autonomous pool/controls supersede the original fixed repeating loadouts and stopped-on-release behavior: [fifteen-tank follow-up](PLAYGROUND_PROVING_GROUND.md#follow-up-fifteen-autonomous-public-tanks). Native acceptance should include Auto/Manual switching, named personalities and equal-share Bunny buses.

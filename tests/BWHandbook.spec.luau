@@ -19,6 +19,10 @@ end
 for _,registry in {Commands.moves,Commands.turns,Commands.steering,Commands.special,{fire=true,Scanner=true,print=true,stop=true}} do
  for name in registry do check(covered[name],"no missing callable: "..name) end
 end
+local helperTopic
+for _,section in Handbook.sections()do if section.id=="tank-source"then helperTopic=section end end
+check(helperTopic and helperTopic.body:find("function travel(distance):",1,true)and helperTopic.body:find("complete editable source",1,true),"handbook distinguishes visible user-defined helpers from engine commands")
+check(not Commands.known("travel"),"travel remains an ordinary player function, never a hidden built-in")
 local sections=Handbook.sections(); local all={}; local ids={}; local documented={}
 local byName={}; for _,command in Handbook.commands() do byName[command.name]=command end
 for _,section in sections do
@@ -92,7 +96,7 @@ check(not ui.handbook.frame.Visible,"tank switch closes popup")
 ui.handbookButton.Activated:Fire(); ui:close()
 check(not ui.handbook.frame.Visible and not ui.frame.Visible,"IDE close also closes popup")
 ui.toggle.Activated:Fire(); ui.handbookButton.Activated:Fire(); ui.running=false; ui.pendingRequest=nil; ui.run.Activated:Fire()
-check(runCount==1 and not ui.handbook.frame.Visible and not ui.frame.Visible,"existing Run still closes reference/IDE")
+check(runCount==1 and not ui.handbook.frame.Visible and ui.frame.Visible,"Run closes reference but preserves draggable live IDE")
 -- Clicking the log must not make continuous scanner output appear frozen.
 UIS.focusedTextBox=ui.output; ui.output.SelectionStart=-1; ui.output.CursorPosition=1
 ui:setOutput("live scan output")
@@ -126,6 +130,17 @@ ui:receiveOutput("Rattler",0,1,{kind="print",line=4,timestamp=1,thread=1,text="s
 ui:update({generation=0,bwRunRequestId=1,bwRequestId=1,bwRunning=true,bwStatus="running"})
 check(ui.logStatus.Text:find("run: 7",1,true) and ui.logStatus.Text:find("received: 1",1,true),"header separates server print execution and client receipt")
 check(ui.diagnostics.Text:find("loops=3 prints=7",1,true),"per-thread counters show loop entry and print dispatch")
+local exported=Handbook.exportText()
+check(#exported>50000 and utf8.len(exported)~=nil,"complete manual is one valid UTF-8 text document")
+for _,section in Handbook.sections()do check(exported:find(section.body,1,true),"download contains entire topic: "..section.id)end
+check(exported:find("material_depth",1,true)and exported:find("get_tank_state",1,true),"download includes exact schema appendix for AI assistance")
+ui.handbook:open();ui.handbook.downloadButton.Activated:Fire()
+check(ui.handbook.body.Text==exported and ui.handbook.body.SelectionStart==1 and ui.handbook.body.CursorPosition==#exported+1,"Download view selects the complete copyable manual")
+check(ui.handbook.downloadAddress.Text==Handbook.DownloadUrl and not ui.handbook.body.TextEditable,"download address/manual are read-only without altering game state")
+ui.handbook.selectLink.Activated:Fire();ui.handbook:close()
+check(ui.handbook.downloadAddress.releasedFocus,"closing export releases address focus and gameplay input")
+ui.handbook:showSection(1)
+check(not ui.handbook.downloadAddress.Visible and ui.handbook.navigation.Visible,"topic navigation returns from complete export view")
 local popup=ui.handbook.frame
 ui:destroy()
 check(popup.destroyed and ui.gui.destroyed,"popup cleaned on IDE destruction")

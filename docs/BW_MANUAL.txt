@@ -1,0 +1,1341 @@
+BATTLEWORKS BW LANGUAGE AND TANK PROGRAMMING MANUAL
+Filename: BattleWorks-BW-Manual.txt
+Complete reference for player-authored BW programs. This is BW syntax, not Luau or Python.
+Use only documented APIs. A tank program must include every helper function it calls. No hidden maps, enemy positions or navigation helpers are available.
+
+CONTENTS
+1. Start here: cycles, ticks and time
+2. Buses, device performance, queues and physical time
+3. Drivetrain commands
+4. Turret commands
+5. Firing and weapon timing
+6. Scanner input, timing and all returned fields
+7. Facing, time, shared readiness and assignment versions
+8. Results, status inspection and cancellation
+9. while: repeat while a value is truthy
+10. Variables, CONST, expressions, branches, threads and costs
+11. Output, practical programs and execution logs
+12. Functions, const references, stacks and ticks
+13. Momentum, traction and command completion
+14. Own state and hardware introspection
+15. Complete tank programs and ordinary helper functions
+16. Immutable aliases for built-in commands
+
+================================================================
+1. Start here: cycles, ticks and time
+================================================================
+COMMAND DIRECTORY (choose a topic tab)
+Movement: forward, back, steer_left, steer_right, steer_center, stop, turn_left, turn_right
+Turret: turret_left, turret_right, turret_up, turret_down, aim_at
+Weapons: fire
+Radar: Scanner
+Facing / clock: get_facing_direction, get_clock, wait_for_clock, wait_for, variable_has_changed
+Queues & results: command_status, clear_queue, abort_command
+Output & examples: print
+Own state: get_weapon_speed, get_current_coordinates, get_weapon_type, is_weapon_ready, get_turret_direction, get_tank_direction, get_drivetrain_type, get_bus_configuration, get_tank_state
+
+CPU CYCLES AND TICKS
+
+BW is a small language for controlling your existing tank. Commands are case-sensitive; write one statement per line and indent blocks with four spaces. This reference stays open independently of execution: reading it does NOT pause a running program.
+
+A SIMULATION SECOND measures arena time. The server simulates tanks at its fixed physics step, not the rendering frame rate.
+
+A CPU CYCLE replenishes each thread's instruction budget. Currently there are 10 cycles per simulation second: one every 0.1 seconds.
+
+A CPU TICK is a gameplay cost, not a fixed duration or real processor MHz. Commands and expression operations spend ticks from the calling thread's budget. Several commands can run in the SAME cycle. If the next instruction cannot fit, it waits for sufficient credit; it is not partially replayed. Unused credit normally carries up to 2 cycles. Large instructions can reserve bounded extra credit, up to 1024 ticks. Actual charges follow only the operations that execute.
+
+Bunny: 1 bus/thread, 10 ticks/cycle/thread, 1 pending/device
+Dual: 2 bus/threads, 15 ticks/cycle/thread, 2 pending/device
+Quad: 4 bus/threads, 20 ticks/cycle/thread, 4 pending/device
+Octa: 8 bus/threads, 30 ticks/cycle/thread, 8 pending/device
+Hexadeca: 16 bus/threads, 40 ticks/cycle/thread, 16 pending/device
+
+Example: Bunny gets 10 ticks × 10 cycles = 100 ticks/second. This is throughput, not a fixed number of seconds per command.
+
+Threads receive SEPARATE CPU budgets. One busy/waiting thread cannot spend another thread's ticks. Source instructions execute in ascending thread order in each cycle, so conflicting shared writes are deterministic; later writes win. Ordinary assignments are atomic. A physical observation or explicit wait may suspend expression evaluation, then resume without repeating prior side effects.
+
+CPU TIME is different from DEVICE TIME. forward(100) costs 1 tick to SUBMIT, then the drivetrain moves independently without spending ticks every step. Waiting in a queue also does not spend repeated CPU ticks. Reading the clock, printing values and automatic logging cost zero. Storing a result or executing real device/query/wait calls inside print still pays its normal cost.
+
+Safety still applies: at most 512 source operations/thread/cycle, 180 simulated seconds/program, a 262144-byte technical upload bound. There is no source-statement or line-count gameplay ceiling. Zero-cost operations cannot hang the server.
+
+================================================================
+2. Buses, device performance, queues and physical time
+================================================================
+DEFAULT TANK HARDWARE
+Boomer: Bunny • 1 cores/buses • 10 ticks/cycle/thread • 1 pending/device
+Rattler: Octa • 8 cores/buses • 30 ticks/cycle/thread • 8 pending/device
+Boomer's devices share its single bus. Rattler reserves dedicated drivetrain, turret and weapon buses; scanners share its remaining five buses. Radar range stays 150 studs at full distance effectiveness.
+
+Each chassis bus has TWO independent roles:
+1. Run one BW instruction thread with its own CPU budget.
+2. Supply reserved performance allocations to its installed devices.
+
+A device belongs to exactly one bus. A bus can host several devices, but their configured allocation percentages must total no more than 100%. Idle devices do not donate their reserved allocation. Multiple devices on one bus CAN operate at the same time; they do not take turns using the bus. ANY thread can issue a command to ANY device, including one on a different bus.
+
+Turret, weapon and scanner performance = 1 - (1 - allocation/100)^2
+25% allocation -> 43.75% performance
+50% -> 75%; 75% -> 93.75%; 100% -> 100%
+0% -> deviceDisabled; the device cannot operate.
+
+Drivetrain uses a separate speed curve:0% is unpowered,5% gives15 forward studs/sec before terrain/tracked modifiers,100% retains the installed rated maximum. Below5% speed is linear from zero; above5% it eases to the maximum with the bus exponent. Reverse/turn keep their own ratings with the same drivetrain fraction.
+
+The drivetrain's speed cap, turret rotation rate and weapon preparation/recharge timing depend on performance. Acceleration, recoil, steering geometry, collisions, projectile speed and damage remain normal tank physics. Lower performance makes weapon intervals/preparation LONGER. Radar RANGE currently stays at 150 studs at 100% distance effectiveness, independently of bus allocation; acquisition time still depends on performance. Future equipment configuration can change radar hardware range.
+
+Edit reservations in Hardware / threads while the program is stopped. First line is chassis name; following lines are: device bus allocationPercent. The server validates configuration too. Each tank starts with its configured chassis profile (listed below); the development hardware editor can override it. Shared allocations affect physical device performance as well as acquisition/preparation times.
+
+WHAT DOES BUSY MEAN?
+A device is busy while it has an active command. A drive remains busy while covering its distance/turn or waiting for genuine progress. A weapon may be busy during preparation, reload, held fire or waiting for its committed shot to release. A scanner is busy during acquisition/cooldown scheduling. Being busy is not a CPU charge every frame.
+
+Every device has ONE active command plus a bounded FIFO pending queue. Queue depth comes from chassis tier and excludes the active command. Finite drivetrain forward/back/chassis turns share one pipeline; continuous forward()/back() replaces active/queued drive work. Finite navigation replaces an active continuous drive. stop() cancels all drive work. Steering setpoints bypass the queue, retain one last-written target and cost 1 tick per issue. All new movement/steering/stop commands cost 1 tick, with no repeated operating ticks. Continuous drive keeps BW running after threads finish, until stopped/cancelled or the normal program timeout. Ascending thread order gives deterministic last-submission wins for replacements; finite-versus-finite work remains FIFO. Drivetrain allocation and immobilization still apply; turret and weapon have separate pipelines. Each physical sensor has its OWN pipeline and cooldown.
+
+Idle device: accepted command starts.
+Busy device with room: command joins the queue.
+Busy device with a full queue: fail / deviceQueueFull, immediately. Existing work is not overwritten and the thread does not wait for space. A full-queue rejection still spends the command submission ticks.
+
+Device commands capture their starting pose when they BEGIN, not while waiting in the queue. Different devices work concurrently. A successful submission is NOT proof the physical operation will finish: it can later fail due to a wall, timeout, cancellation or destruction.
+
+There is no fixed seconds-per-movement-command: distance, heading, terrain, acceleration, recoil and allocation affect actual completion time. Inspect command_status(id). There is no blocking command-completion wait; a while loop can inspect command_status and use clock waits between polls.
+
+A thread finishing does not stop other threads or devices. The whole program completes after all threads finish and accepted device work drains. Stop/destruction/reset cancel operations and release inputs, preserving real inertia and already released projectiles.
+
+================================================================
+3. Drivetrain commands
+================================================================
+COMMANDS IN THIS SECTION
+
+forward(studs, best_effort=true)
+forward()
+  Base CPU cost: 1 ticks
+
+back(studs, best_effort=true)
+back()
+  Base CPU cost: 1 ticks
+
+steer_left(degrees, best_effort=true)
+  Base CPU cost: 1 ticks
+
+steer_right(degrees, best_effort=true)
+  Base CPU cost: 1 ticks
+
+steer_center()
+  Base CPU cost: 1 ticks
+
+stop()
+  Base CPU cost: 1 ticks
+
+turn_left(degrees, best_effort=true)
+turn_left(to=heading, best_effort=true)
+  Base CPU cost: 1 ticks
+
+turn_right(degrees, best_effort=true)
+turn_right(to=heading, best_effort=true)
+  Base CPU cost: 1 ticks
+
+DETAILED REFERENCE
+────────────────────────────
+
+COMMAND: forward
+forward(studs, best_effort=true)
+forward()
+Base CPU cost: 1 ticks • Device: drivetrain
+
+INPUT
+Optional studs: finite number from 0 to 1000; expressions are allowed. Omit studs for continuous driving.
+
+HOW IT WORKS
+Drive forward for the actual requested distance. Installed mobility honors persistent steering; finite arcs count signed forward travel along the changing heading, excluding lateral drift and wheel spin. Real recoil along the commanded direction counts. Without a distance, drive continuously until replaced/stopped or lifecycle timeout. Both forms return immediately after submission. Walls can prevent completion. No teleporting.
+
+RETURNS
+A standard result: {status: "success", reason: null, commandId: number}. Success means accepted, not finished. Failure: {status: "fail", reason: code}. Inspect command_status(commandId) later.
+
+────────────────────────────
+
+COMMAND: back
+back(studs, best_effort=true)
+back()
+Base CPU cost: 1 ticks • Device: drivetrain
+
+INPUT
+Optional studs: finite number from 0 to 1000; expressions are allowed. Omit studs for continuous driving.
+
+HOW IT WORKS
+Reverse for the actual requested distance. Installed mobility honors persistent steering; finite arcs count signed forward travel along the changing heading, excluding lateral drift and wheel spin. Real recoil along the commanded direction counts. Without a distance, drive continuously until replaced/stopped or lifecycle timeout. Both forms return immediately after submission. Walls can prevent completion. No teleporting.
+
+RETURNS
+A standard result: {status: "success", reason: null, commandId: number}. Success means accepted, not finished. Failure: {status: "fail", reason: code}. Inspect command_status(commandId) later.
+
+────────────────────────────
+
+COMMAND: steer_left
+steer_left(degrees, best_effort=true)
+Base CPU cost: 1 ticks • Device: drivetrain
+
+INPUT
+degrees: finite number 0..180, clamped to the installed mobility steering limit (tracks use a 45-degree control range; wheels approximately 31.5127 degrees). No to= argument.
+
+HOW IT WORKS
+Set an absolute steering target left of center, persisting until changed. Repeated calls do not accumulate. Immediate updates bypass queues. Wheeled mobility positions front wheels through existing smoothing; tracked mobility changes relative tread intent while driving. steer_right(20) sets steering; turn_right(20) changes heading. Unsupported only when installed mobility lacks steering: fail / unsupportedDrivetrain. High-level turns temporarily own actual steering, then the saved target resumes.
+
+RETURNS
+Standard result with commandId and steeringDegrees (positive left, negative right). The setpoint command completes immediately, not when wheels physically finish moving. Positive is left and negative is right for both mobility types.
+
+────────────────────────────
+
+COMMAND: steer_right
+steer_right(degrees, best_effort=true)
+Base CPU cost: 1 ticks • Device: drivetrain
+
+INPUT
+degrees: finite number 0..180, clamped to the installed mobility steering limit (tracks use a 45-degree control range; wheels approximately 31.5127 degrees). No to= argument.
+
+HOW IT WORKS
+Set an absolute steering target right of center, persisting until changed. Repeated calls do not accumulate. Immediate updates bypass queues. Wheeled mobility positions front wheels through existing smoothing; tracked mobility changes relative tread intent while driving. steer_right(20) sets steering; turn_right(20) changes heading. Unsupported only when installed mobility lacks steering: fail / unsupportedDrivetrain. High-level turns temporarily own actual steering, then the saved target resumes.
+
+RETURNS
+Standard result with commandId and steeringDegrees (positive left, negative right). The setpoint command completes immediately, not when wheels physically finish moving. Positive is left and negative is right for both mobility types.
+
+────────────────────────────
+
+COMMAND: steer_center
+steer_center()
+Base CPU cost: 1 ticks • Device: drivetrain
+
+INPUT
+No arguments. Installed mobility must support steering.
+
+HOW IT WORKS
+Set the persistent steering target to straight ahead without interrupting movement. Wheels use existing smoothing; tracks return to equal tread intent. Installed mobility without steering returns unsupportedDrivetrain.
+
+RETURNS
+Standard result with commandId and steeringDegrees: 0; status success means the wheel target was accepted.
+
+────────────────────────────
+
+COMMAND: stop
+stop()
+Base CPU cost: 1 ticks • Device: drivetrain
+
+INPUT
+No arguments. Both drivetrain types.
+
+HOW IT WORKS
+Cancel active and queued drivetrain work and release throttle immediately. Preserve steering target, actual velocity and recoil; normal coasting/braking handles physical stopping. Other devices continue. Stop is accepted at zero drive allocation for safety, but requires an installed drivetrain.
+
+RETURNS
+Standard result with commandId. Stop command completes immediately; cancelled movement commands report commandCancelled.
+
+────────────────────────────
+
+COMMAND: turn_left
+turn_left(degrees, best_effort=true)
+turn_left(to=heading, best_effort=true)
+Base CPU cost: 1 ticks • Device: drivetrain
+
+INPUT
+Choose ONE: relative degrees from 0 to 1440, OR to=world heading from -36000 to 36000 (normalized modulo 360). Finite numbers/expressions only.
+
+HOW IT WORKS
+Rotate the chassis counterclockwise (left). Relative rotation starts from the actual heading when this device begins the command, including full revolutions and crossing north. Absolute turns honor the chosen direction even when it takes the longer path. to=360 is north; use a relative 360 for a full revolution. World headings: 0 north, 90 east, 180 south, 270 west; independent of camera. Boomer can pivot; Rattler must drive a curved car-style path to turn, and cannot steer in the air.
+
+RETURNS
+A standard result: {status: "success", reason: null, commandId: number}. Success means accepted, not finished. Failure: {status: "fail", reason: code}. Inspect command_status(commandId) later.
+
+────────────────────────────
+
+COMMAND: turn_right
+turn_right(degrees, best_effort=true)
+turn_right(to=heading, best_effort=true)
+Base CPU cost: 1 ticks • Device: drivetrain
+
+INPUT
+Choose ONE: relative degrees from 0 to 1440, OR to=world heading from -36000 to 36000 (normalized modulo 360). Finite numbers/expressions only.
+
+HOW IT WORKS
+Rotate the chassis clockwise (right). Relative rotation starts from the actual heading when this device begins the command, including full revolutions and crossing north. Absolute turns honor the chosen direction even when it takes the longer path. to=360 is north; use a relative 360 for a full revolution. World headings: 0 north, 90 east, 180 south, 270 west; independent of camera. Boomer can pivot; Rattler must drive a curved car-style path to turn, and cannot steer in the air.
+
+RETURNS
+A standard result: {status: "success", reason: null, commandId: number}. Success means accepted, not finished. Failure: {status: "fail", reason: code}. Inspect command_status(commandId) later.
+RATTLER: CONTINUOUS CIRCLE
+steer_right(20)
+forward()
+
+CHANGE CURVATURE WITHOUT STOPPING
+clock = get_clock()
+wait_for_clock(clock.time + 3)
+steer_left(20)
+
+STRAIGHTEN, THEN STOP
+steer_center()
+clock = get_clock()
+wait_for_clock(clock.time + 3)
+stop()
+
+steer_right(20) sets steering: wheel angle for wheels, relative tread intent for tracks. turn_right(20) changes chassis heading. Capabilities come from installed components, not the model name. forward(50) travels a finite distance; forward() drives until replaced/stopped or lifecycle timeout. An issuing thread can finish while its continuous drive remains active. The same physics, collision, coasting, bus performance, airborne restrictions and damage filters still apply.
+
+================================================================
+4. Turret commands
+================================================================
+COMMANDS IN THIS SECTION
+
+turret_left(degrees, best_effort=true)
+turret_left(to=heading, best_effort=true)
+  Base CPU cost: 1 ticks
+
+turret_right(degrees, best_effort=true)
+turret_right(to=heading, best_effort=true)
+  Base CPU cost: 1 ticks
+
+turret_up(degrees, best_effort=true)
+turret_up(to=pitch, best_effort=true)
+  Base CPU cost: 1 ticks
+
+turret_down(degrees, best_effort=true)
+turret_down(to=pitch, best_effort=true)
+  Base CPU cost: 1 ticks
+
+aim_at(x, y, z, best_effort=true)
+  Base CPU cost: 1 ticks
+
+DETAILED REFERENCE
+────────────────────────────
+
+COMMAND: turret_left
+turret_left(degrees, best_effort=true)
+turret_left(to=heading, best_effort=true)
+Base CPU cost: 1 ticks • Device: turret
+
+INPUT
+Choose ONE: relative degrees from 0 to 1440, OR to=world heading from -36000 to 36000 (normalized modulo 360). Finite numbers/expressions only.
+
+HOW IT WORKS
+Rotate the turret counterclockwise (left). Relative rotation starts from the actual heading when this device begins the command, including full revolutions and crossing north. Absolute turns honor the chosen direction even when it takes the longer path. to=360 is north; use a relative 360 for a full revolution. World headings: 0 north, 90 east, 180 south, 270 west; independent of camera and chassis orientation. Recoil affects actual barrel aim.
+
+RETURNS
+A standard result: {status: "success", reason: null, commandId: number}. Success means accepted, not finished. Failure: {status: "fail", reason: code}. Inspect command_status(commandId) later.
+
+────────────────────────────
+
+COMMAND: turret_right
+turret_right(degrees, best_effort=true)
+turret_right(to=heading, best_effort=true)
+Base CPU cost: 1 ticks • Device: turret
+
+INPUT
+Choose ONE: relative degrees from 0 to 1440, OR to=world heading from -36000 to 36000 (normalized modulo 360). Finite numbers/expressions only.
+
+HOW IT WORKS
+Rotate the turret clockwise (right). Relative rotation starts from the actual heading when this device begins the command, including full revolutions and crossing north. Absolute turns honor the chosen direction even when it takes the longer path. to=360 is north; use a relative 360 for a full revolution. World headings: 0 north, 90 east, 180 south, 270 west; independent of camera and chassis orientation. Recoil affects actual barrel aim.
+
+RETURNS
+A standard result: {status: "success", reason: null, commandId: number}. Success means accepted, not finished. Failure: {status: "fail", reason: code}. Inspect command_status(commandId) later.
+
+────────────────────────────
+
+COMMAND: turret_up
+turret_up(degrees, best_effort=true)
+turret_up(to=pitch, best_effort=true)
+Base CPU cost: 1 ticks • Device: turret
+
+INPUT
+Relative degrees: 0..180. Absolute to=pitch: -90..90 degrees, positive upward.
+
+HOW IT WORKS
+Queue elevation on the existing turret device. Relative up/down uses the current mount angle when execution begins; absolute to= chooses the direction needed. Targets clamp to the installed mount's depression/elevation stops. Uses exactly traverse speed times turret bus performance, with no separate pitch speed. Does not aim shots or bypass cooldown/occupancy. Horizontal commands retain their existing meanings.
+
+RETURNS
+A standard result: {status: "success", reason: null, commandId: number}. Success means accepted, not finished. Failure: {status: "fail", reason: code}. Inspect command_status(commandId) later.
+
+────────────────────────────
+
+COMMAND: turret_down
+turret_down(degrees, best_effort=true)
+turret_down(to=pitch, best_effort=true)
+Base CPU cost: 1 ticks • Device: turret
+
+INPUT
+Relative degrees: 0..180. Absolute to=pitch: -90..90 degrees, positive upward.
+
+HOW IT WORKS
+Queue elevation on the existing turret device. Relative up/down uses the current mount angle when execution begins; absolute to= chooses the direction needed. Targets clamp to the installed mount's depression/elevation stops. Uses exactly traverse speed times turret bus performance, with no separate pitch speed. Does not aim shots or bypass cooldown/occupancy. Horizontal commands retain their existing meanings.
+
+RETURNS
+A standard result: {status: "success", reason: null, commandId: number}. Success means accepted, not finished. Failure: {status: "fail", reason: code}. Inspect command_status(commandId) later.
+
+────────────────────────────
+
+COMMAND: aim_at
+aim_at(x, y, z, best_effort=true)
+Base CPU cost: 1 ticks • Device: turret
+
+INPUT
+Three finite positional world coordinates in studs, each within +/-100000. Optional boolean best_effort.
+
+HOW IT WORKS
+Queue a fixed coordinate on the existing turret device. Both axes move simultaneously at the same actual bus-limited traverse speed. Uses the current mount geometry and mechanical stops; no prediction, detection, tracking or privileged information. Actual shots still follow the physical barrel. Existing cancellation, timeout and authorization apply.
+
+RETURNS
+Standard acceptance with commandId. Query command_status: completed with completionReason mountLimited means the point is beyond mount stops; null means aligned within tolerance.
+
+================================================================
+5. Firing and weapon timing
+================================================================
+COMMANDS IN THIS SECTION
+
+fire(best_effort=true)
+fire(seconds, best_effort=true)
+  Base CPU cost: 2 ticks
+
+DETAILED REFERENCE
+────────────────────────────
+
+COMMAND: fire
+fire(best_effort=true)
+fire(seconds, best_effort=true)
+Base CPU cost: 2 ticks • Device: weapon
+
+INPUT
+No duration: one logical weapon activation. Or seconds: finite number from 0 to 10. fire(0) fires nothing.
+
+HOW IT WORKS
+Submit a weapon operation. A timed command holds the normal trigger for that duration, respecting reload, preparation, heat and cooldown. It does not guarantee a hit or bypass restrictions. CPU cost is paid once per submission, not per bullet. The thread continues while the weapon works.
+
+RETURNS
+A standard result: {status: "success", reason: null, commandId: number}. Success means accepted, not finished. Failure: {status: "fail", reason: code}. Inspect command_status(commandId) later.
+CURRENT FULL-PERFORMANCE TIMING
+Cannon (currently Boomer): 0.2 seconds cannon preparation and 0.65 seconds firing interval. Lower allocation divides these durations by effective performance. It still swells, recoils and releases a shell along the actual barrel direction.
+
+Gatling (currently Rattler): 0.1 seconds firing interval, at most 3 seconds continuous fire, then 2 seconds mandatory overheat cooldown. Lower allocation lengthens the shot interval; it does not increase projectile speed or bypass heat. Releasing and tapping does not reset accumulated heat.
+
+fire(2) holds the trigger for 2 simulated seconds; it does not mean two shots. Preparation/cooldown can delay activation, and active commands have bounded safety timeouts. Neither tank's recoil, movement or weapon mechanics is replaced by BW.
+
+================================================================
+6. Scanner input, timing and all returned fields
+================================================================
+COMMANDS IN THIS SECTION
+
+Scanner(angle, best_effort=true)
+Scanner(position=index, best_effort=true)
+  Base CPU cost: 1 ticks
+
+DETAILED REFERENCE
+────────────────────────────
+
+COMMAND: Scanner
+Scanner(angle, best_effort=true)
+Scanner(position=index, best_effort=true)
+Base CPU cost: 1 ticks • Device: sensor0 ... sensor315
+
+INPUT
+Choose ONE input: angle in degrees (0, 45, 90, 135, 180, 225, 270 or 315, normalized modulo 360), OR position=index with an integer 0..7. Positions map 0->0 degrees, 1->45, 2->90, 3->135, 4->180, 5->225, 6->270, 7->315. Scanner(position=4) equals Scanner(180). Expressions are allowed. Do not provide both angle and position. 0 degrees is chassis-forward, 90 right, 180 back, 270 left.
+
+HOW IT WORKS
+Submit to that physical sensor, then suspend ONLY this thread until it acquires a snapshot. Other threads and devices continue. Queue rejection returns immediately. Finds all visible tanks, objects and walls in the cone, nearest first; cannot see through walls or tanks. Each sensor has its own queue and cooldown. Every completed sensor retains its own light event, so simultaneous scans cannot overwrite other lenses.
+
+RETURNS
+Success: {status: "success", reason: null, sensor, timestamp, range, count, detections, terrain}. detections is an immutable zero-indexed array of immutable dictionaries. Empty space is success with count=0 and an empty list. Failure: {status: "fail", reason: code, sensor}. Terrain adds bounded footprint-lane samples, observed world elevation/change, local signed elevation_rate (rise per horizontal stud), slope_angle in degrees, edge_near/edge_far brackets and explicit unknowns. distance_to_edge is the lower bracket, not an exact edge. No extra CPU fee, hidden maps or automatic steering. Queryable water only; cosmetic water is unknown. See docs/SCANNER_TERRAIN.md for exact units and limits. See Radar tab for existing detection fields.
+PHYSICAL TIME (separate from CPU cost)
+Default acquisition: 0.05 seconds / effective device performance.
+Each sensor cooldown: 0.1 seconds. Queued acquisition honors that sensor's cooldown; a cooling sensor does not block a different sensor. There is also a separate shared query-work safety budget; scannerBusy means that budget/geometry guard, not a shared sensor cooldown. Acquisition priority rotates deterministically to avoid repeatedly favoring the same sensors. Acquisition occurs on a fixed simulation step; the issuing thread resumes on a CPU cycle, so delivery can be later than the recorded timestamp.
+Default cone: 15 degrees total (±7.5). Fixed mounts are 45 degrees apart, leaving angular gaps between narrow cones; a nearby object outside every cone can produce zero detections. Scan activity lights do not guarantee a detected object.
+Default distance: 150 studs at 100% distance effectiveness. Hardware range/distancePercent can be configured later; bus sharing currently does not shorten the range.
+
+SNAPSHOT FIELDS
+status: "success" or "fail".
+reason: null on success; stable failure code otherwise.
+sensor: physical mounting angle in DEGREES, even when called with position=index. Scanner(position=4) reports sensor=180.
+timestamp: actual server simulation time of acquisition, NOT submission or the moment you print it.
+range: effective distance of this radar, in studs.
+count: number of visible detections.
+detections: immutable nearest-first array. Access its first entry with detections[0], not [1].
+
+EACH DETECTION
+.type: "tank", "object" (tree, rock, log or practice target), or "wall" (structural cover).
+.object_id and .name: object identifier and display name; null for other detection types.
+.distance: 3D studs from scanner origin to visible surface.
+.relative_direction: precise chassis-relative bearing to the observed surface, not necessarily the requested angle.
+.world_direction: world compass bearing to that SAME observed surface: 0 north, 90 east, 180 south, 270 west. Use directly in to= heading commands. Both bearings are captured at acquisition, even while the chassis is turning.
+.player: unique owner.tank#id identity for tanks; null for objects/walls. Unowned tanks use a stable AI/tank ID.
+.relation: "enemy" or "teammate" for tanks; null for objects/walls.
+.point: immutable {x, y, z} in WORLD coordinates of the visible hit surface, not necessarily the target center.
+
+Object sensor flashes are yellow; enemy tanks are red, teammates cyan, and walls neutral.
+All entries belong to the same acquisition. The origin is tank position + 2.5 studs world Y. The nearest entry is also exposed through top-level type, distance, relative_direction, world_direction, player, relation, point, object_id and name for existing programs. If nothing is visible, those convenience fields are null and count=0.
+
+Walls/tanks occlude objects behind them. Smoke, cosmetic parts, your own tank and projectiles are ignored. A partially visible physical body can be detected inside the cone. The bounded geometry safety budget may return scannerBusy; it never silently reports a partial successful list. No velocity, prediction or automatic aiming is supplied.
+
+USAGE
+scan = Scanner(0)
+if scan.status == "success" and scan.count > 0:
+    first = scan.detections[0]
+    print(first.player)
+    print(first.distance)
+    print(first.relative_direction)
+    print(first.world_direction)
+    turret_right(to=first.world_direction)
+
+Check status before count/detections: failure dictionaries do not contain a successful snapshot. Do not mutate a scan, its detections list or hit points. Use relative_direction for the chassis-relative bearing and world_direction for absolute aiming. The old direction key has been renamed; it is no longer returned. get_facing_direction().world_direction gives your own chassis heading.
+
+================================================================
+7. Facing, time, shared readiness and assignment versions
+================================================================
+COMMANDS IN THIS SECTION
+
+get_facing_direction()
+  Base CPU cost: 0.1 ticks
+
+get_clock()
+  Base CPU cost: 0 ticks
+
+wait_for_clock(targetTime)
+  Base CPU cost: 0.2 ticks
+
+wait_for(variable)
+  Base CPU cost: 0.2 ticks
+
+variable_has_changed(variable)
+  Base CPU cost: 0.2 ticks
+
+DETAILED REFERENCE
+────────────────────────────
+
+COMMAND: get_facing_direction
+get_facing_direction()
+Base CPU cost: 0.1 ticks • Device: none
+
+INPUT
+No arguments.
+
+HOW IT WORKS
+Read the current authoritative CHASSIS compass heading: 0 north, 90 east, 180 south, 270 west, normalized to [0,360). This is the tank body's actual heading, not turret aim, requested turn target or camera orientation. Returns immediately without operating a device.
+
+RETURNS
+{status: "success", reason: null, world_direction: number}. Use facing.world_direction for the number; the result itself is a dictionary. Each scan hit also includes world_direction for direct use with turn_right(to=...) or turret_right(to=...).
+
+────────────────────────────
+
+COMMAND: get_clock
+get_clock()
+Base CPU cost: 0 ticks • Device: none
+
+INPUT
+No arguments.
+
+HOW IT WORKS
+Read authoritative ARENA simulation time in seconds. It can already be greater than zero when a program starts. It is independent of rendering frame rate and CPU throughput.
+
+RETURNS
+{status: "success", reason: null, time: number}. Use get_clock().time or save the result and read clock.time; the result is not a bare number.
+
+────────────────────────────
+
+COMMAND: wait_for_clock
+wait_for_clock(targetTime)
+Base CPU cost: 0.2 ticks • Device: none
+
+INPUT
+targetTime: finite absolute arena simulation time in seconds, usually clock.time + delay.
+
+HOW IT WORKS
+Suspend only this thread until the first CPU cycle at/after targetTime. A time already reached returns immediately. Other streams and devices keep operating. Waiting spends no repeated CPU ticks.
+
+RETURNS
+{status: "success", reason: null}; invalid computed arguments return fail / invalidArgument.
+
+────────────────────────────
+
+COMMAND: wait_for
+wait_for(variable)
+Base CPU cost: 0.2 ticks • Device: none
+
+INPUT
+An actual variable NAME, not a literal/value/expression. It may not have been assigned yet.
+
+HOW IT WORKS
+Wait for that shared variable to contain a ready value: anything except missing, false or null. Zero, an empty string and dictionaries ARE ready. An already-ready value returns immediately. This waits for readiness, not the next assignment. It also observes the variable's current version for this thread.
+
+RETURNS
+{status: "success", reason: null, value: the shared value, version: assignment version}. Missing values wait rather than raise an undefined-variable error.
+
+────────────────────────────
+
+COMMAND: variable_has_changed
+variable_has_changed(variable)
+Base CPU cost: 0.2 ticks • Device: none
+
+INPUT
+An actual variable NAME. Each thread keeps its own last-observed version, initially zero.
+
+HOW IT WORKS
+Check whether this variable has been assigned since THIS thread last checked/observed it. Every assignment increments its version, even assigning the same value. This call updates the thread's observed version. Property writes increment the named root variable's version; aliases do not create extra version notifications.
+
+RETURNS
+{status: "success", reason: null, changed: boolean, version: number}. Test result.changed, not the dictionary itself. This does not wait.
+
+================================================================
+8. Results, status inspection and cancellation
+================================================================
+COMMANDS IN THIS SECTION
+
+command_status(commandId)
+  Base CPU cost: 1 ticks
+
+clear_queue(device)
+  Base CPU cost: 1 ticks
+
+abort_command(device)
+  Base CPU cost: 1 ticks
+
+DETAILED REFERENCE
+────────────────────────────
+
+ALL CALLS RETURN A DICTIONARY
+Success always includes status="success" and reason=null.
+Failure includes status="fail" and a stable reason code.
+Dictionary properties use result.status or result["status"].
+
+Movement, turret and weapon success means ACCEPTED. Save commandId to inspect its later lifecycle. A scanner waits for the observation instead. A clock call returns .time; a change check returns .changed. These are dictionaries, not bare numbers/booleans.
+
+NORMAL OPERATIONAL FAILURE DOES NOT STOP THE THREAD
+Examples: deviceQueueFull, deviceDisabled (0% allocation), deviceUnavailable (not installed), invalidSensor, invalidArgument, sensorCooldown, scannerBusy. An accepted device command can later be stuck, commandTimedOut, executionFailed or commandCancelled. tankDestroyed cancels lifecycle work. deviceDamaged is reserved for future device-specific damage.
+
+You may inspect or ignore a failed submission. Legacy best_effort=true/false is accepted on movement/turn/fire/Scanner, but it does not make asynchronous operational failures fatal. Undefined variables, invalid operand types, immutable-value mutation and other genuine runtime/syntax errors still stop safely with source lines. Stop/reset cannot be bypassed.
+
+COMMAND: command_status
+command_status(commandId)
+Base CPU cost: 1 ticks • Device: none
+
+INPUT
+commandId: number returned by a successful movement, turn or fire submission. IDs belong to this program run.
+
+HOW IT WORKS
+Inspect accepted work without waiting. A successful QUERY does not mean the physical command succeeded. Check result.state and result.completionReason.
+
+RETURNS
+{status: "success", reason: null, commandId, device, state, completionReason}. States: accepted, queued, running, completed, failed, cancelled. completionReason is null while pending/running and after normal completion; failed/cancelled commands carry a reason such as stuck or commandTimedOut. Unknown or expired ID: fail / invalidArgument. The most recent completed/failed/cancelled commands are retained in a rolling history; active and queued work is never evicted.
+
+────────────────────────────
+
+COMMAND: clear_queue
+clear_queue(device)
+Base CPU cost: 1 ticks • Device: named device
+
+INPUT
+device: string such as "drivetrain", "turret", "weapon" or "sensor45".
+
+HOW IT WORKS
+Cancel all PENDING commands for this device without interrupting its active operation. Any thread may manage any installed device. A cancelled pending scan wakes its waiting thread with commandCancelled.
+
+RETURNS
+{status: "success", reason: null}, or fail / deviceUnavailable for an unknown/uninstalled device.
+
+────────────────────────────
+
+COMMAND: abort_command
+abort_command(device)
+Base CPU cost: 1 ticks • Device: named device
+
+INPUT
+device: string such as "drivetrain", "turret", "weapon" or "sensor45".
+
+HOW IT WORKS
+Cancel the ACTIVE command only. Pending commands remain; the oldest can begin at the next device update in the fixed simulation. Aborting a weapon cancels an unreleased preparation, not an already launched projectile. Physical momentum remains. To cancel all work, clear_queue(device) and then abort_command(device).
+
+RETURNS
+{status: "success", reason: null}, or fail / deviceUnavailable. Aborting an idle installed device succeeds.
+
+================================================================
+9. while: repeat while a value is truthy
+================================================================
+SYNTAX
+while condition:
+    # four-space indented statements
+    print("body")
+
+CPU COST
+1 tick per condition test, PLUS normal condition-expression costs. The final false test also pays this cost. The backward jump adds no tick charge. Each body statement keeps its normal cost; printing remains free.
+
+HOW IT WORKS
+Evaluate condition before the first iteration and again after every body execution. Skip the body if the value is falsey. Otherwise run the body in order and return to the condition. A variable condition is re-read each time; another thread can change it. Nested while, if and switch blocks are supported. An asynchronous Scanner condition waits for one acquisition for that test, without repeating it while waiting.
+
+FALSEY VALUES
+false, null, numeric 0, the empty string "", an empty array [] and an empty dictionary {}.
+Every other supported value is truthy, including -1, "0", a whitespace string, [false] and a nonempty dictionary. An undefined variable is still an error, not an implicit null. This truthiness rule belongs to while; existing if conditions and and/or/not operators still require booleans. Use comparisons when combining non-boolean values with logical operators. wait_for retains its separate readiness contract.
+
+EXAMPLE: COUNT DOWN
+remaining = 3
+while remaining:
+    print(remaining)
+    remaining = remaining - 1
+print("finished")
+
+EXAMPLE: SCAN BY SENSOR POSITION
+position = 4
+remaining = 2
+while remaining:
+    observation = Scanner(position=position)
+    print(observation)
+    remaining = remaining - 1
+
+The scanner still returns sensor in degrees and charges its usual submission ticks. A computed invalid position returns invalidSensor; invalid literal positions are rejected before the tank acts. position must be an integer 0..7; it does not wrap like an angle.
+
+PHYSICAL DEVICES AND SAFETY
+Submitting forward/fire/turn inside a loop does NOT wait for physical completion: it still submits to bounded device queues, which can become full. Use command_status and wait_for_clock when coordinating physical work. Loops do not block the server: they yield for CPU budget, asynchronous observations or explicit waits. Other threads/devices continue.
+
+Stop, destruction, respawn and reset cancel loops and clear inputs/queued work. The usual 180-second program timeout and hard per-cycle operation cap still apply. Scanner snapshots, logs and completed command histories roll over rather than stopping a busy loop; output is rate-limited with visible omission notices, even for while true. Reading a handbook does not pause the loop. No break, continue, for or while-else syntax is implemented.
+
+RETURNS
+while is a statement, not a callable: it returns no result dictionary. When false, execution continues after the indented block.
+
+================================================================
+10. Variables, CONST, expressions, branches, threads and costs
+================================================================
+CONST move = 10
+CONST double_move = move * 2
+forward(double_move)
+
+CONST declares an immutable number, string, boolean or null during compilation. Its declaration and references cost ZERO runtime ticks and produce no runtime assignment, read or storage. Initializer operators/parentheses and previously declared constants are evaluated at compile time. Commands still pay their usual submission cost; forward(double_move) has exactly the cost of forward(20). Ordinary variables keep their read/write costs; arithmetic outside a CONST initializer still costs ticks.
+
+Names are case-sensitive and program-wide, visible after declaration in textual source order across threads. Prefer declarations at the top. Declarations inside a branch/thread are compile-time, not conditional. No reassignment, duplicate names, mutable-name conflicts, collections, indexing, function calls, runtime dependencies, self/forward/circular references or synchronization variable references are allowed. Compiler errors identify the source line. Built-in and keyword names cannot be constants.
+
+EDITOR
+Enter retains indentation and adds four spaces after a block-header colon. Backspace in leading indentation removes one level. Tab/Shift+Tab indent/outdent the current line or selected lines. Shift+Delete removes the entire caret line, including its line break, as one undo step. Undo/Redo buttons and Ctrl/Cmd+Z, Ctrl/Cmd+Y or Ctrl/Cmd+Shift+Z use separate history for each tank.
+
+Paste: align is the default: prepare the insertion indentation, then paste the AI code. Common outer indentation is removed and internal nesting is aligned to your insertion point; existing obsolete code stays in place for you to remove. A multiline paste is one undo operation. Inline whitespace/strings and line endings stay intact. Use Paste: exact when every received whitespace byte must remain unchanged. Run never normalizes source. The compiler still expects four-space indentation; the editor does not fix missing internal nesting or strip Markdown fences.
+
+One statement per line. Names are case-sensitive. Command parameters named studs/degrees/seconds/value in this reference are positional placeholders; use named to=, position= or best_effort= only where shown. # starts a comment outside strings. Blocks use four spaces, not tabs. Variables belong to one tank's program and are shared by all its threads; they do not leak between tanks/runs/resets.
+
+VALUES AND EXPRESSIONS
+Numbers (including decimals), quoted strings, true, false, null, arrays and dictionaries. Zero-based arrays: items[0]. String dictionary keys: result.status or result["status"]. Missing dictionary keys return null; invalid array indices are errors. Programmer arrays and dictionaries are mutable references; scanner/result snapshots are immutable. Dictionary equality compares identity; compare fields to compare observations.
+
+Use = for assignment and == for comparison. Arithmetic: + - * / and unary -. Comparisons: == != < <= > >=. Logical: and or not. Parentheses group expressions. Arithmetic has conventional precedence; comparisons bind before not, then and, then or. Conditions/logical operators require booleans; there is no implicit number/string coercion. and/or short-circuit, skipping unused calls and their costs. Division by zero and undefined reads are errors.
+
+DECISIONS
+if condition:
+    forward(10)
+elif other_condition:
+    back(5)
+else:
+    print("neither")
+
+switch value:
+    case "tank":
+        print("tank")
+    case "wall":
+        print("wall")
+    default:
+        print("other")
+
+One matching branch executes. switch evaluates its value once, has no fallthrough and needs no break. Case labels are constant scalars/simple constant expressions. Nested blocks work. while loops are supported (see While loops tab). User functions are supported (Functions tab). for loops, break/continue and automatic targeting are not available yet.
+
+THREADS
+with thread(1):
+    ready = true
+with thread(2):
+    wait_for(ready)
+    print(ready)
+
+Each block is an independent entry point, not a function. Thread IDs must be literal integers within the selected chassis capacity; Bunny cannot run thread 2. Top-level legacy statements map to thread 1. No extra CPU charge is assigned merely for entering a thread block. A waiting thread does not prevent others from running.
+
+EXPRESSION COSTS (additional to base command cost)
+Variable read: 0.1 ticks
+Assignment / dictionary property write: 0.2 ticks
+Arithmetic operation: 0.2 ticks
+Comparison: 0.2 ticks
+Logical operation: 0.1 ticks
+Dictionary / array access: 0.1 ticks
+if / elif decision: 1 ticks
+switch dispatch (all cases together): 2 ticks
+while condition test (each evaluation): 1 ticks
+Literal values and control-flow jumps have no extra charge. Construction of an array/dictionary adds the costs of its evaluated elements, not a separate construction fee. switch has no hidden per-case comparison charges. A single if is cheaper; switch becomes preferable for several alternatives.
+
+EXACT SMALL EXAMPLES UNDER CURRENT COSTS
+distance = 10 + 5
+  0.2 arithmetic + 0.2 assignment = 0.4 ticks
+forward(distance)
+  1 submission + 0.1 variable read = 1.1 ticks
+result = forward(10)
+  1 submission + 0.2 assignment = 1.2 ticks
+if distance < 30:
+  1 decision + 0.1 read + 0.2 comparison = 1.3 ticks
+
+Command reference costs are BASE costs. Argument expressions, property reads and assignment normally cost extra. Exception: print/debug output and its pure display expressions are free. Expressions containing real device/query/wait calls inside print keep their full normal costs; assigning the returned success dictionary still pays a write cost. Waiting/operating device time is not charged repeatedly.
+
+================================================================
+11. Output, practical programs and execution logs
+================================================================
+COMMANDS IN THIS SECTION
+
+print(value)
+  Base CPU cost: 0 ticks
+
+DETAILED REFERENCE
+────────────────────────────
+
+COMMAND: print
+print(value)
+Base CPU cost: 0 ticks • Device: none
+
+INPUT
+One value: number, string, boolean, null, array or dictionary; expressions are allowed. No best_effort argument.
+
+HOW IT WORKS
+Write a readable value to this tank's private IDE history, with source line, simulation timestamp and thread. Printing and automatic logs cost ZERO ticks, including debug-only variable/property reads and arithmetic used to display a value. An expression containing a real call such as Scanner(), forward(), command_status() or a wait executes normally and retains its full expression cost, so print cannot bypass gameplay costs. Saving a print result in a variable still pays the assignment cost. Generic formatting is bounded at 2048 bytes; automatic scanner diagnostics list every detection separately. Log history rolls instead of ending the program. Excess output is rate-limited with an explicit notice, not a fatal error.
+
+RETURNS
+{status: "success", reason: null}. Explicit print(scan) is an additional entry after the automatic scan diagnostic.
+
+MOVE WHILE SCANNING (even on Bunny)
+move = forward(20)
+turn = turn_right(90)
+scan = Scanner(0)
+print(scan)
+
+Drive starts; the turn queues behind it; the scanner acquires while the drivetrain works. The tank may still be accelerating when observed. A scan only blocks its issuing thread for the observation, not the device work already submitted.
+
+DELAY AND INSPECT COMPLETION
+move = forward(10)
+clock = get_clock()
+wait_for_clock(clock.time + 2)
+state = command_status(move.commandId)
+if state.status == "success":
+    print(state.state)
+
+Two seconds is an explicit delay, not a guarantee of movement completion. Check the state. Use while for repeated polling, preferably with a small clock wait between polls. There is no wait_for_command operation.
+
+SHARED SCAN (Dual or higher, sensor0 installed)
+with thread(1):
+    target = Scanner(0)
+with thread(2):
+    wait_for(target)
+    if target.status == "success":
+        print(target.detections)
+
+QUEUE MANAGEMENT
+clear_queue("drivetrain")
+abort_command("drivetrain")
+
+COST OF A WAIT
+clock = get_clock()
+wait_for_clock(clock.time + 1)
+
+The initiating calls/expressions cost ticks once. The one-second wait does not continuously spend instruction ticks; the turret, drive or weapon can keep operating during it.
+
+READING THE EXECUTION LOG
+Command • L3 • t=5.833 • T1 • forward -> ...
+Command = general submission/result.
+L3 = source line 3.
+t = authoritative simulation seconds for that event.
+T1 = thread 1.
+Scanner(0) = an actual sensor observation; its time is acquisition time.
+print = explicit programmer output.
+Indexed [0], [1], ... lines below a scan are detections in that same snapshot, nearest first.
+
+Open Hardware / threads for thread state/current line/tick totals, device allocation, active command, FIFO queue and recent failures. "waiting" may mean CPU budget, clock, variable readiness or scan acquisition; it does not automatically mean a broken tank. Each sensor row also shows successful/failed acquisition totals and its latest object count or failure code/time. Your conditional print only runs on successful nonempty scans; use these rows (or print the scan outside that guard) to distinguish empty space from scannerBusy.
+
+The execution log is selectable and read-only. Long retained history is split into bounded pages; Older opens earlier entries and Latest follows new output. The log header shows server prints executed, print events received by this client and the current page. Each thread row also shows loop-test and print counts, so you can distinguish a waiting scan from skipped print code or a display/transport issue. Click it and use Ctrl+A / Ctrl+C (or platform equivalents) to copy. Updates pause only while text is actually selected, so merely clicking/focusing the log does not freeze it. Clear the selection or click away to catch up. Output history retains the latest 256 entries; older entries roll out. Scan history retains 128 recent snapshots, and terminal command history retains 512 records plus all active/queued work. Excess logging is rate-limited per CPU cycle with an explicit notice; it never makes a valid loop fail. Programs continue running while you read this handbook.
+
+Run closes the IDE and hands control of this tank to BW. Stop cancels its program/devices and returns manual control. You can switch to the other tank and play while this tank's program continues.
+
+================================================================
+12. Functions, const references, stacks and ticks
+================================================================
+FUNCTION SYNTAX
+function advance(const distance):
+    return forward(distance)
+
+function double(const value):
+    return value * 2
+
+move = advance(double(10))
+print(move.status)
+
+Functions take positional arguments, may be defined after calls, and support recursive/mutually recursive calls. Definitions run only when called. return expression exits immediately; return alone or fallthrough returns null. Calls work in expressions, conditions and arguments. Four spaces per block; definitions must be top-level. Built-in names cannot be replaced; identifiers stay case-sensitive. No function values, nested definitions or closures.
+
+COPY OR REFERENCE?
+Scalars (number, string, boolean, null) are copied. Mutable parameters are local bindings and may be reassigned. Arrays and objects keep identity: obj.x = 2 or items[0] = 2 changes caller storage, but obj = {x: 2} only rebinds the parameter. Direct object/array literal arguments are valid. Array writes must be in bounds. Assignments anywhere in a function declare function-local names. Other reads resolve shared top-level variables. Return a value to publish it via a top-level assignment.
+
+CONST PARAMETERS
+function inspect(const target):
+    return target.distance
+
+No reassignment to target, no mutation through fields, indexing or aliases. Const object references may only be forwarded to const parameters; const scalars may be copied into mutable parameters. Independent mutable objects may be passed alongside protected references, but potential aliases between const/mutable arguments are rejected. Const does not permanently freeze the original caller object after return.
+
+Validation is conservative and compile-time: aliases merge across branches/rebindings/call sites. Unknown object-versus-scalar flows can be rejected. Multithread programs cannot pass potentially shared top-level objects as const references: another thread could modify them during a wait. Prefer function-local storage or scalar observations. Existing BW has no public clone() or append() API; neither is introduced. New objects built from proven scalar fields have independent mutable storage.
+
+STACKS AND SCHEDULING
+Each thread has independent call frames, locals and return destinations. Scanner/clock/variable/CPU waits suspend only the calling thread; other devices and threads continue. Default maximum is 50 live function frames per thread, excluding top-level execution. Aggregate limit is 50 times installed computer thread capacity. The server can configure this depth. Overflow names the function/thread/line, cancels that thread's commands, and lets other threads finish; the final program reports an error. Stop/destruction/reset/replacement clear all frames.
+
+CPU COST
+Function calls and returns: 0 ticks.
+Const parameter initialization and reads: 0 ticks.
+Mutable parameter initialization: normal write cost.
+Mutable parameter/local reads and writes: normal variable costs.
+Property/index traversal, arithmetic and device submissions retain their usual costs. Collection literal allocation keeps its existing zero cost; element expressions still cost ticks. Current read/write defaults are 0.1/0.2, not 1 tick each. Calls never duplicate argument evaluation. Uncalled functions and unexecuted branches cost nothing. Optional compiler tips suggest const for unmodified scalar parameters without changing code.
+
+function costly(distance):
+    distance = distance + 10
+    forward(distance)
+
+function efficient(const distance):
+    forward(distance + 10)
+
+At current costs, costly(5) is 1.8 ticks; efficient(5) is 1.2. Both submit asynchronously and preserve normal device queues. A function returning forward(10) returns acceptance, not physical arrival. Use command_status and an explicit clock wait to wait for completion. Infinite/free code is still bounded by scheduler dispatch and program safety limits. Hardware diagnostics show each thread's function, source line and call depth.
+
+================================================================
+13. Momentum, traction and command completion
+================================================================
+BW and manual controls use the same authoritative movement simulation. Drivetrain ratings and bus allocation limit propulsion; they do not cap world velocity from recoil or supplied environmental forces.
+
+On low-grip surfaces, braking/turning take longer. A chassis can rotate while sliding sideways. Off-center collisions or supplied impulses can create yaw momentum. Ground traction does not act in the air; existing recoil hops, gravity and landing behavior remain.
+
+stop() releases driving input and follows ordinary coast/resistance; it does not anchor the tank or erase momentum. Existing partial/reverse throttle can brake. Steering changes still position wheels or request differential tread steering rather than teleporting the chassis to a heading.
+
+Finite forward/back measures signed actual horizontal travel along the requested direction; curved motion follows the changing heading tangent. Sideways/vertical drift and collision penetration corrections do not count. Backward displacement subtracts progress; external forward displacement can help. Turns count actual signed yaw, so an external spin can help or oppose them.
+
+Completion means the requested travel/rotation was achieved, not that the tank is stationary or holding its final position. Residual sliding/spinning may continue. Timeouts, stuck detection, bounded immobilization pauses, best_effort, queues, command results and CPU tick costs retain their existing meaning. A program cannot bypass traction or teleport a tank to finish a command.
+
+The debug speed HUD shows measured world speed against the allocation-limited drive target, rated engine speed, yaw rate and sliding/contact state. Physical surface regions can be configured independently from visible map terrain. The test arena now defaults to IceWind: parked tanks gently drift eastward (about1 stud/sec), with visibly icy ground. Powered grip exceeds the test wind, so driving/reversing can pull away from downwind walls. Uniform wind eases its push as downwind drift builds; it does not clamp faster movement. Rivers, buoyancy and general prop physics remain deferred. The internal force/impulse API is server-only and is not a new BW command.
+
+================================================================
+14. Own state and hardware introspection
+================================================================
+COMMANDS IN THIS SECTION
+
+get_weapon_speed()
+  Base CPU cost: 1 ticks
+
+get_current_coordinates()
+  Base CPU cost: 1 ticks
+
+get_weapon_type()
+  Base CPU cost: 1 ticks
+
+is_weapon_ready()
+  Base CPU cost: 10 ticks
+
+get_turret_direction()
+  Base CPU cost: 1 ticks
+
+get_tank_direction()
+  Base CPU cost: 0.1 ticks
+
+get_drivetrain_type()
+  Base CPU cost: 1 ticks
+
+get_bus_configuration()
+  Base CPU cost: 1 ticks
+
+get_tank_state()
+  Base CPU cost: 20 ticks
+
+DETAILED REFERENCE
+────────────────────────────
+
+COMMAND: get_weapon_speed
+get_weapon_speed()
+Base CPU cost: 1 ticks • Device: own tank
+
+INPUT
+No arguments. Read-only own tank only; no user/tank/world selectors.
+
+HOW IT WORKS
+Fresh immutable BW result at invocation after CPU charge. kind projectile, finite speed in studs/second and units; no hitscan or infinite speed is fabricated. Field access pays ordinary read/access costs only. Readiness costs one tier-relative CPU cycle, full snapshot two; other metadata calls cost one tick except tank heading at 0.1. No enemies/maps or new movement permissions.
+
+RETURNS
+status success/reason null with kind projectile, finite speed in studs/second and units; no hitscan or infinite speed is fabricated. Failure stateUnavailable if a trusted own context is missing/mismatched.
+
+────────────────────────────
+
+COMMAND: get_current_coordinates
+get_current_coordinates()
+Base CPU cost: 1 ticks • Device: own tank
+
+INPUT
+No arguments. Read-only own tank only; no user/tank/world selectors.
+
+HOW IT WORKS
+Fresh immutable BW result at invocation after CPU charge. x, y, z in world studs, read now rather than from last network snapshot. Field access pays ordinary read/access costs only. Readiness costs one tier-relative CPU cycle, full snapshot two; other metadata calls cost one tick except tank heading at 0.1. No enemies/maps or new movement permissions.
+
+RETURNS
+status success/reason null with x, y, z in world studs, read now rather than from last network snapshot. Failure stateUnavailable if a trusted own context is missing/mismatched.
+
+────────────────────────────
+
+COMMAND: get_weapon_type
+get_weapon_type()
+Base CPU cost: 1 ticks • Device: own tank
+
+INPUT
+No arguments. Read-only own tank only; no user/tank/world selectors.
+
+HOW IT WORKS
+Fresh immutable BW result at invocation after CPU charge. weapon_type is the installed canonical ID, e.g. weapon.cannon or weapon.gatling. Field access pays ordinary read/access costs only. Readiness costs one tier-relative CPU cycle, full snapshot two; other metadata calls cost one tick except tank heading at 0.1. No enemies/maps or new movement permissions.
+
+RETURNS
+status success/reason null with weapon_type is the installed canonical ID, e.g. weapon.cannon or weapon.gatling. Failure stateUnavailable if a trusted own context is missing/mismatched.
+
+────────────────────────────
+
+COMMAND: is_weapon_ready
+is_weapon_ready()
+Base CPU cost: 10 Bunny ticks (1 tier-relative CPU cycles) • Device: own tank
+
+INPUT
+No arguments. Read-only own tank only; no user/tank/world selectors.
+
+HOW IT WORKS
+Fresh immutable BW result at invocation after CPU charge. ready boolean (or null if standalone timing unavailable), state and remaining_seconds; own heat/burst/overheat and native/effective interval/preparation metadata; no ammo magazine exists. Field access pays ordinary read/access costs only. Readiness costs one tier-relative CPU cycle, full snapshot two; other metadata calls cost one tick except tank heading at 0.1. No enemies/maps or new movement permissions.
+
+RETURNS
+status success/reason null with ready boolean (or null if standalone timing unavailable), state and remaining_seconds; own heat/burst/overheat and native/effective interval/preparation metadata; no ammo magazine exists. Failure stateUnavailable if a trusted own context is missing/mismatched.
+
+────────────────────────────
+
+COMMAND: get_turret_direction
+get_turret_direction()
+Base CPU cost: 1 ticks • Device: own tank
+
+INPUT
+No arguments. Read-only own tank only; no user/tank/world selectors.
+
+HOW IT WORKS
+Fresh immutable BW result at invocation after CPU charge. actual world_direction/world_pitch and mount_yaw/mount_pitch, in degrees including chassis tilt and recoil; immutable world-space pivot, muzzle_position and direction xyz records. Field access pays ordinary read/access costs only. Readiness costs one tier-relative CPU cycle, full snapshot two; other metadata calls cost one tick except tank heading at 0.1. No enemies/maps or new movement permissions.
+
+RETURNS
+status success/reason null with actual world_direction/world_pitch and mount_yaw/mount_pitch, in degrees including chassis tilt and recoil; immutable world-space pivot, muzzle_position and direction xyz records. Failure stateUnavailable if a trusted own context is missing/mismatched.
+
+────────────────────────────
+
+COMMAND: get_tank_direction
+get_tank_direction()
+Base CPU cost: 0.1 ticks • Device: own tank
+
+INPUT
+No arguments. Read-only own tank only; no user/tank/world selectors.
+
+HOW IT WORKS
+Fresh immutable BW result at invocation after CPU charge. world_direction, the unchanged get_facing_direction convention: 0 north/-Z, 90 east/+X. Field access pays ordinary read/access costs only. Readiness costs one tier-relative CPU cycle, full snapshot two; other metadata calls cost one tick except tank heading at 0.1. No enemies/maps or new movement permissions.
+
+RETURNS
+status success/reason null with world_direction, the unchanged get_facing_direction convention: 0 north/-Z, 90 east/+X. Failure stateUnavailable if a trusted own context is missing/mismatched.
+
+────────────────────────────
+
+COMMAND: get_drivetrain_type
+get_drivetrain_type()
+Base CPU cost: 1 ticks • Device: own tank
+
+INPUT
+No arguments. Read-only own tank only; no user/tank/world selectors.
+
+HOW IT WORKS
+Fresh immutable BW result at invocation after CPU charge. drivetrain_type Tracked/Wheeled plus canonical drivetrain_id and mobility_id; no implicit pivot capability. Field access pays ordinary read/access costs only. Readiness costs one tier-relative CPU cycle, full snapshot two; other metadata calls cost one tick except tank heading at 0.1. No enemies/maps or new movement permissions.
+
+RETURNS
+status success/reason null with drivetrain_type Tracked/Wheeled plus canonical drivetrain_id and mobility_id; no implicit pivot capability. Failure stateUnavailable if a trusted own context is missing/mismatched.
+
+────────────────────────────
+
+COMMAND: get_bus_configuration
+get_bus_configuration()
+Base CPU cost: 1 ticks • Device: own tank
+
+INPUT
+No arguments. Read-only own tank only; no user/tank/world selectors.
+
+HOW IT WORKS
+Fresh immutable BW result at invocation after CPU charge. tier, zero-based buses array, devices keyed by real names with bus ID, percent allocation and effective performance. Field access pays ordinary read/access costs only. Readiness costs one tier-relative CPU cycle, full snapshot two; other metadata calls cost one tick except tank heading at 0.1. No enemies/maps or new movement permissions.
+
+RETURNS
+status success/reason null with tier, zero-based buses array, devices keyed by real names with bus ID, percent allocation and effective performance. Failure stateUnavailable if a trusted own context is missing/mismatched.
+
+────────────────────────────
+
+COMMAND: get_tank_state
+get_tank_state()
+Base CPU cost: 20 Bunny ticks (2 tier-relative CPU cycles) • Device: own tank
+
+INPUT
+No arguments. Read-only own tank only; no user/tank/world selectors.
+
+HOW IT WORKS
+Fresh immutable BW result at invocation after CPU charge. coordinates, chassis, turret, motion, weapon/readiness/ammo, health, equipment, bus, scanners and simulation metadata. Field access pays ordinary read/access costs only. Readiness costs one tier-relative CPU cycle, full snapshot two; other metadata calls cost one tick except tank heading at 0.1. No enemies/maps or new movement permissions.
+
+RETURNS
+status success/reason null with coordinates, chassis, turret, motion, weapon/readiness/ammo, health, equipment, bus, scanners and simulation metadata. Failure stateUnavailable if a trusted own context is missing/mismatched.
+Snapshots use immutable dictionaries and zero-based arrays. Assign s = get_tank_state() on its own source line, then read s.coordinates.x or s.weapon.readiness.ready. Check s.scanner_count before reading s.scanners[0].cone_degrees.
+No field read repeats introspection charges. One CPU cycle costs your tier's ticks/cycle. A two-cycle snapshot can wait for credit; it reads AFTER that wait. Ordinary print does not waive this fee.
+Current weapons use finite-speed projectiles and unlimited ammo; wheel_count is null because the physics model does not define it. Standalone runtimes without a server clock return null tick/step_seconds. Scanner headings are chassis-relative fixed 45-degree mounts, not a freely steered beam; narrow cones leave gaps. Use actual steer/pivot capability when planning a sweep.
+
+================================================================
+15. Complete tank programs and ordinary helper functions
+================================================================
+The BW IDE shows a tank's complete editable source, including all function definitions. There is no hidden personality intelligence or runtime import needed to execute that document.
+
+BUILT-IN COMMANDS VERSUS YOUR FUNCTIONS
+forward, steer_left, Scanner and fire are engine commands listed in the command directory. A name such as travel is not an extra engine command: it is an ordinary BW function declared with function travel(distance): in the same displayed program. Marauder calls that function to submit movement, wait through normal queues, observe progress and recover if blocked. turn_to and await_command are ordinary functions too. Scroll to their definitions to inspect or edit what they do.
+
+A call without its function definition is invalid. The complete source delivered to the IDE contains every required definition and is parsed by the same public BW compiler. Any player can write their own helpers. Function body operations pay the ordinary CPU/device costs; there is no privileged mapping, pathfinding or hidden enemy access.
+
+SOURCE AND DRAFTS
+Entering a tank replaces an untouched demo with its full program. The title identifies the tank program. If you edited a local draft, it is preserved and labeled local draft; Tank code loads the latest complete authoritative program as an undoable edit. Runtime highlighting appears only when the visible document matches the running source. Run submits that entire document. The code in the IDE is one self-contained program, not an unexplained snippet relying on files the player cannot see.
+
+================================================================
+16. Immutable aliases for built-in commands
+================================================================
+CONST turn_command_left = turn_left
+turn_command_left(20)
+
+A top-level CONST or const can name an existing built-in command without executing it. Calls expand to that command at compile time, preserving positional/named arguments, validation, return values, device queues and CPU costs. The declaration has no runtime fee. Alias chains are allowed after their target alias is declared.
+
+Aliases are immutable and are not runtime function values. They cannot be assigned, passed as ordinary arguments, stored in arrays, shadowed or declared inside functions/branches. Runtime hardware-dependent choice belongs in an ordinary BW function. steer_left(20) sets a wheel angle; turn_left(20) requests a chassis heading change. Declaring one as an alias for the other does not make their physical meanings identical.
+
+APPENDIX: EXACT OWN-STATE API AND SCANNER SCHEMA
+
+===== docs/BW_CORE_API_SPEC.md =====
+# BW core self-introspection API — Stage 1
+
+Status: **Stage 1 implemented and automatically verified**. Native Studio acceptance remains pending. Stage2 G1–G5 and all15 personalities are implemented and automatically verified. Stage3 is unimplemented. Scope: own tank only; no map, opponents, targets or privileged geometry. Existing syntax and value types suffice. The existing const/alias analyzer receives static shapes for these immutable results; scalar fields and array/map entries can be passed to ordinary numeric functions without being mistaken for unknown object aliases. Existing mutable/const and shared-reference restrictions remain unchanged.
+
+## Runtime, values and authority
+
+Production BWExecution evaluates calls on the authoritative bound tank. Every read occurs synchronously **after its CPU charge succeeds**, selecting fresh entity/state/hardware values at that invocation. Nothing is cached per tick. A single snapshot is constructed without yields, so its values share one read instant; two reads can differ even within the same tick if trusted server state changed. Returned nested dictionaries/zero-based arrays are deep immutable BWValue values, never Luau Instances, Vector3, device handles or references into live state. Missing/not-computable information is BW null, not misleading zero/infinity. No API takes a tank/user/world argument.
+
+All results use existing `status: "success"|"fail"`, `reason: null|string` conventions. Normal reads succeed even if a subsystem is absent/disabled; fields describe that condition. Invalid argument counts/named arguments are parse errors. Existing runtime lifecycle stops BW when its tank dies/replaces; standalone read-only adapter tests can inspect destroyed state without granting gameplay control.
+
+`get_facing_direction()` remains unchanged: chassis `world_direction` in degrees, cost 0.1 tick. `get_clock()` remains unchanged: server simulation seconds where supplied, otherwise runtime elapsed seconds, cost 0. New `get_tank_direction()` is the discoverable alias, not a different heading model.
+
+## Signatures and per-call cost
+
+All calls have **zero arguments**, no named arguments and no best_effort parameter.
+
+| Signature | Result payload in addition to status/reason | Cost |
+|---|---|---|
+| `get_weapon_speed()` | `kind: "projectile"`, `speed: number|null`, `units: "studs/second"` | 1 tick |
+| `get_current_coordinates()` | `x, y, z: number` | 1 tick |
+| `get_weapon_type()` | `weapon_type: string` (installed canonical ID, e.g. weapon.cannon) | 1 tick |
+| `is_weapon_ready()` | `ready: boolean|null`, `state: string`, `remaining_seconds: number|null` | 1 CPU cycle |
+| `get_turret_direction()` | `world_direction: number|null`, `mount_yaw, mount_pitch: number`, `world_pitch: number`, `max_rotation_speed, effective_rotation_speed, min_pitch, max_pitch: number` | 1 tick |
+| `get_tank_direction()` | `world_direction: number` | 0.1 tick (same as existing alias) |
+| `get_drivetrain_type()` | `drivetrain_type: "Tracked"|"Wheeled"`, `drivetrain_id, mobility_id: string` | 1 tick |
+| `get_bus_configuration()` | `tier: string`, `bus_count: number`, `buses: array<bus>`, `devices: dictionary<device>` | 1 tick |
+| `get_tank_state()` | Full nested schema below | 2 CPU cycles |
+
+One cycle is a 10 Hz scheduling/grant interval; one tier-relative cycle costs its per-thread ticks: Bunny10, Dual15, Quad20, Octa30, Hexadeca40. Thus snapshot costs20/30/40/60/80 ticks. Credit accumulates/reserves through the existing scheduler, bounded by 1,024 ticks per instruction. Calls do not add a forced sleep or skip simulation ticks. Assignment/expression overhead is additional: `s = get_tank_state()` costs 2×tier ticks+0.2 and may need a third grant from zero credit. Each reached call is charged once, including inside print/user functions/conditions; short-circuited calls cost zero. Ordinary assignment/read/access/comparison/etc. charges remain (write0.2, read/access0.1 ticks). Snapshot fields incur **no second introspection fee**, only normal expression access. Existing costs do not change.
+
+## Existing CPU accounting inventory
+
+The 60 Hz simulation and 10 Hz CPU grants are separate clocks. The legacy `cyclesSpent` member is a **tick-charge total**, despite its historical name. Charge and reservation use the same Hardware.cost lookup; reservations include worst-case expression cost and only reached operations charge actual ticks.
+
+| Existing category | Tick cost |
+|---|---:|
+| Variable read / field or array access | 0.1 each |
+| Variable write / mutable parameter binding | 0.2 each |
+| Arithmetic / comparison | 0.2 each |
+| Logical operation | 0.1 |
+| Branch / while test | 1 |
+| Switch | 2 |
+| Movement, steering, stop, chassis/turret turn, Scanner submission | 1 each |
+| Fire submission | 2 |
+| Synchronization / queue management/status | 0.2 / 1 |
+| get_facing_direction | 0.1 |
+| get_clock / print / user-function call and return | 0 |
+
+Constant parameters retain their existing read-cost waiver. Side-effect-free debug-only printed expressions retain their existing fee waiver, but **an introspection call is never debug-only**; its own fee and argument/expression work remain charged. Scanner acquisition/cooldown is physical time, not a repeated CPU charge. The legacy serial interpreter's informational CycleCosts/ScannerCost hooks remain for historical programs and are not production budgeting policy; introspection through that facade uses BWExecution.
+
+| CPU tier | Buses/threads | Ticks/grant/thread | Readiness fee | Snapshot fee |
+|---|---:|---:|---:|---:|
+| Bunny | 1 | 10 | 10 | 20 |
+| Dual | 2 | 15 | 15 | 30 |
+| Quad | 4 | 20 | 20 | 40 |
+| Octa | 8 | 30 | 30 | 60 |
+| Hexadeca | 16 | 40 | 40 | 80 |
+
+## Coordinates and directions
+
+Coordinates are the authoritative chassis origin/base position, not the muzzle or hitbox center. World coordinates are Roblox studs: +Y up, heading0 points -Z, heading90 points +X. World headings increase clockwise and normalize to [0,360). Speeds use studs/second. Public angular rates and angles use degrees or degrees/second, never radians.
+
+Chassis heading follows state yaw through the existing adapter. Turret world heading/pitch is the actual recoil-adjusted barrel direction composed with chassis pitch/roll. An exactly vertical barrel has null world heading. `mount_yaw` is the recoil-adjusted relative mount heading, normalized [0,360); `mount_pitch` is actual barrel pitch relative to the tilted mount. Mechanical travel stops are mount-relative. No aim or orientation is modified by a read.
+
+## Snapshot schema
+
+Top-level payload: `coordinates`, `chassis`, `turret`, `motion`, `weapon`, `health`, `equipment`, `bus`, `scanners`, `scanner_count`, `simulation`.
+
+- `coordinates`: `{x,y,z}` studs.
+- `chassis`: `{world_direction, turn_rate, max_turn_rate, effective_max_turn_rate}`; signed current clockwise turn rate, physical rated maximum and nominal bus-limited maximum in degrees/second. Wheeled effective bound also respects forward speed/wheelbase/steering geometry and MaxYawRate; traction, air and surface conditions can reduce actual ability.
+- `turret`: direction fields above plus `{max_rotation_speed,effective_rotation_speed,min_pitch,max_pitch}`. Both axes share traverse speed × turret bus performance; effective stops already intersect weapon/mount limits.
+- `motion`: `{speed,forward_speed,vertical_speed,max_speed,max_reverse_speed,effective_max_speed,effective_reverse_speed,terrain_speed_scale,ground_max_speed,drivetrain_type,drivetrain_id,mobility_id,steering_mode,steering_angle,max_steering_angle,wheelbase,wheel_count,turning_radius,min_turning_radius,can_pivot,can_reverse,immobilized,airborne}`. `speed` is current horizontal velocity magnitude; `forward_speed` signed yaw-plane chassis-forward projection (the engine speed convention); vertical speed is separate. Ratings are physical drivetrain ratings; effective ratings multiply bus performance only, not a promise of traction/surface/slope speed. Recoil/pushing can exceed ratings. Steering mode is differential for tracks, front_wheel for wheels, none if capability absent. Angles degrees; wheel steering angle is positive left, as with existing steeringDegrees. Steering angle/max_steering_angle are null for tracks or absent steering capability: differential tread intent is not a physical wheel angle. Wheelbase/radii studs. Wheel count is null (not authoritative). Current nominal geometric wheel radius respects actual steer angle, current forward speed and yaw cap; straight/stationary/undefined radius is null. It is not a measured trajectory radius under slip. Tracked moving radius is null unless a stationary pivot is directly identifiable. Pivot-capable tracks have min_turning_radius=0; non-pivot tracked geometry cannot supply a finite minimum and returns null.
+- `weapon`: `{id,kind,projectile_speed,projectile_model,range,readiness,ammo}`. id is canonical installed ID; kind is existing WeaponType (Cannon/Gatling). range studs; speed studs/second independent of bus (allocation changes timing, not shell speed). readiness has the individual read's payload. ammo `{mode:"unlimited",remaining:null,capacity:null}` for both current weapons; no fabricated empty/reload states. `projectile_model:"projectile"` for all supported engine weapons. Reserved future hitscan representation is model/kind `"hitscan"` and speed null, never math.huge/0; **no hitscan hardware/behavior is introduced or claimed supported now**.
+- `health`: `{current,max,damage}` HP and max-current HP.
+- `equipment`: immutable dictionary of the resolver's actual installed IDs (`Weapon`, `Mobility`, `Drivetrain`, `Turret`, `Computer`, `Bus`, `Chassis`, `Sensor`, mounted sensorN keys as installed). It describes equipment, not enabled bus-device presence.
+- `bus`: individual bus-configuration payload. Devices are keyed by actual names drivetrain/turret/weapon/sensor0..315, each `{bus,allocation,performance}` (bus 1-based, allocation percent, performance0..1 through existing curve). Buses are a **zero-based BW array** of `{index,allocated,available}`; index is the actual 1-based bus ID. No new categories. Absent devices remain absent, not fabricated. Performance is `1 - (1 - allocation/100)^PerformanceExponent`; the exponent comes from the installed bus.
+- `scanners`: zero-based array in ascending physical mounting angle. Each `{device,id,mounting_degrees,reference,world_direction,cone_degrees,catalog_range,max_range,distance_percent,configured_range,effective_range,performance,enabled,acquisition_seconds,cooldown_seconds,origin_height}`. reference is `"chassis"`; world_direction=(chassis heading+mounting)%360. Catalog range is installed sensor rating; max_range is the current hardware record's override or rating. configured_range=max_range×distance_percent/100. Allocation affects enablement/acquisition; it does **not shrink range**. effective_range is configured range when enabled, otherwise0. Acquisition scales by performance; disabled acquisition is null. Cooldown is the configured per-lens cooldown. Origin height is above chassis origin in studs. No installed scanners returns an empty array with scanner_count=0; absent bus entries disable a mounted lens.
+- `simulation`: `{time,tick,step_seconds}`. Server time/tick refer to the current completed fixed-step boundary read before movement/combat. Same-frame consecutive queries can share timestamp/tick but are freshly built. Standalone execution without a server step clock exposes runtime time and null tick/step_seconds, rather than pretending a server tick exists.
+
+## Weapon readiness
+
+The production reader receives the own tank's current server heat/windup/trigger state, not only replicated snapshot telemetry. State values: ready, destroyed, unavailable (no weapon bus device), disabled (zero allocation), release_required, preparing, overheated, cooldown, unknown. `ready` is true only for ready; false for known blockers; null for unknown due to missing private heat timing in a standalone harness. remaining_seconds reports active preparation/cooldown when known. The check is at the invocation instant, not a guarantee that a future trigger will succeed after simulation, obstruction, damage or occupancy changes. No finite ammunition/magazine mechanic exists, so out_of_ammunition/reloading is not invented.
+
+## Scanner coverage and drivetrain limits
+
+Scanner(angle) selects installed chassis-mounted lenses at fixed45° positions; Scanner(position=index) selects one of eight mount slots. It does not continuously rotate the scanner, and turret yaw does not rotate its reference. The current 15° cones at45° spacing leave gaps. Rotating/driving the chassis and rescanning can cover gaps, subject to obstacles, acquisition, cooldown and supported steering. For hypothetical freely selectable36° cones ceil(360/36)=10 is only an ideal tiling calculation; it does not make Scanner(36) legal or imply actual complete coverage. No new privileged spatial algorithms are added.
+
+Wheeled tanks use wheelbase/steer/yaw constraints and cannot pivot; tracked pivoting depends on the installed capabilities. Hardware configuration while BW runs remains rejected; stop/configure/restart is the supported reconfiguration workflow. Query freshness does not authorize new equipment mutation from BW.
+
+## Real BW examples
+
+```text
+state = get_tank_state()
+print(state.coordinates.y)
+print(state.weapon.id)
+if state.scanner_count > 0:
+    print(state.scanners[0].cone_degrees)
+ready = is_weapon_ready()
+if ready.ready == true:
+    fire()
+heading = get_tank_direction()
+print(heading.world_direction)
+```
+
+Use scanner_count (and bus.bus_count) with an existing while loop and zero-based indexing; an empty BW array cannot be indexed. No privileged map/enemy data is returned. Backward compatibility keeps every existing signature/cost and ordinary movement/fire/scan semantics. The nine new builtin names become reserved identifiers; external user functions/variables with those formerly unused names must be renamed. Programs containing new introspection may enter via the legacy Runtime facade but execute on the production scheduler rather than duplicating its value APIs.
+
+## Gaps / deliberate omissions
+
+No enemy state/map lookup, pathfinding/cover/intercept helper, hitscan implementation, finite ammo, authoritative wheel count, unsupported tracked turning geometry, or guaranteed terrain-limited speed/turn capability is fabricated. Stage2 programs and Stage3 living arena are not part of Stage1.
+
+
+## Verification and native acceptance
+
+Automated evidence and exact commands are tracked in [BW_ROADMAP_CHECKLIST.md](BW_ROADMAP_CHECKLIST.md). The production server getter is exercised through authorized BWRun/private output in Playground; the pure module suite covers values, clocks, mechanical/hardware distinctions, cooldown/windup/heat/damage, real BW motion and scheduler behavior on every tier. Static shape conformance ensures declared scalar/container paths match actual emitted snapshot values, without relaxing existing const/mutable safety.
+
+Native Roblox acceptance still required:
+
+1. In two-player Playground, enter separate tanks and run the real example above in each. Verify coordinates are each player's own chassis base, equipment matches their tank, and only the occupant gets that program's output. An unauthorized BWRun for the other tank must fail through the existing lease check.
+2. Read before/after driving, steering, turret yaw/elevation and going up/down slopes. Check chassis/world/mount headings, coordinates, signed motion, native fixed-step time and tick; a retained prior snapshot must stay unchanged.
+3. Observe cannon preparing/cooldown and Gatling shot pacing/overheat while firing; compare with HUD and actual timing. Damage the occupied tank and read current/max HP and damage. No ammo count or hitscan behavior should be invented.
+4. Stop a program, change supported bus allocation/computer configuration, restart and compare physical/effective ratings and CPU fees. Changing hardware while running must still be rejected. Public Playground hardware restrictions stay in place; use the existing Classic hardware workflow where necessary.
+5. Check sensor metadata with installed/removal/override fixtures: chassis-relative fixed mounting, cone gaps, configured range/distancePercent, disabled devices and acquisition delay. Terrain occlusion and wheeled steering still constrain any scan sweep; the API does not promise full coverage or map knowledge.
+6. Repeat existing Classic programs, custom worlds, mode transitions, deaths, disconnects and owned/public tank lifecycles. Gameplay, chat, editor and 3D aiming remain outside this Stage 1 change.
+
+No native Studio execution is claimed by automated tests/builds. Stage 2 personalities and Stage 3 living Playground remain TODO and must not be started here.
+
+## Stage 2 approved additions (2026-11-19)
+
+G1: `get_turret_direction()` and `get_tank_state().turret` additionally return immutable world-space `pivot`, `muzzle_position`, and unit `direction` xyz records, from the existing authoritative shot/mount geometry. The existing projectile launch sweeps from pivot to muzzle tip for obstruction safety, then enters free flight at `pivot + direction * MuzzleOffset`. The metadata describes that unobstructed muzzle position; it performs no scene query and cannot promise the barrel is clear. Existing fees and field-read costs are unchanged.
+
+G2: `aim_at(x, y, z, best_effort=true)` accepts three finite positional world coordinates (studs, absolute value <=100000) and optional boolean keyword. Submission costs **1 tick**, plus ordinary expressions. Returns standard acceptance/failure and commandId, using the existing turret FIFO. `command_status(id)` reports completed with `completionReason="mountLimited"` when the physical stop prevents reaching the point; normal alignment has null reason. Disabled/missing devices and queue limits return existing errors. Timeout/stuck/cancellation/generation/death handling is unchanged. Both axes use the ordinary mount solver and identical existing bus-limited angular speed. It samples no surroundings, tracks no enemy, predicts nothing, and never redirects a shot. The requested point remains fixed; the mount solver recomputes against the current chassis pose. Clients gain no new authority.
+
+G3: `is_weapon_ready()` and snapshot `.weapon.readiness` additionally expose `operation`, `heat`, `max_heat`, `burst_seconds`, `max_burst_seconds`, `overheat_seconds`, `fire_interval_seconds`, `effective_fire_interval_seconds`, `preparation_seconds`, `effective_preparation_seconds`. Timing units are seconds; current heat units are active-fire seconds. `overheat_seconds` is the remaining native overheat lockout. Inapplicable/unavailable fields are null; zero weapon performance yields null effective intervals. Effective interval/preparation divides the real component duration by bus performance. No ammunition/reload mechanics are added. Existing readiness one-cycle/snapshot two-cycle fees remain unchanged.
+
+```text
+request = aim_at(20, 8, -40)
+wait_for_clock(get_clock().time + 2)
+result = command_status(request.commandId)
+pose = get_turret_direction()
+weapon = is_weapon_ready()
+print(result.completionReason)
+print(pose.direction.y)
+print(weapon.effective_preparation_seconds)
+```
+
+## G4/G5 continuation
+
+The source-statement and line ceilings are removed. Technical guards are256KiB upload,65,536 compiled instructions,1-second compilation deadline and250,000 analysis updates. Existing50-frame recursive limit, CPU grants/costs, memory/container/variable bounds, nesting,512 source-operations/thread/cycle, queues and180-second runtime remain. These are technical resources, not source-length gameplay fees.
+
+Existing own-state scanner entries add `ground_observations` and `ground_operational` booleans. Existing `Scanner` successes add immutable `.terrain`; no new command or player-facing fee. See [terrain/elevation contract](SCANNER_TERRAIN.md). Unsupported hardware/occlusion/range/missing normals report unsupported/null/unknown, never invented slope, depth, water or safe-driving advice.
+
+Stage2.5 own motion additions (same snapshot cost): `terrain_speed_scale` is the last authoritative movement contact multiplier (material/surface and the single proving-ground tracked.90 factor); null before a contact update. `ground_max_speed` is physical drivetrain forward rating × current bus performance × that multiplier, studs/second, or null before contact. It is a ground target limit, not guaranteed actual speed or an airborne limit. Existing `max_speed` and `effective_max_speed` remain physical and bus-only ratings. See [terrain formulas](PLAYGROUND_PROVING_GROUND.md).
+
+### Drivetrain low-power curve (2026-11-20)
+
+Device performance is centralized in BWChassis.devicePerformance and shared by server hardware application, BW device scheduling and self reads. For a forward rating R, the drivetrain fraction at5% is min(15,R)/R;0% stays0. Below5%, interpolate linearly from zero. Above5%, let u=(allocation-5)/95 and f=min(15,R)/R; performance=f+(1-f)*(1-(1-u)^Bus.PerformanceExponent).100% stays1. Reverse and tracked turn caps retain the same shared drive fraction and their existing physical maxima. These are pre-terrain ratings: the Playground tracked.90 and other traction/material factors still apply. No minimum throttle/automatic movement is introduced. Other device curves, CPU costs and bus shares remain unchanged.
+
+Top-level immutable built-in command aliases (see BW_LANGUAGE.md) invoke the exact canonical API with unchanged signatures, fees, physical limits and ownership. They add no new hardware facts or privileged observations. Steering-aware personality helpers remain editable player BW, not built-ins.
+
+
+===== docs/SCANNER_TERRAIN.md =====
+# BW Scanner terrain observations (G5)
+
+`Scanner(angle)` / `Scanner(position=index)` are unchanged. Their successful immutable result now includes `.terrain`, alongside the existing count/detections/nearest-object fields. No `scan_ground` command exists. Submission remains **one tick**, plus ordinary argument/field/expression costs and existing sensor acquisition/queue/cooldown time. Terrain is collected in the same authoritative operation/timestamp; it adds no player CPU fee or separate scan.
+
+## Equipment, geometry and query budget
+
+`sensor.standard` explicitly supports `GroundObservations=true`. Other installed sensor definitions without that flag return unsupported terrain observations. Own-state scanner metadata exposes `ground_observations` (equipped capability) and `ground_operational` (capability with nonzero allocation/range). Disabled/absent devices still return the existing Scanner failure before acquisition. Terrain never bypasses bus performance, mounting, range, field of view, cooldown, server rate limits or occupancy authorization.
+
+Queries use the existing scanner origin (chassis position + installed OriginHeight) and chassis-relative azimuth. 0 is forward,90 right,180 rear,270 left, clockwise from chassis heading. World axes: +Y up,0 world heading faces -Z,90 faces +X. The existing cone has vertical planes limiting azimuth; G5 does not invent an independent panoramic or downward camera.
+
+At forward distances **2,4,6,8,12,18,26,40 studs**, sample the center and two lateral contact-footprint edges. Projected span uses the existing custom-physics ContactWidth/ContactLength and scanner direction, rather than the cosmetic mesh bounds. Lanes outside the cone or range are omitted, not synthesized. Close side lanes usually cannot be seen with the default15-degree lens. Consequently a center sample never proves full-width support.
+
+Each candidate uses a vertical ray up to12 studs above sensor height and40 below, clipped to the actual range sphere, followed by a line-of-sight ray from the actual scanner origin. Accepted hits must lie inside the actual three-dimensional range and azimuth cone. Hidden upper/lower surfaces, objects behind occluders, and other tanks' concealed ground yield unknowns. An additional visibility probe can test whether a previously observed supporting plane is absent. Candidate probes alone do not reveal hidden elevations. Ground candidates and occlusion use authoritative query geometry, including the real floor, Playground parts, fitted model proxies/native face meshes and native Terrain when present. Dead/destroyed and nonqueryable geometry remains excluded. World-object non-solid flags distinguish visible non-supporting surfaces without changing collision/destruction behavior.
+
+At most **64 terrain raycasts** and24 sample records, within the existing **512-ray total scan budget**, are permitted. Remaining object-query budget limits terrain; a partial result is explicit. Existing object detections are collected first and retain their ordering and query priority. This is a bounded near-field sampling stencil, not exhaustive coverage to the full scanner range or a map. Small gaps between stations may be missed.
+
+## Result contract
+
+All containers use existing immutable BW dictionaries/zero-based arrays. Unknown numbers/booleans/points are `null`, not0 or invented measurements.
+
+| `.terrain` field | Meaning |
+|---|---|
+| supported / operational | Equipped ground capability; operational also needs positive effective range. A returned scan already passed ordinary bus/device checks. |
+| status | `unsupported`, `unknown`, `observed`, or `partial_budget`. Missing query-provider geometry in a harness is unknown. |
+| reference_elevation | Current authoritative chassis-base world Y, in studs. It may be airborne; this is not a claim of support. |
+| footprint_width | Projected contact-footprint span perpendicular to the scan heading, studs. |
+| count / samples | Number of actual samples; zero-based immutable array. |
+| max_distance | Furthest attempted forward station, studs; not a promise of observation or continuity. |
+| max_rise / max_drop | Technical vertical search extents above/below sensor origin (12/40 studs). |
+| continuity | `sampled`, `discontinuity`, or `unknown`. `sampled` never guarantees continuous ground between rays. |
+| edge_near / edge_far | Forward-distance bracket from last observed support to observable absence/drop; nearest bracket across lanes. Null unless observed. |
+| distance_to_edge | Alias of **edge_near**, a quantized lower bound, NOT a precise edge point. Programs should retain both bracket endpoints. |
+| drop_depth | Visible downward elevation difference between adjacent samples at an observed discontinuity, studs. Null if hidden/unmeasurable. Not an unseen ravine-depth lookup. |
+
+Each sample contains:
+
+| Field | Meaning |
+|---|---|
+| lane / lateral_offset | Lane0 left,1 center,2 right relative to the scanner direction; signed sideways offset in studs. |
+| horizontal_distance | Actual XZ distance from scanner origin to sample column, studs. |
+| forward_distance | Distance along horizontal scanner heading, studs. Adjacent samples in one lane differ along this axis. |
+| confidence | `observed` or `unknown`. Observed reference-plane absence can have no visible surface point. |
+| point / elevation | Accepted visible world xyz / world Y, studs; null if occluded/unresolved. |
+| relative_elevation_change | Visible elevation minus current chassis-base Y, studs; positive above, negative below. |
+| elevation_rate | **Local signed rise per horizontal forward stud**, derived from the actual hit normal and scan heading. Dimensionless studs/stud; positive uphill, negative downhill. Null without a reliable upward normal. |
+| slope_angle | `atan(elevation_rate)` in **degrees**, positive uphill, negative downhill. No horsepower/traction or traversability judgment. |
+| interval_elevation_rate | Difference quotient between adjacent observed samples only when consistent with one local plane. Null across steps, slope changes, occlusion and gaps. |
+| transition | `first`, `sampled`, `discontinuity`, `slope_change`, `missing_reference_support`, `unknown_interval`, or `unknown`. Local slopes are never replaced with an average across a discontinuity. |
+| ground_detected | True for a visible supporting surface, false for visible water/non-supporting geometry, null when unresolved. False does not assert that there is no hidden ground underneath. |
+| reference_support | Same as visible ground detection, or false when the previously observed support plane is visibly absent at this station. |
+| drop_depth | Measured visible downward step from the previous sample when applicable; otherwise null. |
+| surface_type | Native hit material name (e.g. Grass/WoodPlanks), recognized modeled `ScannerSurface` (Pavement/Dirt/Grass/Snow/Ice/Mud), explicit queryable Water, or `unknown`. No inference from color/name. |
+| wetness | Visible modeled surface wetness0..1, or null without an explicit measurement. |
+| material_depth | Measured layer thickness in studs0..5, or null. Not ground elevation or hidden mud/snow depth. |
+| consistency | Measured firmness0..1, or null. Not a traversability judgment. |
+
+Queryable native water is detectable with IgnoreWater=false. The current Playground river and some Classic water patches are cosmetic, nonqueryable Glass parts: they cannot be truthfully classified as water by this scanner. Their water classification remains unknown; observed ravine geometry/edges remain available. Do not fabricate river depth or change combat/collision queries to make cosmetic water detectable.
+
+## Player BW example
+
+```text
+scan = Scanner(0)
+if scan.status == "success" and scan.terrain.supported:
+    print(scan.terrain.continuity)
+    print(scan.terrain.edge_near)
+    print(scan.terrain.edge_far)
+    index = 0
+    while index < scan.terrain.count:
+        sample = scan.terrain.samples[index]
+        print(sample.elevation)
+        print(sample.elevation_rate)
+        print(sample.slope_angle)
+        index = index + 1
+```
+
+An algorithm may decide to stop/turn using these observations, but scanning itself never changes throttle, steering, turret or physics. Hunter maps observations in its own BW arrays; Trailblazer compares support observations with actual progress. Duelist intentionally ignores terrain. Future player algorithms may compare these measurements to truthful vehicle capabilities; G5 adds no horsepower/climbing restriction or privileged navigation command.
+
+## Verification and native acceptance
+
+Group55 exercises the real DirectionalScanner/terrain collector using analytic ray-plane fixtures: flat/uphill/downhill terrain, abrupt and small steps, gaps/cliffs/hidden vs measurable drops, elevated/narrow bridges, water, footprint/cone/range limits, unsupported/missing hardware, disabled bus, invalid arguments, immutable values, existing result compatibility, scalar consumption in BW functions and shared query budgets. Explicit BW can react to an edge. Real Playground custom physics still allows bridge falls. Existing scanner/server/combat tests cover the unchanged acquisition and authority paths.
+
+Native Studio remains required: verify raycast normals/occlusion on rotated/scaled imported MeshParts/compound colliders; bridge top versus ground below; default narrow-cone side-lane unknowns; native Terrain water versus cosmetic river unknowns; two-player scanner privacy, rates and frame cost. Compare world elevations and signed slope samples against ramps in both directions. Ensure normal keyboard/touch/gamepad controls and deliberate cliff falls remain unchanged.
+
+Stage2.5: material scalars require an accepted visible hit, finite in-range attribute (`TerrainWetness`, `TerrainDepth`, `TerrainConsistency`) and matching boolean `*Observable=true`. Proving-ground wetness is exposed; depth/firmness remain unknown because buried properties are not measured. Labels are for human comparison only. Queryable terrain occludes object rays without becoming obstacle detections. See [layout, tuning and native tests](PLAYGROUND_PROVING_GROUND.md).
+

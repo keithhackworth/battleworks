@@ -38,7 +38,7 @@ Read.Shapes.Scanner=resultShape(shape("sensor timestamp range count type distanc
 local function nullable(n)return if n==nil then Value.Null else n end
 local function performance(ctx,name)
  local d=ctx.hardware.devices[name]
- return if d then Hardware.performance(d.allocation,ctx.components.Bus)else 0
+ return if d then Hardware.devicePerformance(name,d.allocation,ctx.components)else 0
 end
 local function coordinates(ctx)local p=ctx.state.position;return {x=p.X,y=p.Y,z=p.Z}end
 local function velocity(ctx)

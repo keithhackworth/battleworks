@@ -9,7 +9,7 @@ local ScannerConfig=require(script.Parent.ScannerConfig)
 local D={}; D.__index=D
 function D.new(config,state,services)
  local self=setmetatable({config=config,services=services or {},devices={},commands={},completed={},retainedCount=0,nextId=0,generation=state.generation,tankType=state.tankType,components=Components.get(state),steering=0},D)
- for name,spec in config.devices do self.devices[name]={name=name,spec=spec,performance=Hardware.performance(spec.allocation,self.components.Bus),queue={}} end
+ for name,spec in config.devices do self.devices[name]={name=name,spec=spec,performance=Hardware.devicePerformance(name,spec.allocation,self.components),queue={}} end
  return self
 end
 function D:submit(name,instruction,time,thread)
@@ -58,7 +58,7 @@ function D:archive(c)
  end
 end
 function D:terminal(d,c,state,reason,time)
- c.state=state; c.reason=reason; c.completed=time
+ c.state=state; c.reason=reason; c.completed=time;c.executor=nil
  if d.name:sub(1,6)=="sensor" and not c.result then c.result=Value.result(reason or "commandCancelled",{sensor=c.instruction.value}) end
  if d.name=="weapon" and state~="completed" and self.services.cancelWeapon then self.services.cancelWeapon() end
  self:archive(c)
@@ -96,6 +96,9 @@ function D:stop(time,reason)
   self:manage(name,false,time)
   if d.active then self:terminal(d,d.active,"cancelled",reason or "commandCancelled",time) end
  end
+end
+function D:releasePayloads()
+ for _,command in self.commands do command.result=nil;command.observation=nil;command.executor=nil end
 end
 function D:status(id)
  local c=self.commands[id]; if not c then return Value.result("invalidArgument") end

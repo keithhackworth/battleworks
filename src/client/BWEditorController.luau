@@ -298,6 +298,12 @@ function Editor:bind(id,source)
  self.id=id; self.history=self.sessions[id] or Text.history(source)
  self:write(self.history.current)
 end
+-- Loading an authoritative source is an undoable source change, not a new tank.
+function Editor:loadSource(source)
+ self:release();self.serial+=1
+ self.history:record(source,1,-1,self.serial)
+ self:write(self.history.current)
+end
 function Editor:destroy()
  self.destroyed=true; self.historyAction=nil; self.historyLatch=nil; self.guard=nil; self.enterIntent=nil; self.enterCaret=nil
  for _,connection in self.connections do connection:Disconnect() end

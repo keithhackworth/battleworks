@@ -47,9 +47,12 @@ function R:stop(reason,status)
  self.devices:stop(self.time,if self.status=="stopped" then "commandCancelled" else "tankDestroyed")
  for _,t in self.threads do if t.state~="finished" then t.state="finished" end; t.coroutine=nil; t.pending=nil; t.frames={}; t.frame=nil end
  self.totalCallFrames=0
+ self.results={};self.lastObservation=nil;self.lastValue=nil
+ self.devices:releasePayloads()
  if self.status~="completed" then self.variables={}; self.versions={} end
 end
 function R:log(t,text,line,kind,observation,angle)
+ local enabled=not self.services.outputEnabled or self.services.outputEnabled()
  if kind=="print" then self.printCount=(self.printCount or 0)+1; t.prints=(t.prints or 0)+1 end
  self.outputCount+=1 -- total attempted output; retained UI history is bounded separately
  self.cycleLogCount=self.cycleLogCount or 0
@@ -58,13 +61,15 @@ function R:log(t,text,line,kind,observation,angle)
   if self.cycleLogCount<Limits.MaxLogEventsPerCycle then
    self.cycleLogCount+=1
    self.emittedLogCount=(self.emittedLogCount or 0)+1
-   if self.services.onEvent then self.services.onEvent({thread=t.id,timestamp=self.time,line=line,kind="diagnostic",
+   if enabled and self.services.onEvent then self.services.onEvent({thread=t.id,timestamp=self.time,line=line,kind="diagnostic",
     text="Debug output rate limit reached; further entries this CPU cycle are omitted. Execution continues."}) end
   end
   return
  end
  self.cycleLogCount+=1
  self.emittedLogCount=(self.emittedLogCount or 0)+1
+ if not enabled then return end
+ if type(text)=="function"then text=text()end
  if self.services.onEvent then self.services.onEvent({thread=t.id,timestamp=self.time,line=line,kind=kind or "result",text=text}) end
  if kind=="scan" and self.services.onValue then self.services.onValue(observation,line,angle,t.id)
  elseif kind=="print" and self.services.onPrint then self.services.onPrint(text,line,t.id) end
@@ -134,7 +139,7 @@ function R:_call(t,call,evaluate)
   local result=self.devices:manage(device,name=="abort_command",self.time); self:log(t,name.." -> "..Value.format(result),line); return result
  end
  if name=="print" then
-  local value=self:debugValue(t,function() return evaluate(call.args[1].expression) end,call.args[1].expression); self:charge(t,"print"); self:log(t,Value.display(value),line,"print"); return Value.result()
+  local value=self:debugValue(t,function() return evaluate(call.args[1].expression) end,call.args[1].expression); self:charge(t,"print"); self:log(t,function()return Value.display(value)end,line,"print"); return Value.result()
  end
  -- Runtime operational arguments fail as values; static literals were validated before Run.
  local evaluated={}
@@ -175,8 +180,10 @@ function R:submit(t,instruction,line)
   if c.observation then
    self.lastObservation=c.observation; self.lastValue=result; table.insert(self.results,c.observation)
    if #self.results>Limits.MaxScannerHistory then table.remove(self.results,1) end
-   self:log(t,Value.format(result),line,"scan",c.observation,instruction.value)
+   self:log(t,function()return Value.format(result)end,line,"scan",c.observation,instruction.value)
   else self:log(t,Value.format(result),line) end
+  -- command_status exposes metadata, never an archived full scan payload.
+  c.result=nil;c.observation=nil
  end
  return result
 end

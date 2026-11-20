@@ -99,7 +99,7 @@
         "PublicTankCount": {
           "$className": "IntValue",
           "$properties": {
-            "Value": 6
+            "Value": 15
           }
         },
         "PublicTankReplenishDelay": {

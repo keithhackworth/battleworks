@@ -15,16 +15,42 @@ function random_step(seed):
     while seed >= 997:
         seed = seed - 997
     return seed
+function heading_error(target, current):
+    error = target - current
+    while error > 180:
+        error = error - 360
+    while error < -180:
+        error = error + 360
+    return error
 function turn_to(heading):
     hardware = get_tank_state()
     if hardware.motion.effective_max_speed <= 0:
         return
-    if hardware.motion.can_pivot:
-        await_command(turn_right(to=heading))
-    else:
+    if hardware.motion.drivetrain_type == "Wheeled":
+        limit = hardware.motion.max_steering_angle
+        if limit == null or limit <= 0:
+            return
+        error = heading_error(heading, get_tank_direction().world_direction)
+        deadline = get_clock().time + 30
         forward()
-        await_command(turn_right(to=heading))
+        while (error > 3 or error < -3) and get_clock().time < deadline:
+            angle = error
+            if angle < 0:
+                angle = -angle
+            if angle < 4:
+                angle = 4
+            if angle > limit:
+                angle = limit
+            if error > 0:
+                steer_right(angle)
+            else:
+                steer_left(angle)
+            wait_for_clock(get_clock().time + 0.1)
+            error = heading_error(heading, get_tank_direction().world_direction)
+        steer_center()
         stop()
+    else:
+        await_command(turn_right(to=heading))
 function travel(distance):
     before = get_current_coordinates()
     result = await_command(forward(distance))

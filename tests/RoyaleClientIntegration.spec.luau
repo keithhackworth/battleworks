@@ -218,6 +218,26 @@ named("RoyaleMainMenu").Activated:Fire();remotes.RoyaleControl.OnClientEvent:Fir
 check(not client.chat.gui.Enabled and not chatBar.Enabled,"menu and its World Editor do not retain active chat input")
 main.buttons[1].Activated:Fire();remotes.RoyaleControl.OnClientEvent:Fire({revision=118,mode="OnFoot"})
 check(client.chat.window==chatWindow and #created==chatWidgets,"returning to Playground reuses chat across menu transitions without duplicate UI")
+state.controlEpoch=30;state.controlMode="Manual";state.bwRunning=false
+remotes.Snapshot.OnClientEvent:Fire({["public:1"]=state},{})
+remotes.RoyaleControl.OnClientEvent:Fire({revision=119,mode="Tank",selected="public:1",epoch=30,controlMode="Manual",personality="Marauder"})
+check(client.modeSwitch.Visible and client.modeSwitch.Text:find("MANUAL",1,true),"large bottom switch reflects automatic Manual entry")
+client.modeSwitch.Activated:Fire()
+check(requests[#requests].name=="RoyaleControl"and requests[#requests].args[1]=="Auto"and requests[#requests].args[4]==30,"switch requests Auto using current authoritative lease")
+local sourceRequested=false
+for _,request in requests do if request.name=="BWRuntimeState"and request.args[1]=="Source"then sourceRequested=true end end
+check(sourceRequested,"authoritative control ACK requests source after client begins accepting tank packets")
+local pendingRequests=#requests;client.modeSwitch.Activated:Fire()
+check(#requests==pendingRequests,"rapid duplicate toggle waits for authoritative acknowledgment")
+state.controlEpoch=31;state.controlMode="Auto";state.bwRunning=true
+remotes.Snapshot.OnClientEvent:Fire({["public:1"]=state},{})
+remotes.RoyaleControl.OnClientEvent:Fire({revision=120,mode="Tank",selected="public:1",epoch=31,controlMode="Auto",personality="Marauder"})
+frame(1/30)
+check(client.modeSwitch.Text:find("AUTO",1,true)and client.battle.inputController.externalControl,"Auto mode suspends manual providers while keeping tank camera")
+client.modeSwitch.Activated:Fire()
+check(requests[#requests].args[1]=="Manual"and requests[#requests].args[4]==31,"same touch/click button requests Manual with refreshed lease")
+remotes.RoyaleControl.OnClientEvent:Fire({revision=121,mode="OnFoot"})
+check(not client.modeSwitch.Visible,"switch hides outside occupancy")
 Players.PlayerRemoving:Fire(player)
 check(client.chat.destroyed and not bindings.BattleWorksTextEntry_PlaygroundChat,"production departure cleans chat input route and native wrapper")
 Instance.new=savedNew;game.GetService=originalService

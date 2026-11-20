@@ -61,7 +61,7 @@ local cfg=Hardware.forTank(low);cfg.devices.drivetrain.allocation=20
 local record={state=low,hardware=cfg};Controller.applyHardware(record)
 local env=environment(grass)
 for _=1,300 do Sim.step(low,drive,1/60,T.DefaultSize,env)end
-local limit=C.get(low).Drivetrain.Speed*Hardware.performance(20,C.get(low).Bus)*.9
+local limit=C.get(low).Drivetrain.Speed*Hardware.devicePerformance("drivetrain",20,C.get(low))*.9
 check(near(low.speed,limit),"terrain never overrides/doubles existing bus-power constraint")
 local snapshot=Read.read("get_tank_state",low,cfg,5,{})
 check(near(snapshot.motion.ground_max_speed,limit)and near(snapshot.motion.terrain_speed_scale,.9),"own-state exposes last applied terrain scale separately from nominal bus limit")
@@ -104,5 +104,42 @@ for _,extra in {{wheelSpeed=0},{trackSpeed=2},{trackedStaticFriction=0/0}}do
  local bad=table.clone(Surface.Profiles.Normal)
  for k,v in extra do bad[k]=v end
  check(not pcall(Surface.prepare,{{id="bad",x=0,z=0,rx=1,rz=1,surface=bad}}),"new material fields validated at prepare time")
+end
+-- Exact curve anchors and actual powered movement, including fractional low bus.
+for _,kind in {"Boomer","Rattler"}do
+ local state=Sim.new(Vector3.new(150,0,0),kind);local vehicle=C.get(state)
+ local previous=0
+ for _,allocation in {0,1,2.5,5,9.09,25,50,75,100}do
+  local p=Hardware.devicePerformance("drivetrain",allocation,vehicle)
+  check(p>=previous and p<=1,"drivetrain curve is monotonic and capped at existing rating");previous=p
+  if allocation==0 then check(p==0,"zero bus grants no propulsion")end
+  if allocation==5 then check(near(p*vehicle.Drivetrain.Speed,15),"five percent gives15 rated forward studs/sec before terrain")end
+  if allocation==100 then check(p==1,"full power keeps existing maximum")end
+ end
+ for _,name in {"turret","weapon","sensor0"}do
+  check(Hardware.devicePerformance(name,5,vehicle)==Hardware.performance(5,vehicle.Bus),"other device curves are unchanged")
+ end
+ local record={state=state,hardware=Hardware.forTank(state)}
+ record.hardware.devices.drivetrain.allocation=5;Controller.applyHardware(record)
+ local env=environment(grass)
+ for _=1,300 do Sim.step(state,drive,1/60,T.DefaultSize,env)end
+ check(near(state.speed,15*(if vehicle.Mobility.Kind=="Tracked"then .9 else 1)),"real drive obeys five-percent curve and single tracked terrain factor")
+ local read=Read.read("get_tank_state",state,record.hardware,5,{})
+ check(near(read.motion.effective_max_speed,15),"BW own-state reports exact physical bus limit")
+ local vm=require("BWDevices").new(record.hardware,state,{})
+ check(near(vm.devices.drivetrain.performance,state.drivePerformance),"AI command scheduling and actual movement share one curve")
+end
+-- Diagnose the shipped public configuration through actual production drive.
+local Auto=require("PlaygroundAutonomy")
+for _,kind in {"Boomer","Rattler"}do
+ local state=Sim.new(Vector3.new(150,0,0),kind)
+ local record={state=state};Auto.hardware(record)
+ local config=C.get(state);local profile=Materials.profile("Grass",0,0,1)
+ local env=environment(profile)
+ for _=1,300 do Sim.step(state,drive,1/60,T.DefaultSize,env)end
+ local expected=config.Drivetrain.Speed*Hardware.devicePerformance("drivetrain",record.hardware.devices.drivetrain.allocation,config)*(if config.Mobility.Kind=="Tracked"then .9 else 1)
+ check(near(state.speed,expected),"actual public speed matches bus and terrain factors, independent of tank population")
+ check(near(state.terrainSpeedScale,if config.Mobility.Kind=="Tracked"then .9 else 1),"dry grass has no hidden terrain speed penalty")
+ print(string.format("Public movement diagnostic: %s bus %.2f%% -> %.3f studs/sec (rated %.1f)",kind,record.hardware.devices.drivetrain.allocation,state.speed,config.Drivetrain.Speed))
 end
 print("Terrain material/drivetrain physics passed: "..count.." assertions")

@@ -5,7 +5,7 @@ local Value=require(script.Parent.BWValue)
 local E={}
 local dynamic={dynamic=true}
 local precedence={['or']=10,['and']=20,['==']=30,['!=']=30,['<']=30,['<=']=30,['>']=30,['>=']=30,['+']=40,['-']=40,['*']=50,['/']=50}
-function E.parse(tokens,start,functions)
+function E.parse(tokens,start,functions,aliases)
 	local pos,nodes=start or 1,0
 	local function node(kind,fields)
 		nodes+=1; if nodes>Limits.MaxExpressionNodes then Commands.error(tokens[pos].line,"Expression is too large.") end
@@ -52,7 +52,7 @@ function E.parse(tokens,start,functions)
 					if tokens[pos].kind~="," then break end; take(",")
 					if tokens[pos].kind==")" then Commands.error(token.line,"Trailing comma is not supported.") end
 				until false end
-				take(")"); left=node("call",{name=token.value,args=args,line=token.line}); Commands.signature(left,functions)
+				take(")"); left=node("call",{name=(aliases and aliases[token.value])or token.value,args=args,line=token.line}); Commands.signature(left,functions)
 			else left=node("variable",{name=token.value,line=token.line}) end
 		else Commands.error(token.line,"Expected an expression.") end
 		while true do

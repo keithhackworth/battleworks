@@ -49,9 +49,10 @@ local function parse(source)
 	local cursor,count=1,0
     -- Like mutable BW names, constants have program-wide scope. Resolve in
     -- textual declaration order, including inside thread/branch blocks.
-    local constants,mutableNames={},{}
+    local constants,mutableNames,aliases={},{},{}
     local function resolveConstants(n,required)
         if n.kind=="variable" then
+            if aliases[n.name] then Commands.error(n.line,"Command alias must be called, not used as a value.")end
             local value=constants[n.name]
             if value~=nil and not (activeFunction and activeFunction.locals[n.name]) then return {kind="literal",value=value,line=n.line} end
             if required then Commands.error(n.line,"CONST requires a previously declared constant; '"..n.name.."' is undefined, self-referential or runtime-dependent.") end
@@ -78,12 +79,13 @@ local function parse(source)
         return n
     end
     local function writable(name,line)
+        if aliases[name]then Commands.error(line,"Cannot assign to CONST command alias '"..name.."'.")end
         if constants[name]~=nil and not (activeFunction and activeFunction.locals[name]) then Commands.error(line,"Cannot assign to CONST '"..name.."'.") end
         if functions[name] and not (activeFunction and activeFunction.locals[name]) then Commands.error(line,"Cannot assign to function '"..name.."'.") end
         if not activeFunction then mutableNames[name]=true end
     end
 	local function expression(row,start,last,required)
-		local node,pos=Expression.parse(row.tokens,start,functions)
+		local node,pos=Expression.parse(row.tokens,start,functions,aliases)
 		if row.tokens[pos].kind~=(last or "eof") or (last and row.tokens[pos+1].kind~="eof") then Commands.error(row.line,"Unexpected token after expression; expected "..(last or "end of line")..".") end
 		return resolveConstants(node,required)
 	end
@@ -122,8 +124,9 @@ local function parse(source)
 			local node={line=row.line,text=row.text}
 			if word=="function" then
                 node.kind="function"; node.name=row.tokens[2].value
+                if aliases[node.name]then Commands.error(row.line,"Function conflicts with command alias.")end
                 local fn=functions[node.name]; activeFunction=fn
-                for _,param in fn.parameters do fn.locals[param.name]=true end
+                for _,param in fn.parameters do if aliases[param.name]then Commands.error(row.line,"Parameter conflicts with command alias.")end;fn.locals[param.name]=true end
                 -- Assignments anywhere in a function are local, including before their first write.
                 local scan=cursor
                 while lines[scan] and lines[scan].indent>indent do
@@ -143,13 +146,20 @@ local function parse(source)
                 if name.kind~="id" or reserved[name.value] or Commands.known(name.value) or row.tokens[3].kind~="=" then Commands.error(row.line,"Expected CONST name = scalar expression; name must not be reserved.") end
                 if functions[name.value] then Commands.error(row.line,"Constant conflicts with function name.") end
                 if activeFunction then Commands.error(row.line,"Declare compile-time constants at top level, outside functions.") end
-                if constants[name.value]~=nil or mutableNames[name.value] then Commands.error(row.line,"Duplicate or conflicting CONST name '"..name.value.."'.") end
-                local initializer=expression(row,4,nil,true)
-                local known,value=constant(initializer)
-                if not known or Value.isArray(value) or Value.isDictionary(value) then Commands.error(row.line,"CONST requires a compile-time scalar expression.") end
-                constants[name.value]=value
-                node.kind="const" -- retained for source diagnostics; emits nothing
-                node.name=name.value; node.value=value
+                if constants[name.value]~=nil or aliases[name.value]~=nil or mutableNames[name.value] then Commands.error(row.line,"Duplicate or conflicting CONST name '"..name.value.."'.") end
+                local target=row.tokens[4]
+                if target.kind=="id"and row.tokens[5].kind=="eof"and(Commands.known(target.value)or aliases[target.value])then
+                 if indent~=0 then Commands.error(row.line,"Declare command aliases at top level.")end
+                 aliases[name.value]=aliases[target.value]or target.value
+                 node.kind="const";node.name=name.value;node.value=Value.Null
+                else
+                 local initializer=expression(row,4,nil,true)
+                 local known,value=constant(initializer)
+                 if not known or Value.isArray(value) or Value.isDictionary(value) then Commands.error(row.line,"CONST requires a compile-time scalar expression.") end
+                 constants[name.value]=value
+                 node.kind="const" -- retained for source diagnostics; emits nothing
+                 node.name=name.value; node.value=value
+                end
             elseif word=="with" then
                 if indent~=0 then Commands.error(row.line,"Thread entry blocks must be at the top level.") end
                 local t=row.tokens
@@ -193,7 +203,7 @@ local function parse(source)
 				end
 			elseif reserved[word] then Commands.error(row.line,"Unexpected or unsupported statement '"..word.."'.")
 			elseif token.kind=="id" and (row.tokens[2].kind=="." or row.tokens[2].kind=="[") then
-                local target,pos=Expression.parse(row.tokens,1,functions)
+                local target,pos=Expression.parse(row.tokens,1,functions,aliases)
                 if row.tokens[pos].kind~="=" or target.kind~="index" then Commands.error(row.line,"Expected dictionary assignment.") end
                 local root=target; while root.kind=="index" do root=root.array end
                 if root.kind=="variable" then writable(root.name,row.line) end

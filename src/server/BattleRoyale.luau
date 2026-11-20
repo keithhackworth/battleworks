@@ -6,10 +6,12 @@ local BW=require(script.Parent.BWController)
 local Components=require(Shared.VehicleComponents)
 local Hardware=require(Shared.BWChassis)
 local Motion=require(Shared.VehicleMotion)
+local Effects=require(Shared.DamageEffects)
 local Battle=require(script.Parent.LocalBattle)
 local R={};R.__index=R
 local function clearControl(tank,reason)
- BW.stop(tank,reason);BW.clearInputs(tank);tank.bw=nil
+ BW.stop(tank,reason);BW.clearInputs(tank);tank.bw=nil;tank.autonomyActive=false
+ tank.state.bwProgramKind=nil;tank.state.bwProgramName=nil
  tank.lastBWRequest=0;tank.bwRunRequestId=0
  local state=tank.state
  state.bwRunning=false;state.bwRequestId=0;state.bwRunRequestId=0
@@ -22,19 +24,21 @@ function R.new(options)
 end
 function R:reading(member,message)
  local tank=member.tank
- return {requestId=member.lastRequest,revision=member.revision,selected=if tank then tank.id else nil,epoch=if tank then tank.state.controlEpoch else nil,generation=if tank then tank.state.generation else nil,mode=if not member.inBattle then "Menu" elseif tank then "Tank" else "OnFoot",message=message}
+ return {requestId=member.lastRequest,revision=member.revision,selected=if tank then tank.id else nil,epoch=if tank then tank.state.controlEpoch else nil,generation=if tank then tank.state.generation else nil,controlMode=if tank then tank.state.controlMode else nil,personality=if tank then tank.state.personalityName else nil,mode=if not member.inBattle then "Menu" elseif tank then "Tank" else "OnFoot",message=message}
 end
 function R:notify(member,message)
  self.options.notify(member.player,self:reading(member,message))
 end
 function R:spawn(slot)
- local kind,assembly=Config.loadout(slot.index)
+ local kind,assembly=slot.kind,slot.assembly
+ if not kind then kind,assembly=Config.loadout(slot.index,if self.options.autonomy then math.random else nil);slot.kind=kind;slot.assembly=assembly end
  local tank=self.options.create(slot.id,kind,slot.index,assembly)
  if not tank then slot.retryAt=self.options.clock()+1;return end
  slot.retryAt=nil;slot.generation+=1;slot.epoch+=1;slot.tank=tank
  tank.id=slot.id;tank.public=true;tank.slot=slot;tank.owner=0
  tank.state.generation=slot.generation;tank.state.controlEpoch=slot.epoch;tank.state.public=true;tank.state.occupantUserId=nil
  tank.hitbox:SetAttribute("OwnerId",0);tank.hitbox:SetAttribute("OccupantUserId",nil)
+ if self.options.autonomy then self.options.autonomy.attach(tank,slot.index);self.options.autonomy.start(tank,self.options.clock())end
  self:attachPrompt(tank)
 end
 function R:attachPrompt(tank)
@@ -42,7 +46,7 @@ function R:attachPrompt(tank)
  if tank.prompt then tank.prompt:Destroy()end
  local slot=tank.slot
  local prompt=Instance.new("ProximityPrompt");prompt.Name="EnterPublicTank";prompt.ActionText="Enter tank"
- prompt.ObjectText="Bunny • "..(if tank.kind=="Boomer" then "Tracks" else "Wheels").." / "..(if tank.state.weaponId=="weapon.cannon" then "Cannon" else "Gatling")
+ prompt.ObjectText=(if tank.personality then tank.personality.name.." • "else "").."Bunny • "..(if tank.kind=="Boomer" then "Tracks" else "Wheels").." / "..(if tank.state.weaponId=="weapon.cannon" then "Cannon" else "Gatling")
  prompt.KeyboardKeyCode=Enum.KeyCode.E;prompt.GamepadKeyCode=Enum.KeyCode.ButtonX
  prompt.MaxActivationDistance=Config.InteractionDistance;prompt.HoldDuration=.2;prompt.RequiresLineOfSight=false;prompt.Parent=tank.hitbox
  tank.prompt=prompt
@@ -85,10 +89,15 @@ function R:enter(player,id,epoch)
  if (root.Position-(tank.state.position+Vector3.new(0,2.5,0))).Magnitude>Config.InteractionDistance then return false end
  member.lastAction=now;member.tank=tank;tank.occupant=player.UserId
  tank.slot.epoch+=1;tank.state.controlEpoch=tank.slot.epoch;tank.state.occupantUserId=player.UserId
- clearControl(tank,"Manual control.")
+ clearControl(tank,"Manual control.");tank.state.controlMode="Manual";tank.autoRestartAt=nil
  tank.prompt.Enabled=false;tank.hitbox:SetAttribute("OccupantUserId",player.UserId)
  local ok=pcall(self.options.characters.hide,self.options.characters,player,tank.state.position)
  if not ok then self:release(member,"Character unavailable.");return false end
+ -- Successful entry grants new-tank HP, not a physical/weapon/spawn reset.
+ tank.state.health=Components.get(tank.state).Chassis.Health
+ tank.state.damageByWeapon={}
+ if tank.effects then Effects.stop(tank.effects,tank.state)end
+ Effects.severity(tank.state)
  member.revision+=1;self.options.select(player,tank,member);self:notify(member)
  return true
 end
@@ -103,11 +112,13 @@ function R:release(member,reason,kill,silent,eject)
  end
  clearControl(tank,reason)
  tank.hardware=nil;Components.withComputer(tank.state,"Bunny");tank.hardware=Hardware.forTank(tank.state);BW.applyHardware(tank)
+ if tank.personality then self.options.autonomy.hardware(tank)end
  member.tank=nil;tank.occupant=nil;tank.slot.epoch+=1;tank.state.controlEpoch=tank.slot.epoch;tank.state.occupantUserId=nil
  tank.hitbox:SetAttribute("OccupantUserId",nil)
  if tank.state.health>0 and not tank.state.publicRetired then self:attachPrompt(tank)else tank.prompt.Enabled=false end
  member.revision+=1;self.options.select(member.player,nil,member)
  self.options.characters:restore(member.player,tank.state.position+Vector3.new(12,0,0),kill,ejection)
+ if tank.personality and tank.state.health>0 and not tank.state.publicRetired then self.options.autonomy.start(tank,self.options.clock())end
  if not silent then self:notify(member,reason)end;return true
 end
 function R:park(member)
@@ -138,10 +149,19 @@ function R:join(member)
 end
 function R:request(player,action,requestId,id,epoch)
  local member=self.members[player.UserId]
- if not member or (action~="Sync" and action~="Enter" and action~="Exit" and action~="Menu" and action~="Join") or type(requestId)~="number" or requestId~=requestId or requestId%1~=0 or requestId<1 or requestId>1e9 or requestId<=member.lastRequest then return false end
+ if not member or (action~="Sync" and action~="Enter" and action~="Exit" and action~="Menu" and action~="Join" and action~="Auto" and action~="Manual") or type(requestId)~="number" or requestId~=requestId or requestId%1~=0 or requestId<1 or requestId>1e9 or requestId<=member.lastRequest then return false end
  member.lastRequest=requestId
  if action=="Sync"then
   local now=os.clock();if now-(member.lastSync or -math.huge)<.5 then return false end;member.lastSync=now;self:notify(member);return true
+ elseif action=="Auto"or action=="Manual"then
+  local tank=self:controlled(player,id,epoch)
+  if not tank or not tank.personality then return false end
+  local now=os.clock();if now-member.lastAction<Config.ActionInterval then member.revision+=1;self:notify(member,"Please wait before switching control mode.");return false end
+  member.lastAction=now
+  clearControl(tank,"Control mode changed.")
+  tank.slot.epoch+=1;tank.state.controlEpoch=tank.slot.epoch
+  if action=="Auto"then self.options.autonomy.start(tank,self.options.clock())else tank.state.controlMode="Manual";tank.autoRestartAt=nil end
+  member.revision+=1;self.options.select(player,tank,member);self:notify(member);return true
  elseif action=="Menu"then return self:menu(member)
  elseif action=="Join"then return self:join(member)
  elseif action=="Enter"then return self:enter(player,id,epoch)
@@ -177,6 +197,7 @@ function R:step()
   if tank and tank.state.health>0 and self.options.hazard and self.options.hazard(tank.state.position)then
    Battle.environmentDamage(self.battle,tank)
   end
+  if tank and self.options.autonomy then self.options.autonomy.step(tank,now)end
   if tank and tank.state.health<=0 then self:destroyed(tank)end
   if tank and tank.retireAt and now>=tank.retireAt then
    tank.promptConnection:Disconnect();self.options.remove(slot.id,tank);slot.tank=nil;self:spawn(slot)

@@ -34,7 +34,7 @@ try {
   // Native mesh fixtures approach Luau Web's fixed heap. Load their actual
   // production dependency graph, without compiling unrelated UI/server loaders.
   // The full syntax pass and other groups still compile every source file.
-  if (groupIndex === 45) {
+  if (groupIndex === 5 || groupIndex === 42 || groupIndex === 45 || groupIndex === 53 || groupIndex === 56 || groupIndex === 59 || groupIndex === 61 || groupIndex === 64) {
     const byName = new Map([...sources].map(([file, source]) => [file.split('/').pop().replace('.luau',''), {file, source}]));
     const needed = new Set();
     function include(name) {
@@ -44,11 +44,14 @@ try {
       needed.add(name);
       for (const match of entry.source.matchAll(/require\(([^)]+)\)/g)) {
         const dependency=match[1].match(/(?:\.|["'])(\w+)["']?$/)?.[1];
+        if (!dependency && name==='InputController' && match[1]==='module') continue; // Roblox PlayerModule, supplied by the existing require stand-in
         if (!dependency) throw new Error(`Unresolved fixture dependency: ${match[0]}`);
         include(dependency);
       }
     }
-    const fixture=await readFile('tests/BulkAssetCollision.spec.luau','utf8');
+    const fixtures=groupIndex===5?['BW','BWBestEffort','Battle','DamageEffects','Scanner']:[(groupIndex===45||groupIndex===42)?'BulkAssetCollision':groupIndex===64?'BWRetention':groupIndex===59?'PlaygroundAutonomyIntegration':groupIndex===61?'PlaygroundEditorProgramIntegration':'BWPersonalities'];
+    let fixture=(await Promise.all(fixtures.map(name=>readFile('tests/'+name+'.spec.luau','utf8')))).join('\n');
+    if(groupIndex===59||groupIndex===61){include('ServerEntrypoint');const boot=await readFile('tests/RoyaleServerIntegration.spec.luau','utf8');const setup=await readFile('tests/ServerIntegration.spec.luau','utf8');fixture+='\n'+boot.slice(0,boot.indexOf('advance(4)'))+'\n'+setup.slice(0,setup.indexOf(' require("ServerEntrypoint")'));}
     for (const match of fixture.matchAll(/require\("(\w+)"\)/g)) include(match[1]);
     for (const file of sources.keys()) if (!needed.has(file.split('/').pop().replace('.luau',''))) sources.delete(file);
   }
@@ -70,7 +73,7 @@ try {
         ? await readFile('tests/fixtures/SwappedVehicleAssemblies.luau', 'utf8') : originalSource;
     const name = file.split('/').pop().replace('.luau', '');
     const parent = file.includes('/shell/') ? 'Shell' : file.includes('/shared/') ? 'Shared' : 'Client';
-    bundle += `\nloaders[${JSON.stringify(name)}] = function()\nlocal script = { Parent = ${parent}, PlaygroundBuilder = "PlaygroundBuilder", RoyaleCharacters = "RoyaleCharacters", BattleRoyale = "BattleRoyale", BWController = "BWController", LocalBattle = "LocalBattle", WorldTestContext = "WorldTestContext", StudioWorldSelector = "StudioWorldSelector", StudioAssetPlacement = "StudioAssetPlacement", WorldObjects = "WorldObjects", DirectionalScanner = "DirectionalScanner", ManualScanner = "ManualScanner", EnvironmentBuilder = "EnvironmentBuilder", PlayerWorldStorage = "PlayerWorldStorage", PlayerWorldService = "PlayerWorldService", EditorAssetCatalog = "EditorAssetCatalog", PracticeTargets = "PracticeTargets", ProjectileSimulation = "ProjectileSimulation" }\n${source}\nend\n`;
+    bundle += `\nloaders[${JSON.stringify(name)}] = function()\nlocal script = { Parent = ${parent}, PlaygroundAutonomy = "PlaygroundAutonomy", PlaygroundBuilder = "PlaygroundBuilder", RoyaleCharacters = "RoyaleCharacters", BattleRoyale = "BattleRoyale", BWController = "BWController", LocalBattle = "LocalBattle", WorldTestContext = "WorldTestContext", StudioWorldSelector = "StudioWorldSelector", StudioAssetPlacement = "StudioAssetPlacement", WorldObjects = "WorldObjects", DirectionalScanner = "DirectionalScanner", ManualScanner = "ManualScanner", EnvironmentBuilder = "EnvironmentBuilder", PlayerWorldStorage = "PlayerWorldStorage", PlayerWorldService = "PlayerWorldService", EditorAssetCatalog = "EditorAssetCatalog", PracticeTargets = "PracticeTargets", ProjectileSimulation = "ProjectileSimulation" }\n${source}\nend\n`;
   }
   bundle += `\nloaders.EditorState=function()\n${await readFile('studio/world-builder/EditorState.luau','utf8')}\nend\n`;
   bundle += '\nrequire = function(name)\nif name == "PlayerModule" then return { GetControls = function() return defaultControls end } end\nif cache[name] == nil then cache[name] = assert(loaders[name], "Unknown module " .. tostring(name))() end\nreturn cache[name]\nend\n';
@@ -136,6 +139,12 @@ try {
     ['BWPersonalityFailures'],
     ['ProvingGround'],
     ['TerrainMaterials'],
+    ['PlaygroundAutonomyIntegration'],
+    ['BWEditorStatus'],
+    ['PlaygroundEditorProgramIntegration'],
+    ['BWCommandAliases'],
+    ['BWTankSource'],
+    ['BWRetention'],
   ];
   if (groupIndex === null) {
     const worldTests = spawnSync(process.execPath, ['--test', ...(await readdir('tests')).filter(name=>name.endsWith('.test.js')).sort().map(name=>'tests/'+name)], { stdio: 'inherit' });
@@ -154,6 +163,13 @@ try {
       if(suite==='RoyaleTeamClientIntegration'){
         const source=await readFile('tests/RoyaleClientIntegration.spec.luau','utf8');
         tests+='\ndo\n'+source.replace('IsStudio=function() return false end','IsStudio=function() return true end')+'\nend\n';
+      } else if(suite==='PlaygroundAutonomyIntegration'||suite==='PlaygroundEditorProgramIntegration'){
+        const harness=await readFile('tests/ServerIntegration.spec.luau','utf8');
+        const setup=harness.slice(0,harness.indexOf(' require("ServerEntrypoint")'));
+        let boot=await readFile('tests/RoyaleServerIntegration.spec.luau','utf8');
+        boot=boot.slice(0,boot.indexOf('advance(4)')).replace('require("BattleRoyaleConfig").TankCount=6','').replace('require("BattleRoyaleConfig").Personalities=false','');
+        if(suite==='PlaygroundEditorProgramIntegration')boot=boot.replace('require("ServerEntrypoint")','require("BattleRoyaleConfig").TankCount=2\nrequire("ServerEntrypoint")');
+        tests+='\ndo\nlocal headlessStartup=false\n'+setup+boot+await readFile('tests/'+suite+'.spec.luau','utf8')+'\nend\n';
       } else if(suite==='RoyaleServerIntegration'||suite==='RoyaleHeadlessServerIntegration'){
         const harness=await readFile('tests/ServerIntegration.spec.luau','utf8');
         let setup=harness.slice(0,harness.indexOf(' require("ServerEntrypoint")'));
@@ -170,6 +186,7 @@ try {
           const {createRequire}=await import('node:module');
           const {build}=createRequire(import.meta.url)('../tools/build-bw-personalities.js');
           const allProfiles=JSON.parse(await readFile('programs/personalities/profiles.json','utf8'));
+          tests+='\nlocal steeringSource='+JSON.stringify(await readFile('programs/lib/core.bw','utf8')+'\nturn_to(90)')+'\n';
           const profiles=allProfiles;
           tests+='\nlocal hunterSource='+JSON.stringify(build(allProfiles.find(p=>p.id==='P06')))+'\n';
           tests+='\nlocal personalityMinimums={'+profiles.map(p=>'['+JSON.stringify(p.id)+']={'+Object.entries(p.constraints).map(([k,v])=>'['+JSON.stringify(k)+']='+v.min).join(',')+'}').join(',')+'}\n';

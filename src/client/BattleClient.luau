@@ -87,7 +87,7 @@ end,function()
     if not active or not driving then return bwRequest end
 	bwRequest+=1; bwStop:FireServer(bwRequest,selectedId,controlEpoch)
 	return bwRequest
-end,function(configuration) if active and driving then bwHardware:FireServer(configuration,selectedId,controlEpoch) end end)
+end,function(configuration) if active and driving then bwHardware:FireServer(configuration,selectedId,controlEpoch) end end,function()if active and driving and selectedId then bwRuntimeState:FireServer("Source",selectedId,controlEpoch)end end)
 ide.gui.Enabled=false
 bwRuntimeState.OnClientEvent:Connect(function(id,reading) if active and (not royale or (driving and id==selectedId and reading.controlEpoch==controlEpoch)) then ide:receiveRuntime(id,reading) end end)
 local resetButton=Instance.new("TextButton")
@@ -114,7 +114,7 @@ snapshot.OnClientEvent:Connect(function(nextStates,battles)
  if royale and (not driving or not own or own.controlEpoch~=controlEpoch)then own=nil end
  if ownId then ide:bind(ownId)end
 	if own then bwRequest=math.max(bwRequest,own.bwRequestId or 0) end
-	controller:setExternalControl(not own or own.bwRunning==true or own.health<=0)
+	controller:setExternalControl(not own or own.bwRunning==true or own.controlMode=="Auto" or own.health<=0)
 	if battlefieldCamera:observe(states[ownId]) and renderers[ownId] then
 		renderers[ownId]:resetPose(states[ownId])
 	end
@@ -193,7 +193,7 @@ function self:setActive(enabled)
   battlefieldCamera.gui:SetAttribute("PauseCamera",false)
   TankRenderers.sync(renderers,states,Renderer.new)
   local own=states[selectedId]
-  controller:setExternalControl(not own or own.bwRunning==true or own.health<=0)
+  controller:setExternalControl(not own or own.bwRunning==true or own.controlMode=="Auto" or own.health<=0)
  else
   controller:setExternalControl(true); controller:release(); ide:close()
   local focused=game:GetService("UserInputService"):GetFocusedTextBox()
@@ -238,13 +238,13 @@ function self:setControl(reading)
  if driving then
   local camera=workspace.CurrentCamera
   if camera then savedCamera={camera=camera,CameraType=camera.CameraType,CameraSubject=camera.CameraSubject,CFrame=camera.CFrame,Focus=camera.Focus,FieldOfView=camera.FieldOfView,FieldOfViewMode=camera.FieldOfViewMode}end
-  ide:bind(selectedId) -- request IDs stay monotonic across this client's leases
+  ide:bind(selectedId);ide:setControlEpoch(controlEpoch) -- request IDs stay monotonic across this client's leases
   battlefieldCamera.layoutKey=nil;battlefieldCamera.lastState=nil;battlefieldCamera.focus=nil
  else restoreCharacterCamera()end
  gui.Enabled=active and driving;ide.gui.Enabled=active and driving;battlefieldCamera.gui.Enabled=active and driving
  if battlefieldCamera.testPanel and battlefieldCamera.testPanel.gui then battlefieldCamera.testPanel.gui.Enabled=active and driving end
  local own=states[selectedId]
- controller:setExternalControl(not driving or not own or own.controlEpoch~=controlEpoch or own.bwRunning==true or own.health<=0)
+ controller:setExternalControl(not driving or not own or own.controlEpoch~=controlEpoch or own.bwRunning==true or own.controlMode=="Auto" or own.health<=0)
  elapsed=0
  return true
 end

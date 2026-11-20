@@ -1,10 +1,12 @@
 -- Compact in-game editor. Only source text/Stop intent go to the server.
 local Config=require(game.ReplicatedStorage.Shared.BWConfig)
 local EditorController=require(script.Parent.BWEditorController)
+local Parser=require(game.ReplicatedStorage.Shared.BWParser)
 local Hardware=require(game.ReplicatedStorage.Shared.BWChassis)
 local HandbookView=require(script.Parent.BWHandbookView)
 local IDE={}
 IDE.__index=IDE
+local statusKeys={"generation","controlEpoch","bwProgramSerial","bwRunRequestId","bwRequestId","bwRunning","bwProgramKind","tankType","bwStatus","bwLine","bwIndex","bwCount","bwInstruction","bwMessage","bwWarning","bwSkipped"}
 local function text(parent,class,name)
 	local item=Instance.new(class); item.Name=name; item.Font=Enum.Font.Code; item.TextSize=14
 	item.TextColor3=Color3.fromRGB(238,239,220); item.BackgroundColor3=Color3.fromRGB(31,39,45)
@@ -39,25 +41,29 @@ function IDE.pages(message)
  local pages={}; for i=#reversed,1,-1 do table.insert(pages,reversed[i]) end
  return pages
 end
-function IDE.new(playerGui,onRun,onStop,onConfigure)
-	local self=setmetatable({connections={},running=false,sources={},requests={},scanOutputs={},minimumScanRequests={}},IDE)
+function IDE.new(playerGui,onRun,onStop,onConfigure,onSource)
+	local self=setmetatable({onSource=onSource,connections={},running=false,sources={},requests={},scanOutputs={},minimumScanRequests={},submittedPrograms={},serverSources={},sourceBaselines={},dirtyDrafts={},editedDrafts={}},IDE)
 	local gui=Instance.new("ScreenGui"); gui.Name="BWEditor"; gui.ResetOnSpawn=false
-	gui:SetAttribute("EditorVersion","E3.2-history")
+	gui:SetAttribute("EditorVersion","E3.3-live")
 	gui.ScreenInsets=Enum.ScreenInsets.CoreUISafeInsets; gui.DisplayOrder=30; gui.Parent=playerGui; self.gui=gui
 	local toggle=text(gui,"TextButton","ToggleBW")
 	toggle.AnchorPoint=Vector2.new(1,0); toggle.Position=UDim2.new(1,-8,0,172); toggle.Size=UDim2.fromOffset(194,26)
-	toggle.Text="BW Editor • E3.2"; toggle.Selectable=true; self.toggle=toggle
+	toggle.Text="BW Editor • E3.3"; toggle.Selectable=true; self.toggle=toggle
 	local frame=Instance.new("Frame"); frame.Name="EditorPanel"; frame.AnchorPoint=Vector2.new(0.5,0.5)
 	frame.Position=UDim2.fromScale(0.5,0.5); frame.Size=UDim2.fromScale(0.94,0.88)
 	frame.BackgroundColor3=Color3.fromRGB(21,28,33); frame.Active=true; frame.Visible=false; frame.Parent=gui; self.frame=frame
 	local size=Instance.new("UISizeConstraint"); size.MaxSize=Vector2.new(780,620); size.MinSize=Vector2.new(240,260); size.Parent=frame
 	local current=text(frame,"TextLabel","CurrentInstruction")
-	current.Position=UDim2.fromOffset(12,8); current.Size=UDim2.new(1,-206,0,28)
+	current.Position=UDim2.fromOffset(12,32); current.Size=UDim2.new(1,-206,0,14)
 	current.BackgroundTransparency=1; current.TextXAlignment=Enum.TextXAlignment.Left; current.TextSize=12; current.TextWrapped=true
 	current.Text="BW v0.2 • Ready"; self.current=current
-	local run=text(frame,"TextButton","Run"); run.Position=UDim2.new(1,-184,0,8); run.Size=UDim2.fromOffset(78,28)
+ local execution=text(frame,"TextLabel","ExecutionPosition")
+ execution.Position=UDim2.fromOffset(12,47);execution.Size=UDim2.new(1,-206,0,13)
+ execution.BackgroundTransparency=1;execution.TextXAlignment=Enum.TextXAlignment.Left;execution.TextSize=11
+ execution.Text="Execution: stopped";self.execution=execution
+	local run=text(frame,"TextButton","Run"); run.Position=UDim2.new(1,-184,0,32); run.Size=UDim2.fromOffset(78,28)
 	run.Text="Run"; run.BackgroundColor3=Color3.fromRGB(43,120,64); run.Selectable=true; self.run=run
-	local stop=text(frame,"TextButton","Stop"); stop.Position=UDim2.new(1,-96,0,8); stop.Size=UDim2.fromOffset(84,28)
+	local stop=text(frame,"TextButton","Stop"); stop.Position=UDim2.new(1,-96,0,32); stop.Size=UDim2.fromOffset(84,28)
 	stop.Text="Stop"; stop.BackgroundColor3=Color3.fromRGB(153,62,39); stop.Selectable=true; self.stop=stop
 	local scroll=Instance.new("ScrollingFrame"); scroll.Name="SourceScroll"
 	scroll.Position=UDim2.fromOffset(12,44); scroll.Size=UDim2.new(1,-24,0.75,-64)
@@ -66,12 +72,14 @@ function IDE.new(playerGui,onRun,onStop,onConfigure)
 	local gutter=text(scroll,"TextLabel","LineNumbers"); gutter.Size=UDim2.fromOffset(34,200)
 	gutter.TextXAlignment=Enum.TextXAlignment.Right; gutter.TextYAlignment=Enum.TextYAlignment.Top; gutter.BackgroundTransparency=1
 	gutter.TextColor3=Color3.fromRGB(132,150,157); self.gutter=gutter
-	local editor=text(scroll,"TextBox","Source"); editor.Position=UDim2.fromOffset(42,0)
+	local highlight=Instance.new("Frame");highlight.Name="ExecutionLineHighlight";highlight.BackgroundColor3=Color3.fromRGB(83,146,86);highlight.BackgroundTransparency=.7;highlight.BorderSizePixel=0;highlight.Active=false;highlight.Visible=false;highlight.Parent=scroll;self.executionHighlight=highlight
+ local editor=text(scroll,"TextBox","Source"); editor.Position=UDim2.fromOffset(42,0)
 	editor.MultiLine=true; editor.ClearTextOnFocus=false; editor.TextWrapped=false
 	editor.TextXAlignment=Enum.TextXAlignment.Left; editor.TextYAlignment=Enum.TextYAlignment.Top
+	editor.BackgroundTransparency=1;editor.ZIndex=2;gutter.ZIndex=2
 	editor.Text=Config.DefaultSource; self.editor=editor
  local tools=Instance.new("Frame"); tools.Name="SourceTools"; tools.BackgroundTransparency=1
- tools.Position=UDim2.fromOffset(12,66); tools.Size=UDim2.new(1,-24,0,24); tools.Parent=frame; self.sourceTools=tools
+ tools.Position=UDim2.fromOffset(12,90); tools.Size=UDim2.new(1,-24,0,24); tools.Parent=frame; self.sourceTools=tools
  local undo=text(tools,"TextButton","Undo"); undo.Size=UDim2.fromOffset(54,22); undo.Text="Undo"; undo.TextSize=11; self.undo=undo
  local redo=text(tools,"TextButton","Redo"); redo.Position=UDim2.fromOffset(60,0); redo.Size=UDim2.fromOffset(54,22); redo.Text="Redo"; redo.TextSize=11; self.redo=redo
  local pasteMode=text(tools,"TextButton","PasteMode"); pasteMode.Position=UDim2.fromOffset(124,0); pasteMode.Size=UDim2.new(1,-124,0,22)
@@ -94,9 +102,9 @@ function IDE.new(playerGui,onRun,onStop,onConfigure)
     local logStatus=text(frame,"TextLabel","LogStatus"); logStatus.Position=UDim2.new(0,134,.75,-46); logStatus.Size=UDim2.new(1,-146,0,28)
     logStatus.TextSize=11; logStatus.TextWrapped=true; logStatus.TextXAlignment=Enum.TextXAlignment.Left; logStatus.BackgroundTransparency=1; self.logStatus=logStatus
 	local hardware=text(frame,"TextButton","Hardware")
-    hardware.Position=UDim2.new(.5,6,0,39); hardware.Size=UDim2.new(.5,-18,0,22); hardware.Text="Hardware / threads"; self.hardwareButton=hardware
-    scroll.Position=UDim2.fromOffset(12,94); scroll.Size=UDim2.new(1,-24,0.75,-148)
-    local panel=Instance.new("Frame"); panel.Name="HardwarePanel"; panel.Position=UDim2.fromOffset(12,66); panel.Size=UDim2.new(1,-24,0.75,-120)
+    hardware.Position=UDim2.new(.5,6,0,63); hardware.Size=UDim2.new(.5,-18,0,22); hardware.Text="Hardware / threads"; self.hardwareButton=hardware
+    scroll.Position=UDim2.fromOffset(12,118); scroll.Size=UDim2.new(1,-24,0.75,-172)
+    local panel=Instance.new("Frame"); panel.Name="HardwarePanel"; panel.Position=UDim2.fromOffset(12,90); panel.Size=UDim2.new(1,-24,0.75,-144)
     panel.BackgroundColor3=Color3.fromRGB(21,28,33); panel.Visible=false; panel.Parent=frame; self.hardwarePanel=panel
     local configEditor=text(panel,"TextBox","HardwareConfiguration"); configEditor.Position=UDim2.fromOffset(0,0); configEditor.Size=UDim2.new(.5,-4,1,-32)
     configEditor.MultiLine=true; configEditor.ClearTextOnFocus=false; configEditor.TextXAlignment=Enum.TextXAlignment.Left; configEditor.TextYAlignment=Enum.TextYAlignment.Top; configEditor.TextSize=12; self.configEditor=configEditor
@@ -106,10 +114,16 @@ function IDE.new(playerGui,onRun,onStop,onConfigure)
     local apply=text(panel,"TextButton","ApplyHardware"); apply.Position=UDim2.new(0,0,1,-28); apply.Size=UDim2.new(.5,-4,0,28); apply.Text="Apply (program stopped)"; self.applyHardware=apply
     self.runtimeReadings={}
     local handbook=text(frame,"TextButton","OpenHandbook")
-    handbook.Position=UDim2.fromOffset(12,39); handbook.Size=UDim2.new(.5,-18,0,22)
+    handbook.Position=UDim2.fromOffset(12,63); handbook.Size=UDim2.new(.5,-18,0,22)
     handbook.Text="BW Handbook"; handbook.TextSize=12; handbook.Selectable=true; self.handbookButton=handbook
     self.handbook=HandbookView.new(frame)
     local function connect(event,callback) table.insert(self.connections,event:Connect(callback)) end
+ local title=text(frame,"TextLabel","EditorTitleBar");title.Position=UDim2.fromOffset(0,0);title.Size=UDim2.new(1,-148,0,24);title.Text="BW Editor • drag to move";title.Active=true;self.titleBar=title
+ local close=text(frame,"TextButton","CloseEditor");close.Position=UDim2.new(1,-32,0,0);close.Size=UDim2.fromOffset(32,24);close.Text="×";self.closeButton=close
+ connect(close.Activated,function()self:close()end)
+ local tankCode=text(frame,"TextButton","LoadTankCode");tankCode.Position=UDim2.new(1,-148,0,0);tankCode.Size=UDim2.fromOffset(116,24);tankCode.Text="Tank code";tankCode.Visible=false;self.tankCode=tankCode
+ connect(tankCode.Activated,function()local reading=self.serverSources[self.tankId];if reading then self:loadTankSource(reading)end end)
+ self.window=require(script.Parent.BWEditorWindow).attach(gui,frame,title,connect)
 	connect(older.Activated,function()
         self.output:ReleaseFocus(); self.output.SelectionStart=-1
         self.logPageIndex=math.max(1,(self.currentLogPage or #(self.outputPages or {}))-1)
@@ -131,17 +145,20 @@ function IDE.new(playerGui,onRun,onStop,onConfigure)
     end)
     connect(toggle.Activated,function()
 		frame.Visible=not frame.Visible
+  if frame.Visible and self.onSource then self.onSource()end
 		if not frame.Visible then self:close() end
 	end)
 	connect(run.Activated,function()
-		if self.running or self.pendingRequest then return end
-		self:close()
+		if (self.running and not self.personalityRunning)or self.pendingRequest then return end
+		self.editorController:release();self.handbook:close();editor:ReleaseFocus();self.output:ReleaseFocus()
 		local source=editor.Text
 		self.logPageIndex=nil; self.fullOutputMessage=nil
 		self.pendingRequest=onRun(source)
 		if self.tankId then
 			self.scanOutputs[self.tankId]=nil
 			self.minimumScanRequests[self.tankId]=self.pendingRequest
+   local own=self.lastObservedState
+   self.submittedPrograms[self.tankId]={source=source,requestId=self.pendingRequest,generation=own and own.generation or 0,epoch=own and own.controlEpoch}
 		end
 		self:setOutput("Submitted for server validation…")
 	end)
@@ -152,8 +169,14 @@ function IDE.new(playerGui,onRun,onStop,onConfigure)
 	end)
  self.lastEditorText=editor.Text
  self.editorController=EditorController.new(editor,function(source)
-  self.lastEditorText=source; self:layoutSource()
+  self.lastEditorText=source
+  if self.tankId and not self.loadingTankSource then
+   self.dirtyDrafts[self.tankId]=source~=((self.serverSources[self.tankId]and self.serverSources[self.tankId].text)or self.sourceBaselines[self.tankId]or Config.DefaultSource)
+   if self.dirtyDrafts[self.tankId]then self.editedDrafts[self.tankId]=true end
+  end
+  self:layoutSource();self:sourceStatusChanged();self:refreshSourceTitle()
  end)
+ connect(editor:GetPropertyChangedSignal("CursorPosition"),function()self:renderEditorStatus()end)
  connect(pasteMode.Activated,function()
   self.editorController:release(); self.editorController.smartPaste=not self.editorController.smartPaste
   pasteMode.Text=if self.editorController.smartPaste then "Paste: align" else "Paste: exact"
@@ -163,10 +186,11 @@ function IDE.new(playerGui,onRun,onStop,onConfigure)
  connect(redo.Activated,function() self.editorController:release(); self.editorController:focus(); self.editorController:key("redo") end)
 	connect(scroll:GetPropertyChangedSignal("AbsoluteSize"),function() self:layoutSource() end)
 	connect(outputScroll:GetPropertyChangedSignal("AbsoluteSize"),function() self:layoutOutput(false) end)
-	self:layoutSource(); self:layoutOutput(false)
+	self:layoutSource(); self:layoutOutput(false);self:sourceStatusChanged()
 	return self
 end
 function IDE:close()
+ if self.window then self.window.stop()end
  self.editorController:release()
 	self.handbook:close()
 	self.output:ReleaseFocus()
@@ -185,17 +209,35 @@ function IDE:bind(id)
 	self.editor:ReleaseFocus()
 	self.output:ReleaseFocus()
 	self.logPageIndex=nil; self.fullOutputMessage=nil; self.outputPages=nil; self.currentLogPage=nil
-	self.tankId=id; self.editorController:bind(id,self.sources[id] or Config.DefaultSource)
-	self.pendingRequest=self.requests[id]; self.running=false
-	self:layoutSource()
+	self.tankId=id;self.loadingTankSource=true
+ self.editorController:bind(id,self.sources[id] or Config.DefaultSource)
+ self.loadingTankSource=false
+	self.statusMemoTank=nil;self.renderedDiagnosticTank=nil
+	self.pendingRequest=self.requests[id]; self.running=false;self.personalityRunning=false;self.lastObservedState=nil
+	self:layoutSource();self:sourceStatusChanged();self:refreshSourceTitle()
+end
+-- A public tank may have many control leases with reset client request IDs.
+-- Keep drafts, but never carry a previous lease's output/request fences across.
+function IDE:setControlEpoch(epoch)
+ if self.controlEpoch==epoch and self.controlTankId==self.tankId then return end
+ self.statusMemoTank=nil;self.renderedDiagnosticTank=nil
+ self.controlTankId=self.tankId;self.controlEpoch=epoch;self.pendingRequest=nil;self.lastObservedState=nil
+ if self.tankId then
+  self.scanOutputs[self.tankId]=nil;self.minimumScanRequests[self.tankId]=0
+  self.runtimeReadings[self.tankId]=nil;self.requests[self.tankId]=nil;self.serverSources[self.tankId]=nil
+ end
+ self:renderEditorStatus();self:refreshSourceTitle()
+ if self.tankId and self.onSource then self.onSource()end
 end
 -- Exact observations arrive privately, separate from public tank snapshots.
 function IDE:receiveOutput(id,generation,requestId,reading)
 	if requestId<(self.minimumScanRequests[id] or 0) then return end
 	local output=self.scanOutputs[id]
-	if output and (generation<output.generation or (generation==output.generation and requestId<output.requestId)) then return end
-	if not output or output.generation~=generation or output.requestId~=requestId then
-		output={generation=generation,requestId=requestId,readings={},text=""}; self.scanOutputs[id]=output
+ local serial=reading.programSerial or 0
+ if output and generation==output.generation and requestId==output.requestId and serial<(output.programSerial or 0)then return end
+ if output and (generation<output.generation or (generation==output.generation and requestId<output.requestId)) then return end
+	if not output or output.generation~=generation or output.requestId~=requestId or output.programSerial~=serial then
+		output={generation=generation,requestId=requestId,programSerial=serial,programKind=reading.programKind,programName=reading.programName,readings={},text=""}; self.scanOutputs[id]=output
 	end
 	output.receivedCount=(output.receivedCount or 0)+1
  if reading.kind=="print" then output.receivedPrints=(output.receivedPrints or 0)+1 end
@@ -224,9 +266,10 @@ function IDE:setOutput(message,force)
 	-- Keep live log updates from clearing a selection while the player copies.
 	if game:GetService("UserInputService"):GetFocusedTextBox()==self.output then
         local first,last=self.output.SelectionStart or -1,self.output.CursorPosition or -1
-        if first>0 and last>0 and first~=last then return end
+        if first>0 and last>0 and first~=last then self.outputNeedsRefresh=true;return end
     end
-	local pages=self.outputPages
+	self.outputNeedsRefresh=false
+ local pages=self.outputPages
     if force or self.fullOutputMessage~=message or not pages then
         self.fullOutputMessage=message; pages=IDE.pages(message); self.outputPages=pages
     end
@@ -265,6 +308,63 @@ function IDE:layoutSource()
 	self.editor.Size=UDim2.fromOffset(width,height); self.gutter.Size=UDim2.fromOffset(34,height)
 	self.gutter.Text=table.concat(numbers,"\n"); self.scroll.CanvasSize=UDim2.fromOffset(width+48,height)
 end
+-- The header describes the visible source/caret, never the tank VM's unrelated
+-- program (for example an expanded autonomous personality with library lines).
+function IDE:renderEditorStatus()
+ local source=self.editor.Text
+ local cursor=self.editor.CursorPosition
+ if not cursor or cursor<1 then cursor=self.editorController and self.editorController.history.current.cursor or 1 end
+ cursor=math.clamp(cursor,1,#source+1)
+ local _,lineBreaks=source:sub(1,cursor-1):gsub("\n","")
+ local _,allBreaks=source:gsub("\n","")
+ local suffix="instruction …"
+ if self.statusSource==source then
+  if self.statusError then suffix="instruction — (syntax error)"
+  else
+   local index=0
+   for _,entry in self.statusInstructions do if entry.line<=lineBreaks+1 then index=entry.index end end
+   suffix=string.format("instruction %d/%d",index,#self.statusInstructions)
+  end
+ end
+ self.current.Text=string.format("Line %d/%d • %s",lineBreaks+1,allBreaks+1,suffix)
+ self.executionHighlight.Visible=false
+ local own=self.lastObservedState;local submitted=self.submittedPrograms[self.tankId]
+ if own and own.bwRunning then
+  local authoritative=self.serverSources[self.tankId]
+  local matching=(submitted and submitted.source==source and submitted.generation==(own.generation or 0)and submitted.requestId==(own.bwRunRequestId or own.bwRequestId or 0)and submitted.epoch==own.controlEpoch)or(authoritative and authoritative.text==source and authoritative.generation==(own.generation or 0)and authoritative.epoch==own.controlEpoch and authoritative.programSerial==own.bwProgramSerial)
+  if matching then
+   self.execution.Text=string.format("Running line %d • instruction %d/%d",own.bwLine or 0,own.bwIndex or 0,own.bwCount or 0)
+   local line=own.bwLine or 0
+   if line>=1 and line<=allBreaks+1 then
+    local bounds=self.editor.TextBounds
+    local row=if bounds and bounds.Y>0 then bounds.Y/(allBreaks+1)else 18
+    self.executionHighlight.Position=UDim2.fromOffset(42,(line-1)*row)
+    self.executionHighlight.Size=UDim2.new(0,self.editor.Size.X.Offset,0,row)
+    self.executionHighlight.Visible=true
+   end
+  else self.execution.Text="Execution: different program running in tank"end
+ elseif self.pendingRequest then self.execution.Text="Execution: awaiting server"
+ else self.execution.Text="Execution: "..(own and own.bwStatus or "stopped")end
+end
+function IDE:sourceStatusChanged()
+ self.statusRevision=(self.statusRevision or 0)+1
+ local revision=self.statusRevision;local source=self.editor.Text
+ self:renderEditorStatus()
+ -- Do not compile the buffer on every render/cursor movement. Debounce typing;
+ -- an old callback cannot overwrite a replacement/switch/undo's source mapping.
+ task.delay(.2,function()
+  if self.destroyed or self.statusRevision~=revision or self.editor.Text~=source then return end
+  local parsed,err=Parser.parse(source);local entries={}
+  if parsed then
+   local ids={};for id in parsed.streams do table.insert(ids,id)end;table.sort(ids)
+   for _,id in ids do for _,instruction in ipairs(parsed.streams[id])do
+    table.insert(entries,{line=instruction.line,index=#entries+1})
+   end end
+  end
+  self.statusSource=source;self.statusError=err;self.statusInstructions=entries
+  self:renderEditorStatus()
+ end)
+end
 function IDE:parseHardware(source)
  local lines={}; for line in (source.."\n"):gmatch("([^\n]*)\n") do if line:match("%S") then table.insert(lines,line) end end
  local config={tier=lines[1],devices={}}
@@ -276,13 +376,44 @@ function IDE:parseHardware(source)
  local ok,reason=Hardware.validate(config); if not ok then return nil,reason end
  return config
 end
+function IDE:refreshSourceTitle()
+ local source=self.serverSources[self.tankId]
+ self.tankCode.Visible=source~=nil
+ self.titleBar.Text=if source then source.name..(if self.dirtyDrafts[self.tankId]then " • local draft"else " • drag to move")else "BW Editor • drag to move"
+end
+function IDE:loadTankSource(source)
+ self.loadingTankSource=true
+ self.editorController:loadSource(source.text)
+ self.loadingTankSource=false
+ self.sourceBaselines[self.tankId]=source.text;self.dirtyDrafts[self.tankId]=false;self.editedDrafts[self.tankId]=false
+ self.sources[self.tankId]=source.text;self:refreshSourceTitle();self:renderEditorStatus()
+end
+function IDE:receiveTankSource(id,reading)
+ local source=reading.source
+ if type(source)~="table"or type(source.text)~="string"then return end
+ source=table.clone(source);source.name=if type(source.name)=="string"then source.name else "Tank program";source.generation=reading.generation;source.requestId=reading.requestId;source.epoch=reading.controlEpoch
+ self.serverSources[id]=source
+ if id~=self.tankId then return end
+ if self.editor.Text==source.text then
+  self.sourceBaselines[id]=source.text;self.dirtyDrafts[id]=false
+ elseif not self.dirtyDrafts[id]and not self.editedDrafts[id]then self:loadTankSource(source)else self.dirtyDrafts[id]=true end
+ self:refreshSourceTitle();self:renderEditorStatus()
+end
 function IDE:receiveRuntime(id,reading)
  local old=self.runtimeReadings[id]
+ if old and reading.generation~=nil and old.generation~=nil then
+  if reading.generation<old.generation or (reading.generation==old.generation and reading.requestId~=nil and old.requestId~=nil and reading.requestId<old.requestId)then return end
+ end
  if not reading.configurationResult and old then reading.configurationResult=old.configurationResult end
  self.runtimeReadings[id]=reading
+ self:receiveTankSource(id,reading)
 end
 function IDE:renderRuntime()
  local reading=self.runtimeReadings[self.tankId]; if not reading then return end
+ local own=self.lastObservedState
+ local clock=reading.runtime and reading.runtime.clock
+ if self.renderedDiagnostic==reading and self.renderedDiagnosticTank==self.tankId and self.renderedDiagnosticGeneration==(own and own.generation)and self.renderedDiagnosticRun==(own and own.bwRunRequestId)and self.renderedDiagnosticSerial==(own and own.bwProgramSerial)and self.renderedDiagnosticClock==clock then return end
+ self.renderedDiagnostic=reading;self.renderedDiagnosticTank=self.tankId;self.renderedDiagnosticGeneration=own and own.generation;self.renderedDiagnosticRun=own and own.bwRunRequestId;self.renderedDiagnosticSerial=own and own.bwProgramSerial;self.renderedDiagnosticClock=clock
  local config=reading.configuration
  if config and self.lastHardwareTank~=self.tankId then
   self.lastHardwareTank=self.tankId; local lines={config.tier}; local names={}; for name in config.devices do table.insert(names,name) end; table.sort(names)
@@ -292,6 +423,8 @@ function IDE:renderRuntime()
  local spec=Hardware.Tiers[config and config.tier or "Hexadeca"]
  local lines={string.format("%d threads, %d ticks, queue %d",spec.threads,spec.ticks,spec.queue),if reading.configurationResult then "Config: "..reading.configurationResult else "Device bus allocation%"}
  local r=reading.runtime
+ local own=self.lastObservedState
+ if own and ((reading.generation~=nil and reading.generation~=(own.generation or 0))or(reading.requestId~=nil and reading.requestId~=(own.bwRunRequestId or own.bwRequestId or 0)))then r=nil end
  if r then
   table.insert(lines,string.format("%s • %.3fs • %d ticks/cycle",r.tier,r.clock,r.ticksPerCycle))
   table.insert(lines,string.format("Scans: %d • log attempts: %d • omitted: %d",r.scanCount or 0,r.outputCount or 0,r.suppressedLogs or 0))
@@ -315,20 +448,35 @@ end
 function IDE:update(state)
  self.lastObservedState=state
  self:renderRuntime()
-	if not state then self.running=false; self.current.Text="BW v0.2 • Waiting for tank"; return end
+	if not state then self.running=false;self.personalityRunning=false; self:renderEditorStatus(); return end
 	self.running=state.bwRunning==true
+ self.personalityRunning=self.running and state.bwProgramKind=="Personality"
 	self.toggle.Text=(state.tankType or "Tank")..(if self.running then " • BW running" else " • BW Editor")
-	self.editor.TextEditable=not self.running
-	self.run.AutoButtonColor=not self.running and not self.pendingRequest
+	self.editor.TextEditable=not self.running or self.personalityRunning
+	self.run.AutoButtonColor=(not self.running or self.personalityRunning)and not self.pendingRequest
 	if self.pendingRequest and (state.bwRequestId or 0)<self.pendingRequest then return end
 	self.pendingRequest=nil
+ local history=self.scanOutputs[self.tankId];local logText=history and history.text
+ local memo=self.statusMemo or{};self.statusMemo=memo
+ local same=self.statusMemoTank==self.tankId and self.statusMemoLog==logText and self.statusMemoVisible==self.frame.Visible
+ for _,key in statusKeys do if memo[key]~=state[key]then same=false;break end end
+ if same and self.outputNeedsRefresh then
+  local first,last=self.output.SelectionStart or -1,self.output.CursorPosition or -1
+  if game:GetService("UserInputService"):GetFocusedTextBox()~=self.output or first<1 or last<1 or first==last then same=false end
+ end
+ if same then
+  if self.renderedLogReading~=self.runtimeReadings[self.tankId]then self.renderedLogReading=self.runtimeReadings[self.tankId];self:renderLogStatus()end
+  return
+ end
+ for _,key in statusKeys do memo[key]=state[key]end
+ self.statusMemoTank=self.tankId;self.statusMemoLog=logText;self.statusMemoVisible=self.frame.Visible
 	local status=state.bwStatus or "idle"
-	self.current.Text=if self.running then string.format("Line %d • instruction %d/%d",state.bwLine or 0,state.bwIndex or 0,state.bwCount or 0)
-		else "BW v0.2 • "..status
+	self:renderEditorStatus()
 	local message=(if self.running then (state.bwInstruction or "").."\n" else "")..(state.bwMessage or "Ready. BW controls the selected tank while running.")
 	local output=self.scanOutputs[self.tankId]
 	if output and output.generation==(state.generation or 0) and output.requestId==(state.bwRunRequestId or state.bwRequestId or 0) then
-		message=output.text:sub(2).."\n"..message
+		local provenance=if output.programName then string.format("%s • %s • run %d\n",tostring(self.tankId),output.programName,output.programSerial)else ""
+  if state.bwProgramSerial==nil or output.programSerial==state.bwProgramSerial then message=provenance..output.text:sub(2).."\n"..message end
 	elseif output and (output.generation<(state.generation or 0) or output.requestId<(state.bwRunRequestId or state.bwRequestId or 0)) then self.scanOutputs[self.tankId]=nil end
 	if state.bwWarning and state.bwWarning~="" then message..="\n"..state.bwWarning end
 	self:setOutput(message)
@@ -336,6 +484,7 @@ function IDE:update(state)
 	self.output.TextColor3=if status=="error" then Color3.fromRGB(255,157,125) else Color3.fromRGB(238,239,220)
 end
 function IDE:destroy()
+ if self.window then self.window.stop()end
  self.editorController:destroy()
 	self.destroyed=true
 	self.handbook:destroy()

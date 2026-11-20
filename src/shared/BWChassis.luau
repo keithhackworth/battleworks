@@ -24,6 +24,19 @@ C.TankTiers={}
 for id,assembly in Assemblies do C.TankTiers[id]=Catalog[assembly.Computer].Properties.Tier end
 C.Angles={0,45,90,135,180,225,270,315}
 function C.performance(percent,bus) local a=math.clamp(percent/100,0,1); return 1-(1-a)^(if bus then bus.PerformanceExponent else Catalog["bus.standard"].Properties.PerformanceExponent) end
+-- Forward-speed anchor before terrain/mobility modifiers. Only propulsion uses
+-- this curve; scanner, weapon, turret, CPU budgets and bus capacity are unchanged.
+C.DrivetrainCurve=table.freeze({allocation=5,speed=15})
+function C.devicePerformance(name,percent,vehicle)
+ if name~="drivetrain"then return C.performance(percent,vehicle.Bus)end
+ local a=math.clamp(percent,0,100);local rating=vehicle.Drivetrain.Speed
+ if rating<=0 then return 0 end
+ local anchor=C.DrivetrainCurve
+ local floor=math.min(anchor.speed,rating)/rating
+ if a<=anchor.allocation then return floor*a/anchor.allocation end
+ local fraction=(a-anchor.allocation)/(100-anchor.allocation)
+ return floor+(1-floor)*(1-(1-fraction)^vehicle.Bus.PerformanceExponent)
+end
 function C.default(tier,vehicle)
  local budget=if vehicle then vehicle.Bus else Catalog["bus.standard"].Properties
  local sensor=if vehicle then vehicle.Sensor else Catalog["sensor.standard"].Properties

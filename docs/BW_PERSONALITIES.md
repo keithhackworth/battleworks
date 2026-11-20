@@ -58,3 +58,7 @@ Native Studio acceptance (not performed here):
 4. Verify Survivor escapes when possible and continues firing when cornered at critical health without healing. Verify Ambusher never shoots remembered hidden traffic. Test all programs' wheel turning/reversing limitations and manual takeover.
 5. Test real MeshPart/compound terrain raycasts, native water versus cosmetic-water unknowns, narrow-lens side lanes and frame/query cost with two players.
 6. Stop, switch tanks, exit, destroy and disconnect during program execution; confirm existing authoritative cleanup releases every device/input. Check Classic/custom-world loading and keyboard/touch/gamepad regression behavior. No automatic Playground population should appear.
+
+## Steering follow-up
+
+The shared `turn_to(heading)` helper branches on actual own drivetrain metadata. Wheels use continuous forward plus signed heading-error feedback through steer_left/right, bounded by installed max wheel angle and30s deadline; tracks keep turn_right(to=heading). Wheels center and stop after turning. The single-thread Crazy variant also uses steering for wheels; its tracked turn queues an ordinary bounded forward leg so it does not spend every random change stationary. No physics changes or automatic navigation. Duelist continues its deliberately simple pursuit and ignores terrain. All original sources/hints/profiles remain editable, and the generated Playground bundle is refreshed with `node tools/build-bw-personalities.js --playground`.

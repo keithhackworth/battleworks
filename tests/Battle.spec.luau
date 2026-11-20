@@ -55,7 +55,7 @@ check(ui.editor.Text=="fire(2)" and ui.editor.TextEditable and not ui.pendingReq
 ui:bind("Boomer")
 check(ui.editor.Text=="forward(7)","other tank editing never overwrites first source")
 ui:destroy()
--- Run -> close editor -> switch -> keyboard/mouse drive, with the other BW
+-- Run -> retain live editor -> switch -> keyboard/mouse drive, with the other BW
 -- runtime still alive. Exercise both tank directions and returning to BW control.
 do
  local Controller=require("InputController")
@@ -86,7 +86,7 @@ do
   editor.editor.Text="forward(100)"; editor.toggle.Activated:Fire()
   UIS.focusedTextBox=editor.editor; UIS.TextBoxFocused:Fire(editor.editor)
   editor.run.Activated:Fire(); snapshot()
-  check(not editor.frame.Visible and UIS:GetFocusedTextBox()==nil,"Run hides IDE and clears native text focus")
+  check(editor.frame.Visible and UIS:GetFocusedTextBox()==nil,"Run preserves live editor and clears native text focus")
   check(controls.suspended and not controls.providers.KeyboardMouse.active,"selected BW tank blocks manual input")
   local selector=Selector.new(Instance.new("ScreenGui"),function(kind)
    editor:close(); controls:release(); controls:setExternalControl(true)

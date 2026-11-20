@@ -60,6 +60,7 @@ function Instance.new(class)
  function object:GetAttributeChangedSignal(key) return self:GetPropertyChangedSignal("attribute:"..key) end
  function object:Emit(count) self.emitted=(self.emitted or 0)+count end
 	function object:Clear() self.clearCalls=(self.clearCalls or 0)+1 end
+	function object:CaptureFocus() self.capturedFocus=true;self.releasedFocus=false end
 	function object:ReleaseFocus() self.releasedFocus=true end
 	function object:IsA(name) return self.ClassName == name end
 	function object:GetChildren() return self.children end

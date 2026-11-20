@@ -45,6 +45,25 @@ function Client.start()
  end
  local menu=Instance.new("TextButton");menu.Name="RoyaleMainMenu";menu.Text="Main Menu";menu.Position=UDim2.fromOffset(12,60);menu.Size=UDim2.fromOffset(120,44);menu.BackgroundColor3=Color3.fromRGB(32,47,52);menu.TextColor3=Color3.fromRGB(237,239,224);menu.Font=Enum.Font.GothamMedium;menu.TextSize=15;menu.Parent=navigation
  local notice=Instance.new("TextLabel");notice.Name="RoyaleNotice";notice.Position=UDim2.fromOffset(144,60);notice.Size=UDim2.new(1,-164,0,60);notice.BackgroundColor3=Color3.fromRGB(32,47,52);notice.TextColor3=Color3.fromRGB(255,224,163);notice.Font=Enum.Font.GothamMedium;notice.TextSize=16;notice.TextWrapped=true;notice.Visible=false;notice.Parent=navigation
+ local modeSwitch=Instance.new("TextButton");modeSwitch.Name="PlaygroundControlMode";modeSwitch.AnchorPoint=Vector2.new(.5,1);modeSwitch.Position=UDim2.new(.5,0,1,-12);modeSwitch.Size=UDim2.new(.42,0,0,56);modeSwitch.BackgroundColor3=Color3.fromRGB(32,81,69);modeSwitch.TextColor3=Color3.fromRGB(245,246,229);modeSwitch.Font=Enum.Font.GothamBold;modeSwitch.TextSize=18;modeSwitch.TextWrapped=true;modeSwitch.Visible=false;modeSwitch.Parent=navigation
+ local currentMode="Manual"
+ local modePending=false
+ local function showMode(mode)
+  currentMode=mode or "Manual"
+  modeSwitch.Visible=reading~=nil and reading.mode=="Tank"and reading.personality~=nil
+  modeSwitch.Text=(if currentMode=="Auto"then "AUTO  ●  |  Manual"else "Auto  |  ●  MANUAL").."\n"..(reading and reading.personality or "")
+  modeSwitch.BackgroundColor3=if currentMode=="Auto"then Color3.fromRGB(37,96,64)else Color3.fromRGB(35,67,93)
+ end
+ modeSwitch.Activated:Connect(function()
+  if modePending or not reading or reading.mode~="Tank"or not reading.personality then return end
+  modePending=true
+  battle.inputController:release()
+  request(if currentMode=="Auto"then "Manual"else "Auto")
+ end)
+ network:WaitForChild("Snapshot").OnClientEvent:Connect(function(states)
+  local own=reading and reading.selected and states[reading.selected]
+  if own and own.controlEpoch==reading.epoch then showMode(own.controlMode)end
+ end)
  menu.Activated:Connect(home)
  gameplay:setActive(true)
  remote.OnClientEvent:Connect(function(nextReading)
@@ -58,6 +77,8 @@ function Client.start()
   if not battle:setControl(control)then return end
   notice.Text=nextReading.message or "";notice.Visible=notice.Text~=""
   reading=nextReading
+  modePending=false
+  showMode(reading.controlMode)
   if not session:receive(requestId,nextReading.mode~="Menu",nextReading.message)then return end
   if nextReading.mode=="Menu"then gameplay:setActive(false)else gameplay:setActive(true)end
   gui.Enabled=nextReading.mode=="OnFoot";navigation.Enabled=nextReading.mode~="Menu"
@@ -68,6 +89,6 @@ function Client.start()
   return Enum.ContextActionResult.Sink
  end,false,Enum.KeyCode.F,Enum.KeyCode.ButtonB)
  request("Sync")
- return {battle=battle,request=request,gui=gui,navigation=navigation,chat=chat,session=session,home=home,getShell=function()return shell end}
+ return {battle=battle,request=request,gui=gui,navigation=navigation,chat=chat,session=session,home=home,getShell=function()return shell end,modeSwitch=modeSwitch}
 end
 return Client
