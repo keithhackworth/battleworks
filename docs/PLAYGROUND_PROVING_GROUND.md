@@ -1,8 +1,8 @@
 # Stage 2.5: Playground proving ground
 
-The default Playground is an anchored, deterministic 800 × 640 stud battlefield. It retains the six public Bunny tanks, existing bridge, ravine, river hazards, safe entry/exit rules and continuous replenishment. Stage 3 population management, onboarding, redemption and garage persistence are not implemented.
+The default Playground is now **462 × 369 studs**, about one third of the area of the 800 × 640 reference layout. The bridge retains its 24-stud driving clearance and the layout keeps the barracks, forest, terrain lanes, practice targets, and three configuration zones. Dimensions below describe the reference layout. The default scales their horizontal positions and footprints together, with the bridge clearance preserved.
 
-Only the default Playground selects this layout. Classic, startup-selected authored worlds, asset imports, JSON schemas and World Builder saves are preserved. An existing server must restart to select the expanded default layout.
+Only the default Playground selects this layout. Classic, startup-selected authored worlds, asset imports, JSON schemas and World Builder saves are preserved. An existing server must restart to load the smaller default layout.
 
 ## Layout and modification points
 
@@ -105,3 +105,6 @@ The reported all-tank burstiness is investigated separately from the editor disp
 ### Editor programs versus built-in Auto
 
 Follow-up bug fix: editor Run previously marked the tank Auto, and the public Auto loop restarted its personality after the player's program ended, reusing the same request identity. That could make a simple program unexpectedly turn and mix logs. `autonomyActive` now explicitly gates only built-in personality invocations. Player-source completion/failure restores Manual; Stop is persistent. Explicit Auto, exit/disconnect and replacement still restart the personality. Log invocation serials/origin labels and control-lease fencing prevent mixed histories. The live editor is draggable, stays open on Run and highlights matching executing source; see BW_RUNTIME.md.
+
+
+The default layout includes three blue-striped protected configuration pads. Use the tank HUD gear while manually occupying a pad to apply a Garage setup. [Zone layout, safety rules, and Studio checks](BUS_CONFIGURATION.md#in-world-configuration-zones)

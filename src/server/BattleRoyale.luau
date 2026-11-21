@@ -19,6 +19,7 @@ local function clearControl(tank,reason)
 end
 function R.new(options)
  local self=setmetatable({options=options,members={},slots={},battle={multiplayer=true}},R)
+ if options.autonomy then self.busOffset=math.random(0,#Hardware.Categories-1) end
  for i=1,options.count do self.slots[i]={id="public:"..i,index=i,epoch=0,generation=-1};self:spawn(self.slots[i])end
  return self
 end
@@ -38,7 +39,12 @@ function R:spawn(slot)
  tank.id=slot.id;tank.public=true;tank.slot=slot;tank.owner=0
  tank.state.generation=slot.generation;tank.state.controlEpoch=slot.epoch;tank.state.public=true;tank.state.occupantUserId=nil
  tank.hitbox:SetAttribute("OwnerId",0);tank.hitbox:SetAttribute("OccupantUserId",nil)
- if self.options.autonomy then self.options.autonomy.attach(tank,slot.index);self:startAutonomy(tank)end
+ if self.options.autonomy then
+  local focus=if slot.generation==0 then (slot.index-1+self.busOffset)%#Hardware.Categories+1 else nil
+  self.options.autonomy.attach(tank,slot.index,focus,slot.lastBusAllocation)
+  slot.lastBusAllocation=tank.spawnHardware.allocations
+  self:startAutonomy(tank)
+ end
  self:attachPrompt(tank)
 end
 function R:startAutonomy(tank)
@@ -114,14 +120,19 @@ function R:release(member,reason,kill,silent,eject)
   ejection={position=tank.state.position+Vector3.new(0,top+Config.EjectClearance,0),velocity=Vector3.new(velocity.X,Config.EjectSpeed,velocity.Z)}
  end
  clearControl(tank,reason)
- tank.hardware=nil;Components.withComputer(tank.state,"Bunny");tank.hardware=Hardware.forTank(tank.state);BW.applyHardware(tank)
- if tank.personality then self.options.autonomy.hardware(tank)end
+ if tank.personality then self.options.autonomy.hardware(tank)
+ else
+  Components.withComputer(tank.state,"Bunny");tank.hardware=Hardware.forTank(tank.state);BW.applyHardware(tank)
+ end
  member.tank=nil;tank.occupant=nil;tank.slot.epoch+=1;tank.state.controlEpoch=tank.slot.epoch;tank.state.occupantUserId=nil
  tank.hitbox:SetAttribute("OccupantUserId",nil)
  if tank.state.health>0 and not tank.state.publicRetired then self:attachPrompt(tank)else tank.prompt.Enabled=false end
  member.revision+=1;self.options.select(member.player,nil,member)
  self.options.characters:restore(member.player,tank.state.position+Vector3.new(12,0,0),kill,ejection)
- if tank.personality and tank.state.health>0 and not tank.state.publicRetired then self:startAutonomy(tank)end
+ if self.options.autoBlocked and self.options.autoBlocked(tank) then
+  tank.state.controlMode="Parked"
+ elseif tank.personality and tank.state.health>0 and not tank.state.publicRetired then self:startAutonomy(tank)
+ else tank.state.controlMode=nil end
  if not silent then self:notify(member,reason)end;return true
 end
 function R:park(member)
@@ -159,6 +170,9 @@ function R:request(player,action,requestId,id,epoch)
  elseif action=="Auto"or action=="Manual"then
   local tank=self:controlled(player,id,epoch)
   if not tank or not tank.personality then return false end
+  if action=="Auto" and self.options.autoBlocked and self.options.autoBlocked(tank) then
+   member.revision+=1;self:notify(member,"Drive clear of the configuration zone before switching to Auto.");return false
+  end
   local now=os.clock();if now-member.lastAction<Config.ActionInterval then member.revision+=1;self:notify(member,"Please wait before switching control mode.");return false end
   member.lastAction=now
   clearControl(tank,"Control mode changed.")
@@ -197,6 +211,9 @@ function R:step(autonomyPaused)
  end
  for _,slot in self.slots do
   local tank=slot.tank
+  if tank and tank.state.controlMode=="Parked" and tank.state.health>0 and not autonomyPaused and not self.options.autoBlocked(tank) then
+   if tank.personality then self:startAutonomy(tank) else tank.state.controlMode=nil end
+  end
   if tank and tank.state.health>0 and self.options.hazard and self.options.hazard(tank.state.position)then
    Battle.environmentDamage(self.battle,tank)
   end

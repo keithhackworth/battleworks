@@ -208,6 +208,7 @@ local function candidates(a,list,statics,dt,sweep,stats)
  table.clear(list.indices)
  if stats then stats.candidateChecks+=#statics;stats.rebuilds+=1 end
  for i,b in statics do
+  if b.configurationOnly and a.ignoreConfigurationZones then continue end
   local inside
   if not b.fixed then
    inside=true
@@ -268,6 +269,16 @@ local function resolve(bodies,statics,lists,dt,stats)
   if #group==2 then solveBlock(group[1],group[2]) else solveNormal(group[1]) end
   for _,c in group do solveFriction(c) end
  end end
+ if lists.trackContacts then
+  for _,group in contacts do
+   local first,second=group[1],group[2]
+   if (first.a.trackContacts or first.b.trackContacts) and
+    (first.depth>C.Skin or first.normalImpulse>1e-6 or (second and second.normalImpulse>1e-6)) then
+    if first.a.trackContacts then first.a.state.motionDebugContact=first.b.id end
+    if first.b.trackContacts then first.b.state.motionDebugContact=first.a.id end
+   end
+  end
+ end
  -- Split positional correction never feeds artificial separation energy into v.
  for _=1,C.Iterations do
   local needsCorrection=false
@@ -388,6 +399,11 @@ function C.obstacles(environment,mapSize,radius)
  for _,r in environment and environment.playground and environment.playground.staticBoxes or{}do
   table.insert(out,C.box(r.id,Vector3.new(r.x,r.y,r.z),r.sx/2,r.sz/2,-r.sy/2,r.sy/2))
  end
+ for _,r in environment and environment.playground and environment.playground.configurationZones or{}do
+  local zone=C.box(r.id,Vector3.new(r.x,r.y,r.z),r.halfX,r.halfZ,-math.huge,math.huge)
+  zone.configurationOnly=true
+  table.insert(out,zone)
+ end
  for i,t in environment and environment.trees or {} do table.insert(out,C.box("tree:"..i,Vector3.new(t.x,0,t.z),t.radius,t.radius,0,t.height or math.huge)) end
  if environment then environment.motionObstacles={width=mapSize and mapSize.X,depth=mapSize and mapSize.Y,records=out} end
  return out
@@ -401,6 +417,10 @@ function C.solve(bodies,statics,dt,stats)
  local substeps,lists=1,{}
  for i,r in bodies do
   local s=r.state
+  if r.trackContacts then
+   lists.trackContacts=true
+   s.motionDebugContact=nil;s.motionDebugLimitedBy=nil;s.motionDebugLostTime=0
+  end
   Motion.ensure(s)
   r.sweepRadius=math.sqrt(r.halfX^2+r.halfZ^2)
   r.inverseMass,r.inverseInertia=1/s.motionMass,1/s.yawInertia
@@ -418,15 +438,26 @@ function C.solve(bodies,statics,dt,stats)
   local remaining=dt/substeps
   for event=1,C.MaxEvents do
    local time=1
+   local eventA,eventB
    eachPair(bodies,statics,lists,remaining,true,false,function(a,b)
-    local t=impactTime(a,b,remaining,stats); if t then time=math.min(time,t) end
+    local t=impactTime(a,b,remaining,stats)
+    if t and t<time then time=t;eventA,eventB=a.id,b.id end
    end,stats)
    local advance=remaining*time
    for _,r in bodies do Motion.integrateHorizontal(r.state,advance) end
    resolve(bodies,statics,lists,nil,stats)
    remaining-=advance
    if time>=1 or remaining<1e-9 then break end
-   if event==C.MaxEvents then for _,r in bodies do r.state.motionContactLimited=(r.state.motionContactLimited or 0)+1 end end
+   if event==C.MaxEvents then
+    for _,r in bodies do
+     local s=r.state
+     s.motionContactLimited=(s.motionContactLimited or 0)+1
+     if r.trackContacts then
+      s.motionDebugLostTime+=remaining
+      s.motionDebugLimitedBy=eventA.." / "..eventB
+     end
+    end
+   end
   end
  end
  for _,r in bodies do Motion.sync(r.state) end

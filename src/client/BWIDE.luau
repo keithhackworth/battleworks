@@ -428,8 +428,8 @@ function IDE:renderRuntime()
  self.renderedDiagnostic=reading;self.renderedDiagnosticTank=self.tankId;self.renderedDiagnosticGeneration=own and own.generation;self.renderedDiagnosticRun=own and own.bwRunRequestId;self.renderedDiagnosticSerial=own and own.bwProgramSerial;self.renderedDiagnosticClock=clock
  local config=reading.configuration
  if config then
-  self.configEditor.TextEditable=config.allocations==nil
-  self.applyHardware.Visible=config.allocations==nil
+  self.configEditor.TextEditable=config.allocations==nil and not self.garageOnly
+  self.applyHardware.Visible=self.configEditor.TextEditable
   if config.allocations then
    local lines={config.tier,"Garage bus configuration"}
    for _,name in Hardware.Categories do table.insert(lines,string.format("%s %.1f%%",name,config.allocations[name])) end

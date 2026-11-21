@@ -18,6 +18,12 @@ for _,name in {"RoyaleControl","Input","Snapshot","Shot","SelectTank","PrepareSh
  remotes[name]=remote
 end
 local network={WaitForChild=function(_,name) return assert(remotes[name],name) end,FindFirstChild=function(_,name)return remotes[name]end,ChildAdded=signal()}
+remotes.GarageConfiguration={InvokeServer=function(_,action,id,draft,epoch)
+ table.insert(requests,{name=action,args={id,epoch}})
+ if action=="SaveZone" then return {ok=true,draft=draft} end
+ return {ok=true,choices={{id=id,kind="Boomer",weapon="weapon.cannon",tier="Bunny",
+  draft={allocations={drivetrain=25,turret=25,weapon=25,scanners=25},tuning={weapon=.5,scanners=.5}}}}}
+end}
 local arena=Instance.new("Folder")
 arena:SetAttribute("MapWidth",160);arena:SetAttribute("MapDepth",120)
 workspace.WaitForChild=function(_,name) assert(name=="Arena");return arena end
@@ -246,6 +252,26 @@ state.controlEpoch=30;state.controlMode="Manual";state.bwRunning=false
 remotes.Snapshot.OnClientEvent:Fire({["public:1"]=state},{})
 remotes.RoyaleControl.OnClientEvent:Fire({revision=119,mode="Tank",selected="public:1",epoch=30,controlMode="Manual",personality="Marauder"})
 check(client.modeSwitch.Visible and client.modeSwitch.Text:find("MANUAL",1,true),"large bottom switch reflects automatic Manual entry")
+local gear=named("ZoneConfigurationGear")
+check(not gear.Visible,"gear is hidden while manually driving outside a zone")
+state.configurationZone="config:west"
+client.battle.inputController:setMouseMode("Mouse Direct")
+remotes.Snapshot.OnClientEvent:Fire({["public:1"]=state},{})
+check(gear.Visible and UIS.MouseIconEnabled,"server zone snapshot displays the gear and releases Mouse Direct cursor")
+gear.Activated:Fire()
+local zoneGui=named("ZoneGarage")
+local zoneRequest=requests[#requests]
+check(zoneGui.Enabled and zoneRequest.name=="ReadZone" and zoneRequest.args[1]=="public:1" and zoneRequest.args[2]==30,"gear opens the existing Garage for the current lease")
+for _,widget in created do
+ if widget.Name=="SaveBus" and widget.Parent.Parent.Name=="Tank Configuration" then widget.Activated:Fire() end
+end
+check(requests[#requests].name=="SaveZone" and requests[#requests].args[2]==30,"Apply sends the draft through the live lease route")
+local beforeAuto=#requests
+client.modeSwitch.Activated:Fire()
+check(#requests==beforeAuto,"Auto button is inhibited in the protected zone")
+state.configurationZone=nil
+remotes.Snapshot.OnClientEvent:Fire({["public:1"]=state},{})
+check(not gear.Visible and not zoneGui.Enabled and not client.battle.inputController.externalControl and not UIS.MouseIconEnabled,"leaving closes Garage, resumes manual input, and restores Mouse Direct capture")
 client.modeSwitch.Activated:Fire()
 check(requests[#requests].name=="RoyaleControl"and requests[#requests].args[1]=="Auto"and requests[#requests].args[4]==30,"switch requests Auto using current authoritative lease")
 local sourceRequested=false

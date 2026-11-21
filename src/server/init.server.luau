@@ -1,6 +1,7 @@
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
+local studio=RunService:IsStudio()
 local profileBegin=debug.profilebegin or function()end
 local profileEnd=debug.profileend or function()end
 local function startup(stage) if RunService:IsStudio() then print("[BattleWorks startup/server] "..stage) end end
@@ -154,7 +155,7 @@ local walls = {}
 for _, data in ipairs({ {Vector3.new(0, 3, -118), Vector3.new(240, 6, 4)}, {Vector3.new(0, 3, 118), Vector3.new(240, 6, 4)}, {Vector3.new(-118, 3, 0), Vector3.new(4, 6, 240)}, {Vector3.new(118, 3, 0), Vector3.new(4, 6, 240)} }) do
 	table.insert(walls, part("Boundary", data[2], data[1], Color3.fromRGB(57, 66, 73)))
 end
-if worldSettings then
+if worldSettings or environment.playground then
  walls[1].Size=Vector3.new(mapSize.X+10,6,4); walls[1].Position=Vector3.new(0,3,-mapSize.Y/2-3)
  walls[2].Size=walls[1].Size; walls[2].Position=Vector3.new(0,3,mapSize.Y/2+3)
  walls[3].Size=Vector3.new(4,6,mapSize.Y+10); walls[3].Position=Vector3.new(-mapSize.X/2-3,3,0)
@@ -322,6 +323,23 @@ local function owned(player,id,epoch)
 	local battle=battles[player.UserId]
 	return battle and battle.tanks[id or battle.selected]
 end
+local function zoneAt(position,clearance)
+ return Playground.configurationZone(environment.playground,position,clearance)
+end
+local function autoBlocked(tank)
+ local chassis=Components.get(tank.state).Chassis
+ local x,z=(chassis.CollisionWidth or chassis.Radius*2)/2,(chassis.CollisionLength or chassis.Radius*2)/2
+ return zoneAt(tank.state.position,math.sqrt(x*x+z*z)+VehicleContacts.Skin)~=nil
+end
+local function syncConfigurationZone(tank)
+ local state=tank.state
+ local zone=zoneAt(state.position)
+ local id=zone and zone.id
+ if state.configurationZone==id then return end
+ state.configurationZone=id
+ if id and BWController.running(tank) then BWController.stop(tank,"BW is disabled in configuration zones.") end
+ BWController.disarm(tank)
+end
 local function createTank(id,player,kind,index,assembly)
  local owner=if player then player.UserId else 0
 
@@ -435,8 +453,33 @@ Players.PlayerRemoving:Connect(function(player)
  if playerWorlds then playerWorlds:remove(player) end
 end)
 for _,player in Players:GetPlayers() do registerPlayer(player) end
-garage.OnServerInvoke=function(player,action,key,draft)
+local function saveGarage(session,key,draft,vehicle,tier)
+ local configuration,reason=Hardware.fromCategories(draft,vehicle,tier)
+ if not configuration then return nil,reason end
+ session.garage=session.garage or {}
+ session.garage[key]=configuration
+ return configuration
+end
+garage.OnServerInvoke=function(player,action,key,draft,epoch)
  local session=sessions[player.UserId]
+ if session and (action=="ReadZone" or action=="SaveZone") then
+  local tank=royale and royale:controlled(player,key,epoch)
+  if not tank or tank.state.controlMode~="Manual" or BWController.running(tank) or not zoneAt(tank.state.position) then
+   return {ok=false,message="Manually occupy a tank inside a configuration zone."}
+  end
+  local vehicle=Components.get(tank.state)
+  local tier=vehicle.Computer.Tier
+  local weapon=vehicle.Installed.Weapon
+  if action=="ReadZone" then
+   return {ok=true,choices={{id=key,kind=tank.kind,weapon=weapon,tier=tier,assembly=tank.assembly,
+    current=Hardware.copy(tank.hardware),draft=Hardware.categoryDraft(tank.hardware)}}}
+  end
+  local configuration,reason=saveGarage(session,tank.kind.."/"..weapon,draft,vehicle,tier)
+  if not configuration then return {ok=false,message=reason} end
+  BWController.clearInputs(tank)
+  applyGarageConfiguration(player,tank)
+  return {ok=true,draft=Hardware.categoryDraft(configuration)}
+ end
  if not session or battles[player.UserId] then return {ok=false,message="Open Garage from Main Menu."} end
  if action~="Read" and action~="Save" then return {ok=false,message="Invalid request."} end
  if action=="Save" and type(key)~="string" then return {ok=false,message="Invalid loadout."} end
@@ -449,10 +492,8 @@ garage.OnServerInvoke=function(player,action,key,draft)
    local vehicle=Components.forWeapon(kind,weapon)
    local tier=if isRoyale then "Bunny" else vehicle.Computer.Tier
    if action=="Save" and key==id then
-    local configuration,reason=Hardware.fromCategories(draft,vehicle,tier)
+    local configuration,reason=saveGarage(session,id,draft,vehicle,tier)
     if not configuration then return {ok=false,message=reason} end
-    session.garage=session.garage or {}
-    session.garage[id]=configuration
     return {ok=true,draft=Hardware.categoryDraft(configuration)}
    elseif action=="Read" then
     local saved=session.garage and session.garage[id]
@@ -514,6 +555,10 @@ bwRun.OnServerEvent:Connect(function(player,source,requestId,id,epoch)
 	local tank=owned(player,id,epoch)
 	local now=os.clock()
 	if not tank or not acceptBWRequest(tank,requestId) then return end
+	if autoBlocked(tank) then
+		BWController.reject(tank,"Drive clear of the configuration zone before running BW.")
+		return
+	end
 	if not network:GetAttribute("PlaygroundBWEnabled") then
 		BWController.reject(tank,"Playground BW execution is disabled for this server.")
 		return
@@ -546,7 +591,7 @@ bwHardware.OnServerEvent:Connect(function(player,configuration,id,epoch)
  local tank=owned(player,id,epoch); if not tank then return end
  local now=os.clock(); if now-(tank.lastHardwareRequest or -math.huge)<0.25 then return end
  tank.lastHardwareRequest=now
- if isRoyale and (tank.personality or type(configuration)~="table" or configuration.tier~="Bunny")then
+ if isRoyale then
   bwRuntimeState:FireClient(player,id,{controlEpoch=tank.state.controlEpoch,configuration=Hardware.copy(tank.hardware),configurationResult="Use the Garage to configure a Playground loadout."})
   return
  end
@@ -572,6 +617,7 @@ local function launchShell(id, tank, origin, direction, deferEffects)
 	-- Spawn at the muzzle after checking the pivot-to-tip path for cover.
 	tank.state.weaponShotSerial=(tank.state.weaponShotSerial or 0)+1
 	local tuning = Components.get(tank.state).Weapon
+ if zoneAt(tank.state.position) or zoneAt(origin) or zoneAt(origin+direction*tuning.MuzzleOffset) then return nil end
  local airborne,ground=Simulation.projectileFlight(tank.state)
  local flight={physical=true,speed=tank.state.projectileSpeed,muzzleHeight=Components.get(tank.state).Turret.MuzzleHeight,airborne=airborne,findGround=if worldObjects then function(position,heading,range,radius,baseline)
   return worldObjects:projectileGround(position,heading,range,radius,baseline)
@@ -579,6 +625,10 @@ local function launchShell(id, tank, origin, direction, deferEffects)
 	local shell, blocked = Projectiles.launch(workspace,origin,direction,{tank.hitbox,shellFolder},tuning,ground,flight)
 	local small = Components.get(tank.state).Weapon.Operation=="Heat"
 	shell.pendingHit = blocked
+ if blocked and environment.playground and environment.playground.configurationZones then
+  local victim=tanks[blocked.Instance:GetAttribute("TankId") or ""]
+  shell.pendingHitProtected=victim and victim.state.configurationZone~=nil
+ end
 	shell.owner = id
 	shell.weaponType=Components.get(tank.state).Weapon.WeaponType
 	shell.visualScale = if small then 0.4 else 1
@@ -597,7 +647,9 @@ local function updateShells(now)
 	for i = #shells,1,-1 do
 		local shell = shells[i]
 		local hit = shell.pendingHit
+		local protected = shell.pendingHitProtected
 		shell.pendingHit = nil
+		shell.pendingHitProtected = nil
 		if not hit then hit = Projectiles.step(workspace,shell,Config.Step) end
 		poseShell(shell)
 		if hit then
@@ -618,7 +670,7 @@ local function updateShells(now)
 			for _, other in tanks do
 				if other.hitbox == hit.Instance then
 					local battle=if other.public then royale.battle else battles[other.owner]
-					if Battle.damage(battle,other,tanks[shell.owner],shell.damage,shell.weaponType,hit.Position) and multiplayer and other.state.health<=0 then
+					if not protected and Battle.damage(battle,other,tanks[shell.owner],shell.damage,shell.weaponType,hit.Position) and multiplayer and other.state.health<=0 then
                         if other.public then royale:destroyed(other)else other.respawnAt=simulationTime+3 end
                     end
 				end
@@ -761,6 +813,7 @@ if isRoyale then
  startup("Playground BW execution enabled: "..tostring(bwEnabled))
  royale=require(script.BattleRoyale).new({count=settings.count,delay=settings.delay,autonomy=if bwEnabled and settings.personalities then require(script.PlaygroundAutonomy)else nil,tanks=tanks,characters=Characters,
   hazard=function(position)return environment.playground and Playground.hazard(environment.playground,position)end,
+  autoBlocked=autoBlocked,
   safeExit=function(tank)
    if not environment.playground then return true end
    local p=tank.state.position
@@ -856,7 +909,7 @@ RunService.Heartbeat:Connect(function(dt)
 			end
 			command=command or (if now - tank.lastInput <= Config.InputTimeout then tank.command else Command.neutral())
 			tank.tickCommand=command
-			local trigger = command.fire and not tank.requireFireRelease
+			local trigger = command.fire and not tank.requireFireRelease and not tank.state.configurationZone
 			tank.rattlerShot = RattlerWeapon.step(tank.rattler,Components.get(tank.state).Weapon.Operation=="Heat" and tank.state.health > 0,trigger,Config.Step,tank.state.weaponPerformance)
 			tank.state.firing = Components.get(tank.state).Weapon.Operation=="Heat" and tank.rattler.firing
 			tank.state.heat = tank.rattler.heat; tank.state.weaponCooldown = tank.rattler.cooldown
@@ -889,7 +942,13 @@ RunService.Heartbeat:Connect(function(dt)
 			tank.state.groundPlaneY=floor.Position.Y+floor.Size.Y/2
             if not tank.state.waitingForSpawn and not tank.state.publicRetired then
                 Simulation.step(tank.state, command, Config.Step, mapSize, environment,true)
-                table.insert(contactBodies,VehicleContacts.body(id,tank.state,Components.get(tank.state).Chassis))
+                local body=VehicleContacts.body(id,tank.state,Components.get(tank.state).Chassis)
+                if studio and (tank.occupant or not tank.public) then
+                 body.trackContacts=true
+                 tank.state.motionDebugThrottle=command.throttle
+                end
+                body.ignoreConfigurationZones=tank.state.controlMode=="Parked" or (tank.occupant~=nil and tank.state.controlMode=="Manual" and not BWController.running(tank))
+                table.insert(contactBodies,body)
             end
         end
         local solverStarted=if diagnostics then os.clock() else 0
@@ -903,19 +962,21 @@ RunService.Heartbeat:Connect(function(dt)
             MovementTelemetry.update(tank.state,tank.state.motionStepStart,Config.Step)
             tank.hitbox.CFrame=CFrame.new(tank.state.position+Vector3.new(0,Components.get(tank.state).Chassis.HitboxHeight,0))*CFrame.Angles(0,tank.state.yaw,0)
             tank.hitbox.CanQuery=tank.state.health>0
+            if environment.playground and environment.playground.configurationZones then syncConfigurationZone(tank) end
         end
         profileEnd()
         local projectileStarted=if diagnostics then os.clock() else 0
         profileBegin("BattleWorks.Projectiles")
 		updateShells(now)
 		for id, tank in tanks do
-			if paused and tank.state.controlMode=="Auto" then continue end
+			if tank.state.configurationZone or (paused and tank.state.controlMode=="Auto") then continue end
 			local command = tank.tickCommand or Command.neutral()
 			if Components.get(tank.state).Weapon.Operation=="Heat" then
 				if tank.rattlerShot and tank.state.health > 0 then
 					local origin,direction = Simulation.shotPose(tank.state)
 					tank.state.weaponActivationSerial=(tank.state.weaponActivationSerial or 0)+1
 					local shell=launchShell(id,tank,origin,direction,true)
+					if not shell then continue end
 					TurretRecoil.kick(tank.state,tank.rattler)
 					RattlerRecoil.kick(tank.state,tank.rattler.heat,direction)
 					shot:FireAllClients(id,shell.position,direction,tank.state.tankType,tank.state.generation,
@@ -929,8 +990,7 @@ RunService.Heartbeat:Connect(function(dt)
 				if done then
 					tank.pendingShot = nil
 					if origin then
-						launchShell(id, tank, origin, direction)
-						TurretRecoil.kick(tank.state,tank.boomerAim)
+						if launchShell(id,tank,origin,direction) then TurretRecoil.kick(tank.state,tank.boomerAim) end
 					end
 				end
 			end

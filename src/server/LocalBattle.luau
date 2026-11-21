@@ -71,6 +71,7 @@ local function applyDamage(battle,victim,source,damage,weaponType,position)
 	return true
 end
 function Battle.damage(battle,victim,source,damage,weaponType,position)
+ if victim.state.configurationZone then return false end
  -- Projectile authority and friendly/solo rules stay at this boundary.
  if not source or source==victim or (source.owner~=victim.owner and not battle.multiplayer) or victim.state.health<=0 or type(damage)~="number" or damage~=damage or damage<=0 or damage==math.huge then return false end
  return applyDamage(battle,victim,source,damage,weaponType or Components.get(source.state).Weapon.WeaponType,position)

@@ -9,12 +9,14 @@ local Hardware=require(Shared.BWChassis)
 local Components=require(Shared.VehicleComponents)
 local Command=require(Shared.InputCommand)
 local Controller={}
+function Controller.disarm(tank)
+ tank.pendingShot=nil;tank.rattlerShot=false;tank.state.firing=false
+ tank.state.weaponPreparationRemaining=nil;tank.requireFireRelease=true
+ if tank.rattler then tank.rattler.firing=false end
+end
 local function cleanup(tank)
 	tank.command=Command.neutral(); tank.tickCommand=Command.neutral(); tank.lastInput=0
-	tank.pendingShot=nil; tank.rattlerShot=false; tank.state.firing=false
-	tank.state.weaponPreparationRemaining=nil
-	if tank.rattler then tank.rattler.firing=false end
-	tank.requireFireRelease=true
+	Controller.disarm(tank)
 end
 Controller.clearInputs=cleanup
 function Controller.suspendInputs(tank)

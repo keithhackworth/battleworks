@@ -4,6 +4,11 @@ local L={Size=Vector2.new(800,640)}
 function L.extend(data)
  data.provingGround=true;data.staticBoxes={};data.trees={};data.strips={};data.targets={}
  data.openField={x0=50,x1=350,z0=-135,z1=145}
+ data.configurationZones={
+  {id="config:west",x=-136,z=83,y=0,halfX=24,halfZ=21},
+  {id="config:southeast",x=310,z=235,y=0,halfX=24,halfZ=21},
+  {id="config:northeast",x=105,z=-230,y=0,halfX=24,halfZ=21},
+ }
  data.boundaries={{id="Pavement",x=45,z=0,rx=8,rz=150,profile=Materials.profile("Pavement",0,0,1)},
   {id="Dirt",x=205,z=166,rx=150,rz=6,profile=Materials.profile("Dirt",0,0,1)},
   {id="BarracksFloor",x=170,z=245,rx=80,rz=50,profile=Materials.profile("Pavement",0,0,1)}}

@@ -91,6 +91,7 @@ end,function()
 	return bwRequest
 end,function(configuration) if active and driving then bwHardware:FireServer(configuration,selectedId,controlEpoch) end end,function()if active and driving and selectedId then bwRuntimeState:FireServer("Source",selectedId,controlEpoch)end end)
 ide.gui.Enabled=false
+ide.garageOnly=royale
 local touch=controller.providers.Touch
 ide:fitAboveTouchDrive(touch.root,touch.sticks.Drive.frame)
 bwRuntimeState.OnClientEvent:Connect(function(id,reading) if active and (not royale or (driving and id==selectedId and reading.controlEpoch==controlEpoch)) then ide:receiveRuntime(id,reading) end end)
@@ -106,6 +107,48 @@ menuButton.AnchorPoint=Vector2.new(.5,0); menuButton.Position=UDim2.new(.5,0,0,5
 menuButton.Font=Enum.Font.GothamMedium; menuButton.TextSize=14; menuButton.TextColor3=Color3.fromRGB(237,239,224)
 menuButton.BackgroundColor3=Color3.fromRGB(32,47,52); menuButton.Selectable=true; menuButton.Parent=gui
 menuButton.Activated:Connect(function() if active then onMenu() end end)
+local garageRemote=if royale then network:FindFirstChild("GarageConfiguration") else nil
+local gear,zoneGui,zoneGarage,zoneLease
+local function closeConfiguration()
+ if not zoneLease then return end
+ zoneLease=nil
+ zoneGarage:exit();zoneGui.Enabled=false
+end
+local function updateConfiguration(own)
+ local available=active and driving and own~=nil and own.controlEpoch==controlEpoch and own.health>0
+  and own.controlMode=="Manual" and own.configurationZone~=nil
+ if gear then gear.Visible=available end
+ controller.providers.KeyboardMouse:setZoneCursor(available==true)
+ if zoneLease and not available then closeConfiguration() end
+end
+local function updateInput(own)
+ updateConfiguration(own)
+ controller:setExternalControl(zoneLease~=nil or not own or own.bwRunning==true or own.controlMode=="Auto" or own.health<=0)
+end
+if garageRemote then
+ gear=Instance.new("TextButton")
+ gear.Name="ZoneConfigurationGear";gear.Text="⚙";gear.TextSize=26;gear.AnchorPoint=Vector2.new(1,0)
+ gear.Position=UDim2.new(1,-8,0,48);gear.Size=UDim2.fromOffset(44,40)
+ gear.BackgroundColor3=Color3.fromRGB(28,65,99);gear.TextColor3=Color3.fromRGB(232,244,255)
+ gear.Visible=false;gear.Parent=gui
+ gear.Activated:Connect(function()
+  if not gear.Visible or zoneLease or not active then return end
+  if not zoneGarage then
+   zoneGui=Instance.new("ScreenGui");zoneGui.Name="ZoneGarage";zoneGui.ResetOnSpawn=false
+   zoneGui.DisplayOrder=90;zoneGui.ScreenInsets=Enum.ScreenInsets.CoreUISafeInsets
+   zoneGui.Parent=player:WaitForChild("PlayerGui")
+   zoneGarage=require(script.Parent.shell.ShellGarage).new({parent=zoneGui,inWorld=true,
+    home=function() closeConfiguration();updateInput(states[selectedId]) end,
+    garageRequest=function(action,_,draft)
+     local lease=zoneLease
+     return garageRemote:InvokeServer(action.."Zone",lease.id,draft,lease.epoch)
+    end})
+  end
+  zoneLease={id=selectedId,epoch=controlEpoch}
+  ide:close();controller:setExternalControl(true)
+  zoneGui.Enabled=true;zoneGarage:enter()
+ end)
+end
 snapshot.OnClientEvent:Connect(function(nextStates,battles)
 	states = nextStates
 	battleState=(battles or {})[tostring(player.UserId)] or {}
@@ -118,7 +161,7 @@ snapshot.OnClientEvent:Connect(function(nextStates,battles)
  if royale and (not driving or not own or own.controlEpoch~=controlEpoch)then own=nil end
  if ownId then ide:bind(ownId)end
 	if own then bwRequest=math.max(bwRequest,own.bwRequestId or 0) end
-	controller:setExternalControl(not own or own.bwRunning==true or own.controlMode=="Auto" or own.health<=0)
+	updateInput(own)
 	if battlefieldCamera:observe(states[ownId]) and renderers[ownId] then
 		renderers[ownId]:resetPose(states[ownId])
 	end
@@ -172,6 +215,7 @@ RunService:BindToRenderStep("BattleWorksFrame", Enum.RenderPriority.Camera.Value
 		local status
 		if own.waitingForSpawn then status = "Waiting for a clear spawn…"
   elseif own.health <= 0 then status = if battleState.multiplayer then "WRECKED • Respawning…" else "WRECKED • Reset Battle to retry"
+		elseif own.configurationZone then status="Configuration zone"
 		elseif own.weaponPerformance==0 then status="Weapon disabled"
 		elseif Components.forWeapon(own.tankType,own.weaponId).Weapon.Operation=="Heat" then
 			status = if (own.weaponCooldown or 0)>0 then string.format("COOLING %.1fs",own.weaponCooldown)
@@ -179,6 +223,7 @@ RunService:BindToRenderStep("BattleWorksFrame", Enum.RenderPriority.Camera.Value
 		elseif (own.weaponPreparationRemaining or 0)>0 then status=string.format("Preparing %.1fs",own.weaponPreparationRemaining)
 		else status = if own.cooldown>0 then string.format("Reloading %.1fs",own.cooldown) else "Ready" end
 		if own.immobilized then status..=string.format(" / RATTLED %.1fs",own.immobilizedRemaining or 0) end
+		if not own.immobilized and (own.rattleSeverity or 0)>0 then status..=" / GATLING DAMAGE" end
 		if own.smokeBurst then status..=" / SMOKE" end
 		label.Text = string.format("%s / HP %d / %s",own.tankType or "Boomer",own.health,status)..(if battleState.winner=="Draw" then " / DRAW!" elseif battleState.winner then " / "..battleState.winner.." WINS!" else "")
 	end
@@ -205,8 +250,9 @@ function self:setActive(enabled)
   battlefieldCamera.gui:SetAttribute("PauseCamera",false)
   TankRenderers.sync(renderers,states,Renderer.new)
   local own=states[selectedId]
-  controller:setExternalControl(not own or own.bwRunning==true or own.controlMode=="Auto" or own.health<=0)
+  updateInput(own)
  else
+  updateConfiguration(nil)
   controller:setExternalControl(true); controller:release(); ide:close()
   local focused=game:GetService("UserInputService"):GetFocusedTextBox()
   if focused then focused:ReleaseFocus() end
@@ -242,6 +288,7 @@ function self:setControl(reading)
  if reading.mode~="Tank" and reading.mode~="OnFoot" then return false end
  if reading.mode=="Tank" and (type(reading.selected)~="string" or type(reading.epoch)~="number" or reading.epoch~=reading.epoch or reading.epoch%1~=0 or reading.epoch<1)then return false end
  controlRevision=reading.revision
+ closeConfiguration();updateConfiguration(nil)
  controller:setExternalControl(true);controller:release();ide:close()
  if driving then restoreCharacterCamera()end
  selectedId=if reading.mode=="Tank" then reading.selected else nil
@@ -256,7 +303,7 @@ function self:setControl(reading)
  gui.Enabled=active and driving;ide.gui.Enabled=active and driving;battlefieldCamera.gui.Enabled=active and driving
  if battlefieldCamera.testPanel and battlefieldCamera.testPanel.gui then battlefieldCamera.testPanel.gui.Enabled=active and driving end
  local own=states[selectedId]
- controller:setExternalControl(not driving or not own or own.controlEpoch~=controlEpoch or own.bwRunning==true or own.controlMode=="Auto" or own.health<=0)
+ updateInput(if driving and own and own.controlEpoch==controlEpoch then own else nil)
  elapsed=0
  return true
 end

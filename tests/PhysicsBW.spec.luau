@@ -50,6 +50,12 @@ hud:update({tankType="Boomer",drivePerformance=.64,movementSpeedXZ=27,angularVel
 check(hud.label.Text:find("BOOST +4.6",1,true) and hud.label.Text:find("SLIDING",1,true),"HUD shows allocation-limited boost and traction/angular diagnostics")
 hud:update({tankType="Boomer",drivePerformance=0,movementSpeedXZ=10})
 check(hud.label.Text:find("MOVING WITH DRIVE DISABLED",1,true),"HUD handles external movement with disabled propulsion")
+hud:update({tankType="Boomer",drivePerformance=.5,terrainSpeedScale=.5,surface="Grass",rattleSeverity=1,grounded=true})
+check(hud.label.Text:find("GROUND LIMIT 8.8 | Grass",1,true) and hud.label.Text:find("GATLING DAMAGE",1,true),"HUD distinguishes terrain limit and recurring damage")
+hud:update({tankType="Boomer",immobilized=true,immobilizedRemaining=.4})
+check(hud.label.Text:find("DRIVE STUN 0.4s",1,true),"HUD identifies a current damage stun")
+hud:update({tankType="Boomer",motionDebugThrottle=1,linearVelocity=Vector3.new(26,0,0),motionDebugLostTime=.012,motionDebugLimitedBy="public:1 / public:2"})
+check(hud.label.Text:find("THROTTLE +1.00 | VELOCITY 26.0",1,true) and hud.label.Text:find("CCD CUT 12.0 ms",1,true),"HUD distinguishes commanded drive, retained velocity and clipped motion")
 hud:destroy()
 print(string.format("Physics BW/control/telemetry coverage passed: %d assertions",checks))
 

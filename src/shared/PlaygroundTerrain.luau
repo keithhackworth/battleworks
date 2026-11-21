@@ -3,9 +3,11 @@
 local Layout=require(script.Parent.PlaygroundProvingLayout)
 local Materials=require(script.Parent.TerrainMaterials)
 local Surface=require(script.Parent.SurfacePhysics)
-local T={Depth=-42,BridgeWidth=24,DefaultSize=Layout.Size}
+local T={Depth=-42,BridgeWidth=24,ReferenceSize=Layout.Size,DefaultSize=Vector2.new(462,369)}
 function T.create(size)
- local x,z=size.X/2,size.Y/2
+ local proving=size.X>=T.DefaultSize.X and size.Y>=T.DefaultSize.Y
+ local scale=if proving then math.min(1,size.X/Layout.Size.X,size.Y/Layout.Size.Y) else 1
+ local x,z=size.X/(2*scale),size.Y/(2*scale)
  local regions={}
  local function add(name,x0,x1,z0,z1,y,slope)
   table.insert(regions,{name=name,x0=x0,x1=x1,z0=z0,z1=z1,y=y or 0,slope=slope or 0})
@@ -23,7 +25,27 @@ function T.create(size)
  local data={regions=regions,entries=entries,hazards={
   {name="River",x0=-22,x1=22,z0=-75,z1=65,y0=-1000000,y1=-27},
  },spawns={Vector3.new(-72,0,84),Vector3.new(-48,0,84),Vector3.new(48,0,84),Vector3.new(72,0,84),Vector3.new(-72,0,50),Vector3.new(72,0,50)}}
- if size.X>=Layout.Size.X and size.Y>=Layout.Size.Y then Layout.extend(data)end
+ if proving then Layout.extend(data)end
+ data.geometryScale=scale
+ if scale<1 then
+  for _,r in regions do
+   r.x0*=scale;r.x1*=scale;r.z0*=scale;r.z1*=scale;r.y*=scale
+   if r.name=="Bridge" then r.z0=-T.BridgeWidth/2;r.z1=T.BridgeWidth/2 end
+  end
+  for _,r in data.hazards do r.x0*=scale;r.x1*=scale;r.z0*=scale;r.z1*=scale end
+  for _,points in {data.entries,data.spawns} do
+   for i,p in points do points[i]=p*scale end
+  end
+  local field=data.openField
+  field.x0*=scale;field.x1*=scale;field.z0*=scale;field.z1*=scale
+  for _,r in data.staticBoxes do r.x*=scale;r.z*=scale;r.sx*=scale;r.sz*=scale end
+  for _,r in data.trees do r.x*=scale;r.z*=scale;r.radius*=scale end
+  for _,r in data.targets do r.x*=scale;r.z*=scale end
+  for _,r in data.configurationZones do r.x*=scale;r.z*=scale;r.halfX*=scale;r.halfZ*=scale end
+  for _,list in {data.strips,data.boundaries} do
+   for _,r in list do r.x*=scale;r.z*=scale;r.rx*=scale;r.rz*=scale end
+  end
+ end
  return data
 end
 -- Attach to the existing Environment. Authored worlds never call this factory.
@@ -46,6 +68,14 @@ end
 function T.sample(data,x,z)
  for _,r in data.regions do if inside(r,x,z)then return r.y+(z-r.z0)*r.slope,r end end
  return T.Depth,nil
+end
+function T.configurationZone(data,position,clearance)
+ if not data or not data.configurationZones then return nil end
+ for _,zone in data.configurationZones do
+  if math.abs(position.X-zone.x)<=zone.halfX+(clearance or 0)
+   and math.abs(position.Z-zone.z)<=zone.halfZ+(clearance or 0) then return zone end
+ end
+ return nil
 end
 function T.hazard(data,p)
  for _,r in data.hazards do if inside(r,p.X,p.Z)and p.Y>=r.y0 and p.Y<=r.y1 then return r.name end end

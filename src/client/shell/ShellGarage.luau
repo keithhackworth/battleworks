@@ -53,9 +53,13 @@ local function readout(config,profile,name)
 end
 
 function Screen.new(context)
- local view=View.new(context,"Garage","Allocate up to 100% of the bus. Save a setup before taking control.")
+ local inWorld=context.inWorld==true
+ local view=View.new(context,if inWorld then "Tank Configuration" else "Garage",
+  if inWorld then "Allocate up to 100% of this tank’s bus." else "Allocate up to 100% of the bus. Save a setup before taking control.")
  local choices,index,draft,profile={},1,nil,nil
+ local actual
  local drag,requesting
+ local revision=0
  local rows={}
  local function connect(event,handler) table.insert(view.connections,event:Connect(handler)) end
  local remote=context.garageRequest
@@ -66,11 +70,16 @@ function Screen.new(context)
   return result
  end
  local function refresh() end
+ local function select(choice)
+  draft=Hardware.categoryDraft(choice.draft)
+  actual=choice.current
+  profile=if choice.assembly then Components.resolve(choice.assembly) else Components.forWeapon(choice.kind,choice.weapon)
+ end
  local picker=view:button("Loadout","Load loadouts",function()
   if requesting then return end
+  if inWorld and draft then return end
   if #choices>0 then index=index%#choices+1 else view:loadChoices();return end
-  draft=Hardware.categoryDraft(choices[index].draft)
-  profile=Components.forWeapon(choices[index].kind,choices[index].weapon)
+  select(choices[index])
   refresh()
  end)
  local total=view:paragraph("BusTotal","")
@@ -103,19 +112,22 @@ function Screen.new(context)
   if row.secondary then connect(row.secondary.track.InputBegan,function(input) dragAt(row.secondary,input) end) end
  end
  local status=view:paragraph("GarageStatus","")
- local save=view:button("SaveBus","Save setup for this session",function()
+ local save=view:button("SaveBus",if inWorld then "Apply to this tank" else "Save setup for this session",function()
   if not draft or requesting then return end
   requesting=true
   local choice=choices[index]
+  local version=revision
   local result=request("Save",choice.id,draft)
+  if version~=revision then return end
   requesting=false
   if result.ok then
+   actual=nil
    choice.draft=result.draft;draft=Hardware.categoryDraft(result.draft)
    refresh()
   end
-  status.Text=if result.ok then "Saved. Applies when you take manual control." else result.message
+  status.Text=if not result.ok then result.message elseif inWorld then "Applied to this tank and saved for this session." else "Saved. Applies when you take manual control."
  end,true)
- view:back()
+ if inWorld then view:button("CloseConfiguration","Close",context.home) else view:back() end
  refresh=function()
   local choice=choices[index]
   if not choice or not draft then
@@ -123,8 +135,8 @@ function Screen.new(context)
    total.Text="";save.Visible=false
    return
   end
-  local config=assert(Hardware.fromCategories(draft,profile,choice.tier))
-  picker.Text=choice.kind.." / "..profile.Weapon.WeaponType.."  ›"
+  local config=actual or assert(Hardware.fromCategories(draft,profile,choice.tier))
+  picker.Text=choice.kind.." / "..profile.Weapon.WeaponType..(if inWorld then "" else "  ›")
   local sum=0
   for name,row in rows do
    local allocation=draft.allocations[name]
@@ -148,6 +160,7 @@ function Screen.new(context)
   if width<=0 then return end
   local fraction=math.clamp((x-slide.track.AbsolutePosition.X)/width,0,1)
   local name=drag.name
+  actual=nil
   if slide==rows[name].master then
    local used=0
    for category,value in draft.allocations do if category~=name then used+=value end end
@@ -173,13 +186,13 @@ function Screen.new(context)
  connect(UIS.WindowFocusReleased,endDrag)
  function view:loadChoices()
   requesting=true
+  local version=revision
   local result=request("Read")
+  if version~=revision then return end
   requesting=false
   if result.ok and #result.choices>0 then
    choices=result.choices;index=math.min(index,#choices)
-   local choice=choices[index]
-   profile=Components.forWeapon(choice.kind,choice.weapon)
-   draft=Hardware.categoryDraft(choice.draft)
+   select(choices[index])
    status.Text=""
   else
    status.Text=result.message or "No loadouts available."
@@ -189,9 +202,11 @@ function Screen.new(context)
  end
  function view:enter()
   View.enter(self)
+  if inWorld then draft=nil;choices={};index=1;picker.Text="Loading tank…";refresh() end
   if not draft then self:loadChoices() end
  end
  function view:exit()
+  revision+=1;requesting=false
   endDrag()
   View.exit(self)
  end

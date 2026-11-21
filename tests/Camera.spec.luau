@@ -280,7 +280,7 @@ for _, viewport in {Vector2.new(812,362), Vector2.new(568,320), Vector2.new(2560
 		check(not view.wholeMap and near(view.distance,160), "follow camera reaches 160 studs on regular maps across slider depths and viewports")
 		assertCap(view,defaults.MaxGroundFootprint)
 	end
-	local playground = Math.layout(viewport, config(Vector2.new(800,640)))
+	local playground = Math.layout(viewport, config(Vector2.new(462,369)))
 	check(not playground.wholeMap and near(playground.distance,160), "Playground tank camera reaches 160 studs across viewports")
 end
 local zoom = config(Vector2.new(2400,1800)); zoom.DefaultZoom = 1

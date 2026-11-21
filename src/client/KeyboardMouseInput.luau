@@ -29,7 +29,7 @@ function Provider.new()
  return self
 end
 function Provider:cursor()
- local lock=self.active and self.focused and self.mouseMode=="Mouse Direct"and not self.freeCursor and not self.uiBlocked and not UIS:GetFocusedTextBox()
+ local lock=self.active and self.focused and self.mouseMode=="Mouse Direct"and not self.freeCursor and not self.uiBlocked and not self.zoneCursor and not UIS:GetFocusedTextBox()
  if lock and not self.locked then self.oldBehavior=UIS.MouseBehavior;self.oldIcon=UIS.MouseIconEnabled;self.locked=true end
  if lock then UIS.MouseBehavior=Enum.MouseBehavior.LockCenter;UIS.MouseIconEnabled=false
  elseif self.locked then UIS.MouseBehavior=self.oldBehavior or Enum.MouseBehavior.Default;UIS.MouseIconEnabled=self.oldIcon~=false;self.locked=false end
@@ -40,6 +40,10 @@ function Provider:setMode(mode)
  self.mouseMode=mode;self:reset();self:cursor()
 end
 function Provider:setUIBlocked(blocked)self.uiBlocked=blocked;self:reset();self:cursor()end
+function Provider:setZoneCursor(enabled)
+ if (self.zoneCursor==true)==enabled then return end
+ self.zoneCursor=enabled;self.delta=Vector2.zero;self:cursor()
+end
 function Provider:setActive(active)self.active=active;self.freeCursor=false;self:reset();self:cursor()end
 function Provider:sample(camera,context,dt)
  local command=Command.neutral();self:cursor()
@@ -47,6 +51,7 @@ function Provider:sample(camera,context,dt)
  local function down(key)return if self.held[key]then 1 else 0 end
  command.throttle=down(Enum.KeyCode.W)-down(Enum.KeyCode.S);command.steer=down(Enum.KeyCode.A)-down(Enum.KeyCode.D)
  command.fire=self.held[Enum.UserInputType.MouseButton1]==true
+ if self.zoneCursor and self.mouseMode=="Mouse Direct" then self.delta=Vector2.zero;return command end
  local mouse=UIS:GetMouseLocation()+GuiService:GetInsetArea(Enum.ScreenInsets.None).Min
  if self.mouseMode=="Mouse Points"then
   command.aimMode="World"

@@ -15,10 +15,34 @@ local Value=require("BWValue")
 local count=0
 local function check(ok,m)count+=1;assert(ok,m)end
 local function near(a,b,epsilon)return math.abs(a-b)<(epsilon or .001)end
-local size=T.DefaultSize
+local size=T.ReferenceSize
 local env=E.create(size);local data=T.configure(env,size)
 check(size.X==800 and size.Y==640 and data.provingGround,"expanded deterministic default Playground")
+local compact=T.create(T.DefaultSize)
+local areaRatio=T.DefaultSize.X*T.DefaultSize.Y/(size.X*size.Y)
+check(math.abs(areaRatio-1/3)<.001 and compact.provingGround,"compact Playground keeps about one third of the reference area")
+check(#compact.staticBoxes==#data.staticBoxes and #compact.strips==#data.strips and #compact.targets==#data.targets,"compact layout retains barracks, lanes and targets")
+for _,zone in compact.configurationZones do
+ check(zone.halfX>=12 and zone.halfZ>=12 and T.safe(compact,Vector3.new(zone.x,zone.y,zone.z),7),"compact configuration pad fits a tank on supported ground")
+end
+for _,region in compact.regions do
+ if region.name=="Bridge" then check(region.z1-region.z0==24,"compact bridge preserves driving clearance") end
+end
 check(#data.targets==10 and #data.staticBoxes<50 and #data.trees>=12,"bounded scenery and intentional target placements")
+check(#data.configurationZones==3,"three configuration pads use the proving-ground layout")
+local Motion=require("VehicleMotion")
+local west=data.configurationZones[1]
+local zoneBounds=Contacts.obstacles({playground=data},size)
+for _,manual in {false,true} do
+ local state=S.new(Vector3.new(west.x+west.halfX+8,0,west.z),"Boomer")
+ Motion.setVelocity(state,Vector3.new(-1800,0,0))
+ local body=Contacts.body("zone-test",state,C.get(state).Chassis)
+ body.ignoreConfigurationZones=manual
+ Contacts.solve({body},zoneBounds,1/60)
+ check((T.configurationZone(data,state.position)==west)==manual,
+  "continuous collision blocks autonomous entry at speed and allows manual passage")
+end
+check(T.configurationZone(data,Vector3.new(west.x,15,west.z))==west,"protection remains within the pad footprint while airborne")
 local other=T.create(size)
 for i,r in data.staticBoxes do
  local b=other.staticBoxes[i];check(r.id==b.id and r.x==b.x and r.z==b.z,"layout stable across rebuilds")
@@ -54,12 +78,21 @@ Builder.build(root,data,floor)
 require("EnvironmentBuilder").build(root,env,nil)
 Instance.new=saveFactory
 local walls,trunks,terrainParts={},{},{}
+local pads,signs,stripes=0,0,0
 for _,p in made do
  if p.Name=="BarracksWall"then table.insert(walls,p);check(p.Anchored and p.CanCollide and p.CanQuery,"native walls solid and queryable")end
  if p.Name=="TreeTrunk"then table.insert(trunks,p);check(p.CanCollide and p.CanQuery,"trunks block avatars and scans")end
  if p.Name=="TreeCrown"then check(not p.CanQuery and not p.CanCollide,"foliage stays cosmetic")end
+ if p.Name=="ConfigurationZone" then
+  pads+=1;check(p:GetAttribute("ConfigurationZoneId")~=nil and not p.CanQuery and not p.CanCollide,"zone pads are identified and cosmetic")
+ elseif p.Name=="ConfigurationZoneLabel" then
+  signs+=1
+ elseif p.Name=="ConfigurationStripe" then
+  stripes+=1;check(not p.CanQuery and not p.CanCollide,"zone paint cannot block native rays or movement")
+ end
  if p:GetAttribute("TerrainWetnessObservable")then table.insert(terrainParts,p)end
 end
+check(pads==3 and signs==3 and stripes>pads,"each configuration zone has a striped pad and ground sign")
 check(#walls==#data.staticBoxes and #trunks==#data.trees,"native and custom collision geometry share exact definitions")
 local function intersection(p,origin,delta)
  local a=origin-p.CFrame.Position;local h=p.Size/2;local low,high=0,1;local normal=Vector3.new(0,1,0)
