@@ -60,6 +60,97 @@ function C.default(tier,vehicle)
  return {tier=tier or "Hexadeca",devices=devices}
 end
 function C.forTank(vehicle) local profile=Components.get(vehicle); return C.default(profile.Computer.Tier,profile) end
+C.Categories={"drivetrain","turret","weapon","scanners"}
+-- Provisional balance: positive power preserves a useful scanner footprint
+-- and projectile speed floor. Per-lens power uses the installed mount count.
+local ScannerFloor,ProjectileFloor,TradeoffFloor=.60,.65,.75
+local function boosted(base,floor,power)
+ return base*(floor+(1-floor)*power)
+end
+function C.weaponStats(config,vehicle)
+ local allocation=config.devices.weapon and config.devices.weapon.allocation or 0
+ local power=C.devicePerformance("weapon",allocation,vehicle)
+ local weapon=vehicle.Weapon
+ if not config.tuning then return power,power,weapon.ShellSpeed end
+ local bias=config.tuning.weapon
+ local rate=power*(TradeoffFloor+(1-TradeoffFloor)*bias)
+ local speed=if power>0 then boosted(weapon.ShellSpeed,ProjectileFloor,power*(1-(1-TradeoffFloor)*bias)) else 0
+ return rate,power,speed
+end
+function C.effective(config,name,vehicle)
+ local device=config.devices[name]
+ if not device then return 0 end
+ if name=="weapon" then return (C.weaponStats(config,vehicle)) end
+ return C.devicePerformance(name,device.allocation,vehicle)
+end
+function C.driveRates(vehicle,power)
+ local mobility=vehicle.Mobility
+ local forward,reverse=vehicle.Drivetrain.Speed*power,vehicle.Drivetrain.ReverseSpeed*power
+ local maximum=if not vehicle.Capabilities.Steer then 0 elseif mobility.Kind=="Wheeled" then mobility.MaxYawRate else mobility.TurnSpeed
+ local turn=if mobility.Kind=="Wheeled" then math.min(maximum,forward/mobility.Wheelbase*math.tan(mobility.MaxSteer)) else maximum*power
+ return forward,reverse,turn,maximum
+end
+function C.categoryDraft(config)
+ if config.allocations then
+  return {allocations=table.clone(config.allocations),tuning=table.clone(config.tuning)}
+ end
+ local allocations={drivetrain=0,turret=0,weapon=0,scanners=0}
+ local sum=0
+ for _,name in {"drivetrain","turret","weapon"} do
+  local device=config.devices[name]
+  if device then allocations[name]=device.allocation;sum+=device.allocation end
+ end
+ for _,angle in C.Angles do
+  local device=config.devices["sensor"..angle]
+  if device then allocations.scanners+=device.allocation;sum+=device.allocation end
+ end
+ if sum>100 then for name,value in allocations do allocations[name]=value*100/sum end end
+ return {allocations=allocations,tuning={scanners=.5,weapon=.5}}
+end
+local function bounded(value,maximum)
+ return type(value)=="number" and value>=0 and value<=maximum
+end
+function C.fromCategories(draft,vehicle,tier)
+ if type(draft)~="table" or type(draft.allocations)~="table" or type(draft.tuning)~="table" or not C.Tiers[tier] then return nil,"invalidConfiguration" end
+ local allocations,tuning={},{}
+ local total=0
+ for _,name in C.Categories do
+  local value=draft.allocations[name]
+  if not bounded(value,100) then return nil,"invalidAllocation" end
+  allocations[name]=value;total+=value
+ end
+ if total>100+1e-8 then return nil,"busOverallocated" end
+ for _,name in {"scanners","weapon"} do
+  local bias=draft.tuning[name]
+  if not bounded(bias,1) then return nil,"invalidTuning" end
+  tuning[name]=bias
+ end
+ local count=0
+ for _ in vehicle.Sensors do count+=1 end
+ if count==0 and allocations.scanners>0 then return nil,"noScanners" end
+ local config={tier=tier,devices={},allocations=allocations,tuning=tuning}
+ for _,name in {"drivetrain","turret","weapon"} do config.devices[name]={bus=1,allocation=allocations[name]} end
+ if count>0 then
+  local allocation=allocations.scanners/count
+  local power=C.performance(allocation,vehicle.Bus)
+  local bias=tuning.scanners
+  for angle,sensor in vehicle.Sensors do
+   config.devices["sensor"..angle]={bus=1,allocation=allocation,acquisition=sensor.Acquisition,
+    range=boosted(sensor.Range,ScannerFloor,power*(TradeoffFloor+(1-TradeoffFloor)*bias)),
+    distancePercent=sensor.DistancePercent,
+    coneWidth=boosted(sensor.ConeWidth,ScannerFloor,power*(1-(1-TradeoffFloor)*bias)),
+    cooldown=sensor.Cooldown,originHeight=sensor.OriginHeight}
+  end
+ end
+ return config
+end
+function C.playgroundDefault(vehicle)
+ local legacy=C.default("Bunny",vehicle)
+ local count=0
+ for _ in legacy.devices do count+=1 end
+ for _,device in legacy.devices do device.allocation=100/count end
+ return assert(C.fromCategories(C.categoryDraft(legacy),vehicle,"Bunny"))
+end
 function C.validate(config)
  if type(config)~="table" or not C.Tiers[config.tier] or type(config.devices)~="table" then return nil,"invalidChassis" end
  local spec=C.Tiers[config.tier]; local sums={}; local count=0
@@ -81,6 +172,7 @@ function C.validate(config)
 end
 function C.copy(config)
  local out={tier=config.tier,devices={}}
+ if config.allocations then out.allocations=table.clone(config.allocations);out.tuning=table.clone(config.tuning) end
  for k,d in config.devices do out.devices[k]={bus=d.bus,allocation=d.allocation,acquisition=d.acquisition,range=d.range,distancePercent=d.distancePercent,coneWidth=d.coneWidth,cooldown=d.cooldown,originHeight=d.originHeight} end
  return out
 end

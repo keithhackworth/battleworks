@@ -3,6 +3,7 @@ local GuiService = game:GetService("GuiService")
 local Players = game:GetService("Players")
 local Actions=game:GetService("ContextActionService")
 local Command = require(game.ReplicatedStorage.Shared.InputCommand)
+local MouseAimView = require(script.Parent.MouseAimView)
 local Controller = {}
 Controller.__index = Controller
 local modes = { "Auto", "KeyboardMouse", "Touch", "Gamepad" }
@@ -14,9 +15,21 @@ function Controller.new(gui, onRelease)
 		Touch = require(script.Parent.TouchInput).new(gui, { turretDeadZone = 0.15, driveDeadZone = 0.15 }),
 		Gamepad = require(script.Parent.GamepadInput).new(),
 	}
- self.mouseView=require(script.Parent.MouseAimView).new(gui,function(mode)self:setMouseMode(mode)end,function(blocked)
+ self.mouseView=MouseAimView.new(gui,function(mode)self:setMouseMode(mode)end,function(blocked)
   self.providers.KeyboardMouse:setUIBlocked(blocked)
   self.onRelease(Command.neutral())
+ end)
+ UIS.InputBegan:Connect(function(input,processed)
+  if processed or input.KeyCode~=Enum.KeyCode[MouseAimView.Shortcut] then return end
+  if gui.Enabled and self.mouseView.icon.Visible and not self.suspended and not UIS:GetFocusedTextBox() then
+   local panelOpen=self.mouseView.panel.Visible
+   if UIS:IsKeyDown(Enum.KeyCode.LeftShift) or UIS:IsKeyDown(Enum.KeyCode.RightShift) then
+    local keyboard=self.providers.KeyboardMouse
+    if not panelOpen and not keyboard.freeCursor and keyboard.mouseMode=="Mouse Joystick" then keyboard.recenter=true end
+   else
+    self.mouseView:open(not panelOpen)
+   end
+  end
  end)
 	local button = Instance.new("TextButton")
 	button.Name = "InputMode"; button.AnchorPoint = Vector2.new(1, 0)

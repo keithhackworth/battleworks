@@ -47,7 +47,7 @@ point=Targets.select(world,arena,ray,"public:1")
 check(point.Y==4 and not table.find(seen[2].params.FilterDescendantsInstances,own),"rejected own geometry cannot mask next target")
 index=0;hits={}
 check((Targets.select(world,arena,ray,"public:1")-(ray.Origin+ray.Direction*Targets.Distance)).Magnitude<1e-6,"no suitable hit uses deterministic camera-ray fallback")
-local gui=Instance.new("ScreenGui");local releases=0
+local gui=Instance.new("ScreenGui");gui.Enabled=true;local releases=0
 UIS.PreferredInput=Enum.PreferredInput.KeyboardAndMouse;UIS.focusedTextBox=nil
 UIS.MouseBehavior=Enum.MouseBehavior.Default;UIS.MouseIconEnabled=true
 local controller=Controller.new(gui,function()releases+=1 end)
@@ -67,8 +67,19 @@ UIS.InputBegan:Fire({KeyCode=Enum.KeyCode.LeftAlt,UserInputType=Enum.UserInputTy
 check(UIS.MouseBehavior==Enum.MouseBehavior.Default and not controller:sample(camera).fire,"Alt frees cursor and suppresses gameplay intent for UI")
 UIS.InputEnded:Fire({KeyCode=Enum.KeyCode.LeftAlt,UserInputType=Enum.UserInputType.Keyboard})
 check(UIS.MouseBehavior==Enum.MouseBehavior.LockCenter,"Alt release resumes relative mouse")
-controller.mouseView.icon.Activated:Fire()
-check(controller.mouseView.panel.Visible and UIS.MouseBehavior==Enum.MouseBehavior.Default,"compact selector releases lock while open")
+local shortcut={KeyCode=Enum.KeyCode.C,UserInputType=Enum.UserInputType.Keyboard}
+gui.Enabled=false
+UIS.InputBegan:Fire(shortcut,false)
+check(not controller.mouseView.panel.Visible,"shortcut does not open the hidden tank HUD")
+gui.Enabled=true
+UIS.InputBegan:Fire(shortcut,true)
+check(not controller.mouseView.panel.Visible,"processed shortcut leaves the selector closed")
+UIS.InputBegan:Fire(shortcut,false)
+check(controller.mouseView.panel.Visible and UIS.MouseBehavior==Enum.MouseBehavior.Default and UIS.MouseIconEnabled,"C frees the cursor and opens the options while locked")
+check(not controller:sample(camera).fire,"open options suspend gameplay intent")
+UIS.InputBegan:Fire(shortcut,false)
+check(not controller.mouseView.panel.Visible and UIS.MouseBehavior==Enum.MouseBehavior.LockCenter,"C again closes options and resumes Direct")
+UIS.InputBegan:Fire(shortcut,false)
 controller.mouseView.buttons["Mouse Joystick"].Activated:Fire()
 check(provider.mouseMode=="Mouse Joystick"and not controller.mouseView.panel.Visible and UIS.MouseBehavior==Enum.MouseBehavior.Default,"selector switches mode during play")
 command=controller:sample(camera)
@@ -77,9 +88,12 @@ mouse=Vector2.new(640+Mouse.Radius,360-Mouse.Radius)
 local first=controller:sample(camera);local second=controller:sample(camera)
 check(first.turretX>0 and first.turretY>0 and near(first.turretX,second.turretX),"displaced joystick continues both axes without mouse motion")
 check(controller.mouseView.ring.Visible and controller.mouseView.dot.Visible,"neutral ring and joystick position are rendered")
-UIS.InputBegan:Fire({KeyCode=Enum.KeyCode.C,UserInputType=Enum.UserInputType.Keyboard},false)
+UIS.heldKeys={[Enum.KeyCode.LeftShift]=true}
+UIS.InputBegan:Fire(shortcut,false)
+UIS.heldKeys=nil
+check(not controller.mouseView.panel.Visible,"Shift+C recenters without opening the selector")
 command=controller:sample(camera)
-check(command.turretX==0 and command.turretY==0 and (provider.center-mouse).Magnitude<1e-6,"C reliably establishes a new neutral point")
+check(command.turretX==0 and command.turretY==0 and (provider.center-mouse).Magnitude<1e-6,"Shift+C reliably establishes a new neutral point")
 controller:setExternalControl(true)
 check(not provider.active and controller:sample(camera).turretX==0,"BW/death/on-foot/menu suspension clears mouse intent")
 controller:setExternalControl(false)

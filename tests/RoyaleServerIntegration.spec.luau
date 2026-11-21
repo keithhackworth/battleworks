@@ -1,5 +1,6 @@
 -- Continue the production server harness before boot, supplying native character
 -- lifecycle stand-ins and recording public occupancy acknowledgments.
+math.randomseed(43)
 check(require("BattleRoyaleConfig").mode(nil,nil)=="BattleRoyale","production startup defaults to Royale even without a configuration object")
 check(require("BattleRoyaleConfig").mode(nil,"Classic")=="Classic","explicit Classic startup remains available")
 check(not pcall(require("BattleRoyaleConfig").mode,nil,"bad"),"invalid startup configuration fails clearly")
@@ -51,6 +52,7 @@ local input=network:FindFirstChild("Input")
 local bwRun=network:FindFirstChild("BWRun")
 local function advance(frames)for _=1,frames do time+=1/60;heartbeat:Fire(1/60)end end
 advance(4)
+check((network:FindFirstChild("PlaygroundBWExecution")~=nil)==not headlessStartup,"diagnostic remote exists only in Studio")
 check(players.CharacterAutoLoads and network:GetAttribute("GameMode")=="BattleRoyale","Royale is native-character automatic admission, not menu admission")
 for _,p in created do
  if p.Name=="Arena"then check(p:GetAttribute("Weather")=="Normal","default Royale arena has normal weather")end

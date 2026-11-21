@@ -23,7 +23,7 @@ local function fixture(planes,options)
   rays+=1;local nearest=2;local found
   for _,p in planes do
    local divisor=delta.Y-p.slope*delta.Z
-   if math.abs(divisor)>1e-8 then
+   if table.find(params.FilterDescendantsInstances,p.part) and math.abs(divisor)>1e-8 then
     local t=(p.y+p.slope*origin.Z-origin.Y)/divisor
     local hit=origin+delta*t
     if t>=-1e-8 and t<=1+1e-8 and t<nearest and hit.Z>=p.z0 and hit.Z<=p.z1 and math.abs(hit.X)<=p.width/2 then
@@ -45,7 +45,17 @@ local function fixture(planes,options)
  end
  local tank={state=state,id="own"}
  local parts={};for _,p in planes do table.insert(parts,p.part)end
- local scanner=Scanner.new(world,function()return{}, {},parts end)
+ local scene
+ if options.cached then
+  local arena=Instance.new("Folder");arena.children=parts
+  for _,part in parts do part:SetAttribute("ScannerTerrainOnly",true) end
+  function world:FindFirstChild() return nil end
+  scene=require("ScannerScene").new(arena,world,{CanQuery=false},{},{})
+ end
+ local scanner=Scanner.new(world,function()
+  if scene then return scene:read() end
+  return {},{},parts
+ end)
  local function scan(angle,hardware,time)
   return scanner:execute(tank,angle or 0,time or 10,hardware or{coneWidth=90})
  end
@@ -61,6 +71,15 @@ for _,sample in ground.samples do
  check(near(sample.elevation_rate,0)and near(sample.slope_angle,0),"flat slope units")
 end
 check(table.isfrozen(ground)and table.isfrozen(ground.samples[1]),"terrain returns deeply immutable BW values")
+local uncachedRamp=fixture({plane(0,-200,200,.25)})
+local cachedRamp=fixture({plane(0,-200,200,.25)},{cached=true})
+local expectedRamp=assert(uncachedRamp()).value.terrain
+local actualRamp=assert(cachedRamp()).value.terrain
+check(actualRamp.count==expectedRamp.count and actualRamp.continuity==expectedRamp.continuity,"cache preserves terrain sample count and continuity")
+for i,expected in expectedRamp.samples do
+ local actual=actualRamp.samples[i]
+ check(actual.elevation==expected.elevation and actual.slope_angle==expected.slope_angle and actual.surface_type==expected.surface_type,"cached samples preserve elevation, slope, and material")
+end
 for _,slope in {-.25,.25}do
  local ramp=fixture({plane(0,-200,200,slope)})
  local record=assert(ramp()).value.terrain

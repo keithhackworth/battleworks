@@ -96,6 +96,18 @@
             "Value": "BattleRoyale"
           }
         },
+        "PlaygroundBWEnabled": {
+          "$className": "BoolValue",
+          "$properties": {
+            "Value": true
+          }
+        },
+        "PlaygroundProfileWindowSeconds": {
+          "$className": "IntValue",
+          "$properties": {
+            "Value": 5
+          }
+        },
         "PublicTankCount": {
           "$className": "IntValue",
           "$properties": {

@@ -111,7 +111,7 @@ function Math.layout(viewport, config, padding)
 	end
 	local wholeReadable = config.ReferenceWindowHeight * config.TankSilhouetteWidth
 		/ (2 * lens.tanV * config.WholeMapMinTankPixels) - farthest
-	local wholeCap = math.min(footprintCap, config.MaxZoom, wholeReadable)
+	local wholeCap = math.min(footprintCap, config.MaxZoom, config.OverviewMaxZoom or config.MaxZoom, wholeReadable)
 	local wholeMap = wholeDistance <= wholeCap + EPSILON
 	-- In pan mode also reduce distance enough that the footprint CAN fit within
 	-- both map axes. A long thin map must not expose enormous empty side regions.

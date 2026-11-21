@@ -47,6 +47,7 @@ Instance.new=function(class)
  end
  setmetatable(p,{__index=function(self,key)
   if key=="CFrame" and rawget(self,"Position") then return CFrame.new(self.Position) end
+  return instanceEvents.__index(self,key)
  end,__newindex=function(self,key,value)
   rawset(self,key,value)
   if key=="Parent" and value and value.children then table.insert(value.children,self) end

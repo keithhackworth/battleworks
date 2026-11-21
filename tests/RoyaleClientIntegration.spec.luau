@@ -26,6 +26,12 @@ local bindings={}
 local actions={BindAction=function(_,name,fn)bindings[name]=fn end,BindActionAtPriority=function(_,name,fn)bindings[name]=fn end,UnbindAction=function(_,name)bindings[name]=nil end}
 local frame
 local run={IsStudio=function() return false end,BindToRenderStep=function(_,_,_,callback) frame=callback end}
+if run:IsStudio() then
+ local execution=Instance.new("RemoteEvent")
+ execution:SetAttribute("Enabled",true)
+ function execution:FireServer(value)table.insert(requests,{name="PlaygroundBWExecution",args={value}})end
+ remotes.PlaygroundBWExecution=execution
+end
 local chatService=Instance.new("TextChatService");chatService.ChatVersion=Enum.ChatVersion.TextChatService;chatService.MessageReceived=signal()
 local chatBar=Instance.new("ChatInputBarConfiguration");chatBar.Enabled=true;chatBar.IsFocused=false
 local chatHistory=Instance.new("ChatWindowConfiguration");chatHistory.Enabled=true
@@ -64,6 +70,17 @@ remotes.RoyaleControl.OnClientEvent.Fire=function(event,value)
  fireControl(event,value)
 end
 check(requests[#requests].name=="RoyaleControl" and requests[#requests].args[1]=="Sync","default Royale client requests authoritative admission state")
+if run:IsStudio() then
+ local toggle=named("PlaygroundBWExecution")
+ check(toggle.Text=="BW Execution: ON","diagnostic button renders the server's initial state")
+ toggle.Activated:Fire()
+ check(requests[#requests].name=="PlaygroundBWExecution" and requests[#requests].args[1]==false and toggle.Text=="BW Execution: ON","click requests OFF without optimistic state changes")
+ local execution=remotes.PlaygroundBWExecution
+ execution:SetAttribute("Enabled",false);execution:GetAttributeChangedSignal("Enabled"):Fire()
+ check(toggle.Text=="BW Execution: OFF","server replication updates the diagnostic button")
+else
+ for _,widget in created do assert(widget.Name~="PlaygroundBWExecution","published HUD has no diagnostic toggle")end
+end
 remotes.RoyaleControl.OnClientEvent:Fire({revision=1,mode="OnFoot"})
 local state=require("TankSimulation").new(Vector3.zero,"Boomer");state.public=true;state.controlEpoch=2
 remotes.Snapshot.OnClientEvent:Fire({["public:1"]=state},{["101"]={royale=true,selected="public:1"}})
@@ -191,6 +208,13 @@ check(named("MouseAimSelector"):GetAttribute("MouseAimMode")=="Mouse Direct","in
 exitAndEnter(112,24)
 check(named("MouseAimSelector"):GetAttribute("MouseAimMode")=="Mouse Direct","mouse preference persists across public tank lease/death-style control changes")
 named("MouseAimSelector").Activated:Fire();named("Mouse Points").Activated:Fire()
+local editorToggle=named("ToggleBW")
+local touchProvider=client.battle.inputController.providers.Touch
+check(editorToggle.AnchorPoint.Y==1 and editorToggle.Position.Y.Scale==1 and editorToggle.Position.Y.Offset==-12,"BW Editor is docked along the bottom of the tank HUD")
+touchProvider.root.Visible=true;touchProvider.root:GetPropertyChangedSignal("Visible"):Fire()
+check(-editorToggle.Position.Y.Offset>16+touchProvider.sticks.Drive.frame.Size.Y.Offset,"editor dock clears the touch drive stick")
+touchProvider.root.Visible=false;touchProvider.root:GetPropertyChangedSignal("Visible"):Fire()
+check(editorToggle.Position.Y.Offset==-12,"editor dock returns to the bottom when touch controls hide")
 -- Chat persists across real RoyaleClient control acknowledgments, not a second HUD.
 UIS.PreferredInput=Enum.PreferredInput.KeyboardAndMouse;UIS.preferredSignal:Fire()
 check(client.chat.ready and client.chat.gui.Enabled and client.chat.window.Target==chatChannel,"production Playground client mounts native global chat both on foot/in tank")

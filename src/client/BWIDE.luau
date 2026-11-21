@@ -47,7 +47,10 @@ function IDE.new(playerGui,onRun,onStop,onConfigure,onSource)
 	gui:SetAttribute("EditorVersion","E3.3-live")
 	gui.ScreenInsets=Enum.ScreenInsets.CoreUISafeInsets; gui.DisplayOrder=30; gui.Parent=playerGui; self.gui=gui
 	local toggle=text(gui,"TextButton","ToggleBW")
-	toggle.AnchorPoint=Vector2.new(1,0); toggle.Position=UDim2.new(1,-8,0,172); toggle.Size=UDim2.fromOffset(194,26)
+	toggle.AnchorPoint=Vector2.new(1,1); toggle.Position=UDim2.new(1,-12,1,-12); toggle.Size=UDim2.new(.27,0,0,26)
+	toggle.TextScaled=true
+	local toggleBounds=Instance.new("UISizeConstraint");toggleBounds.MaxSize=Vector2.new(194,26);toggleBounds.Parent=toggle
+	local toggleText=Instance.new("UITextSizeConstraint");toggleText.MaxTextSize=14;toggleText.Parent=toggle
 	toggle.Text="BW Editor • E3.3"; toggle.Selectable=true; self.toggle=toggle
 	local frame=Instance.new("Frame"); frame.Name="EditorPanel"; frame.AnchorPoint=Vector2.new(0.5,0.5)
 	frame.Position=UDim2.fromScale(0.5,0.5); frame.Size=UDim2.fromScale(0.94,0.88)
@@ -188,6 +191,15 @@ function IDE.new(playerGui,onRun,onStop,onConfigure,onSource)
 	connect(outputScroll:GetPropertyChangedSignal("AbsoluteSize"),function() self:layoutOutput(false) end)
 	self:layoutSource(); self:layoutOutput(false);self:sourceStatusChanged()
 	return self
+end
+function IDE:fitAboveTouchDrive(touchRoot,driveStick)
+ local function position()
+  local bottom=if touchRoot.Visible then driveStick.Size.Y.Offset+44 else 12
+  self.toggle.Position=UDim2.new(1,-12,1,-bottom)
+ end
+ table.insert(self.connections,touchRoot:GetPropertyChangedSignal("Visible"):Connect(position))
+ table.insert(self.connections,driveStick:GetPropertyChangedSignal("Size"):Connect(position))
+ position()
 end
 function IDE:close()
  if self.window then self.window.stop()end
@@ -415,10 +427,19 @@ function IDE:renderRuntime()
  if self.renderedDiagnostic==reading and self.renderedDiagnosticTank==self.tankId and self.renderedDiagnosticGeneration==(own and own.generation)and self.renderedDiagnosticRun==(own and own.bwRunRequestId)and self.renderedDiagnosticSerial==(own and own.bwProgramSerial)and self.renderedDiagnosticClock==clock then return end
  self.renderedDiagnostic=reading;self.renderedDiagnosticTank=self.tankId;self.renderedDiagnosticGeneration=own and own.generation;self.renderedDiagnosticRun=own and own.bwRunRequestId;self.renderedDiagnosticSerial=own and own.bwProgramSerial;self.renderedDiagnosticClock=clock
  local config=reading.configuration
- if config and self.lastHardwareTank~=self.tankId then
-  self.lastHardwareTank=self.tankId; local lines={config.tier}; local names={}; for name in config.devices do table.insert(names,name) end; table.sort(names)
-  for _,name in names do local d=config.devices[name]; table.insert(lines,string.format("%s %d %g",name,d.bus,d.allocation)) end
-  self.configEditor.Text=table.concat(lines,"\n")
+ if config then
+  self.configEditor.TextEditable=config.allocations==nil
+  self.applyHardware.Visible=config.allocations==nil
+  if config.allocations then
+   local lines={config.tier,"Garage bus configuration"}
+   for _,name in Hardware.Categories do table.insert(lines,string.format("%s %.1f%%",name,config.allocations[name])) end
+   self.configEditor.Text=table.concat(lines,"\n")
+  elseif self.lastHardwareTank~=self.tankId or reading.configurationResult then
+   local lines={config.tier}; local names={}; for name in config.devices do table.insert(names,name) end; table.sort(names)
+   for _,name in names do local d=config.devices[name]; table.insert(lines,string.format("%s %d %g",name,d.bus,d.allocation)) end
+   self.configEditor.Text=table.concat(lines,"\n")
+  end
+  self.lastHardwareTank=self.tankId
  end
  local spec=Hardware.Tiers[config and config.tier or "Hexadeca"]
  local lines={string.format("%d threads, %d ticks, queue %d",spec.threads,spec.ticks,spec.queue),if reading.configurationResult then "Config: "..reading.configurationResult else "Device bus allocation%"}
@@ -434,6 +455,9 @@ function IDE:renderRuntime()
   for _,name in names do local d=r.devices[name]; local idsInQueue={}; for _,c in d.queue do table.insert(idsInQueue,tostring(c.id)..":"..c.op) end
    table.insert(lines,string.format("%s B%d %g%% active=%s Q[%s]",name,d.bus,d.allocation,if d.active then tostring(d.active.id)..":"..d.active.op else "idle",table.concat(idsInQueue,",")))
    if d.steeringDegrees~=nil then table.insert(lines,string.format("  wheel target %.1f degrees (+left / -right)",d.steeringDegrees)) end
+   if d.acquisitionSeconds then
+    table.insert(lines,string.format("  %.1f° / %.1f studs • %.2fs acquisition",d.coneWidth,d.range,d.acquisitionSeconds))
+   end
    if d.lastScan then
     local reading=d.lastScan
     local result=if reading.status=="success" then tostring(reading.count).." objects" else reading.reason or "failed"

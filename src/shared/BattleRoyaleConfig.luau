@@ -6,6 +6,10 @@ function C.mode(configuration,override)
  assert(mode=="Classic" or mode=="BattleRoyale","GameMode must be Classic or BattleRoyale")
  return mode
 end
+function C.bwEnabled(configuration)
+ local flag=configuration and configuration:FindFirstChild("PlaygroundBWEnabled")
+ return not (flag and flag:IsA("BoolValue") and flag.Value==false)
+end
 function C.settings(configuration)
  local function number(name,default,min,max)
   local item=configuration and configuration:FindFirstChild(name);local n=if item then item.Value else default

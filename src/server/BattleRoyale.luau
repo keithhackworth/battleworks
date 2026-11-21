@@ -38,8 +38,11 @@ function R:spawn(slot)
  tank.id=slot.id;tank.public=true;tank.slot=slot;tank.owner=0
  tank.state.generation=slot.generation;tank.state.controlEpoch=slot.epoch;tank.state.public=true;tank.state.occupantUserId=nil
  tank.hitbox:SetAttribute("OwnerId",0);tank.hitbox:SetAttribute("OccupantUserId",nil)
- if self.options.autonomy then self.options.autonomy.attach(tank,slot.index);self.options.autonomy.start(tank,self.options.clock())end
+ if self.options.autonomy then self.options.autonomy.attach(tank,slot.index);self:startAutonomy(tank)end
  self:attachPrompt(tank)
+end
+function R:startAutonomy(tank)
+ self.options.autonomy.start(tank,(self.options.autonomyClock or self.options.clock)())
 end
 function R:attachPrompt(tank)
  if tank.promptConnection then tank.promptConnection:Disconnect()end
@@ -118,7 +121,7 @@ function R:release(member,reason,kill,silent,eject)
  if tank.state.health>0 and not tank.state.publicRetired then self:attachPrompt(tank)else tank.prompt.Enabled=false end
  member.revision+=1;self.options.select(member.player,nil,member)
  self.options.characters:restore(member.player,tank.state.position+Vector3.new(12,0,0),kill,ejection)
- if tank.personality and tank.state.health>0 and not tank.state.publicRetired then self.options.autonomy.start(tank,self.options.clock())end
+ if tank.personality and tank.state.health>0 and not tank.state.publicRetired then self:startAutonomy(tank)end
  if not silent then self:notify(member,reason)end;return true
 end
 function R:park(member)
@@ -160,7 +163,7 @@ function R:request(player,action,requestId,id,epoch)
   member.lastAction=now
   clearControl(tank,"Control mode changed.")
   tank.slot.epoch+=1;tank.state.controlEpoch=tank.slot.epoch
-  if action=="Auto"then self.options.autonomy.start(tank,self.options.clock())else tank.state.controlMode="Manual";tank.autoRestartAt=nil end
+  if action=="Auto"then self.options.autonomy.hardware(tank);self:startAutonomy(tank)else tank.state.controlMode="Manual";tank.autoRestartAt=nil end
   member.revision+=1;self.options.select(player,tank,member);self:notify(member);return true
  elseif action=="Menu"then return self:menu(member)
  elseif action=="Join"then return self:join(member)
@@ -182,7 +185,7 @@ function R:destroyed(tank)
  local member=tank.occupant and self.members[tank.occupant]
  if member then self:release(member,"Tank destroyed. Find another public tank.",true)end
 end
-function R:step()
+function R:step(autonomyPaused)
  local now=self.options.clock()
  if self.options.hazard then
   for _,member in self.members do
@@ -197,7 +200,9 @@ function R:step()
   if tank and tank.state.health>0 and self.options.hazard and self.options.hazard(tank.state.position)then
    Battle.environmentDamage(self.battle,tank)
   end
-  if tank and self.options.autonomy then self.options.autonomy.step(tank,now)end
+  if tank and self.options.autonomy and (not autonomyPaused or not tank.autonomyActive) then
+   self.options.autonomy.step(tank,if self.options.autonomyClock then self.options.autonomyClock() else now)
+  end
   if tank and tank.state.health<=0 then self:destroyed(tank)end
   if tank and tank.retireAt and now>=tank.retireAt then
    tank.promptConnection:Disconnect();self.options.remove(slot.id,tank);slot.tank=nil;self:spawn(slot)

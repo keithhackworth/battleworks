@@ -10,6 +10,7 @@ local Environment = require(script.Parent.Environment)
 local TurretRecoil = require(script.Parent.TurretRecoil)
 local Recoil = require(script.Parent.RattlerRecoil)
 local Aim=require(script.Parent.TurretAim)
+local Timing=require(script.Parent.WeaponTiming)
 local Simulation = {}
 function Simulation.new(position, tankType, seed, assembly)
     local c=if assembly then (if assembly.Resolved then assembly else Components.resolve(assembly)) else Components.get(tankType)
@@ -132,7 +133,7 @@ function Simulation.step(state, command, dt, mapSize, environment, deferContacts
 end
 function Simulation.tryFire(state, command)
 	if state.health <= 0 or not command.fire or state.cooldown > 0 or (state.weaponPerformance or 1)<=0 then return nil end
-	state.cooldown = Components.get(state).Weapon.Cooldown / (state.weaponPerformance or 1)
+	state.cooldown = Timing.interval(Components.get(state).Weapon,state.weaponPerformance or 1)
 	return Simulation.shotPose(state)
 end
 return Simulation

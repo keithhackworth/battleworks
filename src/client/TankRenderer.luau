@@ -166,10 +166,11 @@ function Renderer.new(id, tankType, weaponId)
 	CombatVisual.attach(self)
 	return self
 end
-function Renderer:fire(rock)
+function Renderer:fire(rock,windup)
 	if self.gatling then self.recoil=self.weapon.Visual.Recoil; RattlerVisual.jolt(self,rock); return end
 	self.recoil = self.weapon.Visual.Recoil
 	self.shotAge = if self.weapon.Visual.Swelling then 0 else nil
+	self.shotWindup = windup
 end
 function Renderer:resetPose(state)
 	self.position = state.position; self.yaw = state.yaw
@@ -205,7 +206,7 @@ function Renderer:update(state, dt)
 	self.phase += dt * math.abs(state.speed) * 0.7
 	self.recoil *= math.exp(-12 * dt)
 	if self.shotAge then self.shotAge += math.max(dt, 0) end
-	local swelling = BarrelAnimation.sample(self.shotAge)
+	local swelling = BarrelAnimation.sample(self.shotAge,self.shotWindup,self.weapon.FireWindup)
 	if not swelling.active or state.health <= 0 then self.shotAge = nil; swelling = BarrelAnimation.sample(nil) end
 	if not self.gatling then
 		self.cannon.Size = Vector3.new(6, BARREL_DIAMETER*swelling.barrelScale, BARREL_DIAMETER*swelling.barrelScale)

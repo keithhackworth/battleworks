@@ -1,6 +1,9 @@
 -- Stateless cosmetic sampling: every value is derived from the base shape.
 local Animation = { Duration = 0.264 }
-function Animation.sample(age)
+function Animation.sample(age,windup,nominal)
+	if age and windup and nominal and windup>0 and nominal>0 then
+		age=if age<windup then age*nominal/windup else nominal+age-windup
+	end
 	if age == nil or age < 0 or age >= Animation.Duration then
 		return { active = false, z = -2.7, bulge = 1.8, opacity = 0, flare = 0, barrelScale = 1 }
 	end

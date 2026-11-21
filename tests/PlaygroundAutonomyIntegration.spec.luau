@@ -89,6 +89,63 @@ check(snapshots[b].generation>generation and snapshots[b].personalityId==persona
 check(not controls[101].selected,"destroyed occupant is released")
 enter(second,a,3);players.PlayerRemoving:Fire(second);advance(4)
 check(not snapshots[a].occupantUserId and snapshots[a].controlMode=="Auto"and snapshots[a].bwRunning,"disconnect releases tank back to Auto")
+local execution=network:FindFirstChild("PlaygroundBWExecution")
+check(execution and execution:GetAttribute("Enabled")==true,"Studio starts with live BW execution ON")
+local auto=runtimeTanks[snapshots[a].personalityId]
+local manual=runtimeTanks[snapshots[b].personalityId]
+-- Capture the replacement the next time its existing input dispatcher runs.
+BW.input=function(tank,...)if tank.id==b then manual=tank end;return bwInput(tank,...)end
+advance(2);BW.input=bwInput
+roots[101],humanoids[101]=character(first)
+first.CharacterAdded:Fire(first.Character)
+wall+=1;enter(first,b,6)
+check(controls[101].selected==b and manual.state.controlMode=="Manual","manual tank is occupied during the diagnostic")
+auto.state.position=Vector3.new(110,0,40)
+check(BW.start(auto,"marker = 42\nforward()\nlook = Scanner(0)\nwait_for_clock(get_clock().time + 10)"),"fixture schedules persistent drive, scan and clock wait")
+local runtime=auto.bw
+for _=1,40 do
+ if auto.tickCommand.throttle>0 and runtime.scanCount>0 then break end
+ advance(1)
+end
+check(auto.tickCommand.throttle>0 and runtime.scanCount==1,"continuous BW drive and scanner request are active before pause")
+local pending={remaining=0.5};auto.pendingShot=pending
+local tankState,hardware,health=auto.state,auto.hardware,auto.state.health
+local elapsed,clock,completed=runtime.elapsed,runtime.time,runtime.devices.devices.sensor0.scanSuccesses
+local shotsBefore=auto.state.weaponShotSerial
+execution.OnServerEvent:Fire({UserId=first.UserId},false)
+execution.OnServerEvent:Fire(first,"false")
+check(execution:GetAttribute("Enabled")==true,"toggle rejects a different sender object and non-boolean input")
+execution.OnServerEvent:Fire(first,false)
+check(execution:GetAttribute("Enabled")==false and auto.tickCommand.throttle==0 and not auto.tickCommand.fire,"server OFF immediately clears autonomous intent")
+local manualInput=require("InputCommand").neutral();manualInput.throttle=1;manualInput.turretX=.5
+wall+=1
+input.OnServerEvent:Fire(first,manualInput,b,controls[101].epoch)
+advance(55)
+check(auto.state==tankState and auto.hardware==hardware and auto.state.health==health and auto.bw==runtime and runtime.variables.marker==42,"OFF preserves the physical tank, hardware, and invocation")
+check(runtime.elapsed==elapsed and runtime.time==clock and runtime.devices.devices.sensor0.scanSuccesses==completed,"OFF freezes interpreter clock and pending scanner")
+check(auto.tickCommand.throttle==0 and auto.tickCommand.steer==0 and auto.tickCommand.turretX==0 and auto.tickCommand.turretY==0 and not auto.tickCommand.fire,"OFF emits neutral drive, steering, turret and fire input")
+check(auto.pendingShot==pending and pending.remaining==0.5 and auto.state.weaponShotSerial==shotsBefore,"an accepted cannon preparation never advances or fires while OFF")
+check(manual.tickCommand.throttle==1 and manual.tickCommand.turretX==.5,"manual player movement and turret commands still dispatch while OFF")
+local populated=0;for _ in snapshots do populated+=1 end
+check(populated==15,"OFF retains the 15-tank pool")
+execution.OnServerEvent:Fire(first,true)
+advance(2)
+check(execution:GetAttribute("Enabled")==true and auto.bw==runtime and runtime.elapsed>elapsed and runtime.time-clock<.1,"ON resumes the same invocation with no clock jump")
+check(auto.tickCommand.throttle>0 and manual.tickCommand.throttle==1,"continuous BW and regular manual input both run after resume")
+advance(50)
+check(runtime.devices.devices.sensor0.scanSuccesses==1 and runtime.variables.look~=nil,"the same queued scan completes after resume")
+local garage=network:FindFirstChild("GarageConfiguration")
+check(not garage.OnServerInvoke(first,"Read").ok,"Garage cannot change equipment while occupying a public tank")
+local loadout=snapshots[b].tankType.."/"..snapshots[b].weaponId
+wall+=1;remote.OnServerEvent:Fire(first,"Menu",7);advance(4)
+local choices=garage.OnServerInvoke(first,"Read")
+check(choices.ok and #choices.choices==4,"Playground Garage lists registered chassis and weapon combinations")
+local setup={allocations={drivetrain=5,turret=15,weapon=50,scanners=30},tuning={weapon=1,scanners=0}}
+check(garage.OnServerInvoke(first,"Save",loadout,setup).ok,"public tank preference is saved in the server session")
+wall+=1;remote.OnServerEvent:Fire(first,"Join",8);advance(4);enter(first,b,9)
+check(controls[101].selected==b and snapshots[b].weaponPerformance==.75,"the matching public tank uses the saved power when manually occupied")
+wall+=1;remote.OnServerEvent:Fire(first,"Auto",10,b,controls[101].epoch);advance(4)
+check(snapshots[b].controlMode=="Auto" and snapshots[b].weaponPerformance<.2,"built-in Auto restores the personality default bus")
 os.clock=oldClock
 print("Playground fifteen-personality integration passed: "..count.." assertions")
 end

@@ -9,7 +9,7 @@ local ScannerConfig=require(script.Parent.ScannerConfig)
 local D={}; D.__index=D
 function D.new(config,state,services)
  local self=setmetatable({config=config,services=services or {},devices={},commands={},completed={},retainedCount=0,nextId=0,generation=state.generation,tankType=state.tankType,components=Components.get(state),steering=0},D)
- for name,spec in config.devices do self.devices[name]={name=name,spec=spec,performance=Hardware.devicePerformance(name,spec.allocation,self.components),queue={}} end
+ for name,spec in config.devices do self.devices[name]={name=name,spec=spec,performance=Hardware.effective(config,name,self.components),queue={}} end
  return self
 end
 function D:submit(name,instruction,time,thread)
@@ -187,6 +187,12 @@ function D:diagnostics()
   local queue={}; for _,c in d.queue do table.insert(queue,{id=c.id,op=c.instruction.op,thread=c.thread}) end
   out[name]={steeringDegrees=if name=="drivetrain" then math.deg(self.steering) else nil,bus=d.spec.bus,allocation=d.spec.allocation,performance=d.performance,scanAttempts=d.scanAttempts or 0,scanSuccesses=d.scanSuccesses or 0,scanFailures=d.scanFailures or 0,lastScan=d.lastScan,capacity=Hardware.Tiers[self.config.tier].queue,
    active=if d.active then {id=d.active.id,op=d.active.instruction.op,thread=d.active.thread,state=d.active.state} else false,queue=queue}
+  if self.config.allocations and name:sub(1,6)=="sensor" then
+   local entry=out[name]
+   entry.range=if d.performance>0 then d.spec.range*d.spec.distancePercent/100 else 0
+   entry.coneWidth=if d.performance>0 then d.spec.coneWidth else 0
+   entry.acquisitionSeconds=if d.performance>0 then d.spec.acquisition/d.performance else nil
+  end
  end
  return out
 end

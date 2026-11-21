@@ -24,12 +24,17 @@ end,network)
 startup("menu snapshot receivers ready")
 local session=Session.new(function(action,requestId) remote:FireServer(action,requestId) end)
 startup("initializing main menu")
+local function garageRequest(...)
+ local garage=network:FindFirstChild("GarageConfiguration")
+ if not garage then return {ok=false,message="Garage unavailable in this session."} end
+ return garage:InvokeServer(...)
+end
 local function worldRequest(action,payload)
  local worlds=network:FindFirstChild("PlayerWorlds")
  assert(worlds,"Saved worlds are unavailable in this build")
  return worlds:InvokeServer(action,payload)
 end
-shell=Shell.new(Players.LocalPlayer:WaitForChild("PlayerGui"),workspace:WaitForChild("Arena"),session,gameplay,nil,function() return game.ReplicatedStorage:FindFirstChild("BattleWorksEditorAssets") end,worldRequest)
+shell=Shell.new(Players.LocalPlayer:WaitForChild("PlayerGui"),workspace:WaitForChild("Arena"),session,gameplay,nil,function() return game.ReplicatedStorage:FindFirstChild("BattleWorksEditorAssets") end,worldRequest,{garageRequest=garageRequest})
 startup("main menu ready")
 local function worldMessage(message)
  local editor=shell.manager.screens.WorldEditor

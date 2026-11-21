@@ -10,6 +10,7 @@ In Edit mode, under **ServerStorage → BattleWorksStudio**:
 | --- | --- | --- |
 | GameMode | BattleRoyale | Use Classic for the existing lobby, owned collections and saved-world launch workflow. Restart Play after changing. |
 | PublicTankCount | 15 | Integer 2–16; pool slots retry when the world has no safe spawn. |
+| PlaygroundBWEnabled | true | Set this BoolValue to false before Play to disable both built-in personality programs and BW Editor runs in Battle Royale. |
 | PublicTankReplenishDelay | 5 | Seconds, 1–60, from destruction to retirement/replacement. |
 
 Workspace attribute `BattleWorksGameMode` can explicitly override GameMode with `Classic` or `BattleRoyale` for development/tests. Historical test fixtures explicitly select Classic. Published places also default to BattleRoyale if configuration is absent. World selection, source assets and the existing loaded-world simulation are reused. The default arena uses Normal weather (grass, no wind). Set Workspace attribute `ArenaWeather=IceWind` explicitly to select the optional ice/wind preset.
@@ -18,7 +19,7 @@ Workspace attribute `BattleWorksGameMode` can explicitly override GameMode with 
 - Enter: approach within 12 studs and use **E**, **controller X**, or the native touch proximity button. Prompt hold is 0.2 seconds; availability is server-controlled and distance is independently validated.
 - In tank: existing keyboard/mouse, touch and gamepad input providers, aiming, firing, HUD and battlefield camera.
 - Exit: **F**, **controller B** outside text entry, or **Exit Tank** in the HUD. Text entry is protected from the keyboard/gamepad exit binding.
-- BW Editor remains accessible while occupying a tank. Supported programs use the current Bunny CPU/bus limits; personality tanks keep fixed equal-share bus hardware; legacy nonautonomous pools still support allocation editing. Computer upgrades are rejected in this mode.
+- BW Editor remains accessible while occupying a tank. Supported programs use the current Bunny CPU/bus limits; built-in personalities use their default balanced bus tuning. Main Menu → Garage saves a session setup for manual control. Computer upgrades are rejected in this mode.
 
 The repeating pool variety is tracked/cannon, wheeled/Gatling, tracked/Gatling and wheeled/cannon. All use the existing standard chassis, installed drivetrain/mobility/weapon components and **Bunny computer**. No new weapon or physics model was added. Computer hardware/bus configuration resets on release; health, position, turret pose, heat and existing physical momentum are retained.
 

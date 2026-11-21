@@ -43,6 +43,11 @@ local ColorSequence={new=function(a,b) return {Start=a,End=b} end}
 local TweenInfo = { new = function(...) return {...} end }
 local Color3 = { new = function(r,g,b) return {r or 0,g or 0,b or 0} end, fromRGB = function(r, g, b) return { r, g, b } end }
 local Instance = {}
+local instanceEvents={__index=function(object,key)
+ if key=="DescendantAdded" or key=="DescendantRemoving" then
+  local event=signal();rawset(object,key,event);return event
+ end
+end}
 function Instance.new(class)
 	local object = { ClassName = class, AbsoluteSize = Vector2.new(640, 320), AbsolutePosition = Vector2.zero,
 		InputBegan = signal(), Activated = signal(), ChildAdded = signal(), children = {}, properties = {}, Enabled = true }
@@ -72,7 +77,7 @@ function Instance.new(class)
 	end
 	function object:WaitForChild(name) return self[name] end
 	function object:Destroy() self.Parent = nil; self.destroyed = true end
-	return object
+	return setmetatable(object,instanceEvents)
 end
 local workspace = Instance.new("Folder")
 workspace:SetAttribute("BattleWorksGameMode","Classic") -- explicit historical-mode regression baseline
@@ -81,6 +86,7 @@ for _, key in { "InputBegan", "InputChanged", "InputEnded", "TouchMoved", "Touch
 UIS.preferredSignal = signal()
 function UIS:GetPropertyChangedSignal() return self.preferredSignal end
 function UIS:GetFocusedTextBox() return self.focusedTextBox end
+function UIS:IsKeyDown(key) return self.heldKeys and self.heldKeys[key]==true or false end
 local GuiService = { MenuOpened = signal(), MenuClosed = signal() }
 GuiService.fullRect = { Min = Vector2.zero, Max = Vector2.new(1920, 1080) }
 GuiService.safeRect = GuiService.fullRect

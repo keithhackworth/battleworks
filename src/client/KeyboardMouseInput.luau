@@ -12,7 +12,6 @@ function Provider.new()
   if not self.active then return end
   if input.KeyCode==Enum.KeyCode.LeftAlt or input.KeyCode==Enum.KeyCode.RightAlt then self.freeCursor=true;self:reset();self:cursor();return end
   if processed or self.uiBlocked or self.freeCursor then return end
-  if input.KeyCode==Enum.KeyCode.C and self.mouseMode=="Mouse Joystick"then self.recenter=true end
   self.held[input.KeyCode]=true;self.held[input.UserInputType]=true
  end)
  UIS.InputChanged:Connect(function(input,processed)

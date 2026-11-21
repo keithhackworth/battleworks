@@ -12,7 +12,7 @@ function Projectiles.new(origin, direction, exclusions, tuning, groundY, flight)
 	overlap.FilterType = Enum.RaycastFilterType.Exclude
 	overlap.FilterDescendantsInstances = exclusions
 	overlap.RespectCanCollide = false
-	local shell = { position = origin, direction = direction.Unit, remaining = tuning.Range, speed = tuning.ShellSpeed, radius = tuning.ShellRadius, damage = tuning.Damage, muzzleOffset = tuning.MuzzleOffset,
+	local shell = { position = origin, direction = direction.Unit, remaining = tuning.Range, speed = flight and flight.speed or tuning.ShellSpeed, radius = tuning.ShellRadius, damage = tuning.Damage, muzzleOffset = tuning.MuzzleOffset,
 		ray = ray, overlap = overlap, done = false }
 	if tuning.Trajectory and (not flight or flight.airborne) then
 		shell.trajectory=Trajectory.new(origin,direction,(groundY or 0)+(flight and flight.muzzleHeight or Config.MuzzleHeight),tuning.Trajectory,flight and flight.physical)

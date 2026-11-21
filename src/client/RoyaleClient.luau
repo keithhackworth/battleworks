@@ -28,13 +28,18 @@ function Client.start()
   chat:setActive(enabled)
   navigation.Enabled=enabled;gui.Enabled=enabled and (not reading or reading.mode=="OnFoot")
  end
- local function worldRequest(action,payload)
+ local function garageRequest(...)
+ local garage=network:FindFirstChild("GarageConfiguration")
+ if not garage then return {ok=false,message="Garage unavailable in this session."} end
+ return garage:InvokeServer(...)
+end
+local function worldRequest(action,payload)
   local worlds=network:FindFirstChild("PlayerWorlds");assert(worlds,"Saved worlds are unavailable in this build")
   return worlds:InvokeServer(action,payload)
  end
  local function ensureShell()
   if not shell then
-   shell=require(script.Parent.shell.ApplicationShell).new(playerGui,workspace:WaitForChild("Arena"),session,gameplay,nil,function()return game.ReplicatedStorage:FindFirstChild("BattleWorksEditorAssets")end,worldRequest,{royale=true})
+   shell=require(script.Parent.shell.ApplicationShell).new(playerGui,workspace:WaitForChild("Arena"),session,gameplay,nil,function()return game.ReplicatedStorage:FindFirstChild("BattleWorksEditorAssets")end,worldRequest,{royale=true,garageRequest=garageRequest})
   end
   return shell
  end
@@ -44,6 +49,19 @@ function Client.start()
   ensureShell().home()
  end
  local menu=Instance.new("TextButton");menu.Name="RoyaleMainMenu";menu.Text="Main Menu";menu.Position=UDim2.fromOffset(12,60);menu.Size=UDim2.fromOffset(120,44);menu.BackgroundColor3=Color3.fromRGB(32,47,52);menu.TextColor3=Color3.fromRGB(237,239,224);menu.Font=Enum.Font.GothamMedium;menu.TextSize=15;menu.Parent=navigation
+ local execution=network:FindFirstChild("PlaygroundBWExecution")
+ if execution then
+  local toggle=Instance.new("TextButton")
+  toggle.Name="PlaygroundBWExecution";toggle.Position=UDim2.fromOffset(12,108);toggle.Size=UDim2.fromOffset(120,44)
+  toggle.BackgroundColor3=menu.BackgroundColor3;toggle.TextColor3=menu.TextColor3;toggle.Font=menu.Font;toggle.TextSize=14
+  toggle.Selectable=true;toggle.Parent=navigation
+  local function refresh()
+   toggle.Text="BW Execution: "..(if execution:GetAttribute("Enabled") then "ON" else "OFF")
+  end
+  execution:GetAttributeChangedSignal("Enabled"):Connect(refresh)
+  toggle.Activated:Connect(function() execution:FireServer(not execution:GetAttribute("Enabled")) end)
+  refresh()
+ end
  local notice=Instance.new("TextLabel");notice.Name="RoyaleNotice";notice.Position=UDim2.fromOffset(144,60);notice.Size=UDim2.new(1,-164,0,60);notice.BackgroundColor3=Color3.fromRGB(32,47,52);notice.TextColor3=Color3.fromRGB(255,224,163);notice.Font=Enum.Font.GothamMedium;notice.TextSize=16;notice.TextWrapped=true;notice.Visible=false;notice.Parent=navigation
  local modeSwitch=Instance.new("TextButton");modeSwitch.Name="PlaygroundControlMode";modeSwitch.AnchorPoint=Vector2.new(.5,1);modeSwitch.Position=UDim2.new(.5,0,1,-12);modeSwitch.Size=UDim2.new(.42,0,0,56);modeSwitch.BackgroundColor3=Color3.fromRGB(32,81,69);modeSwitch.TextColor3=Color3.fromRGB(245,246,229);modeSwitch.Font=Enum.Font.GothamBold;modeSwitch.TextSize=18;modeSwitch.TextWrapped=true;modeSwitch.Visible=false;modeSwitch.Parent=navigation
  local currentMode="Manual"

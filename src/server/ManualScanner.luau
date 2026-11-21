@@ -32,10 +32,17 @@ function Manual.step(tank,enabled,time,dt,scan,publish)
 	local hardware=Components.get(state).Sensors
 	for index=1,Config.SensorCount do
         local installed=hardware[(index-1)*45]; if not installed then continue end
+        local acquisition=0
+        if tank.hardware and tank.hardware.allocations then
+            local lens=tank.hardware.devices["sensor"..((index-1)*45)]
+            local power=lens and tank.scannerPower or 0
+            if power<=0 then continue end
+            acquisition=lens.acquisition/power
+        end
 		local sensor=tank.manualSensors[index]
-		if not sensor then sensor={nextTime=time,phase=0}; tank.manualSensors[index]=sensor end
+		if not sensor then sensor={nextTime=time+acquisition,phase=0}; tank.manualSensors[index]=sensor end
 		if time<sensor.nextTime-1e-8 then continue end
-		sensor.nextTime=math.max(sensor.nextTime+Config.ManualSensorInterval,time+installed.Cooldown)
+		sensor.nextTime=math.max(sensor.nextTime+math.max(Config.ManualSensorInterval,acquisition),time+installed.Cooldown)
 		local offset=if sensor.phase==0 then 0 elseif sensor.phase==1 then Config.ManualStep else -Config.ManualStep
 		local angle=((index-1)*360/Config.SensorCount+offset)%360
 		local observation=scan(angle)

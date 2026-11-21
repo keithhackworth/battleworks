@@ -64,7 +64,7 @@ Safety still applies: at most 512 source operations/thread/cycle, 180 simulated 
 DEFAULT TANK HARDWARE
 Boomer: Bunny • 1 cores/buses • 10 ticks/cycle/thread • 1 pending/device
 Rattler: Octa • 8 cores/buses • 30 ticks/cycle/thread • 8 pending/device
-Boomer's devices share its single bus. Rattler reserves dedicated drivetrain, turret and weapon buses; scanners share its remaining five buses. Radar range stays 150 studs at full distance effectiveness.
+Legacy Classic tanks use the computer bus layout above. Garage-enabled tanks share a single allocation budget and retain their installed computer cores.
 
 Each chassis bus has TWO independent roles:
 1. Run one BW instruction thread with its own CPU budget.
@@ -79,9 +79,9 @@ Turret, weapon and scanner performance = 1 - (1 - allocation/100)^2
 
 Drivetrain uses a separate speed curve:0% is unpowered,5% gives15 forward studs/sec before terrain/tracked modifiers,100% retains the installed rated maximum. Below5% speed is linear from zero; above5% it eases to the maximum with the bus exponent. Reverse/turn keep their own ratings with the same drivetrain fraction.
 
-The drivetrain's speed cap, turret rotation rate and weapon preparation/recharge timing depend on performance. Acceleration, recoil, steering geometry, collisions, projectile speed and damage remain normal tank physics. Lower performance makes weapon intervals/preparation LONGER. Radar RANGE currently stays at 150 studs at 100% distance effectiveness, independently of bus allocation; acquisition time still depends on performance. Future equipment configuration can change radar hardware range.
+Garage setups reserve one shared 100% budget across drivetrain, turret, weapon and the scanner array. Array power is split equally among installed lenses. Cone Width / Range trades scanner coverage against reach. Projectile Speed / Reload or Fire Rate trades projectile speed against shot interval. Cannon windup follows master weapon power. The drivetrain speed curve, turret mechanical stops, weapon damage and Gatling heat recovery retain their physical rules.
 
-Edit reservations in Hardware / threads while the program is stopped. First line is chassis name; following lines are: device bus allocationPercent. The server validates configuration too. Each tank starts with its configured chassis profile (listed below); the development hardware editor can override it. Shared allocations affect physical device performance as well as acquisition/preparation times.
+Save allocations in Main Menu → Garage before taking manual control. Hardware / threads shows the active configuration and runtime state. Legacy Classic configurations still use their existing per-device editor until a Garage setup is saved.
 
 WHAT DOES BUSY MEAN?
 A device is busy while it has an active command. A drive remains busy while covering its distance/turn or waiting for genuine progress. A weapon may be busy during preparation, reload, held fire or waiting for its committed shot to release. A scanner is busy during acquisition/cooldown scheduling. Being busy is not a CPU charge every frame.
@@ -404,7 +404,7 @@ A standard result: {status: "success", reason: null, commandId: number}. Success
 CURRENT FULL-PERFORMANCE TIMING
 Cannon (currently Boomer): 0.2 seconds cannon preparation and 0.65 seconds firing interval. Lower allocation divides these durations by effective performance. It still swells, recoils and releases a shell along the actual barrel direction.
 
-Gatling (currently Rattler): 0.1 seconds firing interval, at most 3 seconds continuous fire, then 2 seconds mandatory overheat cooldown. Lower allocation lengthens the shot interval; it does not increase projectile speed or bypass heat. Releasing and tapping does not reset accumulated heat.
+Gatling (currently Rattler): 0.1 seconds firing interval, at most 3 seconds continuous fire, then 2 seconds mandatory overheat cooldown. Lower allocation lengthens the shot interval; the Garage tradeoff also controls projectile speed. Heat and overheat recovery follow the weapon mechanics. Releasing and tapping does not reset accumulated heat.
 
 fire(2) holds the trigger for 2 simulated seconds; it does not mean two shots. Preparation/cooldown can delay activation, and active commands have bounded safety timeouts. Neither tank's recoil, movement or weapon mechanics is replaced by BW.
 
@@ -436,8 +436,8 @@ Success: {status: "success", reason: null, sensor, timestamp, range, count, dete
 PHYSICAL TIME (separate from CPU cost)
 Default acquisition: 0.05 seconds / effective device performance.
 Each sensor cooldown: 0.1 seconds. Queued acquisition honors that sensor's cooldown; a cooling sensor does not block a different sensor. There is also a separate shared query-work safety budget; scannerBusy means that budget/geometry guard, not a shared sensor cooldown. Acquisition priority rotates deterministically to avoid repeatedly favoring the same sensors. Acquisition occurs on a fixed simulation step; the issuing thread resumes on a CPU cycle, so delivery can be later than the recorded timestamp.
-Default cone: 15 degrees total (±7.5). Fixed mounts are 45 degrees apart, leaving angular gaps between narrow cones; a nearby object outside every cone can produce zero detections. Scan activity lights do not guarantee a detected object.
-Default distance: 150 studs at 100% distance effectiveness. Hardware range/distancePercent can be configured later; bus sharing currently does not shorten the range.
+Catalog cone: 15 degrees total (±7.5). Fixed mounts are 45 degrees apart, leaving angular gaps between narrow cones; a nearby object outside every cone can produce zero detections. Scan activity lights do not guarantee a detected object.
+Catalog distance: 150 studs at 100% distance effectiveness. Garage power and tuning affect cone and range. Read the selected lens in get_tank_state().scanners for effective values.
 
 SNAPSHOT FIELDS
 status: "success" or "fail".
@@ -445,6 +445,7 @@ reason: null on success; stable failure code otherwise.
 sensor: physical mounting angle in DEGREES, even when called with position=index. Scanner(position=4) reports sensor=180.
 timestamp: actual server simulation time of acquisition, NOT submission or the moment you print it.
 range: effective distance of this radar, in studs.
+cone_degrees: effective total cone angle.
 count: number of visible detections.
 detections: immutable nearest-first array. Access its first entry with detections[0], not [1].
 
@@ -1248,9 +1249,16 @@ Stage2.5 own motion additions (same snapshot cost): `terrain_speed_scale` is the
 
 ### Drivetrain low-power curve (2026-11-20)
 
-Device performance is centralized in BWChassis.devicePerformance and shared by server hardware application, BW device scheduling and self reads. For a forward rating R, the drivetrain fraction at5% is min(15,R)/R;0% stays0. Below5%, interpolate linearly from zero. Above5%, let u=(allocation-5)/95 and f=min(15,R)/R; performance=f+(1-f)*(1-(1-u)^Bus.PerformanceExponent).100% stays1. Reverse and tracked turn caps retain the same shared drive fraction and their existing physical maxima. These are pre-terrain ratings: the Playground tracked.90 and other traction/material factors still apply. No minimum throttle/automatic movement is introduced. Other device curves, CPU costs and bus shares remain unchanged.
+Device performance is centralized in BWChassis.devicePerformance and shared by server hardware application, BW device scheduling and self reads. For a forward rating R, the drivetrain fraction at5% is min(15,R)/R;0% stays0. Below5%, interpolate linearly from zero. Above5%, let u=(allocation-5)/95 and f=min(15,R)/R; performance=f+(1-f)*(1-(1-u)^Bus.PerformanceExponent).100% stays1. Reverse and tracked turn caps retain the same shared drive fraction and their existing physical maxima. These are pre-terrain ratings: the Playground tracked.90 and other traction/material factors still apply. No minimum throttle/automatic movement is introduced. Phase 3 Garage preserves this drivetrain curve and adds category allocations and scanner/weapon tuning. See [the Phase 3 contract](BUS_CONFIGURATION.md).
 
 Top-level immutable built-in command aliases (see BW_LANGUAGE.md) invoke the exact canonical API with unchanged signatures, fees, physical limits and ownership. They add no new hardware facts or privileged observations. Steering-aware personality helpers remain editable player BW, not built-ins.
+
+
+## Garage bus tuning
+
+For a Garage-enabled tank, `get_bus_configuration()` and `get_tank_state().bus` report a single shared bus. The added `.allocations` dictionary has `drivetrain`, `turret`, `weapon`, and `scanners` percentages, and `.tuning` has `scanners` and `weapon` positions from 0 to 1. Legacy configurations return null for the two new dictionaries. The existing `.devices` dictionary still reports the eight physical lens allocations, so old BW code can inspect or address individual sensors.
+
+`get_weapon_speed().speed` and `get_tank_state().weapon.projectile_speed` report the actual launch speed. A Garage-configured zero-power weapon reports 0 and disabled readiness. Effective reload and preparation values follow the separate timing formulas in the [Phase 3 contract](BUS_CONFIGURATION.md). Each reported scanner includes `effective_cone_degrees`, and successful `Scanner` results expose their actual `cone_degrees` and `range`. Legacy fields and instruction fees are preserved.
 
 
 ===== docs/SCANNER_TERRAIN.md =====

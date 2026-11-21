@@ -153,6 +153,13 @@ Stage2.5 own motion additions (same snapshot cost): `terrain_speed_scale` is the
 
 ### Drivetrain low-power curve (2026-11-20)
 
-Device performance is centralized in BWChassis.devicePerformance and shared by server hardware application, BW device scheduling and self reads. For a forward rating R, the drivetrain fraction at5% is min(15,R)/R;0% stays0. Below5%, interpolate linearly from zero. Above5%, let u=(allocation-5)/95 and f=min(15,R)/R; performance=f+(1-f)*(1-(1-u)^Bus.PerformanceExponent).100% stays1. Reverse and tracked turn caps retain the same shared drive fraction and their existing physical maxima. These are pre-terrain ratings: the Playground tracked.90 and other traction/material factors still apply. No minimum throttle/automatic movement is introduced. Other device curves, CPU costs and bus shares remain unchanged.
+Device performance is centralized in BWChassis.devicePerformance and shared by server hardware application, BW device scheduling and self reads. For a forward rating R, the drivetrain fraction at5% is min(15,R)/R;0% stays0. Below5%, interpolate linearly from zero. Above5%, let u=(allocation-5)/95 and f=min(15,R)/R; performance=f+(1-f)*(1-(1-u)^Bus.PerformanceExponent).100% stays1. Reverse and tracked turn caps retain the same shared drive fraction and their existing physical maxima. These are pre-terrain ratings: the Playground tracked.90 and other traction/material factors still apply. No minimum throttle/automatic movement is introduced. Phase 3 Garage preserves this drivetrain curve and adds category allocations and scanner/weapon tuning. See [the Phase 3 contract](BUS_CONFIGURATION.md).
 
 Top-level immutable built-in command aliases (see BW_LANGUAGE.md) invoke the exact canonical API with unchanged signatures, fees, physical limits and ownership. They add no new hardware facts or privileged observations. Steering-aware personality helpers remain editable player BW, not built-ins.
+
+
+## Garage bus tuning
+
+For a Garage-enabled tank, `get_bus_configuration()` and `get_tank_state().bus` report a single shared bus. The added `.allocations` dictionary has `drivetrain`, `turret`, `weapon`, and `scanners` percentages, and `.tuning` has `scanners` and `weapon` positions from 0 to 1. Legacy configurations return null for the two new dictionaries. The existing `.devices` dictionary still reports the eight physical lens allocations, so old BW code can inspect or address individual sensors.
+
+`get_weapon_speed().speed` and `get_tank_state().weapon.projectile_speed` report the actual launch speed. A Garage-configured zero-power weapon reports 0 and disabled readiness. Effective reload and preparation values follow the separate timing formulas in the [Phase 3 contract](BUS_CONFIGURATION.md). Each reported scanner includes `effective_cone_degrees`, and successful `Scanner` results expose their actual `cone_degrees` and `range`. Legacy fields and instruction fees are preserved.

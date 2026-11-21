@@ -13,11 +13,7 @@ function A.attach(tank,index)
 end
 function A.hardware(tank)
  Components.withComputer(tank.state,"Bunny")
- local hardware=Hardware.forTank(tank.state);local count=0
- for _ in hardware.devices do count+=1 end
- for _,device in hardware.devices do device.bus=1;device.allocation=100/count end
- assert(Hardware.validate(hardware),"Invalid equal-share public bus")
- tank.hardware=hardware;BW.applyHardware(tank)
+ tank.hardware=Hardware.playgroundDefault(Components.get(tank.state));BW.applyHardware(tank)
 end
 function A.start(tank,now)
  BW.clearInputs(tank)

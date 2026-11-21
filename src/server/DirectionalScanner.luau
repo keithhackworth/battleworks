@@ -27,7 +27,7 @@ end
 function Scanner.new(world,scene)
 	return setmetatable({world=world,scene=scene,tokens=Config.ServerBurst,lastTime=0,completed=0},Scanner)
 end
-function Scanner:execute(source,angle,time,hardware)
+function Scanner:execute(source,angle,time,hardware,observationTime)
  -- Range is explicit hardware data, independent of operating/acquisition performance.
  hardware=if type(hardware)=="table" then hardware else {}
  if type(angle)~="number" or angle~=angle or math.abs(angle)==math.huge then return nil,"invalidArgument" end
@@ -128,11 +128,12 @@ function Scanner:execute(source,angle,time,hardware)
  local terrain,terrainCasts=Terrain.observe(self.world,groundParts,records,state,angle,range,cone,origin,sensorHardware,Config.MaxRaycasts-casts)
  -- Nearest fields remain as conveniences for existing programs; detections is
  -- the authoritative complete visible-object list, zero-indexed in BW.
- local result=Value.result(nil,{terrain=terrain,sensor=angle,timestamp=time,range=range,count=#detections,detections=Value.array(detections),
+ local timestamp=observationTime or time
+ local result=Value.result(nil,{terrain=terrain,sensor=angle,timestamp=timestamp,range=range,cone_degrees=cone,count=#detections,detections=Value.array(detections),
   type=nearest.type or Value.Null,distance=nearest.distance or Value.Null,relative_direction=nearest.relative_direction or Value.Null,world_direction=nearest.world_direction or Value.Null,
   player=nearest.player or Value.Null,relation=nearest.relation or Value.Null,point=nearest.point or Value.Null,
   object_id=nearest.object_id or Value.Null,name=nearest.name or Value.Null})
 	self.completed+=1; self.lastRaycasts=casts+terrainCasts
-	return Value.observation(result,time,origin,yaw)
+	return Value.observation(result,timestamp,origin,yaw)
 end
 return Scanner

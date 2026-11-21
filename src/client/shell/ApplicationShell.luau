@@ -30,7 +30,7 @@ function Shell.new(playerGui,arena,session,gameplay,presenter,editorAssets,world
  local content=Instance.new("Frame"); content.Name="Screens"; content.BackgroundTransparency=1
  content.Size=UDim2.fromScale(1,1); content.Parent=gui
  local self=setmetatable({gui=gui,background=background,session=session,gameplay=gameplay},Shell)
- local context={royale=options.royale==true,parent=content,session=session,gameplay=gameplay,trace=startup,worldRequest=worldRequest,
+ local context={royale=options.royale==true,parent=content,session=session,gameplay=gameplay,trace=startup,worldRequest=worldRequest,garageRequest=options.garageRequest,
   editorAssets=if type(editorAssets)=="function" then nil else editorAssets,
   getEditorAssets=if type(editorAssets)=="function" then editorAssets else function() return editorAssets end}
  context.join=function() session:join() end

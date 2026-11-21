@@ -1,3 +1,10 @@
+local garage=network:FindFirstChild("GarageConfiguration")
+local choices=garage.OnServerInvoke(first,"Read")
+check(choices.ok and #choices.choices==2,"Classic Garage lists the two actual owned loadouts")
+local draft={allocations={drivetrain=5,turret=15,weapon=50,scanners=30},tuning={weapon=1,scanners=0}}
+local key="Boomer/weapon.cannon"
+check(not garage.OnServerInvoke(first,"Save","Boomer/weapon.gatling",draft).ok,"Classic cannot save a weapon the loadout does not have")
+check(garage.OnServerInvoke(first,"Save",key,draft).ok,"server accepts a valid menu configuration")
 check(next(snapshots)==nil and next(battleStates)==nil,"joining experience allocates no tanks")
 input.OnServerEvent:Fire(first,command,"101")
 bwRun.OnServerEvent:Fire(first,"fire(8)",1,"101")
@@ -15,6 +22,8 @@ session.OnServerEvent:Fire(first,"Enter",1); advance(5)
 check(snapshots["101"] and snapshots["101:Rattler"] and battleStates["102"].multiplayer,"admission uses existing shared battle and collection ownership")
 check(sessionReadings[#sessionReadings].recipient==first and sessionReadings[#sessionReadings].args[2]==true,"server acknowledges admission only to requester")
 local generation=snapshots["101"].generation
+check(snapshots["101"].projectileSpeed<24 and snapshots["101"].weaponPerformance==.75,"saved Garage settings reach the live server simulation")
+check(not garage.OnServerInvoke(first,"Save",key,draft).ok,"live clients cannot configure outside the menu")
 session.OnServerEvent:Fire(first,"Enter",2); advance(3)
 check(snapshots["101"].generation==generation,"duplicate enter does not replace or duplicate tanks")
 session.OnServerEvent:Fire(first,"Leave",3); advance(4)
@@ -27,6 +36,7 @@ check(not snapshots["101"] and not snapshots["102"].bwRunning,"late Enter and ga
 session.OnServerEvent:Fire(first,"Enter",4); advance(3)
 check(not snapshots["101"] and sessionReadings[#sessionReadings].args[2]==false,"rapid admission is server rate limited")
 advance(65);session.OnServerEvent:Fire(first,"Enter",5);advance(5)
+check(snapshots["101"].projectileSpeed<24 and snapshots["101"].weaponPerformance==.75,"session configuration survives leaving and re-entering")
 check(snapshots["101"].generation>generation and snapshots["101"].health==100,"re-entering creates a fresh lifecycle generation")
 bwRun.OnServerEvent:Fire(first,"fire(8)",1,"101"); advance(15)
 session.OnServerEvent:Fire(first,"Leave",6); advance(5)

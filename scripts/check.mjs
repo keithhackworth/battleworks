@@ -31,52 +31,71 @@ try {
   }
   if (groupIndex === null) console.log(`Syntax compilation passed: ${files.length} Luau source files`);
   if(syntaxOnly){state.destroy();state=null;process.exit(0);}
-  // Native mesh fixtures approach Luau Web's fixed heap. Load their actual
-  // production dependency graph, without compiling unrelated UI/server loaders.
-  // The full syntax pass and other groups still compile every source file.
-  if (groupIndex === 5 || groupIndex === 42 || groupIndex === 45 || groupIndex === 53 || groupIndex === 56 || groupIndex === 59 || groupIndex === 61 || groupIndex === 64) {
-    const byName = new Map([...sources].map(([file, source]) => [file.split('/').pop().replace('.luau',''), {file, source}]));
+  // Assemble the dependency closure after expanding each fixture and its
+  // harness so large, unrelated modules stay outside the fixed WASM heap.
+  async function buildBundle(tests) {
+    const moduleName = file => file.split('/').pop().replace('.luau','');
+    const byName = new Map([...sources].map(([file, source]) => [moduleName(file), source]));
+    const editorState = await readFile('studio/world-builder/EditorState.luau','utf8');
+    byName.set('EditorState', editorState);
+    const external = new Set(['PlayerModule', 'ContactsBaseline', 'ContactsBaselineStats']);
     const needed = new Set();
     function include(name) {
       if (needed.has(name)) return;
-      const entry=byName.get(name);
-      if (!entry) throw new Error(`Missing fixture dependency: ${name}`);
       needed.add(name);
-      for (const match of entry.source.matchAll(/require\(([^)]+)\)/g)) {
-        const dependency=match[1].match(/(?:\.|["'])(\w+)["']?$/)?.[1];
-        if (!dependency && name==='InputController' && match[1]==='module') continue; // Roblox PlayerModule, supplied by the existing require stand-in
-        if (!dependency) throw new Error(`Unresolved fixture dependency: ${match[0]}`);
-        include(dependency);
+      if (external.has(name)) return;
+      const source = byName.get(name);
+      if (!source) throw new Error(`Missing fixture dependency: ${name}`);
+      discover(source);
+    }
+    function discover(source) {
+      for (const match of source.matchAll(/require\(([^)]+)\)/g)) {
+        const name = match[1].match(/(?:\.|["'])(\w+)["']?$/)?.[1];
+        if (name) include(name);
       }
     }
-    const fixtures=groupIndex===5?['BW','BWBestEffort','Battle','DamageEffects','Scanner']:[(groupIndex===45||groupIndex===42)?'BulkAssetCollision':groupIndex===64?'BWRetention':groupIndex===59?'PlaygroundAutonomyIntegration':groupIndex===61?'PlaygroundEditorProgramIntegration':'BWPersonalities'];
-    let fixture=(await Promise.all(fixtures.map(name=>readFile('tests/'+name+'.spec.luau','utf8')))).join('\n');
-    if(groupIndex===59||groupIndex===61){include('ServerEntrypoint');const boot=await readFile('tests/RoyaleServerIntegration.spec.luau','utf8');const setup=await readFile('tests/ServerIntegration.spec.luau','utf8');fixture+='\n'+boot.slice(0,boot.indexOf('advance(4)'))+'\n'+setup.slice(0,setup.indexOf(' require("ServerEntrypoint")'));}
-    for (const match of fixture.matchAll(/require\("(\w+)"\)/g)) include(match[1]);
-    for (const file of sources.keys()) if (!needed.has(file.split('/').pop().replace('.luau',''))) sources.delete(file);
+    discover(tests);
+    const selected = new Map([...sources].filter(([file]) => needed.has(moduleName(file))));
+    let bundle = await readFile('tests/RobloxMock.luau', 'utf8');
+    bundle += '\nlocal loaders, cache = {}, {}\nlocal Shell = {}\nlocal require\n';
+    for (const file of selected.keys()) {
+      const name=file.split('/').pop().replace('.luau','');
+      const namespace=file.includes('/shell/')?'Shell':file.includes('/shared/')?'Shared':'Client';
+      bundle += `${namespace}[${JSON.stringify(name)}]=${JSON.stringify(name)}\n`;
+    }
+    bundle += '\nClient.shell=Shell\n';
+    for (const [file, originalSource] of selected) {
+      // Preserve historical weapon baselines as explicit assembly data, without
+      // changing production simulation modules. Group14 preserves an explicit swap
+      // fixture; RestoredLoadouts and subsequent groups exercise live defaults.
+      const source = file.endsWith('/VehicleAssemblies.luau') && groupIndex !== null && groupIndex < 14
+        ? await readFile('tests/fixtures/LegacyVehicleAssemblies.luau', 'utf8')
+        : file.endsWith('/VehicleAssemblies.luau') && groupIndex === 14
+          ? await readFile('tests/fixtures/SwappedVehicleAssemblies.luau', 'utf8') : originalSource;
+      const name = file.split('/').pop().replace('.luau', '');
+      const parent = file.includes('/shell/') ? 'Shell' : file.includes('/shared/') ? 'Shared' : 'Client';
+      bundle += `\nloaders[${JSON.stringify(name)}] = function()\nlocal script = { Parent = ${parent}, PlaygroundAutonomy = "PlaygroundAutonomy", PlaygroundDiagnostics = "PlaygroundDiagnostics", PlaygroundBuilder = "PlaygroundBuilder", RoyaleCharacters = "RoyaleCharacters", BattleRoyale = "BattleRoyale", BWController = "BWController", LocalBattle = "LocalBattle", WorldTestContext = "WorldTestContext", StudioWorldSelector = "StudioWorldSelector", StudioAssetPlacement = "StudioAssetPlacement", WorldObjects = "WorldObjects", DirectionalScanner = "DirectionalScanner", ScannerScene = "ScannerScene", ManualScanner = "ManualScanner", EnvironmentBuilder = "EnvironmentBuilder", PlayerWorldStorage = "PlayerWorldStorage", PlayerWorldService = "PlayerWorldService", EditorAssetCatalog = "EditorAssetCatalog", PracticeTargets = "PracticeTargets", ProjectileSimulation = "ProjectileSimulation" }\n${source}\nend\n`;
+    }
+    if (needed.has('EditorState')) bundle += `\nloaders.EditorState=function()\n${editorState}\nend\n`;
+    bundle += '\nrequire = function(name)\nif name == "PlayerModule" then return { GetControls = function() return defaultControls end } end\nif cache[name] == nil then cache[name] = assert(loaders[name], "Unknown module " .. tostring(name))() end\nreturn cache[name]\nend\n';
+    if (needed.has('ContactsBaseline') || needed.has('ContactsBaselineStats')) {
+      const revision = 'ae8194090e7c8dc244e347196e5b3ccb9ab2d0e6';
+      let baseline;
+      if (process.env.BW_CONTACTS_BASELINE) {
+        baseline = await readFile(process.env.BW_CONTACTS_BASELINE, 'utf8');
+      } else {
+        const original = spawnSync('git', ['show', revision + ':src/shared/VehicleContacts.luau'], { encoding: 'utf8' });
+        if (original.error || original.status !== 0) throw new Error('Cannot load pinned contact solver baseline. Set BW_CONTACTS_BASELINE to its file path.');
+        baseline = original.stdout;
+      }
+      const { instrumentContactsBaseline } = await import('./instrument-contacts-baseline.mjs');
+      for (const [name, source] of [['ContactsBaseline', baseline], ['ContactsBaselineStats', instrumentContactsBaseline(baseline)]]) {
+        bundle += `\nloaders.${name}=function()\nlocal script={Parent=Shared}\n${source}\nend\n`;
+      }
+      bundle += '\nlocal benchmarkContacts=' + String(process.env.BW_CONTACTS_BENCHMARK === '1') + '\n';
+    }
+    return bundle;
   }
-  let bundle = await readFile('tests/RobloxMock.luau', 'utf8');
-  bundle += '\nlocal loaders, cache = {}, {}\nlocal Shell = {}\nlocal require\n';
-  for (const file of sources.keys()) {
-    const name=file.split('/').pop().replace('.luau','');
-    const namespace=file.includes('/shell/')?'Shell':file.includes('/shared/')?'Shared':'Client';
-    bundle += `${namespace}[${JSON.stringify(name)}]=${JSON.stringify(name)}\n`;
-  }
-  bundle += '\nClient.shell=Shell\n';
-  for (const [file, originalSource] of sources) {
-    // Preserve historical weapon baselines as explicit assembly data, without
-    // changing production simulation modules. Group14 preserves an explicit swap
-    // fixture; RestoredLoadouts and subsequent groups exercise live defaults.
-    const source = file.endsWith('/VehicleAssemblies.luau') && groupIndex !== null && groupIndex < 14
-      ? await readFile('tests/fixtures/LegacyVehicleAssemblies.luau', 'utf8')
-      : file.endsWith('/VehicleAssemblies.luau') && groupIndex === 14
-        ? await readFile('tests/fixtures/SwappedVehicleAssemblies.luau', 'utf8') : originalSource;
-    const name = file.split('/').pop().replace('.luau', '');
-    const parent = file.includes('/shell/') ? 'Shell' : file.includes('/shared/') ? 'Shared' : 'Client';
-    bundle += `\nloaders[${JSON.stringify(name)}] = function()\nlocal script = { Parent = ${parent}, PlaygroundAutonomy = "PlaygroundAutonomy", PlaygroundBuilder = "PlaygroundBuilder", RoyaleCharacters = "RoyaleCharacters", BattleRoyale = "BattleRoyale", BWController = "BWController", LocalBattle = "LocalBattle", WorldTestContext = "WorldTestContext", StudioWorldSelector = "StudioWorldSelector", StudioAssetPlacement = "StudioAssetPlacement", WorldObjects = "WorldObjects", DirectionalScanner = "DirectionalScanner", ManualScanner = "ManualScanner", EnvironmentBuilder = "EnvironmentBuilder", PlayerWorldStorage = "PlayerWorldStorage", PlayerWorldService = "PlayerWorldService", EditorAssetCatalog = "EditorAssetCatalog", PracticeTargets = "PracticeTargets", ProjectileSimulation = "ProjectileSimulation" }\n${source}\nend\n`;
-  }
-  bundle += `\nloaders.EditorState=function()\n${await readFile('studio/world-builder/EditorState.luau','utf8')}\nend\n`;
-  bundle += '\nrequire = function(name)\nif name == "PlayerModule" then return { GetControls = function() return defaultControls end } end\nif cache[name] == nil then cache[name] = assert(loaders[name], "Unknown module " .. tostring(name))() end\nreturn cache[name]\nend\n';
   // Mock UI/event fixtures deliberately retain references. Isolate groups so
   // the fixed-size Luau Web heap doesn't accumulate unrelated service graphs.
   const groups = [
@@ -135,7 +154,7 @@ try {
     ['BWCoreAPI'],
     ['BWPersonalities'],
     ['BWLargePrograms'],
-    ['ScannerTerrain'],
+    ['ScannerTerrain', 'ScannerScene'],
     ['BWPersonalityFailures'],
     ['ProvingGround'],
     ['TerrainMaterials'],
@@ -145,6 +164,8 @@ try {
     ['BWCommandAliases'],
     ['BWTankSource'],
     ['BWRetention'],
+    ['VehicleContactsOptimization'],
+    ['BusConfiguration'],
   ];
   if (groupIndex === null) {
     const worldTests = spawnSync(process.execPath, ['--test', ...(await readdir('tests')).filter(name=>name.endsWith('.test.js')).sort().map(name=>'tests/'+name)], { stdio: 'inherit' });
@@ -257,6 +278,7 @@ try {
       tests += '\ndo\nlocal examples = {' + examples.map(source => '[====[' + source + ']====]').join(',') + '}\n';
       tests += await readFile('tests/BWRuntimeExamples.luau', 'utf8') + '\nend\n';
     }
+    const bundle = await buildBundle(tests);
     await state.loadstring(bundle + tests, group.join('-'), true)();
     for (const {document,items} of editorExports) {
       const {compileDocument}=await import(pathToFileURL(resolve('tools/world-builder/document.js')).href);

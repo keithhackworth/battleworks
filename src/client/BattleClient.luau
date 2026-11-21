@@ -1,5 +1,7 @@
 -- Existing simulator wiring, hosted by the application shell or Royale client.
 local BattleClient={}
+local profileBegin=debug.profilebegin or function()end
+local profileEnd=debug.profileend or function()end
 function BattleClient.new(onMenu,options)
 options=options or {}
 local royale=options.royale==true
@@ -89,6 +91,8 @@ end,function()
 	return bwRequest
 end,function(configuration) if active and driving then bwHardware:FireServer(configuration,selectedId,controlEpoch) end end,function()if active and driving and selectedId then bwRuntimeState:FireServer("Source",selectedId,controlEpoch)end end)
 ide.gui.Enabled=false
+local touch=controller.providers.Touch
+ide:fitAboveTouchDrive(touch.root,touch.sticks.Drive.frame)
 bwRuntimeState.OnClientEvent:Connect(function(id,reading) if active and (not royale or (driving and id==selectedId and reading.controlEpoch==controlEpoch)) then ide:receiveRuntime(id,reading) end end)
 local resetButton=Instance.new("TextButton")
 resetButton.Name="ResetBattle"; resetButton.Text="Reset Battle"
@@ -122,27 +126,32 @@ end)
 bwOutput.OnClientEvent:Connect(function(id,generation,requestId,reading,epoch)
 	if active and (not royale or (driving and id==selectedId and epoch==controlEpoch)) then ide:receiveOutput(id,generation,requestId,reading) end
 end)
-prepareShot.OnClientEvent:Connect(function(id, tankType, generation, weaponId)
+prepareShot.OnClientEvent:Connect(function(id, tankType, generation, weaponId, windup)
  if not active then return end
 	local renderer = renderers[tostring(id)]
-	if renderer and renderer.tankType == (tankType or "Boomer") and renderer.generation == (generation or 0) and (not weaponId or renderer.weaponId==weaponId) then renderer:fire() end
+	if renderer and renderer.tankType == (tankType or "Boomer") and renderer.generation == (generation or 0) and (not weaponId or renderer.weaponId==weaponId) then renderer:fire(nil,windup) end
 end)
 shot.OnClientEvent:Connect(function(id, origin, direction, tankType, generation, rock, weaponId)
  if not active then return end
 	local renderer = renderers[tostring(id)]
 	if renderer and (generation or 0)<renderer.generation then return end
+	profileBegin("BattleWorks.ClientShotEffects")
 	local matches = renderer and renderer.tankType == (tankType or "Boomer") and renderer.generation == (generation or 0) and (not weaponId or renderer.weaponId==weaponId)
 	if matches and renderer.gatling then renderer:fire(rock) end
  -- Shot effects use the authoritative release muzzle and direction.
 
 	Renderer.shot(origin, direction, tankType,weaponId)
+	profileEnd()
 end)
 local elapsed, debugElapsed = 0, 0
 RunService:BindToRenderStep("BattleWorksFrame", Enum.RenderPriority.Camera.Value + 1, function(dt)
     if not active then return end
 	local camera = workspace.CurrentCamera
 	if not camera then return end
+	profileBegin("BattleWorks.ClientFrame")
+	profileBegin("BattleWorks.ClientTankRendering")
 	for id, state in states do renderers[id]:update(state, dt) end
+	profileEnd()
 	local own = states[selectedId]
  if royale and (not driving or not own or own.controlEpoch~=controlEpoch)then own=nil end
 	if speedDebug then speedDebug:update(own) end
@@ -163,10 +172,12 @@ RunService:BindToRenderStep("BattleWorksFrame", Enum.RenderPriority.Camera.Value
 		local status
 		if own.waitingForSpawn then status = "Waiting for a clear spawn…"
   elseif own.health <= 0 then status = if battleState.multiplayer then "WRECKED • Respawning…" else "WRECKED • Reset Battle to retry"
+		elseif own.weaponPerformance==0 then status="Weapon disabled"
 		elseif Components.forWeapon(own.tankType,own.weaponId).Weapon.Operation=="Heat" then
 			status = if (own.weaponCooldown or 0)>0 then string.format("COOLING %.1fs",own.weaponCooldown)
 				else string.format("HEAT %d%%%s",math.floor((own.heat or 0)/Components.forWeapon(own.tankType,own.weaponId).Weapon.MaxHeat*100),if own.firing then " / BRRR!" else "")
-		else status = if own.cooldown>0 then "Reloading" else "Ready" end
+		elseif (own.weaponPreparationRemaining or 0)>0 then status=string.format("Preparing %.1fs",own.weaponPreparationRemaining)
+		else status = if own.cooldown>0 then string.format("Reloading %.1fs",own.cooldown) else "Ready" end
 		if own.immobilized then status..=string.format(" / RATTLED %.1fs",own.immobilizedRemaining or 0) end
 		if own.smokeBurst then status..=" / SMOKE" end
 		label.Text = string.format("%s / HP %d / %s",own.tankType or "Boomer",own.health,status)..(if battleState.winner=="Draw" then " / DRAW!" elseif battleState.winner then " / "..battleState.winner.." WINS!" else "")
@@ -177,6 +188,7 @@ RunService:BindToRenderStep("BattleWorksFrame", Enum.RenderPriority.Camera.Value
 		elapsed %= 1 / 30
 		if own and driving then input:FireServer(command,selectedId,controlEpoch) end
 	end
+	profileEnd()
 end)
 
 function self:setActive(enabled)

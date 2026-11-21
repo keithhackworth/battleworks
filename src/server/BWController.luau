@@ -1,6 +1,8 @@
 -- Server-only ownership and lifecycle glue around the pure BW runtime.
 local Shared=game.ReplicatedStorage.Shared
 local Parser=require(Shared.BWParser)
+local profileBegin=debug.profilebegin or function()end
+local profileEnd=debug.profileend or function()end
 local Limits=require(Shared.BWConfig)
 local Runtime=require(Shared.BWExecution)
 local Hardware=require(Shared.BWChassis)
@@ -10,10 +12,20 @@ local Controller={}
 local function cleanup(tank)
 	tank.command=Command.neutral(); tank.tickCommand=Command.neutral(); tank.lastInput=0
 	tank.pendingShot=nil; tank.rattlerShot=false; tank.state.firing=false
+	tank.state.weaponPreparationRemaining=nil
 	if tank.rattler then tank.rattler.firing=false end
 	tank.requireFireRelease=true
 end
 Controller.clearInputs=cleanup
+function Controller.suspendInputs(tank)
+	-- Park an accepted cannon preparation with its executor. Resuming can
+	-- release that same round, while stopping the program still cancels it.
+	local pending,requireRelease=tank.pendingShot,tank.requireFireRelease
+	cleanup(tank)
+	tank.pendingShot=pending
+	tank.state.weaponPreparationRemaining=pending and pending.remaining
+	tank.requireFireRelease=requireRelease
+end
 function Controller.sync(tank)
 	local runtime=tank.bw
 	tank.state.bwRequestId=tank.lastBWRequest or 0
@@ -53,7 +65,9 @@ function Controller.start(tank,source)
 	Controller.stop(tank,"Replaced by a new program.")
 	cleanup(tank)
 	tank.bwSource=if type(source)=="string"and#source<=Limits.MaxSourceBytes then source else nil
+	profileBegin("BattleWorks.BWParse")
 	local instructions,err=Parser.parse(source)
+	profileEnd()
 	if not instructions or tank.state.health<=0 then
 		return Controller.reject(tank,if err then err.message else "Tank is destroyed; reset the battle.",if err then err.line else 0)
 	end
@@ -69,17 +83,36 @@ function Controller.applyHardware(tank)
  tank.hardware=tank.hardware or Hardware.forTank(tank.state)
  Components.withComputer(tank.state,tank.hardware.tier)
  local devices=tank.hardware.devices
- for name,field in {drivetrain="drivePerformance",turret="turretPerformance",weapon="weaponPerformance"} do
-  tank.state[field]=if devices[name] then Hardware.devicePerformance(name,devices[name].allocation,Components.get(tank.state)) else 0
+ local profile=Components.get(tank.state)
+ for name,field in {drivetrain="drivePerformance",turret="turretPerformance"} do
+  tank.state[field]=if devices[name] then Hardware.effective(tank.hardware,name,profile) else 0
+ end
+ tank.state.weaponPerformance,tank.state.weaponWindupPerformance,tank.state.projectileSpeed=Hardware.weaponStats(tank.hardware,profile)
+ tank.scannerPower=nil
+ if tank.hardware.allocations then
+  for angle in profile.Sensors do
+   tank.scannerPower=Hardware.effective(tank.hardware,"sensor"..angle,profile)
+   break
+  end
  end
 end
 function Controller.configure(tank,configuration)
  if Controller.running(tank) then return false,"programRunning" end
+ if type(configuration)=="table" and (configuration.allocations or configuration.tuning or tank.hardware and tank.hardware.allocations) then return false,"Use the Garage to configure this bus." end
  local valid,reason=Hardware.validate(configuration); if not valid then return false,reason end
- tank.hardware=Hardware.copy(configuration); Controller.applyHardware(tank); return true
+ local installed=Hardware.default(configuration.tier,Components.get(tank.state))
+ local accepted={tier=configuration.tier,devices={}}
+ for name,requested in configuration.devices do
+  local device=installed.devices[name]
+  if not device then return false,"deviceUnavailable" end
+  device.bus=requested.bus;device.allocation=requested.allocation
+  accepted.devices[name]=device
+ end
+ tank.hardware=accepted; Controller.applyHardware(tank); return true
 end
 function Controller.input(tank,dt)
 	if not Controller.running(tank) then return nil end
+	profileBegin("BattleWorks.BWRuntime")
 	local release=tank.bw.releaseSerial or 0
 	local command=tank.bw:step(tank.state,dt)
 	if tank.bw.status~="running" then cleanup(tank)
@@ -88,6 +121,7 @@ function Controller.input(tank,dt)
 		tank.requireFireRelease=false -- BW retains ownership of the next instruction
 	end
 	Controller.sync(tank)
+	profileEnd()
 	return command
 end
 return Controller

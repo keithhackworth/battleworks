@@ -3,11 +3,18 @@
 local Motion=require(script.Parent.VehicleMotion)
 local WorldGeometry=require(script.Parent.WorldObjectGeometry)
 local C={Skin=0.0001,Iterations=10,MaxEvents=12,MaxSubsteps=16,Friction=0.15}
+local CorrectionReserve=2
 local function dot(x,z,a,b) return x*a+z*b end
 local function axes(r) local c,s=math.cos(r.state.yaw),math.sin(r.state.yaw); return c,-s,s,c end
+local function boxExtent(r,x,z,ax,az,bx,bz)
+ return math.abs(dot(ax,az,x,z))*r.halfX+math.abs(dot(bx,bz,x,z))*r.halfZ
+end
 local function extent(r,x,z)
  local ax,az,bx,bz=axes(r)
- return math.abs(dot(ax,az,x,z))*r.halfX+math.abs(dot(bx,bz,x,z))*r.halfZ
+ return boxExtent(r,x,z,ax,az,bx,bz)
+end
+local function angularReach(r)
+ return math.abs(r.state.angularVelocity.Y)*(r.sweepRadius or math.sqrt(r.halfX^2+r.halfZ^2))
 end
 local function polygonAxes(a,b)
  local ax,az,bx,bz=axes(a);local out={{ax,az},{bx,bz}}
@@ -29,8 +36,9 @@ local function vertical(a,b)
  local ay=a.state.position.Y; local by=b.state.position.Y
  return ay+a.top>by+b.bottom+C.Skin and by+b.top>ay+a.bottom+C.Skin
 end
-local function separating(a,b,margin)
+local function separating(a,b,margin,stats)
  if b.plane then
+  if stats then stats.narrowTests+=1 end
   local p=b.plane; local gap=dot(a.state.position.X,a.state.position.Z,p.nx,p.nz)-p.offset-extent(a,p.nx,p.nz)
   if gap>C.Skin+(margin or 0) then return nil end
   return p.nx,p.nz,math.max(0,-gap),math.max(0,gap)
@@ -38,6 +46,7 @@ local function separating(a,b,margin)
  if not vertical(a,b) then return nil end
  local radius=a.halfX+a.halfZ+b.halfX+b.halfZ+(margin or 0)+C.Skin
  if math.abs(a.state.position.X-b.state.position.X)>radius or math.abs(a.state.position.Z-b.state.position.Z)>radius then return nil end
+ if stats then stats.narrowTests+=1 end
  if b.polygon then
   local best,nx,nz=math.huge,0,0
   for _,axis in polygonAxes(a,b)do
@@ -49,12 +58,15 @@ local function separating(a,b,margin)
   end
   return nx,nz,math.max(0,best),math.max(0,-best)
  end
+ if stats then stats.boxSatTests+=1 end
  local ax,az,bx,bz=axes(a); local cx,cz,dx,dz=axes(b)
  local px,pz=a.state.position.X-b.state.position.X,a.state.position.Z-b.state.position.Z
  local best,nx,nz=math.huge,0,0
- for _,axis in {{ax,az},{bx,bz},{cx,cz},{dx,dz}} do
-  local x,z=axis[1],axis[2]; local distance=dot(px,pz,x,z)
-  local overlap=extent(a,x,z)+extent(b,x,z)-math.abs(distance)
+ for i=1,4 do
+  local x=if i==1 then ax elseif i==2 then bx elseif i==3 then cx else dx
+  local z=if i==1 then az elseif i==2 then bz elseif i==3 then cz else dz
+  local distance=dot(px,pz,x,z)
+  local overlap=boxExtent(a,x,z,ax,az,bx,bz)+boxExtent(b,x,z,cx,cz,dx,dz)-math.abs(distance)
   if overlap < -(C.Skin+(margin or 0)) then return nil end
   if overlap<best then best=overlap; local sign=if distance>=0 then 1 else -1; nx=x*sign; nz=z*sign end
  end
@@ -70,7 +82,7 @@ local function feature(r,nx,nz,minimum)
   end
   return points,best
  end
- for _,sx in {-1,1} do for _,sz in {-1,1} do
+ for sx=-1,1,2 do for sz=-1,1,2 do
   local x=r.state.position.X+ax*r.halfX*sx+bx*r.halfZ*sz
   local z=r.state.position.Z+az*r.halfX*sx+bz*r.halfZ*sz
   local d=dot(x,z,nx,nz)
@@ -79,9 +91,9 @@ local function feature(r,nx,nz,minimum)
  end end
  return points,best
 end
-local function manifold(a,b,dt)
- local margin=(math.abs(a.state.angularVelocity.Y)*math.sqrt(a.halfX^2+a.halfZ^2)+(if b.fixed then 0 else math.abs(b.state.angularVelocity.Y)*math.sqrt(b.halfX^2+b.halfZ^2)))*(dt or 0)
- local nx,nz,depth,gap=separating(a,b,margin); if not nx then return nil end
+local function manifold(a,b,dt,stats)
+ local margin=(angularReach(a)+(if b.fixed then 0 else angularReach(b)))*(dt or 0)
+ local nx,nz,depth,gap=separating(a,b,margin,stats); if not nx then return nil end
  local fa,da=feature(a,nx,nz,true); local fb,db
  if b.plane then
   db=b.plane.offset; fb={}
@@ -108,7 +120,10 @@ local function velocity(r,x,z)
  local s=r.state; local v=Motion.ensure(s); local w=s.angularVelocity.Y
  return v.X+w*(z-s.position.Z),v.Z-w*(x-s.position.X)
 end
-local function inverse(r) return if r.fixed then 0 else 1/r.state.motionMass,if r.fixed then 0 else 1/r.state.yawInertia end
+local function inverse(r)
+ if r.fixed then return 0,0 end
+ return r.inverseMass or 1/r.state.motionMass,r.inverseInertia or 1/r.state.yawInertia
+end
 local function effective(r,x,z,nx,nz)
  local mass,inertia=inverse(r); local p=r.state.position
  local cross=(z-p.Z)*nx-(x-p.X)*nz
@@ -171,17 +186,83 @@ local function correct(r,x,z)
  -- Record the actual applied displacement, including Vector3 quantization.
  r.state.motionCorrection=(r.state.motionCorrection or Vector3.zero)+(r.state.position-previous)
 end
-local function eachPair(bodies,statics,visit)
- for i,a in bodies do
-  for j=i+1,#bodies do visit(a,bodies[j]) end
-  for _,b in statics do visit(a,b) end
+local function contains(list,minX,maxX,minZ,maxZ)
+ return minX>=list.minX and maxX<=list.maxX and minZ>=list.minZ and maxZ<=list.maxZ
+end
+local function candidates(a,list,statics,dt,sweep,stats)
+ local p=a.state.position
+ local dx,dz=0,0
+ if sweep then
+  local v=Motion.ensure(a.state)
+  dx,dz=v.X*dt,v.Z*dt
+ end
+ -- Match the solver's existing L1 center reach, including speculative angular
+ -- contacts. The reserve allows small positional corrections to reuse the list.
+ local reach=a.halfX+a.halfZ+C.Skin+angularReach(a)*dt
+ local minX,maxX=p.X+math.min(0,dx)-reach,p.X+math.max(0,dx)+reach
+ local minZ,maxZ=p.Z+math.min(0,dz)-reach,p.Z+math.max(0,dz)+reach
+ if contains(list,minX,maxX,minZ,maxZ) then return end
+ minX,maxX=minX-CorrectionReserve,maxX+CorrectionReserve
+ minZ,maxZ=minZ-CorrectionReserve,maxZ+CorrectionReserve
+ list.minX,list.maxX,list.minZ,list.maxZ=minX,maxX,minZ,maxZ
+ table.clear(list.indices)
+ if stats then stats.candidateChecks+=#statics;stats.rebuilds+=1 end
+ for i,b in statics do
+  local inside
+  if not b.fixed then
+   inside=true
+  elseif b.plane then
+   local plane=b.plane
+   local x=if plane.nx>=0 then minX else maxX
+   local z=if plane.nz>=0 then minZ else maxZ
+   inside=math.abs(plane.nx)+math.abs(plane.nz)<1 or dot(x,z,plane.nx,plane.nz)<=plane.offset
+  else
+   local pos=b.state.position
+   local radius=b.halfX+b.halfZ
+   inside=pos.X+radius>=minX and pos.X-radius<=maxX and pos.Z+radius>=minZ and pos.Z-radius<=maxZ
+  end
+  if inside then table.insert(list.indices,i) end
  end
 end
-local function resolve(bodies,statics,dt)
+local function eachPair(bodies,statics,lists,dt,sweep,correction,visit,stats)
+ for i,a in bodies do
+  for j=i+1,#bodies do
+   if stats then stats.pairVisits+=1 end
+   visit(a,bodies[j])
+  end
+  if #statics==0 then continue end
+  local list=lists[i]
+  candidates(a,list,statics,dt,sweep,stats)
+  local cursor=1
+  while cursor<=#list.indices do
+   local index=list.indices[cursor]
+   if stats then stats.pairVisits+=1 end
+   local corrected=visit(a,statics[index])
+   cursor+=1
+   if correction and corrected then
+    local p=a.state.position
+    local reach=a.halfX+a.halfZ+C.Skin
+    if not contains(list,p.X-reach,p.X+reach,p.Z-reach,p.Z+reach) then
+     if stats then stats.correctionRebuilds+=1 end
+     candidates(a,list,statics,0,false,stats)
+     -- Continue in the original pair order. Earlier constraints are revisited
+     -- on the next correction pass, just as in the exhaustive solver.
+     cursor=1
+     while list.indices[cursor] and list.indices[cursor]<=index do cursor+=1 end
+    end
+   end
+  end
+ end
+end
+local function resolve(bodies,statics,lists,dt,stats)
  local contacts={}
- eachPair(bodies,statics,function(a,b)
-  local found=manifold(a,b,dt); if found then table.insert(contacts,found) end
- end)
+ eachPair(bodies,statics,lists,dt or 0,dt~=nil,false,function(a,b)
+  local found=manifold(a,b,dt,stats)
+  if found then
+   table.insert(contacts,found)
+   if stats then stats.contacts+=#found end
+  end
+ end,stats)
  if #contacts==0 then return end -- open space needs no positional solver passes
  for _=1,C.Iterations do for _,group in contacts do
   if #group==2 then solveBlock(group[1],group[2]) else solveNormal(group[1]) end
@@ -189,35 +270,43 @@ local function resolve(bodies,statics,dt)
  end end
  -- Split positional correction never feeds artificial separation energy into v.
  for _=1,C.Iterations do
-  eachPair(bodies,statics,function(a,b)
-   local nx,nz,depth=separating(a,b)
+  local needsCorrection=false
+  if stats then stats.correctionPasses+=1 end
+  eachPair(bodies,statics,lists,0,false,true,function(a,b)
+   local nx,nz,depth=separating(a,b,nil,stats)
    if nx and depth>C.Skin then
     local ia=inverse(a); local ib=inverse(b); local sum=ia+ib
-    if sum>0 then local correction=if b.plane then (depth+C.Skin)/sum else (depth-C.Skin)*0.8/sum
+    if sum>0 then
+     needsCorrection=true
+     local correction=if b.plane then (depth+C.Skin)/sum else (depth-C.Skin)*0.8/sum
      correct(a,nx*correction*ia,nz*correction*ia); correct(b,-nx*correction*ib,-nz*correction*ib)
+     return true
     end
    end
-  end)
+  end,stats)
+  if not needsCorrection then break end
  end
 end
 -- Continuous translational SAT. Yaw is subdivided deterministically; its
 -- swept envelope expansion prevents a rotating corner crossing unnoticed.
-local function impactTime(a,b,dt)
+local function impactTime(a,b,dt,stats)
  if b.plane then
+  if stats then stats.narrowTests+=1 end
   local p=b.plane; local s=a.state; local v=Motion.ensure(s)
   local gap=dot(s.position.X,s.position.Z,p.nx,p.nz)-p.offset-extent(a,p.nx,p.nz)
-  local closing=dot(v.X,v.Z,p.nx,p.nz)-math.abs(s.angularVelocity.Y)*math.sqrt(a.halfX^2+a.halfZ^2)
+  local closing=dot(v.X,v.Z,p.nx,p.nz)-angularReach(a)
   if gap<=C.Skin or closing>=0 then return nil end
   local t=gap/(-closing*dt); return if t>1e-8 and t<=1 then t else nil
  end
- if not vertical(a,b) or separating(a,b) then return nil end
+ if not vertical(a,b) or separating(a,b,nil,stats) then return nil end
  local ax,az,bx,bz=axes(a); local cx,cz,dx,dz=axes(b)
  local av=Motion.ensure(a.state); local bv=if b.fixed then Vector3.zero else Motion.ensure(b.state)
  local px,pz=a.state.position.X-b.state.position.X,a.state.position.Z-b.state.position.Z
  local vx,vz=(av.X-bv.X)*dt,(av.Z-bv.Z)*dt
- local expansion=(math.abs(a.state.angularVelocity.Y)*math.sqrt(a.halfX^2+a.halfZ^2)+(if b.fixed then 0 else math.abs(b.state.angularVelocity.Y)*math.sqrt(b.halfX^2+b.halfZ^2)))*dt
+ local expansion=(angularReach(a)+(if b.fixed then 0 else angularReach(b)))*dt
  local radius=a.halfX+a.halfZ+b.halfX+b.halfZ+expansion
  if (px>radius and px+vx>radius) or (px< -radius and px+vx< -radius) or (pz>radius and pz+vz>radius) or (pz< -radius and pz+vz< -radius) then return nil end
+ if stats then stats.narrowTests+=1 end
  local enter,exit=0,1
  if b.polygon then
   for _,axis in polygonAxes(a,b)do
@@ -231,9 +320,12 @@ local function impactTime(a,b,dt)
   end
   return if enter>=1e-8 and enter<=1 then enter else nil
  end
- for _,axis in {{ax,az},{bx,bz},{cx,cz},{dx,dz}} do
-  local x,z=axis[1],axis[2]; local p,v=dot(px,pz,x,z),dot(vx,vz,x,z)
-  local radius=extent(a,x,z)+extent(b,x,z)+expansion
+ if stats then stats.boxSatTests+=1 end
+ for i=1,4 do
+  local x=if i==1 then ax elseif i==2 then bx elseif i==3 then cx else dx
+  local z=if i==1 then az elseif i==2 then bz elseif i==3 then cz else dz
+  local p,v=dot(px,pz,x,z),dot(vx,vz,x,z)
+  local radius=boxExtent(a,x,z,ax,az,bx,bz)+boxExtent(b,x,z,cx,cz,dx,dz)+expansion
   if math.abs(v)<1e-10 then if math.abs(p)>radius then return nil end
   else
    local t1,t2=(-radius-p)/v,(radius-p)/v
@@ -300,11 +392,19 @@ function C.obstacles(environment,mapSize,radius)
  if environment then environment.motionObstacles={width=mapSize and mapSize.X,depth=mapSize and mapSize.Y,records=out} end
  return out
 end
-function C.solve(bodies,statics,dt)
+function C.solve(bodies,statics,dt,stats)
  table.sort(bodies,function(a,b) return a.id<b.id end); table.sort(statics,function(a,b) return a.id<b.id end)
- local substeps=1
- for _,r in bodies do
+ if stats then
+  stats.candidateChecks=0;stats.pairVisits=0;stats.narrowTests=0;stats.boxSatTests=0;stats.contacts=0
+  stats.correctionPasses=0;stats.rebuilds=0;stats.correctionRebuilds=0
+ end
+ local substeps,lists=1,{}
+ for i,r in bodies do
   local s=r.state
+  Motion.ensure(s)
+  r.sweepRadius=math.sqrt(r.halfX^2+r.halfZ^2)
+  r.inverseMass,r.inverseInertia=1/s.motionMass,1/s.yawInertia
+  lists[i]={indices={},minX=math.huge,maxX=-math.huge,minZ=math.huge,maxZ=-math.huge}
   substeps=math.max(substeps,math.ceil(math.abs(s.angularVelocity.Y)*dt/0.08))
   local previous=s.motionStepStart
   if previous then
@@ -314,14 +414,16 @@ function C.solve(bodies,statics,dt)
  end
  substeps=math.min(C.MaxSubsteps,substeps)
  for _=1,substeps do
-  resolve(bodies,statics,dt/substeps)
+  resolve(bodies,statics,lists,dt/substeps,stats)
   local remaining=dt/substeps
   for event=1,C.MaxEvents do
    local time=1
-   eachPair(bodies,statics,function(a,b) local t=impactTime(a,b,remaining); if t then time=math.min(time,t) end end)
+   eachPair(bodies,statics,lists,remaining,true,false,function(a,b)
+    local t=impactTime(a,b,remaining,stats); if t then time=math.min(time,t) end
+   end,stats)
    local advance=remaining*time
    for _,r in bodies do Motion.integrateHorizontal(r.state,advance) end
-   resolve(bodies,statics)
+   resolve(bodies,statics,lists,nil,stats)
    remaining-=advance
    if time>=1 or remaining<1e-9 then break end
    if event==C.MaxEvents then for _,r in bodies do r.state.motionContactLimited=(r.state.motionContactLimited or 0)+1 end end

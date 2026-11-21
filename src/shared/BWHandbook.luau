@@ -155,9 +155,9 @@ Turret, weapon and scanner performance = 1 - (1 - allocation/100)^2
 
 Drivetrain uses a separate speed curve:0% is unpowered,5% gives15 forward studs/sec before terrain/tracked modifiers,100% retains the installed rated maximum. Below5% speed is linear from zero; above5% it eases to the maximum with the bus exponent. Reverse/turn keep their own ratings with the same drivetrain fraction.
 
-The drivetrain's speed cap, turret rotation rate and weapon preparation/recharge timing depend on performance. Acceleration, recoil, steering geometry, collisions, projectile speed and damage remain normal tank physics. Lower performance makes weapon intervals/preparation LONGER. Radar RANGE currently stays at 150 studs at 100% distance effectiveness, independently of bus allocation; acquisition time still depends on performance. Future equipment configuration can change radar hardware range.
+Garage setups reserve one shared 100% budget across drivetrain, turret, weapon and the scanner array. Array power is split equally among installed lenses. Cone Width / Range trades scanner coverage against reach. Projectile Speed / Reload or Fire Rate trades projectile speed against shot interval. Cannon windup follows master weapon power. The drivetrain speed curve, turret mechanical stops, weapon damage and Gatling heat recovery retain their physical rules.
 
-Edit reservations in Hardware / threads while the program is stopped. First line is chassis name; following lines are: device bus allocationPercent. The server validates configuration too. Each tank starts with its configured chassis profile (listed below); the development hardware editor can override it. Shared allocations affect physical device performance as well as acquisition/preparation times.
+Save allocations in Main Menu → Garage before taking manual control. Hardware / threads shows the active configuration and runtime state. Legacy Classic configurations still use their existing per-device editor until a Garage setup is saved.
 
 WHAT DOES BUSY MEAN?
 A device is busy while it has an active command. A drive remains busy while covering its distance/turn or waiting for genuine progress. A weapon may be busy during preparation, reload, held fire or waiting for its committed shot to release. A scanner is busy during acquisition/cooldown scheduling. Being busy is not a CPU charge every frame.
@@ -197,7 +197,7 @@ steer_right(20) sets steering: wheel angle for wheels, relative tread intent for
 CURRENT FULL-PERFORMANCE TIMING
 Cannon (currently Boomer): %g seconds cannon preparation and %g seconds firing interval. Lower allocation divides these durations by effective performance. It still swells, recoils and releases a shell along the actual barrel direction.
 
-Gatling (currently Rattler): %g seconds firing interval, at most %g seconds continuous fire, then %g seconds mandatory overheat cooldown. Lower allocation lengthens the shot interval; it does not increase projectile speed or bypass heat. Releasing and tapping does not reset accumulated heat.
+Gatling (currently Rattler): %g seconds firing interval, at most %g seconds continuous fire, then %g seconds mandatory overheat cooldown. Lower allocation lengthens the shot interval; the Garage tradeoff also controls projectile speed. Heat and overheat recovery follow the weapon mechanics. Releasing and tapping does not reset accumulated heat.
 
 fire(2) holds the trigger for 2 simulated seconds; it does not mean two shots. Preparation/cooldown can delay activation, and active commands have bounded safety timeouts. Neither tank's recoil, movement or weapon mechanics is replaced by BW.]],Catalog["weapon.cannon"].Properties.FireWindup,Catalog["weapon.cannon"].Properties.Cooldown,Catalog["weapon.gatling"].Properties.Cooldown,Catalog["weapon.gatling"].Properties.MaxBurst,Catalog["weapon.gatling"].Properties.OverheatCooldown))
  add("radar","Radar","Scanner input, timing and all returned fields",renderCommands(commands,{"Scanner"})..string.format([[
@@ -205,8 +205,8 @@ fire(2) holds the trigger for 2 simulated seconds; it does not mean two shots. P
 PHYSICAL TIME (separate from CPU cost)
 Default acquisition: %g seconds / effective device performance.
 Each sensor cooldown: %g seconds. Queued acquisition honors that sensor's cooldown; a cooling sensor does not block a different sensor. There is also a separate shared query-work safety budget; scannerBusy means that budget/geometry guard, not a shared sensor cooldown. Acquisition priority rotates deterministically to avoid repeatedly favoring the same sensors. Acquisition occurs on a fixed simulation step; the issuing thread resumes on a CPU cycle, so delivery can be later than the recorded timestamp.
-Default cone: %g degrees total (±%g). Fixed mounts are 45 degrees apart, leaving angular gaps between narrow cones; a nearby object outside every cone can produce zero detections. Scan activity lights do not guarantee a detected object.
-Default distance: %g studs at %g%% distance effectiveness. Hardware range/distancePercent can be configured later; bus sharing currently does not shorten the range.
+Catalog cone: %g degrees total (±%g). Fixed mounts are 45 degrees apart, leaving angular gaps between narrow cones; a nearby object outside every cone can produce zero detections. Scan activity lights do not guarantee a detected object.
+Catalog distance: %g studs at %g%% distance effectiveness. Garage power and tuning affect cone and range. Read the selected lens in get_tank_state().scanners for effective values.
 
 SNAPSHOT FIELDS
 status: "success" or "fail".
@@ -214,6 +214,7 @@ reason: null on success; stable failure code otherwise.
 sensor: physical mounting angle in DEGREES, even when called with position=index. Scanner(position=4) reports sensor=180.
 timestamp: actual server simulation time of acquisition, NOT submission or the moment you print it.
 range: effective distance of this radar, in studs.
+cone_degrees: effective total cone angle.
 count: number of visible detections.
 detections: immutable nearest-first array. Access its first entry with detections[0], not [1].
 
@@ -497,7 +498,7 @@ Aliases are immutable and are not runtime function values. They cannot be assign
     local config=Hardware.forTank(kind); local spec=Hardware.Tiers[config.tier]
     table.insert(profiles,string.format("%s: %s • %d cores/buses • %g ticks/cycle/thread • %d pending/device",kind,config.tier,spec.threads,spec.ticks,spec.queue))
    end
-   table.insert(profiles,"Boomer's devices share its single bus. Rattler reserves dedicated drivetrain, turret and weapon buses; scanners share its remaining five buses. Radar range stays 150 studs at full distance effectiveness.")
+   table.insert(profiles,"Legacy Classic tanks use the computer bus layout above. Garage-enabled tanks share a single allocation budget and retain their installed computer cores.")
    section.body=table.concat(profiles,"\n").."\n\n"..section.body
   end
   section.commands=membership[section.id] or {}

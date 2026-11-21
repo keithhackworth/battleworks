@@ -12,7 +12,7 @@
 
 **Playground proving ground (Stage 2.5):** the default battlefield now includes an open-roof four-room barracks, navigable forest, large flat combat field, twelve material comparison lanes and ten five-second respawning practice targets. See [layout, terrain tuning and Studio acceptance](docs/PLAYGROUND_PROVING_GROUND.md). Living Playground population management remains a later stage.
 
-**3D aiming:** use the controller icon beside the input selector for Mouse Points, Mouse Direct, or Mouse Joystick. Hold Alt for UI in Direct; press C to recenter Joystick. Both axes share turret bus speed. Cannon/Gatling depression stops are −12°/−15° relative to the mount. [Controls, BW elevation and validation](docs/3D_AIMING.md).
+**3D aiming:** press C or click the controller icon beside the input selector for Mouse Points, Mouse Direct, or Mouse Joystick. Hold Alt for UI in Direct; press Shift+C to recenter Joystick. Both axes share turret bus speed. Cannon/Gatling depression stops are −12°/−15° relative to the mount. [Controls, BW elevation and validation](docs/3D_AIMING.md).
 
 **Playground chat:** use the lower-left Chat button or Enter for Roblox-managed global text chat on foot or in tanks. Typing releases gameplay controls; short touch screens use a modal layout. Roblox eligibility, filtering and moderation remain authoritative. See [chat architecture and native multiplayer checklist](docs/PLAYGROUND_CHAT.md).
 

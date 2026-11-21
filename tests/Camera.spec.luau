@@ -277,9 +277,11 @@ check(near(currentLayout.distance,defaults.DefaultZoom),"current arena uses conf
 for _, viewport in {Vector2.new(812,362), Vector2.new(568,320), Vector2.new(2560,1080)} do
 	for _, depth in {200,230,300,400} do
 		local view = Math.layout(viewport,config(Vector2.new(230,depth)))
-		check(not view.wholeMap and near(view.distance,135), "follow camera reaches 135 studs on regular maps across slider depths and viewports")
+		check(not view.wholeMap and near(view.distance,160), "follow camera reaches 160 studs on regular maps across slider depths and viewports")
 		assertCap(view,defaults.MaxGroundFootprint)
 	end
+	local playground = Math.layout(viewport, config(Vector2.new(800,640)))
+	check(not playground.wholeMap and near(playground.distance,160), "Playground tank camera reaches 160 studs across viewports")
 end
 local zoom = config(Vector2.new(2400,1800)); zoom.DefaultZoom = 1
 check(near(Math.layout(Vector2.new(568,320),zoom).distance,zoom.MinZoom),"default zoom clamps to minimum")
@@ -568,7 +570,7 @@ do
  local lastDistance = 0
  for side = 25, 400 do
   local view = Math.layout(Vector2.new(568,320),config(Vector2.new(side,side)))
-  check(view.distance<=135+1e-5, "hard distance limit applies in both camera modes")
+  check(view.distance<=defaults.MaxZoom+1e-5, "hard distance limit applies in both camera modes")
   check(view.distance>=lastDistance-1e-5, "increasing square size does not zoom closer")
   if view.wholeMap then
    check(near(view.distance,math.max(view.fitDistance,defaults.MinZoom)), "small map uses minimum fitting distance")
