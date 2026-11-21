@@ -16,11 +16,11 @@ function L.extend(data)
   table.insert(data.staticBoxes,{id="proving:wall:"..(#data.staticBoxes+1),name=name,x=x,y=y,z=z,sx=sx,sy=sy,sz=sz})
  end
  -- Open-roof four-room barracks. All dimensions are collision dimensions.
- -- Hall z229..261; opposing exterior doors z233..257 (24-stud clearance).
+ -- Hall z222..268; opposing exterior doors z224..266.
  for _,x in {90,250}do
-  box("end-n-"..x,x,6,214,2,12,38)
-  box("end-s-"..x,x,6,276,2,12,38)
-  box("door-header-"..x,x,11,245,2,2,24)
+  box("end-n-"..x,x,6,209.5,2,12,29)
+  box("end-s-"..x,x,6,280.5,2,12,29)
+  box("door-header-"..x,x,11,245,2,2,42)
  end
  local function wallWithWindows(z)
   -- Windows x121..139 and201..219, vertically y2..9.
@@ -31,17 +31,15 @@ function L.extend(data)
   end
  end
  wallWithWindows(195);wallWithWindows(295)
- for _,z in {229,261}do
-  -- 18-stud room doorways at x121..139 and201..219.
-  for i,r in {{90,121},{139,201},{219,250}}do box("partition-"..z.."-"..i,(r[1]+r[2])/2,6,z,r[2]-r[1],12,2)end
-  for _,x in {130,210}do box("room-header-"..z.."-"..x,x,11,z,18,2,2)end
+ for _,z in {222,268}do
+  -- 36-stud room doorways at x112..148 and192..228.
+  for i,r in {{90,112},{148,192},{228,250}}do box("partition-"..z.."-"..i,(r[1]+r[2])/2,6,z,r[2]-r[1],12,2)end
+  for _,x in {130,210}do box("room-header-"..z.."-"..x,x,11,z,36,2,2)end
  end
- box("north-room-divider",170,6,212,2,12,32)
- box("south-room-divider",170,6,278,2,12,32)
+ box("north-room-divider",170,6,208.5,2,12,25)
  -- Alternate sightline between the southern rooms; northern rooms are dead ends.
- data.staticBoxes[#data.staticBoxes]=nil
- box("south-divider-low",170,1,278,2,2,32)
- box("south-divider-a",170,6,266,2,12,8)
+ box("south-divider-low",170,1,281.5,2,2,25)
+ box("south-divider-a",170,6,269.5,2,12,1)
  box("south-divider-b",170,6,290,2,12,8)
  box("south-divider-top",170,10.5,278,2,3,16)
  -- The existing tree renderer/collider path: box trunks and nonquery foliage.
@@ -67,8 +65,8 @@ function L.extend(data)
  local function target(id,x,z,y)table.insert(data.targets,{id=id,x=x,y=y or 3.5,z=z})end
  target("field-north-west",80,-145);target("field-north-east",345,-145)
  target("field-east",370,0);target("field-south-east",345,155)
- target("field-long-range",370,-110);target("window-north",130,212)
- target("hall-end",235,254);target("window-south",210,278)
+ target("field-long-range",370,-110);target("barracks-north",106,180)
+ target("barracks-east",280,275);target("barracks-south",233,311)
  target("forest-peek",-316,239);target("terrain-transition",30,-180)
  -- Exposed surface layers: top stays at land elevation, no collision seam step.
  return data

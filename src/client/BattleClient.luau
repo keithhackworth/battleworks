@@ -199,7 +199,11 @@ RunService:BindToRenderStep("BattleWorksFrame", Enum.RenderPriority.Camera.Value
  if royale and (not driving or not own or own.controlEpoch~=controlEpoch)then own=nil end
 	if speedDebug then speedDebug:update(own) end
 	ide:update(own)
-	if not royale or driving then battlefieldCamera:update(camera, dt, own)end
+	if not royale or driving then
+		local orbitDelta=controller:takeOrbitDelta(own~=nil and own.health>0 and not zoneLease)
+		if own then battlefieldCamera:orbit(orbitDelta)end
+		battlefieldCamera:update(camera, dt, own)
+	end
 	if RunService:IsStudio() and battlefieldCamera.gui:GetAttribute("DebugEnabled") == true then
 		debugElapsed += dt
 		if debugElapsed >= 2 then
@@ -247,13 +251,14 @@ function self:setActive(enabled)
   local camera=workspace.CurrentCamera
   if camera and not royale then savedCamera={camera=camera,CameraType=camera.CameraType,CameraSubject=camera.CameraSubject,CFrame=camera.CFrame,Focus=camera.Focus,FieldOfView=camera.FieldOfView,FieldOfViewMode=camera.FieldOfViewMode} end
   battlefieldCamera.layoutKey=nil; battlefieldCamera.lastState=nil; battlefieldCamera.focus=nil
+  battlefieldCamera:resetOrbit()
   battlefieldCamera.gui:SetAttribute("PauseCamera",false)
   TankRenderers.sync(renderers,states,Renderer.new)
   local own=states[selectedId]
   updateInput(own)
  else
   updateConfiguration(nil)
-  controller:setExternalControl(true); controller:release(); ide:close()
+  controller:setExternalControl(true); controller:release(); controller:takeOrbitDelta(false); ide:close()
   local focused=game:GetService("UserInputService"):GetFocusedTextBox()
   if focused then focused:ReleaseFocus() end
   if battlefieldCamera.testPanel then
@@ -289,9 +294,11 @@ function self:setControl(reading)
  if reading.mode=="Tank" and (type(reading.selected)~="string" or type(reading.epoch)~="number" or reading.epoch~=reading.epoch or reading.epoch%1~=0 or reading.epoch<1)then return false end
  controlRevision=reading.revision
  closeConfiguration();updateConfiguration(nil)
- controller:setExternalControl(true);controller:release();ide:close()
+ controller:setExternalControl(true);controller:release();controller:takeOrbitDelta(false);ide:close()
  if driving then restoreCharacterCamera()end
+ local previousId=selectedId
  selectedId=if reading.mode=="Tank" then reading.selected else nil
+ if selectedId~=previousId then battlefieldCamera:resetOrbit() end
  controlEpoch=if selectedId then reading.epoch else nil;driving=selectedId~=nil
  controller:setCharacterControl(not driving)
  if driving then

@@ -1,3 +1,255 @@
+function await_command(const command):
+    if command.status == "fail":
+        return {state: "failed", completionReason: command.reason}
+    deadline = get_clock().time + 35
+    state = command_status(command.commandId)
+    while (state.state == "accepted" or state.state == "queued" or state.state == "running") and get_clock().time < deadline:
+        wait_for_clock(get_clock().time + 0.1)
+        state = command_status(command.commandId)
+    if state.state != "completed":
+        abort_command(state.device)
+    return state
+
+function heading_error(target, current):
+    error = target - current
+    while error > 180:
+        error = error - 360
+    while error < -180:
+        error = error + 360
+    return error
+
+function turn_to(heading):
+    hardware = get_tank_state()
+    if hardware.status != "success" or hardware.motion.effective_max_speed <= 0:
+        return false
+    if hardware.motion.drivetrain_type != "Wheeled":
+        steer_center()
+        result = await_command(turn_right(to=heading))
+        return result.state == "completed" and result.completionReason == null
+    limit = hardware.motion.max_steering_angle
+    if limit == null or limit <= 0:
+        return false
+    attempts = 0
+    while attempts < 3:
+        error = heading_error(heading, get_tank_direction().world_direction)
+        if error <= 5 and error >= -5:
+            steer_center()
+            stop()
+            return true
+        deadline = get_clock().time + 5
+        last_heading = get_tank_direction().world_direction
+        last_check = get_clock().time
+        stuck = false
+        forward()
+        while (error > 5 or error < -5) and get_clock().time < deadline and not stuck:
+            angle = error
+            if angle < 0:
+                angle = -angle
+            if angle < 8:
+                angle = 8
+            if angle > limit:
+                angle = limit
+            if error > 0:
+                steer_right(angle)
+            else:
+                steer_left(angle)
+            wait_for_clock(get_clock().time + 0.15)
+            current = get_tank_direction().world_direction
+            error = heading_error(heading, current)
+            if get_clock().time - last_check >= 1:
+                movement = heading_error(current, last_heading)
+                if movement < 0:
+                    movement = -movement
+                if movement < 2:
+                    stuck = true
+                last_heading = current
+                last_check = get_clock().time
+        steer_center()
+        stop()
+        if error <= 5 and error >= -5:
+            return true
+        # Create space and try again; never spin indefinitely.
+        await_command(back(5))
+        stop()
+        attempts = attempts + 1
+    return false
+
+function travel(distance):
+    before = get_current_coordinates()
+    result = await_command(forward(distance))
+    stop()
+    after = get_current_coordinates()
+    progress = (after.x - before.x) * (after.x - before.x) + (after.z - before.z) * (after.z - before.z)
+    if progress < 0.25 or result.state != "completed":
+        await_command(back(2))
+        stop()
+        turn_to(get_tank_direction().world_direction + 55)
+    return progress
+
+function enemy(const scan):
+    if scan.status == "success":
+        index = 0
+        while index < scan.count:
+            hit = scan.detections[index]
+            if hit.type == "tank" and hit.relation == "enemy":
+                return hit
+            index = index + 1
+    return null
+
+function engage(const scan):
+    hit = enemy(scan)
+    if hit == null:
+        return false
+    aligned = await_command(aim_at(hit.point.x, hit.point.y, hit.point.z))
+    if aligned.state != "completed" or aligned.completionReason != null:
+        return false
+    fresh = Scanner(scan.sensor)
+    current = enemy(fresh)
+    if current == null or current.player != hit.player:
+        return false
+    aligned = await_command(aim_at(current.point.x, current.point.y, current.point.z))
+    ready = is_weapon_ready()
+    if aligned.state == "completed" and aligned.state == "completed" and aligned.completionReason == null and ready.ready == true and get_clock().time - fresh.timestamp < 2:
+        if ready.operation == "Heat":
+            await_command(fire(1))
+        else:
+            await_command(fire())
+        return true
+    return false
+
+function heading_to(x, z):
+    north = 0 - z
+    ax = x
+    if ax < 0:
+        ax = 0 - ax
+    az = north
+    if az < 0:
+        az = 0 - az
+    angle = 0
+    if ax + az < 0.001:
+        return get_tank_direction().world_direction
+    if ax <= az:
+        ratio = ax / az
+        angle = ratio / (1 + 0.28 * ratio * ratio) * 57.29578
+    else:
+        ratio = az / ax
+        angle = 90 - ratio / (1 + 0.28 * ratio * ratio) * 57.29578
+    if north < 0:
+        angle = 180 - angle
+    if x < 0:
+        angle = 360 - angle
+    return angle
+
+function floor_value(value):
+    result = 0
+    if value < 0:
+        while result > value:
+            result = result - 1
+    else:
+        while result + 1 <= value:
+            result = result + 1
+    return result
+
+function cell(x, z, const origin):
+    column = floor_value((x - origin.x) / 12 + 2.5)
+    row = floor_value((z - origin.z) / 12 + 2.5)
+    if column < 0 or column > 4 or row < 0 or row > 4:
+        return null
+    return row * 5 + column
+
+function route(cells, start, target):
+    if start == target:
+        return null
+    parents = [-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1]
+    queue = [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]
+    parents[start] = start
+    queue[0] = start
+    head = 0
+    tail = 1
+    goal = null
+    frontier = null
+    offsets = [-5,1,5,-1]
+    while head < tail and goal == null:
+        current = queue[head]
+        head = head + 1
+        side = 0
+        while side < 4 and goal == null:
+            next = current + offsets[side]
+            column = current - floor_value(current / 5) * 5
+            if next >= 0 and next < 25 and not (side == 1 and column == 4) and not (side == 3 and column == 0):
+                if parents[next] == -1 and cells[next] != -1:
+                    parents[next] = current
+                    queue[tail] = next
+                    tail = tail + 1
+                    if cells[next] == 0 and frontier == null:
+                        frontier = next
+                    if target != null and next == target:
+                        goal = next
+            side = side + 1
+    if goal == null:
+        goal = frontier
+    if goal == null:
+        return null
+    while parents[goal] != start:
+        goal = parents[goal]
+    if goal == start - 5:
+        return 0
+    if goal == start + 1:
+        return 90
+    if goal == start + 5:
+        return 180
+    return 270
+
+function root(value):
+    guess = value + 1
+    iteration = 0
+    while iteration < 12:
+        guess = (guess + value / guess) / 2
+        iteration = iteration + 1
+    return guess
+
+function predict(const old, const scan):
+    hit = enemy(scan)
+    if hit == null:
+        return false
+    previous = enemy(old)
+    own = get_tank_state()
+    vx = 0
+    vy = 0
+    vz = 0
+    dt = scan.timestamp - old.timestamp
+    if previous != null and previous.player == hit.player and dt > 0.05 and dt < 5:
+        vx = (hit.point.x - previous.point.x) / dt
+        vy = (hit.point.y - previous.point.y) / dt
+        vz = (hit.point.z - previous.point.z) / dt
+    point = [hit.point.x, hit.point.y, hit.point.z]
+    muzzle = own.turret.muzzle_position
+    speed = own.weapon.projectile_speed
+    latency = get_clock().time - scan.timestamp
+    if own.turret.effective_rotation_speed > 0:
+        latency = latency + 90 / own.turret.effective_rotation_speed
+    if own.weapon.readiness.effective_preparation_seconds != null:
+        latency = latency + own.weapon.readiness.effective_preparation_seconds
+    flight = 0
+    iteration = 0
+    while iteration < 4 and speed != null and speed > 0 and own.weapon.projectile_model == "projectile":
+        point = [hit.point.x + vx * (latency + flight), hit.point.y + vy * (latency + flight), hit.point.z + vz * (latency + flight)]
+        flight = root((point[0] - muzzle.x) * (point[0] - muzzle.x) + (point[1] - muzzle.y) * (point[1] - muzzle.y) + (point[2] - muzzle.z) * (point[2] - muzzle.z)) / speed
+        iteration = iteration + 1
+    if flight > 5 or vx * vx + vy * vy + vz * vz > 2500:
+        point = [hit.point.x, hit.point.y, hit.point.z]
+    aligned = await_command(aim_at(point[0], point[1], point[2]))
+    fresh = Scanner(scan.sensor)
+    visible = enemy(fresh)
+    ready = is_weapon_ready()
+    if visible != null and visible.player == hit.player and aligned.state == "completed" and aligned.completionReason == null and ready.ready == true and get_clock().time - fresh.timestamp < 2:
+        if ready.operation == "Heat":
+            await_command(fire(1))
+        else:
+            await_command(fire())
+        return true
+    return false
+
 # P06 Hunter — observed local grid, bounded BFS, trajectory/corner interception.
 # Unknown cells may hide cliffs; our coarse map is only a set of hypotheses.
 # A steady-motion prediction is understandable, but what if the opponent turns?
@@ -75,49 +327,64 @@ while true:
     elif start == null:
         phase = "return_to_local_map"
         print({personality: "Hunter", phase: phase})
-        turn_to(heading_to(origin.x - own.x, origin.z - own.z))
-        progress = travel(4)
+        turned = turn_to(heading_to(origin.x - own.x, origin.z - own.z))
+        if turned:
+            progress = travel(4)
+        else:
+            phase = "turn_blocked"
+            print({personality: "Hunter", phase: phase})
+            await_command(back(4))
+            stop()
     else:
         heading = route(cells, start, goal)
         if heading != null:
             phase = "navigate"
             print({personality: "Hunter", phase: phase})
-            turn_to(heading)
-            front = Scanner(0)
-            edge = false
-            if front.terrain != null and front.terrain.supported:
-                edge = front.terrain.edge_near != null and front.terrain.edge_near < 10
-            if heading == 0:
-                next_cell = start - 5
-            elif heading == 90:
-                next_cell = start + 1
-            elif heading == 180:
-                next_cell = start + 5
-            else:
-                next_cell = start - 1
-            if front.status != "success":
-                phase = "scanner_unavailable"
+            turned = turn_to(heading)
+            if not turned:
+                phase = "turn_blocked"
                 print({personality: "Hunter", phase: phase})
+                # turn_to already reversed; change heading before replanning.
+                steer_center()
+                await_command(turn_right(45))
                 stop()
-            elif edge:
-                phase = "observed_edge"
-                print({personality: "Hunter", phase: phase})
-                stop()
-                if next_cell >= 0 and next_cell < 25:
-                    cells[next_cell] = -1
             else:
-                before = get_current_coordinates()
-                result = await_command(forward(6))
-                stop()
-                after = get_current_coordinates()
-                if (after.x - before.x) * (after.x - before.x) + (after.z - before.z) * (after.z - before.z) < 0.25:
-                    phase = "blocked"
+                front = Scanner(0)
+                edge = false
+                if front.status == "success" and front.terrain != null and front.terrain.supported:
+                    edge = front.terrain.edge_near != null and front.terrain.edge_near < 10
+                if heading == 0:
+                    next_cell = start - 5
+                elif heading == 90:
+                    next_cell = start + 1
+                elif heading == 180:
+                    next_cell = start + 5
+                else:
+                    next_cell = start - 1
+                if front.status != "success":
+                    phase = "scanner_unavailable"
                     print({personality: "Hunter", phase: phase})
+                    stop()
+                elif edge:
+                    phase = "observed_edge"
+                    print({personality: "Hunter", phase: phase})
+                    stop()
                     if next_cell >= 0 and next_cell < 25:
                         cells[next_cell] = -1
-                    await_command(back(2))
+                else:
+                    before = get_current_coordinates()
+                    result = await_command(forward(6))
                     stop()
-                    turn_to(heading + 90)
+                    after = get_current_coordinates()
+                    if (after.x - before.x) * (after.x - before.x) + (after.z - before.z) * (after.z - before.z) < 0.25 or result.state != "completed":
+                        phase = "blocked"
+                        print({personality: "Hunter", phase: phase})
+                        if next_cell >= 0 and next_cell < 25:
+                            cells[next_cell] = -1
+                        await_command(back(2))
+                        stop()
+                        turn_to(heading + 90)
     sector = sector + 1
     if sector == 8:
         sector = 0
+

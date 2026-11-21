@@ -74,6 +74,27 @@ local scenarios={
  end},
 }
 local function near(a,b) return math.abs(a-b)<=EPSILON end
+do
+ local function nearNorthBoundary()
+  local wall=plane("boundary:n",0,0,1)
+  local rotating=tank(1,0,3.0005,0,2.01,0,1)
+  local distant=tank(2,40,30,15,0)
+  distant.trackContacts=true
+  return {rotating,distant},{wall}
+ end
+ local old,walls=nearNorthBoundary()
+ Original.solve(old,walls,DT)
+ check(old[2].state.motionContactLimited==1,"legacy north boundary sweep reproduces shared CCD time cut")
+ local current,currentWalls=nearNorthBoundary()
+ Contacts.solve(current,currentWalls,DT)
+ check(current[2].state.motionDebugLostTime==0 and near(current[2].state.position.X,40+15*DT),"a rotating tank moving clear of a wall does not cut a distant tank's step")
+ check(near(current[1].state.yaw,DT),"near miss keeps the full rotation")
+ local corner=tank(1,0,3.015,0,0,0,1)
+ corner.trackContacts=true
+ Contacts.solve({corner},currentWalls,DT)
+ check(corner.state.motionDebugContact=="boundary:n","rotation alone still produces a boundary collision")
+ check(corner.state.motionDebugLostTime==0 and Reference.penetration(corner,currentWalls[1])<=Contacts.Skin,"rotating corner resolves without cutting the step")
+end
 local function compare(a,b,name)
  for i,body in a do
   local s,t=body.state,b[i].state
@@ -133,7 +154,15 @@ for _,scenario in scenarios do
  end
  for _=1,4 do
   Original.solve(a,x,DT);Contacts.solve(b,y,DT)
-  compare(a,b,name.." repeated step")
+  if name=="simultaneous contacts" then
+   -- Later steps rotate against the north plane. The old estimate and
+   -- the corrected time of impact can order those contacts differently.
+   for _,body in b do
+    check(Reference.penetration(body,y[2])<=Contacts.Skin,name.." repeated step stays inside north boundary")
+   end
+  else
+   compare(a,b,name.." repeated step")
+  end
  end
 end
 -- Local deterministic LCG. The fixtures interleave the IDs to exercise the

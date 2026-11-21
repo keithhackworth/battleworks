@@ -8,6 +8,7 @@ local Self=require("BWSelfState")
 local Devices=require("BWDevices")
 local Manual=require("ManualScanner")
 local Scan=require("DirectionalScanner")
+local Geometry=require("ScannerGeometry")
 local Command=require("InputCommand")
 local Controller=require("BWController")
 local Timing=require("WeaponTiming")
@@ -34,6 +35,20 @@ local twoLenses=Components.copy(require("VehicleAssemblies").Boomer)
 twoLenses.Sensors={[0]="sensor.standard",[180]="sensor.standard"}
 local partial=compile(Components.resolve(twoLenses),0,0,0,40,.5)
 check(partial.devices.sensor0.allocation==20 and partial.devices.sensor180.allocation==20 and partial.devices.sensor45==nil,"scanner budget is divided only among installed physical lenses")
+for _,anchor in {{5,5},{30,90},{50,110},{100,180}} do
+ local master,cone=anchor[1],anchor[2]
+ for _,bias in {0,.5,1} do
+  local config=compile(boomer,0,0,0,master,bias)
+  check(Hardware.validate(config) and near(config.devices.sensor0.coneWidth,cone*(1-.25*bias)),"array aperture follows master power and slider position")
+  check(config.devices.sensor315.coneWidth==config.devices.sensor0.coneWidth and config.devices.sensor0.allocation==master/8,"array aperture does not multiply the per-lens bus share")
+ end
+end
+local wideAngle=compile(boomer,0,0,0,100,0).devices.sensor0.coneWidth
+for _,anchor in {{0,0,40},{30,.5,100},{50,.5,120},{100,1,200}} do
+ local config=compile(boomer,0,0,0,anchor[1],anchor[2])
+ check(Hardware.validate(config) and near(config.devices.sensor0.range,anchor[3]),"scanner range matches calibration")
+end
+check(Geometry.inCone(0,0,Vector3.new(1,0,-.01),wideAngle) and not Geometry.inCone(0,0,Vector3.new(1,0,.01),wideAngle),"wide cone reaches the sides and excludes targets behind it")
 for _,bias in {0,.5,1} do
  for _,kind in {"Boomer","Rattler"} do
   local profile=Components.get(kind)
@@ -44,7 +59,7 @@ for _,bias in {0,.5,1} do
   check(rate<highRate and windup<highWindup and speed<highSpeed,"all weapon capabilities improve with master power")
   local before,after=low.devices.sensor0,high.devices.sensor0
   check(before.range<after.range and before.coneWidth<after.coneWidth,"both scanner capabilities improve with master power")
-  check(after.range>=.6*profile.Sensors[0].Range and after.range<=profile.Sensors[0].Range and after.coneWidth>=.6*profile.Sensors[0].ConeWidth and after.coneWidth<=profile.Sensors[0].ConeWidth,"scanner remains within useful limits")
+  check(after.range>=40 and after.range<=200 and after.coneWidth>0 and after.coneWidth<=180,"scanner remains within useful limits")
   check(highSpeed>=.65*profile.Weapon.ShellSpeed and highSpeed<=profile.Weapon.ShellSpeed,"projectile speed stays within useful limits")
   check(after.allocation==5 and high.devices.sensor315.allocation==5 and high.devices.sensor0.bus==1,"40 percent array grants five percent per physical mount")
   check(near(Hardware.driveRates(profile,Hardware.effective(low,"drivetrain",profile)),15),"five percent retains the drivetrain anchor")
@@ -85,6 +100,7 @@ Gatling.step(weakHeat,true,true,.01,weakPower)
 check(weakHeat.shotClock==Timing.interval(rattler.Weapon,weakPower),"very low-power timing respects the shared mechanical timer bound")
 check(Projectiles.new(Vector3.zero,Vector3.new(0,0,-1),{},rattler.Weapon,0,{speed=gatlingSpeed}).speed==gatlingSpeed,"Gatling keeps physical projectile launch")
 local disabled=compile(boomer,0,0,0,0,.5)
+check(Hardware.validate(disabled) and disabled.devices.sensor0.coneWidth==0,"disabled array reports zero aperture")
 local off={state=Simulation.new(Vector3.zero,"Boomer"),hardware=disabled}
 Controller.applyHardware(off)
 check(off.state.projectileSpeed==0 and off.state.turretPerformance==0 and off.state.drivePerformance==0 and not Windup.begin(off.state,nozzle),"zero power disables actuation and weapon")

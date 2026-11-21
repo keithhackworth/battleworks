@@ -298,16 +298,72 @@ local function resolve(bodies,statics,lists,dt,stats)
   if not needsCorrection then break end
  end
 end
+-- Find the first rotating corner to reach a boundary. The angular speed
+-- bound can reject a miss, but using it as the impact time can repeatedly
+-- schedule events that have no contact to resolve.
+local function planeImpact(a,p,dt)
+ local s=a.state; local v=Motion.ensure(s)
+ local center=dot(s.position.X,s.position.Z,p.nx,p.nz)-p.offset
+ local speed=dot(v.X,v.Z,p.nx,p.nz)
+ local omega=s.angularVelocity.Y
+ local gap=center-extent(a,p.nx,p.nz)
+ local closing=speed-angularReach(a)
+ if gap<=C.Skin then return nil end
+ if omega==0 then
+  if speed>=0 then return nil end
+  local fraction=gap/(-speed*dt)
+  return if fraction>1e-8 and fraction<=1 then fraction else nil
+ end
+ local skin=C.Skin/2
+ if gap+closing*dt>skin then return nil end
+ local ax,az,bx,bz=axes(a)
+ local radius=a.sweepRadius
+ local period=2*math.pi/math.abs(omega)
+ local rate=speed/(omega*radius)
+ local best=dt
+ local hit=false
+ for sx=-1,1,2 do for sz=-1,1,2 do
+  local x=ax*a.halfX*sx+bx*a.halfZ*sz
+  local z=az*a.halfX*sx+bz*a.halfZ*sz
+  local q=dot(x,z,p.nx,p.nz)
+  local tangent=dot(z,-x,p.nx,p.nz)
+  local function at(t)
+   local angle=omega*t
+   return center+speed*t+q*math.cos(angle)+tangent*math.sin(angle)
+  end
+  local low,high=0,best
+  if math.abs(rate)<1 then
+   -- At a local minimum the corner's normal velocity is zero and its
+   -- normal acceleration is positive. Later minima differ only by drift.
+   local angle=-math.acos(-rate)-math.atan2(q,tangent)
+   local first=(angle/omega)%period
+   if first<=high then
+    local value=at(first)
+    local candidate=first
+    if value>skin and speed<0 then
+     candidate+=math.ceil((value-skin)/(-speed*period))*period
+    end
+    if candidate<=high and at(candidate)<=skin then
+     low=math.max(0,candidate-period);high=candidate
+    end
+   end
+  end
+  if at(high)<=skin then
+   for _=1,24 do
+    local middle=(low+high)/2
+    if at(middle)<=skin then high=middle else low=middle end
+   end
+   best=high;hit=true
+  end
+ end end
+ return if hit then best/dt else nil
+end
 -- Continuous translational SAT. Yaw is subdivided deterministically; its
 -- swept envelope expansion prevents a rotating corner crossing unnoticed.
 local function impactTime(a,b,dt,stats)
  if b.plane then
   if stats then stats.narrowTests+=1 end
-  local p=b.plane; local s=a.state; local v=Motion.ensure(s)
-  local gap=dot(s.position.X,s.position.Z,p.nx,p.nz)-p.offset-extent(a,p.nx,p.nz)
-  local closing=dot(v.X,v.Z,p.nx,p.nz)-angularReach(a)
-  if gap<=C.Skin or closing>=0 then return nil end
-  local t=gap/(-closing*dt); return if t>1e-8 and t<=1 then t else nil
+  return planeImpact(a,b.plane,dt)
  end
  if not vertical(a,b) or separating(a,b,nil,stats) then return nil end
  local ax,az,bx,bz=axes(a); local cx,cz,dx,dz=axes(b)

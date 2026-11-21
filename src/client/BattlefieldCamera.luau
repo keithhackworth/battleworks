@@ -61,6 +61,15 @@ function Battlefield:observe(state)
 	self.lastState = state
 	return snap
 end
+function Battlefield:resetOrbit()
+	self.orbitAzimuth, self.orbitElevation, self.orbitBasis = nil, nil, nil
+end
+function Battlefield:orbit(delta)
+	if delta == Vector2.zero then return end
+	self.orbitAzimuth = ((self.orbitAzimuth or self.config.Azimuth) - delta.X * 0.35) % 360
+	self.orbitElevation = math.clamp((self.orbitElevation or self.config.Elevation) - delta.Y * 0.25, 30, 80)
+	self.orbitBasis = Math.basis(self.orbitElevation, self.orbitAzimuth)
+end
 function Battlefield:update(camera, _dt, state)
 	-- Only Studio may bypass ownership/masks. Live clients retain fixed policy.
 	local studio = game:GetService("RunService"):IsStudio()
@@ -107,11 +116,16 @@ function Battlefield:update(camera, _dt, state)
 	end
 	local layout = self.layout
 	local tank = if state then state.position else (self.focus or layout.map.center)
-	self.focus, self.edgeOverflow = Math.track(layout, tank, self.focus)
+	if self.orbitBasis then
+		self.focus, self.edgeOverflow = tank, nil
+	else
+		self.focus, self.edgeOverflow = Math.track(layout, tank, self.focus)
+	end
+	local basis = self.orbitBasis or layout.basis
 	camera.CameraType = Enum.CameraType.Scriptable
 	camera.FieldOfViewMode = Enum.FieldOfViewMode.Vertical
 	camera.FieldOfView = layout.lens.fov
-	camera.CFrame = CFrame.lookAt(self.focus - layout.basis.forward * layout.distance, self.focus, Vector3.new(0, 1, 0))
+	camera.CFrame = CFrame.lookAt(self.focus - basis.forward * layout.distance, self.focus, Vector3.new(0, 1, 0))
 	camera.Focus = CFrame.new(self.focus)
 	if self.testPanel then self.testPanel:refresh() end
 end

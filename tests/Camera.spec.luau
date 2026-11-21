@@ -564,6 +564,23 @@ check(not live:setActualMapSize(Vector2.new(0,math.huge)), "published camera rej
 check(not live:setMapSizeOverride(Vector2.new(100,100)) and live.mapSizeOverride==nil,"normal clients reject dimension overrides")
 live:update(devCamera,1/60,devState)
 check(live.layout.map.size.X==50 and live.layout.map.size.Y==50,"published camera frames the current server world")
+local orbitDistance=live.layout.distance
+live:orbit(Vector2.new(250,0))
+live:update(devCamera,1/60,devState)
+check(near(live.orbitAzimuth,(defaults.Azimuth-87.5)%360),"horizontal drag rotates a published tank camera")
+check(devCamera.Focus.Position==devState.position and near((devCamera.CFrame.Position-devState.position).Magnitude,orbitDistance),"orbit follows the tank at the existing distance")
+local highY=devCamera.CFrame.Position.Y
+local overhead=live.orbitBasis
+live:orbit(Vector2.new(0,1000))
+live:update(devCamera,1/60,devState)
+check(live.orbitElevation==30 and devCamera.CFrame.Position.Y<highY,"downward drag lowers the camera and stops at the lower limit")
+local lowGround=Math.groundCorners(live.orbitBasis,live.layout.lens,orbitDistance)
+local overheadGround=Math.groundCorners(overhead,live.layout.lens,orbitDistance)
+check(lowGround[3].Magnitude>overheadGround[3].Magnitude,"lower camera shows farther ground")
+live:orbit(Vector2.new(0,-1000))
+check(live.orbitElevation==80,"upward drag raises the camera to the upper limit")
+live:resetOrbit()
+check(live.orbitElevation==nil and live.orbitBasis==nil,"orbit reset clears pitch and heading")
 live:destroy(); game.GetService=savedGetService
 -- Minimum-fit selection stays monotonic and never exceeds the hard distance cap.
 do

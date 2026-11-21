@@ -171,6 +171,14 @@ function Controller:bindTextEntry(name,callbacks)
  end,false,3000,Enum.KeyCode.Return,Enum.KeyCode.KeypadEnter,Enum.KeyCode.Escape)
  return function()Actions:UnbindAction(action);self:setTextEntryFocus(name,false)end
 end
+function Controller:takeOrbitDelta(allowExternal)
+	local enabled = allowExternal and self.externalControl and self.focused and not self.menuOpen
+		and not self.textEntryActive and not UIS:GetFocusedTextBox()
+	local mouse, touch = self.providers.KeyboardMouse, self.providers.Touch
+	mouse:setExternalOrbit(enabled and self.mode == "KeyboardMouse")
+	touch:setExternalOrbit(enabled and self.mode == "Touch")
+	return mouse:takeOrbitDelta() + touch:takeOrbitDelta()
+end
 function Controller:sample(camera,context,dt)
 	local command = if self.suspended then Command.neutral() else self.providers[self.mode]:sample(camera,context,dt)
  self.mouseView:update(self.providers.KeyboardMouse,self.mode=="KeyboardMouse"and not self.suspended)

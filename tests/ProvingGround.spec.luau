@@ -22,6 +22,10 @@ local compact=T.create(T.DefaultSize)
 local areaRatio=T.DefaultSize.X*T.DefaultSize.Y/(size.X*size.Y)
 check(math.abs(areaRatio-1/3)<.001 and compact.provingGround,"compact Playground keeps about one third of the reference area")
 check(#compact.staticBoxes==#data.staticBoxes and #compact.strips==#data.strips and #compact.targets==#data.targets,"compact layout retains barracks, lanes and targets")
+local layoutScale=T.DefaultSize.X/size.X
+for _,target in compact.targets do
+ check(target.x<90*layoutScale or target.x>250*layoutScale or target.z<195*layoutScale or target.z>295*layoutScale,"no practice targets inside the barracks")
+end
 for _,zone in compact.configurationZones do
  check(zone.halfX>=12 and zone.halfZ>=12 and T.safe(compact,Vector3.new(zone.x,zone.y,zone.z),7),"compact configuration pad fits a tank on supported ground")
 end
@@ -143,6 +147,17 @@ for _,kind in {"Boomer","Rattler"}do
  local room=S.new(Vector3.new(130,0,245),kind)
  for _=1,180 do S.step(room,drive,1/60,size,env)end
  check(room.position.Z<220 and room.position.Z>199,"interior room entry works, exterior windowsill remains solid")
+end
+local compactEnv=E.create(T.DefaultSize)
+T.configure(compactEnv,T.DefaultSize)
+for _,kind in {"Boomer","Rattler"}do
+ local hall=S.new(Vector3.new(72*layoutScale,0,255*layoutScale),kind)
+ hall.yaw=-math.pi/2;hall.turretYaw=hall.yaw
+ for _=1,540 do S.step(hall,drive,1/60,T.DefaultSize,compactEnv)end
+ check(hall.position.X>260*layoutScale and near(hall.position.Z,255*layoutScale,.2),"both tanks clear the wider compact entrances off center")
+ local room=S.new(Vector3.new(137*layoutScale,0,245*layoutScale),kind)
+ for _=1,75 do S.step(room,drive,1/60,T.DefaultSize,compactEnv)end
+ check(room.position.Z<217*layoutScale and near(room.position.X,137*layoutScale,.2),"both tanks clear the wider compact room doorway off center")
 end
 local tree=data.trees[1]
 local blocked=S.new(Vector3.new(tree.x,0,tree.z+22),"Boomer")

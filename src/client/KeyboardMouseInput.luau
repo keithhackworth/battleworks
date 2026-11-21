@@ -9,18 +9,24 @@ local Provider={};Provider.__index=Provider
 function Provider.new()
  local self=setmetatable({held={},focused=true,active=false,mouseMode="Mouse Points",delta=Vector2.zero,armed=false},Provider)
  UIS.InputBegan:Connect(function(input,processed)
-  if not self.active then return end
+  if not self.active and not self.externalOrbit then return end
   if input.KeyCode==Enum.KeyCode.LeftAlt or input.KeyCode==Enum.KeyCode.RightAlt then self.freeCursor=true;self:reset();self:cursor();return end
   if processed or self.uiBlocked or self.freeCursor then return end
+  if input.UserInputType==Enum.UserInputType.MouseButton2 then
+   self.orbiting=true;self.delta=Vector2.zero;self:cursor();return
+  end
+  if not self.active then return end
   self.held[input.KeyCode]=true;self.held[input.UserInputType]=true
  end)
  UIS.InputChanged:Connect(function(input,processed)
-  if self.active and self.focused and not processed and not self.uiBlocked and not self.freeCursor and input.UserInputType==Enum.UserInputType.MouseMovement then
-   self.delta+=Vector2.new(input.Delta.X,input.Delta.Y)
+  if (self.active or self.externalOrbit) and self.focused and (self.orbiting or not processed) and not self.uiBlocked and not self.freeCursor and input.UserInputType==Enum.UserInputType.MouseMovement then
+   if self.orbiting then self.orbitDelta=(self.orbitDelta or Vector2.zero)+Vector2.new(input.Delta.X,input.Delta.Y)
+   elseif self.active then self.delta+=Vector2.new(input.Delta.X,input.Delta.Y) end
   end
  end)
  UIS.InputEnded:Connect(function(input)
   self.held[input.KeyCode]=nil;self.held[input.UserInputType]=nil
+  if input.UserInputType==Enum.UserInputType.MouseButton2 then self.orbiting=false;self:cursor()end
   if input.KeyCode==Enum.KeyCode.LeftAlt or input.KeyCode==Enum.KeyCode.RightAlt then self.freeCursor=false;self:reset();self:cursor()end
  end)
  UIS.WindowFocusReleased:Connect(function()self.focused=false;self.freeCursor=false;self:reset();self:cursor()end)
@@ -29,12 +35,25 @@ function Provider.new()
  return self
 end
 function Provider:cursor()
- local lock=self.active and self.focused and self.mouseMode=="Mouse Direct"and not self.freeCursor and not self.uiBlocked and not self.zoneCursor and not UIS:GetFocusedTextBox()
+ local direct=self.active and self.mouseMode=="Mouse Direct" and not self.zoneCursor
+ local lock=self.focused and (direct or (self.orbiting and (self.active or self.externalOrbit))) and not self.freeCursor and not self.uiBlocked and not UIS:GetFocusedTextBox()
  if lock and not self.locked then self.oldBehavior=UIS.MouseBehavior;self.oldIcon=UIS.MouseIconEnabled;self.locked=true end
- if lock then UIS.MouseBehavior=Enum.MouseBehavior.LockCenter;UIS.MouseIconEnabled=false
+ if lock then
+  UIS.MouseBehavior=if direct then Enum.MouseBehavior.LockCenter else Enum.MouseBehavior.LockCurrentPosition
+  UIS.MouseIconEnabled=false
  elseif self.locked then UIS.MouseBehavior=self.oldBehavior or Enum.MouseBehavior.Default;UIS.MouseIconEnabled=self.oldIcon~=false;self.locked=false end
 end
-function Provider:reset()self.held={};self.delta=Vector2.zero;self.center=nil;self.armed=false;self.recenter=false end
+function Provider:reset()self.held={};self.delta=Vector2.zero;self.center=nil;self.armed=false;self.recenter=false;self.orbiting=false;self.orbitDelta=Vector2.zero end
+function Provider:setExternalOrbit(enabled)
+ if self.externalOrbit==enabled then return end
+ self.externalOrbit=enabled
+ if not enabled and not self.active then self:reset();self:cursor()end
+end
+function Provider:takeOrbitDelta()
+ local delta=self.orbitDelta or Vector2.zero
+ self.orbitDelta=Vector2.zero
+ return delta
+end
 function Provider:setMode(mode)
  assert(table.find(Mouse.Modes,mode),"Unknown mouse aiming mode")
  self.mouseMode=mode;self:reset();self:cursor()
@@ -50,6 +69,7 @@ function Provider:sample(camera,context,dt)
  if not self.active or not self.focused or self.uiBlocked or self.freeCursor or UIS:GetFocusedTextBox()then self.delta=Vector2.zero;return command end
  local function down(key)return if self.held[key]then 1 else 0 end
  command.throttle=down(Enum.KeyCode.W)-down(Enum.KeyCode.S);command.steer=down(Enum.KeyCode.A)-down(Enum.KeyCode.D)
+ if self.orbiting then return command end
  command.fire=self.held[Enum.UserInputType.MouseButton1]==true
  if self.zoneCursor and self.mouseMode=="Mouse Direct" then self.delta=Vector2.zero;return command end
  local mouse=UIS:GetMouseLocation()+GuiService:GetInsetArea(Enum.ScreenInsets.None).Min

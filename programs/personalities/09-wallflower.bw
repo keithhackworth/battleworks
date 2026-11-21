@@ -1,37 +1,254 @@
-# P09 Wallflower — local right-wall following and front-obstacle corner recovery.
-# Following the same wall forever can make us predictable.
-# An empty side scan might be a doorway, a blind spot, or the end of a wall.
-phase = "find_wall"
-print({personality: "Wallflower", phase: phase})
-while true:
-    front = Scanner(0)
-    side = Scanner(90)
-    fired = engage(front)
-    if not fired:
-        fired = engage(side)
+# P09 Wallflower — Drivetrain-Aware Perimeter Hunter
+#
+# Wheeled: continuous forward motion and steering.
+# Tracked: forward motion with pivot turns at obstacles.
+# Both: right-wall following, stuck recovery, opportunistic combat.
+
+function await_command(const command):
+    if command.status == "fail":
+        return command
+    deadline = get_clock().time + 6
+    state = command_status(command.commandId)
+    while (state.state == "accepted" or state.state == "queued" or state.state == "running") and get_clock().time < deadline:
+        wait_for_clock(get_clock().time + 0.1)
+        state = command_status(command.commandId)
+    if state.state != "completed":
+        abort_command(state.device)
+    return state
+
+function nearest_obstacle(const scan):
+    nearest = null
+    if scan.status != "success":
+        return null
+    i = 0
+    while i < scan.count:
+        hit = scan.detections[i]
+        if hit.type != "tank":
+            if nearest == null or hit.distance < nearest.distance:
+                nearest = hit
+        i = i + 1
+    return nearest
+
+function nearest_enemy(const scan):
+    nearest = null
+    if scan.status != "success":
+        return null
+    i = 0
+    while i < scan.count:
+        hit = scan.detections[i]
+        if hit.type == "tank" and hit.relation == "enemy":
+            if nearest == null or hit.distance < nearest.distance:
+                nearest = hit
+        i = i + 1
+    return nearest
+
+function turn_to(target):
     hardware = get_tank_state()
-    if hardware.motion.steering_mode == "none" or hardware.motion.effective_max_speed == 0:
-        phase = "stationary"
-        print({personality: "Wallflower", phase: phase})
-        stop()
-    elif front.status == "success" and front.count > 0 and front.type != "tank" and front.distance < 12:
-        phase = "inside_corner"
-        print({personality: "Wallflower", phase: phase})
-        steer_center()
-        turn_to(hardware.chassis.world_direction - 50)
-    elif side.status == "success" and side.count > 0 and side.type != "tank":
-        phase = "follow_wall"
-        print({personality: "Wallflower", phase: phase})
-        if side.distance < 10:
-            steer_left(12)
-        elif side.distance > 18:
-            steer_right(12)
+    if hardware.motion.effective_max_speed <= 0:
+        return false
+
+    if hardware.motion.drivetrain_type != "Wheeled":
+        result = await_command(turn_right(to=target))
+        return result.state == "completed"
+
+    limit = hardware.motion.max_steering_angle
+    if limit == null or limit <= 0:
+        return false
+
+    deadline = get_clock().time + 5
+    error = target - get_tank_direction().world_direction
+    while error > 180:
+        error = error - 360
+    while error < -180:
+        error = error + 360
+
+    while (error > 8 or error < -8) and get_clock().time < deadline:
+        angle = error
+        if angle < 0:
+            angle = -angle
+        if angle < 8:
+            angle = 8
+        if angle > limit:
+            angle = limit
+
+        if error > 0:
+            steer_right(angle)
         else:
-            steer_center()
-        progress = travel(4)
-    else:
-        phase = "outside_corner"
-        print({personality: "Wallflower", phase: phase})
-        steer_right(15)
-        progress = travel(3)
+            steer_left(angle)
+
+        forward()
+        wait_for_clock(get_clock().time + 0.15)
+
+        error = target - get_tank_direction().world_direction
+        while error > 180:
+            error = error - 360
+        while error < -180:
+            error = error + 360
+
+    stop()
     steer_center()
+    return error <= 8 and error >= -8
+
+function recover(is_wheeled):
+    stop()
+    steer_center()
+
+    # Back away from the obstacle.
+    await_command(back(6))
+    stop()
+
+    heading = get_tank_direction().world_direction
+
+    if is_wheeled:
+        # Reverse gave us room to steer away.
+        turn_to(heading - 70)
+    else:
+        # Tracked tanks can pivot without forward travel.
+        await_command(turn_right(to=heading - 90))
+
+function attack(const scan):
+    target = nearest_enemy(scan)
+    if target == null:
+        return false
+
+    ready = is_weapon_ready()
+    if ready.ready != true:
+        return false
+
+    aligned = await_command(aim_at(target.point.x, target.point.y, target.point.z))
+    if aligned.state != "completed" or aligned.completionReason != null:
+        return false
+
+    fresh = Scanner(scan.sensor)
+    current = nearest_enemy(fresh)
+    if current == null:
+        return false
+
+    ready = is_weapon_ready()
+    if ready.ready != true:
+        return false
+
+    if ready.operation == "Heat":
+        await_command(fire(1))
+    else:
+        await_command(fire())
+
+    return true
+
+# ---------------------------------------------------
+# Main
+# ---------------------------------------------------
+
+phase = "initialize"
+stuck = 0
+last_position = get_current_coordinates()
+last_progress_check = get_clock().time
+
+hardware = get_tank_state()
+is_wheeled = hardware.motion.drivetrain_type == "Wheeled"
+
+print("Wallflower initialized")
+print(get_drivetrain_type().drivetrain_type)
+while true:
+    hardware = get_tank_state()
+
+    if hardware.motion.effective_max_speed <= 0 or hardware.motion.steering_mode == "none":
+        phase = "stationary"
+        stop()
+        wait_for_clock(get_clock().time + 0.5)
+
+    else:
+        # Detect drivetrain dynamically in case the hardware changes.
+        is_wheeled = hardware.motion.drivetrain_type == "Wheeled"
+
+        front_scan = Scanner(0)
+        right_scan = Scanner(90)
+
+        front = nearest_obstacle(front_scan)
+        right = nearest_obstacle(right_scan)
+
+        # Check whether we're actually making progress.
+        now = get_clock().time
+        if now - last_progress_check >= 2:
+            position = get_current_coordinates()
+            dx = position.x - last_position.x
+            dz = position.z - last_position.z
+            distance_squared = dx * dx + dz * dz
+
+            if distance_squared < 4:
+                stuck = stuck + 1
+            else:
+                stuck = 0
+
+            last_position = position
+            last_progress_check = now
+
+        if stuck >= 2:
+            phase = "recover"
+            recover(is_wheeled)
+            stuck = 0
+            last_position = get_current_coordinates()
+            last_progress_check = get_clock().time
+
+        elif front != null and front.distance < 14:
+            phase = "inside_corner"
+
+            stop()
+            steer_center()
+
+            heading = get_tank_direction().world_direction
+
+            if is_wheeled:
+                # Wheeled tanks need room to turn.
+                await_command(back(4))
+                stop()
+                turn_to(heading - 65)
+            else:
+                # Tracked tanks pivot in place.
+                await_command(turn_right(to=heading - 65))
+
+        else:
+            if right != null:
+                phase = "follow_wall"
+
+                if is_wheeled:
+                    if right.distance < 9:
+                        steer_left(12)
+                    elif right.distance > 17:
+                        steer_right(12)
+                    else:
+                        steer_center()
+
+                    # Keep moving; don't wait for a fixed distance.
+                    forward()
+
+                else:
+                    # Tracked tanks move straight while following.
+                    # Correct heading only when significantly off the wall.
+                    if right.distance < 8:
+                        stop()
+                        await_command(turn_right(to=get_tank_direction().world_direction - 12))
+                    elif right.distance > 20:
+                        stop()
+                        await_command(turn_right(to=get_tank_direction().world_direction + 12))
+
+                    forward()
+
+            else:
+                phase = "search_wall"
+
+                if is_wheeled:
+                    # Gentle rightward search, not a tight circle.
+                    steer_right(5)
+                    forward()
+                else:
+                    # Tracked tank advances and occasionally searches right.
+                    forward()
+
+        # Opportunistic combat.
+        # The turret operates independently of navigation.
+        fired = attack(front_scan)
+        if not fired:
+            attack(right_scan)
+
+        wait_for_clock(get_clock().time + 0.15)

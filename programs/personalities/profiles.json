@@ -339,10 +339,7 @@
     "id": "P09",
     "name": "Wallflower",
     "source": "09-wallflower.bw",
-    "libraries": [
-      "core",
-      "targeting"
-    ],
+    "libraries": [],
     "tier": "Dual",
     "seed": 0,
     "status": "implemented-verified",

@@ -65,8 +65,24 @@ function Touch.new(gui, options)
 	self.debug.BackgroundTransparency = 0.2; self.debug.BackgroundColor3 = Color3.fromRGB(20, 28, 33)
 	self.debug.Font = Enum.Font.Code; self.debug.TextXAlignment = Enum.TextXAlignment.Left
 	self.debug.TextYAlignment = Enum.TextYAlignment.Center
-	UIS.TouchMoved:Connect(function(input) self:move(input) end)
-	UIS.TouchEnded:Connect(function(input) self:release(input) end)
+	UIS.InputBegan:Connect(function(input, processed)
+		if (self.active or self.externalOrbit) and not processed and input.UserInputType == Enum.UserInputType.Touch
+			and not self.orbitTouch and not self.captures[input] then
+			self.orbitTouch, self.orbitPosition = input, Vector2.new(input.Position.X, input.Position.Y)
+		end
+	end)
+	UIS.TouchMoved:Connect(function(input)
+		if input == self.orbitTouch and not self.captures[input] then
+			local position = Vector2.new(input.Position.X, input.Position.Y)
+			self.orbitDelta = (self.orbitDelta or Vector2.zero) + position - self.orbitPosition
+			self.orbitPosition = position
+		end
+		self:move(input)
+	end)
+	UIS.TouchEnded:Connect(function(input)
+		if input == self.orbitTouch then self.orbitTouch = nil end
+		self:release(input)
+	end)
 	self.root:GetPropertyChangedSignal("AbsoluteSize"):Connect(function() self:layout() end)
 	self:layout()
 	return self
@@ -123,9 +139,19 @@ function Touch:release(input)
 	end
 end
 function Touch:reset()
+	self.orbitTouch, self.orbitDelta = nil, Vector2.zero
 	local inputs = {}
 	for input in self.captures do table.insert(inputs, input) end
 	for _, input in inputs do self:release(input) end
+end
+function Touch:setExternalOrbit(enabled)
+	self.externalOrbit = enabled
+	if not enabled and not self.active then self.orbitTouch, self.orbitDelta = nil, Vector2.zero end
+end
+function Touch:takeOrbitDelta()
+	local delta = self.orbitDelta or Vector2.zero
+	self.orbitDelta = Vector2.zero
+	return delta
 end
 function Touch:setActive(active)
 	self:reset(); self.active = active; self.root.Visible = active

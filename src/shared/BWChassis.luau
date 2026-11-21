@@ -61,11 +61,23 @@ function C.default(tier,vehicle)
 end
 function C.forTank(vehicle) local profile=Components.get(vehicle); return C.default(profile.Computer.Tier,profile) end
 C.Categories={"drivetrain","turret","weapon","scanners"}
--- Provisional balance: positive power preserves a useful scanner footprint
--- and projectile speed floor. Per-lens power uses the installed mount count.
-local ScannerFloor,ProjectileFloor,TradeoffFloor=.60,.65,.75
+local ProjectileFloor,TradeoffFloor=.65,.75
 local function boosted(base,floor,power)
  return base*(floor+(1-floor)*power)
+end
+-- Aperture is a shared array setting. Interpolate between the wide-end
+-- calibration points, then apply the cone/range slider's tradeoff.
+local ConeCurve={{0,0},{5,5},{30,90},{50,110},{100,180}}
+local BalancedRangeCurve={{0,40},{30,100},{50,120},{100,180}}
+local function interpolate(curve,master)
+ for i=2,#curve do
+  local lower,upper=curve[i-1],curve[i]
+  if master<=upper[1] then
+   local position=(master-lower[1])/(upper[1]-lower[1])
+   return lower[2]+(upper[2]-lower[2])*position
+  end
+ end
+ return curve[#curve][2]
 end
 function C.weaponStats(config,vehicle)
  local allocation=config.devices.weapon and config.devices.weapon.allocation or 0
@@ -132,13 +144,17 @@ function C.fromCategories(draft,vehicle,tier)
  for _,name in {"drivetrain","turret","weapon"} do config.devices[name]={bus=1,allocation=allocations[name]} end
  if count>0 then
   local allocation=allocations.scanners/count
-  local power=C.performance(allocation,vehicle.Bus)
   local bias=tuning.scanners
+  local master=allocations.scanners
+  local coneWidth=interpolate(ConeCurve,master)*(1-(1-TradeoffFloor)*bias)
+  local rangeWeight=TradeoffFloor+(1-TradeoffFloor)*bias
+  local balancedWeight=(1+TradeoffFloor)/2
+  local range=40+(interpolate(BalancedRangeCurve,master)-40)*rangeWeight/balancedWeight
   for angle,sensor in vehicle.Sensors do
    config.devices["sensor"..angle]={bus=1,allocation=allocation,acquisition=sensor.Acquisition,
-    range=boosted(sensor.Range,ScannerFloor,power*(TradeoffFloor+(1-TradeoffFloor)*bias)),
+    range=range,
     distancePercent=sensor.DistancePercent,
-    coneWidth=boosted(sensor.ConeWidth,ScannerFloor,power*(1-(1-TradeoffFloor)*bias)),
+    coneWidth=coneWidth,
     cooldown=sensor.Cooldown,originHeight=sensor.OriginHeight}
   end
  end
@@ -162,7 +178,7 @@ function C.validate(config)
   if d.acquisition~=nil and (type(d.acquisition)~="number" or d.acquisition~=d.acquisition or d.acquisition<0 or d.acquisition>5) then return nil,"invalidAcquisition" end
   if d.range~=nil and (type(d.range)~="number" or d.range~=d.range or d.range<=0 or d.range>ScannerConfig.MaxHardwareRange) then return nil,"invalidRange" end
   if d.distancePercent~=nil and (type(d.distancePercent)~="number" or d.distancePercent~=d.distancePercent or d.distancePercent<0 or d.distancePercent>100) then return nil,"invalidRange" end
-  if d.coneWidth~=nil and (type(d.coneWidth)~="number" or d.coneWidth~=d.coneWidth or d.coneWidth<=0 or d.coneWidth>180) then return nil,"invalidCone" end
+  if d.coneWidth~=nil and (not bounded(d.coneWidth,180) or (d.coneWidth==0 and d.allocation>0)) then return nil,"invalidCone" end
   if d.cooldown~=nil and (type(d.cooldown)~="number" or d.cooldown~=d.cooldown or d.cooldown<=0 or d.cooldown>5) then return nil,"invalidCooldown" end
   if d.originHeight~=nil and (type(d.originHeight)~="number" or d.originHeight~=d.originHeight or math.abs(d.originHeight)>50) then return nil,"invalidOrigin" end
   sums[d.bus]=(sums[d.bus] or 0)+d.allocation
