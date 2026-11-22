@@ -41,6 +41,8 @@ check(unboosted<=30.00001,"forward firing does not create a forward speed bonus"
 local hud=Hud.new(Instance.new("ScreenGui"))
 hud:update({tankType="Rattler",movementSpeedXZ=36,movementPeakXZ=36,movementSpeedY=20,movementSpeed3D=41.2})
 check(string.find(hud.label.Text,"36.0 studs/s",1,true)~=nil and string.find(hud.label.Text,"BOOST +6.0 (+20%)",1,true)~=nil,"HUD displays measured horizontal boost versus normal drive speed")
+hud:update({tankType="Boomer",groundPitch=math.rad(30),terrainFaceDegrees=65.5})
+check(string.find(hud.label.Text,"SLOPE 30.0 deg | FACE 65.5 deg",1,true)~=nil,"debug HUD separates chassis support slope from the actual terrain face")
 hud:update(nil)
 check(string.find(hud.label.Text,"waiting",1,true)~=nil,"HUD handles missing tank")
 hud:destroy(); check(hud.label.destroyed,"speed HUD cleans up its label")

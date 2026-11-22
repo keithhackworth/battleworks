@@ -18,6 +18,7 @@ function Surface:chunk(cx,cz)
  local used=0
  local color=Color3.fromRGB(table.unpack(settings.ground.color))
  local material=Enum.Material[settings.ground.material]
+ local cellMaterial,cellColor
  local profile=if self.overlay then Materials.fromMaterial(settings.ground.material) else nil
  local function draw(shape,size,frame,tint)
   used+=1
@@ -29,7 +30,7 @@ function Surface:chunk(cx,cz)
    parts[used]=p
   end
   p.Shape=shape;p.Size=size;p.CFrame=frame
-  p.Color=tint or color;p.Material=if self.overlay then Enum.Material.Neon else material
+  p.Color=tint or cellColor or color;p.Material=if self.overlay then Enum.Material.Neon else cellMaterial or material
   p.Transparency=if self.overlay then .43 else 0
   p.CanCollide=self.physical;p.CanQuery=not self.overlay
   if p.Parent~=self.folder then p.Parent=self.folder end
@@ -67,12 +68,36 @@ function Surface:chunk(cx,cz)
  local elevation=H.height(field,x0,z0)
  local level=true
  for z=z0,z1 do for x=x0,x1 do if H.height(field,x,z)~=elevation then level=false;break end end;if not level then break end end
- if level then flat(point(x0,z0),point(x1,z1))
+ local painted=false
+ if level and (field.paint or field.water) then
+  for z=z0,z1-1 do
+   for x=x0,x1-1 do
+    local i=z*field.columns+x+1
+    if (field.paint and field.paint[i]~=0) or (field.water and field.water[i]~=0) then painted=true;break end
+   end
+   if painted then break end
+  end
+ end
+ if level and not painted then flat(point(x0,z0),point(x1,z1))
  else
   for z=z0,z1-1 do for x=x0,x1-1 do
    local a,b,c,d=point(x,z),point(x+1,z),point(x,z+1),point(x+1,z+1)
+   local index=z*field.columns+x+1
+   local paint=field.paint and H.Paint[field.paint[index]]
+   cellMaterial=paint and Enum.Material[Materials.Materials[paint]]
+   cellColor=paint and Color3.fromRGB(table.unpack(Materials.Colors[paint]))
+   local water=field.water and field.water[index]
+   local wet=water and water~=0 and (water-H.WaterOffset)/H.Unit>math.min(a.Y,b.Y,c.Y,d.Y)
+   profile=if self.overlay then Materials.fromMaterial(paint or settings.ground.material,wet) else nil
    if a.Y==b.Y and a.Y==c.Y and a.Y==d.Y then flat(a,d)
    else triangle(a,b,c);triangle(d,c,b) end
+   if water and water~=0 and not self.overlay then
+    local y=(water-H.WaterOffset)/H.Unit
+    if y>math.min(a.Y,b.Y,c.Y,d.Y) then
+     draw(Enum.PartType.Block,Vector3.new(dx,.04,dz),CFrame.new((a.X+d.X)/2,y-.02,(a.Z+d.Z)/2),Color3.fromRGB(53,140,188))
+     local p=parts[used];p.Material=Enum.Material.Glass;p.Transparency=.35;p.CanCollide=false;p.CanQuery=false
+    end
+   end
   end end
  end
  for i=used+1,#parts do parts[i].Parent=nil end

@@ -58,6 +58,21 @@ local function suspension(state, dt)
 	state.bodyPitch = (math.sin(state.bounceClock or 0)*tuning.Pitch*(state.movement or 0))+(state.flightPitch or 0)
 	state.bodyRoll = (math.cos((state.bounceClock or 0)*tuning.RollFrequency)*tuning.Roll*(state.movement or 0))+(state.flightRoll or 0)
 end
+local function limitTerrainRise(state,terrain)
+ if not terrain or not state.motionStepStart then return end
+ local start,finish=state.motionStepStart,state.position
+ local distance=math.sqrt((finish.X-start.X)^2+(finish.Z-start.Z)^2)
+ if distance<=1e-6 then return end
+ local a=Heightfield.sample(terrain.terrain,terrain.width,terrain.depth,start.X,start.Z)
+ local b=Heightfield.sample(terrain.terrain,terrain.width,terrain.depth,finish.X,finish.Z)
+ -- An airborne tank already above this ground may cross it. For a ground
+ -- crossing, use a numerical tolerance only so slow motion cannot creep up a wall.
+ if start.Y>b+Geometry.MaxStep or b-a<=math.min(Geometry.MaxStep,distance*Traversal.MaxGradient)+1e-6 then return end
+ state.position=Vector3.new(start.X,finish.Y,start.Z)
+ state.motionForwardTravel=state.motionForwardStart
+ local velocity=Motion.ensure(state)
+ Motion.setVelocity(state,Vector3.new(0,velocity.Y,0))
+end
 function Simulation.moveBody(state,command,dt,mapSize,environment,deferContacts)
  local c=Components.get(state)
  local ground,pitch,roll,_,_,material=0,0,0,nil,nil,nil
@@ -73,8 +88,12 @@ function Simulation.moveBody(state,command,dt,mapSize,environment,deferContacts)
  end
  if state.position.Y>support+0.001 then state.lift=math.max(state.lift or 0,state.position.Y-support) end
  local airborne=Recoil.airborne(state)
- local speedScale=if environment then select(3,Environment.sample(environment,state.position.X,state.position.Z,state.position.Y+1.5)) else 1
- local base=if environment and environment.weather~="IceWind" and math.abs(pitch)+math.abs(roll)>.0001 then material else nil
+ local speedScale,painted=1,nil
+ if environment then
+  local _,_,scale,_,profile=Environment.sample(environment,state.position.X,state.position.Z,state.position.Y+1.5)
+  speedScale=scale;painted=profile
+ end
+ local base=painted or (if environment and environment.weather~="IceWind" and math.abs(pitch)+math.abs(roll)>.0001 then material else nil)
  local static,kinetic,resistance,passiveGrip,terrainScale=Surface.contact(if base then nil else environment and environment.physicsSurfaces,state.position,state.yaw,c.Chassis,c.Mobility.Kind,base)
  if environment and environment.materialTerrain then
   -- Apply the approved tracked base factor ONCE, after footprint blending.
@@ -89,23 +108,10 @@ function Simulation.moveBody(state,command,dt,mapSize,environment,deferContacts)
  state.motionForwardStart=state.motionForwardTravel or 0; state.motionYawTravelStart=state.motionYawTravel or 0
  Motion.integrateHorizontal(state,dt)
  local terrain=environment and environment.terrainSettings
- if terrain then
-  local start,finish=state.motionStepStart,state.position
-  local distance=math.sqrt((finish.X-start.X)^2+(finish.Z-start.Z)^2)
-  if distance>1e-5 then
-   local a=Heightfield.sample(terrain.terrain,terrain.width,terrain.depth,start.X,start.Z)
-   local b=Heightfield.sample(terrain.terrain,terrain.width,terrain.depth,finish.X,finish.Z)
-   -- High traction cannot lift the hull through a wall-like heightfield
-   -- jump. Only uphill moves are rejected; the suspension still handles falls.
-   if b-a>math.min(Geometry.MaxStep,distance*Traversal.MaxGradient)+.01 then
-    state.position=start;state.motionForwardTravel=state.motionForwardStart
-    local velocity=Motion.ensure(state)
-    Motion.setVelocity(state,Vector3.new(0,velocity.Y,0))
-   end
-  end
- end
+ limitTerrainRise(state,terrain)
  if not deferContacts then
   Contacts.solve({Contacts.body("vehicle",state,c.Chassis)},Contacts.obstacles(environment,mapSize or Vector2.new(Config.ArenaLimit*2,Config.ArenaLimit*2)),dt)
+  limitTerrainRise(state,terrain)
  end
  local x,z=state.position.X,state.position.Z
  local ground,pitch,roll,kind=0,0,0,"Grass"
@@ -117,8 +123,14 @@ function Simulation.moveBody(state,command,dt,mapSize,environment,deferContacts)
  Motion.sync(state)
 end
 function Simulation.reconcileGround(state,environment)
+ local terrain=environment and environment.terrainSettings
+ if state.motionDeferredDt then limitTerrainRise(state,terrain) end
  local c=Components.get(state); local h,p,r,kind=0,0,0,"Grass"
  if environment then h,p,r,kind=Environment.pose(environment,state.position,state.yaw,c.Chassis) end
+ if terrain then
+  local _,gx,gz=Heightfield.sample(terrain.terrain,terrain.width,terrain.depth,state.position.X,state.position.Z,true)
+  state.terrainFaceDegrees=math.deg(math.atan(math.sqrt(gx*gx+gz*gz)))
+ end
  local dt=state.motionDeferredDt
  state.motionDeferredDt=nil
  if dt then

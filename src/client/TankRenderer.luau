@@ -180,6 +180,7 @@ function Renderer:resetPose(state)
 	self.landingSerial=state.landingSerial or 0
 	self.rockSerial=state.flightShotSerial or 0; self.visualRollKick=0; self.rockHold=0
 	self.bodyPitch = state.bodyPitch or 0; self.bodyRoll = state.bodyRoll or 0
+	self.trackPitch=state.groundPitch or 0;self.trackRoll=state.groundRoll or 0
 	self.bounce = state.bounce or 0; self.bounceVelocity = 0; self.movement = 0; self.bounceClock = 0
 	if not self.gatling then
 		self.cannon.Size = Vector3.new(6, BARREL_DIAMETER, BARREL_DIAMETER)
@@ -228,9 +229,15 @@ function Renderer:update(state, dt)
 		body=base*CFrame.new(0,2.1+self.bounce,0)
 		turret=base*CFrame.new(0,pivotHeight,0)*CFrame.Angles(0,self.turretYaw-self.yaw,0)
 	end
+	local tracks=base
 	if self.left then
-		self.left.CFrame = base * CFrame.new(-3.8, 1.4, 0)
-		self.right.CFrame = base * CFrame.new(3.8, 1.4, 0)
+		if self.components.Mobility.Motion~="Inertial" and not self.jackhammer then
+			self.trackPitch=(self.trackPitch or 0)+((state.groundPitch or 0)-(self.trackPitch or 0))*suspensionAlpha
+			self.trackRoll=(self.trackRoll or 0)+((state.groundRoll or 0)-(self.trackRoll or 0))*suspensionAlpha
+			tracks=base*CFrame.Angles(self.trackPitch,0,self.trackRoll)
+		end
+		self.left.CFrame = tracks * CFrame.new(-3.8, 1.4, 0)
+		self.right.CFrame = tracks * CFrame.new(3.8, 1.4, 0)
 	end
 	local barrel = turret * CFrame.Angles(self.turretPitch, 0, 0) * CFrame.new(0, 0, self.recoil * 0.8)
  if self.weapon.Trajectory then
@@ -243,7 +250,7 @@ function Renderer:update(state, dt)
  end
 	self.muzzleFrame = barrel*CFrame.new(0,0,-7)
 	local spin=if self.gatling then RattlerVisual.spin(self,state,dt) else 0
-	local anchors = { body = body, base = base, turret = turret, barrel = barrel, rotor = barrel*CFrame.Angles(0,0,spin) }
+	local anchors = { body = body, base = tracks, turret = turret, barrel = barrel, rotor = barrel*CFrame.Angles(0,0,spin) }
 	if self.wheels then RattlerVisual.wheelFrames(self,state,dt,base,anchors) end
 	for _, item in self.details do item.part.CFrame = anchors[item.anchor] * item.offset end
 	if not self.gatling then
@@ -272,7 +279,7 @@ function Renderer:update(state, dt)
 			local a = (t-2*straight-arc)/radius
 			y, z, angle = -radius*math.cos(a), -straight/2-radius*math.sin(a), math.pi+a
 		end
-		tread.part.CFrame = base * CFrame.new(tread.side*3.8, 1.4+y, z) * CFrame.Angles(angle, 0, 0)
+		tread.part.CFrame = tracks * CFrame.new(tread.side*3.8, 1.4+y, z) * CFrame.Angles(angle, 0, 0)
 	end
 	for _, p in self.model:GetChildren() do
 		if p:IsA("BasePart") or p:IsA("Part") then p.Transparency = if state.health <= 0 then 0.35 else 0 end

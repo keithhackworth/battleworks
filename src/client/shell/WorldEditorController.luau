@@ -17,7 +17,7 @@ function Controller.new(context)
  local view=View.new(context)
  local self=setmetatable({context=context,view=view,frame=view.frame,buttons=view.buttons,state=State.new(Document.editorFresh()),catalog=Document.catalog({}),prefix="",page=1,mode="Move",runtime={},keys={},yaw=.55,pitch=1,distance=210,focus=Vector3.zero},Controller)
  self.state.snap=false;self.assetScales={};self.cameraSensitivity=1;self.recentAssets={}
- self.brush={operation="Raise",radius=26,strength=24,falloff=.65,elevation=0}
+ self.brush={operation="Raise",radius=26,strength=24,falloff=.65,elevation=0,depth=4}
  self.library=require(script.Parent.WorldLibrary).new(view.frame,context.worldRequest,function(document)
   self:replaceDocument(document)
   return self.state.document
@@ -38,7 +38,15 @@ function Controller.new(context)
    self:finishTerrain(false);self.brush.operation=operation;self:setMode("Terrain")
   end)
  end
- local bounds={radius={2,160},strength={.5,96},falloff={0,1},elevation={-Heightfield.MaxHeight,Heightfield.MaxHeight}}
+ for operation,control in view.surfaceTools do
+  action(control.Activated,function()
+   self:finishTerrain(false);self.brush.operation=operation;self:setMode("Terrain")
+   if operation=="Water" then view:message("Click a channel or basin to route water downhill. Set fill depth in the inspector.")
+   elseif operation=="Carve Ravine" then view:message("Drag to cut a channel. Radius sets width and depth sets the bed below your stroke's start.")
+   else view:message("Drag to paint "..operation..". Radius sets the width.") end
+  end)
+ end
+ local bounds={radius={2,160},strength={.5,96},falloff={0,1},elevation={-Heightfield.MaxHeight,Heightfield.MaxHeight},depth={.25,32}}
  for key,field in view.brushFields do
   action(field.FocusLost,function()
    local value=tonumber(field.Text);local range=bounds[key]
@@ -343,7 +351,15 @@ function Controller:paintTerrain(point,dt)
  local dirty={}
  for i=1,stamps do
   local center=previous+(point-previous)*(i/stamps)
-  for id,chunk in Heightfield.brush(field,settings.width,settings.depth,center,brush.operation,brush.radius,brush.strength,brush.falloff,brush.elevation,dt/stamps,stroke.remainder) do
+  local code=table.find(Heightfield.Paint,brush.operation)
+  local updates
+  if code then updates=Heightfield.paint(field,settings.width,settings.depth,center,brush.radius,code)
+  else
+   local carve=brush.operation=="Carve Ravine"
+   updates=Heightfield.brush(field,settings.width,settings.depth,center,if carve then "Carve" else brush.operation,
+    brush.radius,brush.strength,brush.falloff,if carve then stroke.elevation else brush.elevation,dt/stamps,stroke.remainder)
+  end
+  for id,chunk in updates do
    dirty[id]=chunk
   end
  end
@@ -466,7 +482,15 @@ function Controller:begin(input,processed)
  if self.mode=="Terrain" then
   if point and not self.terrainStroke then
    local settings=self.state.document.settings
-   self.terrainStroke={before=self.state:snapshot(),field=settings.terrain or Heightfield.new(settings.width,settings.depth),remainder={},elapsed=0}
+   if self.brush.operation=="Water" then
+    self:perform(function()
+     settings.terrain=settings.terrain or Heightfield.new(settings.width,settings.depth)
+     local dirty=Heightfield.fillWater(settings.terrain,settings.width,settings.depth,point,self.brush.depth)
+     self.scene:syncTerrain(settings,dirty)
+    end,"Water routed downhill and into connected low ground.")
+    return
+   end
+   self.terrainStroke={before=self.state:snapshot(),field=settings.terrain or Heightfield.new(settings.width,settings.depth),remainder={},elapsed=0,elevation=point.Y-self.brush.depth}
    self:paintTerrain(point,.05)
   end
   return

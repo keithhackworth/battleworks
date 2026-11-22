@@ -8,6 +8,8 @@ test('sculpted terrain survives offline serialization, compilation, and migratio
  const d=fresh('terrain_world');
  const heights=Array(37*37).fill(0);heights[102]=87;heights[233]=-156;
  d.settings.terrain={version:1,columns:36,rows:36,heights};
+ d.settings.terrain.paint=Array(36*36).fill(5);
+ d.settings.terrain.water=Array(36*36).fill(0);d.settings.terrain.water[5]=1032;
  const built=compileDocument(JSON.parse(serialize(d)),items);
  assert.deepEqual(built.manifest.builderSettings.terrain,d.settings.terrain);
  assert.deepEqual(migrate(built.manifest,items,'terrain_copy').settings.terrain,d.settings.terrain);

@@ -7,7 +7,7 @@ function Hud.new(gui)
 	local self=setmetatable({},Hud)
 	local label=Instance.new("TextLabel")
 	label.Name="MovementSpeedDebug"; label.AnchorPoint=Vector2.new(1,0)
-	label.Position=UDim2.new(1,-8,0,88); label.Size=UDim2.fromOffset(268,174)
+	label.Position=UDim2.new(1,-8,0,88); label.Size=UDim2.fromOffset(268,191)
 	label.BackgroundColor3=Color3.fromRGB(24,31,35); label.BackgroundTransparency=0.12
 	label.TextColor3=Color3.fromRGB(237,235,218); label.Font=Enum.Font.Code; label.TextSize=12
 	label.TextXAlignment=Enum.TextXAlignment.Left; label.TextWrapped=false
@@ -24,6 +24,8 @@ function Hud:update(state)
 	local ground=normal*(state.terrainSpeedScale or 1)
 	local velocity=state.linearVelocity
 	local physicsSpeed=if velocity then math.sqrt(velocity.X^2+velocity.Z^2) else 0
+	local pitch,roll=math.tan(state.groundPitch or 0),math.tan(state.groundRoll or 0)
+	local slope=math.deg(math.atan(math.sqrt(pitch*pitch+roll*roll)))
 	local condition=if state.immobilized then string.format("DRIVE STUN %.1fs",state.immobilizedRemaining or 0)
 		elseif (state.rattleSeverity or 0)>0 then "GATLING DAMAGE • STUNS"
 		elseif state.motionSlipping then "SLIDING / TRACTION LIMITED"
@@ -32,6 +34,7 @@ function Hud:update(state)
 		horizontal,state.movementPeakXZ or 0,normal,rated,math.deg(if state.angularVelocity then state.angularVelocity.Y else 0),state.movementSpeedY or 0,state.movementSpeed3D or 0,
 		if extra>0.05 then (if normal>0 then string.format("BOOST +%.1f (+%.0f%%)",extra,extra/normal*100) else "MOVING WITH DRIVE DISABLED") else "AT/BELOW DRIVE SPEED")
 		..string.format("\nGROUND LIMIT %.1f | %s\n%s",ground,state.surface or "Unknown",condition)
+		..string.format("\nSLOPE %.1f deg%s",slope,if state.terrainFaceDegrees then string.format(" | FACE %.1f deg",state.terrainFaceDegrees) else "")
 		..string.format("\nTHROTTLE %+.2f | VELOCITY %.1f\nCONTACT %s\nCCD CUT %.1f ms%s",
 			state.motionDebugThrottle or 0,physicsSpeed,state.motionDebugContact or "—",1000*(state.motionDebugLostTime or 0),
 			if state.motionDebugLimitedBy then "\n"..state.motionDebugLimitedBy else "")

@@ -71,6 +71,15 @@ local boomer=Renderer.new("boomer","Boomer")
 local state=Sim.new(Vector3.zero)
 boomer:resetPose(state); boomer:update(state,1/60)
 check(#boomer.treads==56 and #named(boomer,"RoadWheel")==8,"Boomer keeps original treads and exposed wheels")
+do
+ local slope=Sim.new(Vector3.zero,"Boomer")
+ slope.groundPitch=.3;slope.groundRoll=.2;slope.bodyPitch=.34;slope.bodyRoll=.23
+ boomer:resetPose(slope);boomer:update(slope,0)
+ local expected=CFrame.Angles(.3,0,.2)
+ check((boomer.left.CFrame.UpVector-expected.UpVector).Magnitude<1e-6,"track cores follow the ground plane")
+ check((named(boomer,"RoadWheel")[1].CFrame.UpVector-expected.UpVector).Magnitude<1e-6,"tracked road wheels follow the same ground plane")
+ check((boomer.treads[1].part.CFrame.UpVector-expected.UpVector).Magnitude<1e-6,"the animated tread belt follows the same ground plane")
+end
 check(boomer.cannon.Size.X==6 and boomer.cannon.Size.Y==1.6,"Boomer cannon dimensions preserved")
 check(boomer.chassis.Color[1]==245 and boomer.chassis.Color[2]==116,"Boomer retains orange paint")
 boomer:fire(); boomer:update(state,0.1)

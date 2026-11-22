@@ -172,15 +172,23 @@ function View.new(context)
  make("UIListLayout",self.brushPanel,{Padding=UDim.new(0,6),SortOrder=Enum.SortOrder.LayoutOrder})
  self.brushFields={}
  text(self.brushPanel,"BrushTitle","TERRAIN BRUSH",27).LayoutOrder=1
- for i,spec in {{"radius","Radius (studs)",26},{"strength","Strength",24},{"falloff","Falloff (0–1)",.65},{"elevation","Flatten elevation (studs)",0}} do
+ for i,spec in {{"radius","Radius (studs)",26},{"strength","Strength",24},{"falloff","Falloff (0–1)",.65},{"elevation","Flatten elevation (studs)",0},{"depth","Water / ravine depth (studs)",4}} do
   text(self.brushPanel,spec[1].."Label",spec[2],22).LayoutOrder=i*2
   self.brushFields[spec[1]]=make("TextBox",self.brushPanel,{Name=spec[1],LayoutOrder=i*2+1,Size=UDim2.new(1,-14,0,28),
    Text=tostring(spec[3]),ClearTextOnFocus=false,TextColor3=ink,BackgroundColor3=View.buttonColor,Font=Enum.Font.Code,TextSize=14})
  end
  self.traversability=button(self.brushPanel,"TerrainTraversability","Terrain Traversability")
- self.traversability.LayoutOrder=10;self.traversability.Size=UDim2.new(1,-14,0,34)
+ self.traversability.LayoutOrder=12;self.traversability.Size=UDim2.new(1,-14,0,34)
  self.traversalLegend=text(self.brushPanel,"TraversalLegend","Uphill estimate\nGreen · Easy\nYellow · Requires treads\nRed · Unreliable climb",84)
- self.traversalLegend.LayoutOrder=11;self.traversalLegend.Visible=false
+ self.traversalLegend.LayoutOrder=13;self.traversalLegend.Visible=false
+ self.terrainDock=scrolling(frame,"TerrainToolsDock",UDim2.fromOffset(0,0),UDim2.fromOffset(0,0))
+ self.terrainDock.AutomaticCanvasSize=Enum.AutomaticSize.X;self.terrainDock.ScrollingDirection=Enum.ScrollingDirection.X
+ make("UIListLayout",self.terrainDock,{FillDirection=Enum.FillDirection.Horizontal,SortOrder=Enum.SortOrder.LayoutOrder,Padding=UDim.new(0,6)})
+ self.surfaceTools={}
+ for index,name in {"Grass","Mud","Ice","Snow","Pavement","Water","Carve Ravine"} do
+  local tile=button(self.terrainDock,"Brush"..name,name,UDim2.fromOffset(if index==7 then 112 else 78,40))
+  tile.LayoutOrder=index;self.surfaceTools[name]=tile
+ end
  self.hint.Text="Wheel zoom · MMB pan · RMB orbit · WASD / Q E fly · Shift boost · F focus · Home frame"
  self.dockOpen=true;self.inspectorOpen=true
  self:on(self.toolShelf.Activated,function()
@@ -198,7 +206,7 @@ function View:layout()
  local toolsOpen=if self.toolsOpen==nil then not compact else self.toolsOpen
  local left=if toolsOpen then (if compact then 0 else 220) else 0
  local right=if self.inspectorOpen then (if compact then math.min(174,math.floor(size.X*.36)) else 258) else 0
- local dock=if self.dockOpen and not self.terrainActive then (if size.Y>0 then math.min(218,math.floor(size.Y*.38)) else 218) else 0
+ local dock=if self.terrainActive then 53 elseif self.dockOpen then (if size.Y>0 then math.min(218,math.floor(size.Y*.38)) else 218) else 0
  self.toolbar.Size=UDim2.new(1,0,0,68)
  self.left.Visible=toolsOpen;self.left.Size=UDim2.new(0,if compact then math.min(208,math.floor(size.X*.3)) else 208,1,-118)
  self.left.ZIndex=if compact then 5 else 1
@@ -209,6 +217,7 @@ function View:layout()
  self.brushPanel.Visible=self.inspectorOpen and self.terrainActive==true
  self.palette.Visible=self.dockOpen and not self.terrainActive;self.palette.Position=UDim2.new(0,left,1,-dock-48)
  self.palette.Size=UDim2.new(1,-left-right-6,0,dock)
+ self.terrainDock.Visible=self.terrainActive==true;self.terrainDock.Position=self.palette.Position;self.terrainDock.Size=self.palette.Size
  self.status.Position=UDim2.new(0,8,1,-46);self.status.Size=UDim2.new(1,-16,0,24)
  self.hint.Position=UDim2.new(0,8,1,-23);self.hint.Size=UDim2.new(1,-16,0,22)
  self.inspect.BackgroundColor3=if self.inspectorOpen then View.activeColor else View.buttonColor
@@ -222,6 +231,7 @@ function View:terrainMode(enabled,operation)
  for name,control in self.terrainTools do
   control.Visible=enabled;control.BackgroundColor3=if operation==name then View.activeColor else View.buttonColor
  end
+ for name,control in self.surfaceTools do control.BackgroundColor3=if operation==name then View.activeColor else View.buttonColor end
  for _,control in self.tools do control.Visible=not enabled end
  for _,control in {self.delete,self.options,self.rotationPanel,self.magnets} do control.Visible=not enabled end
  self:layout()

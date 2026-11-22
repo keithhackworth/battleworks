@@ -27,12 +27,18 @@ function validate(input,items){
  for(const [k,n] of [['width',width],['depth',depth]]){number(n,25,2000,`settings.${k}`);if(n%1)fail(`settings.${k}`,'expected integer studs');}
  if (input.settings.terrain !== undefined) {
   const terrain=input.settings.terrain;
-  keys(terrain,['version','columns','rows','heights'],'settings.terrain');
+  keys(terrain,['version','columns','rows','heights','paint','water'],'settings.terrain');
   const grid=n=>Math.max(4,Math.min(36,Math.ceil(n/6)));
   if (terrain.version!==1 || terrain.columns!==grid(width) || terrain.rows!==grid(depth)) fail('settings.terrain','grid does not match map dimensions');
   const count=(terrain.columns+1)*(terrain.rows+1);
   if (!Array.isArray(terrain.heights) || terrain.heights.length!==count) fail('settings.terrain.heights','incorrect sample count');
   for (const value of terrain.heights) if (!Number.isInteger(value) || Math.abs(value)>768) fail('settings.terrain.heights','invalid height sample');
+  for (const layer of ['paint','water']) if (Object.hasOwn(terrain,layer)) {
+   const values=terrain[layer];
+   if (!Array.isArray(values) || values.length!==terrain.columns*terrain.rows) fail(`settings.terrain.${layer}`,'incorrect cell count');
+   for (const value of values) if (!Number.isInteger(value) || (value!==0 &&
+    (layer==='paint' ? value<1 || value>5 : value<256 || value>1792))) fail(`settings.terrain.${layer}`,'invalid cell');
+  }
  }
  bool(input.settings.boundary,'settings.boundary');
  if(!input.settings.boundary)fail('settings.boundary','open boundaries are not supported by current tank physics');

@@ -69,4 +69,38 @@ assert(wallTank.position.Z==0,"incoming momentum cannot pull a tank up a wall-li
 Motion.setVelocity(wallTank,Vector3.new(0,0,12))
 Sim.step(wallTank,neutral,1/60,Vector2.new(96,96),env)
 assert(wallTank.position.Z>0,"the same geometric safeguard permits downhill movement")
+for _,kind in {"Boomer","Rattler"} do
+ local tank=Sim.new(before,kind)
+ -- A tiny advance on a steep face previously fit inside the fixed tolerance.
+ Motion.setVelocity(tank,Vector3.new(0,0,-.05))
+ Sim.moveBody(tank,neutral,1/60,Vector2.new(96,96),env,true)
+ tank.position=Vector3.new(0,tank.position.Y,-.001)
+ Sim.reconcileGround(tank,env)
+ assert(tank.position.Z==0,"deferred contact reconciliation blocks even tiny uphill wall advances")
+ assert(tank.terrainFaceDegrees>60,"authoritative state reports the actual steep terrain face")
+end
+do
+ local settings=env.terrainSettings
+ local fresh=Heightfield.new(96,96);settings.terrain=fresh
+ local point=Vector3.zero
+ Heightfield.brush(fresh,96,96,point,"Carve",9,24,.45,-8,1)
+ assert(Heightfield.sample(fresh,96,96,0,0)==-8 and Heightfield.sample(fresh,96,96,30,0)==0,
+  "ravine tool cuts the channel while preserving distant ground")
+ for code,name in Heightfield.Paint do
+  assert(next(Heightfield.paint(fresh,96,96,point,8,code)),"changing paint touches terrain chunks")
+  local _,kind,_,_,profile=Environment.sample(env,0,0,1)
+  assert(kind==name and profile==Materials.fromMaterial(name),"paint changes real contact material: "..name)
+ end
+ for z=0,fresh.rows do for x=0,fresh.columns do
+  fresh.heights[Heightfield.index(fresh,x,z)]=math.max(0,math.abs(x-8)+math.abs(z-8)-1)*16
+ end end
+ assert(next(Heightfield.fillWater(fresh,96,96,Vector3.new(0,8,30),1)),"water creates a downhill path")
+ local _,basinLevel=Heightfield.surface(fresh,96,96,0,0)
+ local _,sourceLevel=Heightfield.surface(fresh,96,96,0,30)
+ local _,ridgeLevel=Heightfield.surface(fresh,96,96,35,35)
+ assert(basinLevel and sourceLevel and sourceLevel>basinLevel and ridgeLevel==nil,"water follows elevation and remains out of high disconnected ground")
+ local _,kind=Environment.sample(env,0,0,1)
+ assert(kind=="Water","flooded cells affect vehicle physics")
+ Heightfield.validate(fresh,96,96)
+end
 print("Unified terrain slopes, traction, braking, tick-rate stability and geometry passed")

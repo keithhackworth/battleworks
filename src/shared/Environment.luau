@@ -80,7 +80,15 @@ function Environment.sample(data,x,z,maxHeight)
   local settings=data.terrainSettings
   height=Heightfield.sample(settings.terrain,settings.width,settings.depth,x,z)
  end
- local supportingSurface
+ local supportingSurface,painted
+ if data.terrainSettings then
+  local settings=data.terrainSettings
+  local paint,water=Heightfield.surface(settings.terrain,settings.width,settings.depth,x,z)
+  if paint then kind=paint;painted=Materials.fromMaterial(paint) end
+  if water and water>height+.01 and (not maxHeight or maxHeight>=height) then
+   kind="Water";speed=.9;painted=Materials.fromMaterial(paint or settings.ground.material,true)
+  end
+ end
 	for _,zone in data.zones do
 		if inside(zone,x,z) and data.weather~="IceWind" then kind=zone.kind; speed=zone.speed end
 	end
@@ -96,9 +104,9 @@ function Environment.sample(data,x,z,maxHeight)
 	end
  if data.worldObjects and maxHeight then
   local h,surface=data.worldObjects:support(x,z,maxHeight)
-  if h and h>=height then height=h;kind="Structure";speed=1;supportingSurface=surface end
+  if h and h>=height then height=h;kind="Structure";speed=1;supportingSurface=surface;painted=nil end
  end
-	return height,kind,speed,supportingSurface
+	return height,kind,speed,supportingSurface,painted
 end
 function Environment.blocked(data,x,z,radius)
 	for _,tree in data.trees do

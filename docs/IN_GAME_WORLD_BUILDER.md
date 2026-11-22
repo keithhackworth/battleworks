@@ -67,7 +67,13 @@ those bounds. Boundary shapes and editable river paths are separate milestones.
 5. **Save**, then **Open** the saved world to restore the terrain. Place five start zones on relatively level ground before selecting **Save & Play Test**.
 6. In Studio, run the playtest in **Classic** using **ServerStorage → BattleWorksStudio → GameMode**, then drive up the hill and into the depression. Published private playtests use the existing saved-world travel flow.
 
-Terrain is an optional height grid in the existing world document. Each axis uses 4–36 cells and heights are stored in eighth-stud increments between −96 and +96 studs. The editor updates only changed chunks during a drag. The playtest uses the same triangulated surface for tank height and slope, with native queryable ground parts for character collision, scanners, and projectiles. Legacy worlds without terrain retain their flat floor. The grid supports one elevation per horizontal point. Vertical caves, overhangs, and river tools are outside this milestone.
+Terrain is an optional height grid in the existing world document. Each axis uses 4–36 cells and heights are stored in eighth-stud increments between −96 and +96 studs. The editor updates only changed chunks during a drag. The playtest uses the same triangulated surface for tank height and slope, with native queryable ground parts for character collision, scanners, and projectiles. Legacy worlds without terrain retain their flat floor. The grid supports one elevation per horizontal point. The height grid cannot represent caves or overhangs.
+
+### Paint roads and terrain, carve channels, and place water
+
+- Open **Terrain** and pick **Grass**, **Mud**, **Ice**, **Snow**, or **Pavement** in the bottom dock. Drag to paint. Radius controls road or patch width. Use **Flatten** first for a level roadbed. Painted materials affect tank grip and speed.
+- Choose **Carve Ravine** and drag the channel. Radius controls width, falloff controls the sides, and **Water / ravine depth** sets the bed below the height where the stroke started.
+- Choose **Water** and click in a channel or basin. Water follows the lowest downhill cells and fills connected low ground at the chosen depth. On flat open ground the fill can spread across the map. The saved water is static, and later terrain edits do not reroute it. Paint a dry material to remove water from those cells, or undo the water placement.
 
 ### Terrain Traversability
 
