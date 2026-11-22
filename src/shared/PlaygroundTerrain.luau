@@ -20,11 +20,11 @@ function T.create(size)
  add("NorthLand",-22,22,-z,-75)
  add("SouthLand",-22,22,65,z)
  if proving then
-  add("Bridge",-22,-6,-7,7)
-  add("Bridge",-18,-4,7,17,0,.22)
-  add("Bridge",-18,11,17,30,2.2)
-  add("Bridge",4,17,-3,17,0,.11)
-  add("Bridge",4,22,-16,-3)
+  add("Bridge",-22,2,-17,-7)
+  add("Bridge",-8,2,-31,-17,3.5,-.25)
+  add("Bridge",-8,12,-41,-31,3.5)
+  add("Bridge",2,12,-31,-8,3.5,-3.5/23)
+  add("Bridge",2,22,-8,2)
  else
   add("Bridge",-22,22,-12,12)
  end
@@ -56,10 +56,25 @@ function T.create(size)
  if proving then
   -- Keep the deck and pad widths in physical studs at Playground scale.
   for _,r in regions do if r.name=="Bridge" then r.x0/=scale;r.x1/=scale;r.z0/=scale;r.z1/=scale;r.y/=scale end end
-  data.course={x0=-108*scale,x1=220*scale,z0=-40,z1=43,
-   start=Vector3.new(-78*scale,0,0),range=Vector3.new(100*scale,0,0),
-   gauntlet=Vector3.new(164*scale,0,0),finish=205*scale}
-  for _,pad in {{id="course:start",x=-78*scale,z=0},{id="course:range",x=70*scale,z=0},{id="course:gauntlet",x=143*scale,z=0}} do
+  data.course={
+   start=Vector3.new(-51,0,-12),range=Vector3.new(43,0,81),
+   bridgeGates={Vector3.new(-3,0,-12),Vector3.new(-3,2,-25),Vector3.new(2,3.5,-36),Vector3.new(7,1.67,-19),Vector3.new(24,0,-3)},
+   rangeTargets={{distance=43,lane=-9,travel=11,speed=7},{distance=88,lane=4,travel=19,speed=15},{distance=146,lane=-3,travel=17,speed=23}},
+   gauntlet=Vector3.new(161,0,-53),finish=Vector3.new(161,0,-165),
+   court={x0=105,x1=217,z0=-165,z1=-53},
+   areas={{x0=-72,x1=30,z0=-45,z1=10},{x0=19,x1=67,z0=-5,z1=114},
+    {x0=36,x1=211,z0=55,z1=112},{x0=174,x1=215,z0=-59,z1=69},{x0=104,x1=218,z0=-176,z1=-26}},
+  }
+  local court=data.course.court
+  data.course.turrets={}
+  for i=1,8 do
+   local side=if i%2==1 then 1 else -1
+   local x=if side>0 then court.x0+5 else court.x1-5
+   local z=court.z1-11-(i-1)*12.6
+   local direction=Vector3.new(side,0,if i%3==0 then .24 else -.14).Unit
+   table.insert(data.course.turrets,{base=Vector3.new(x,0,z),direction=direction})
+  end
+  for _,pad in {{id="course:start",x=-51,z=-12},{id="course:range",x=30,z=81},{id="course:gauntlet",x=161,z=-39}} do
    pad.y=0;pad.halfX=11;pad.halfZ=11;table.insert(data.configurationZones,pad)
   end
  end
@@ -85,7 +100,10 @@ local function inside(r,x,z,margin)
 end
 function T.inCourse(data,position,margin)
  local course=data and data.course
- return course~=nil and inside(course,position.X,position.Z,-(margin or 0))
+ for _,area in course and course.areas or {} do
+  if inside(area,position.X,position.Z,-(margin or 0)) then return true end
+ end
+ return false
 end
 function T.sample(data,x,z)
  for _,r in data.regions do if inside(r,x,z)then return r.y+(z-r.z0)*r.slope,r end end

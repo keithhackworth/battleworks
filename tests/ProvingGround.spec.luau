@@ -33,13 +33,15 @@ local segments,ramps=0,0
 for _,region in compact.regions do
  if region.name=="Bridge" then
   segments+=1
-  if region.slope>0 then ramps+=1 end
+  if region.slope~=0 then ramps+=1 end
   check(math.min(region.x1-region.x0,region.z1-region.z0)<=14.001,"deck sections are single-lane")
  end
 end
 check(segments==5 and ramps==2,"switchback has two sloped sections")
+local court=compact.course.court
+check(court.x1-court.x0==112 and court.z1-court.z0==112 and #compact.course.turrets==8,"cannon court is a distinct square with eight cannons")
 local widthProfile=C.get("Boomer").Chassis
-local route={{-27,0},{-11,0},{-11,23},{10,23},{10,-9},{23,-9}}
+local route={{-27,-12},{-3,-12},{-3,-36},{7,-36},{7,-3},{24,-3}}
 for i=1,#route-1 do
  local a,b=route[i],route[i+1]
  local yaw=math.atan2(a[1]-b[1],a[2]-b[2])

@@ -361,12 +361,22 @@ do
  local tank=royale.options.tanks[a]
  falling.position=course.start;advance(4)
  check(tank.course and tank.course.phase=="Ravine Crossing","entering the course start pad starts the timer")
- falling.position=Vector3.new(0,2.2,21);advance(2)
+ falling.position=course.range;advance(2)
+ check(tank.course.phase=="Ravine Crossing","going around the bridge cannot skip the checkpoint sequence")
+ for _,gate in course.bridgeGates do falling.position=gate;advance(2) end
  falling.position=course.range;advance(2)
  check(tank.course.phase=="Moving Target Range","reaching the range after the deck advances the run")
  local hitTargets={}
  for _,target in created do if target.Name=="CourseTarget" then table.insert(hitTargets,target) end end
  check(#hitTargets==3,"three physical course targets exist")
+ table.sort(hitTargets,function(a,b)return a:GetAttribute("RangeDistance")<b:GetAttribute("RangeDistance")end)
+ local positions={}
+ for i,target in hitTargets do positions[i]=target.Position end
+ advance(6)
+ for i,target in hitTargets do
+  check(target.Position.X==course.range.X+course.rangeTargets[i].distance,"target stays at its assigned distance")
+  check(math.abs(math.abs(target.Position.Z-positions[i].Z)-course.rangeTargets[i].speed*.1)<.01,"physical target moves on its own speed profile")
+ end
  local hitIndex=0
  workspace.Spherecast=function(_,origin,_,delta,params)
   local target=hitTargets[hitIndex+1]
@@ -386,7 +396,7 @@ do
  falling.position=course.gauntlet;advance(4)
  check(tank.course.phase=="Bullet Gauntlet","range completion unlocks the gauntlet")
  workspace.Spherecast=function(_,origin,_,delta,params)
-  if params.FilterDescendantsInstances[1]~=boxes[a] and math.abs(origin.X-course.gauntlet.X)<18 then
+  if params.FilterDescendantsInstances[1]~=boxes[a] and origin.Z<course.gauntlet.Z and origin.X>course.court.x0 and origin.X<course.court.x1 then
    return {Instance=boxes[a],Position=origin+delta.Unit*.01,Distance=.01}
   end
  end
@@ -394,7 +404,8 @@ do
  advance(80)
  check(falling.health<health and falling.health>0,"gauntlet projectiles use authoritative damage")
  workspace.Spherecast=function()return nil end
- falling.position=Vector3.new(course.finish+1,0,0);advance(4)
+ falling.position=(course.gauntlet+course.finish)/2;advance(2)
+ falling.position=course.finish;advance(4)
  check(tank.course.phase=="Complete","reaching the gauntlet exit alive records completion")
  network:FindFirstChild("ProvingGroundsAction").OnServerEvent:Fire(hazardPlayer,"Restart",a,controls[105].epoch)
  falling=tank.state;advance(4)

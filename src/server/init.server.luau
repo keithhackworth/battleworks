@@ -149,9 +149,19 @@ local function part(name, size, position, color, deferParent)
 	return p
 end
 if course then
- for i=1,3 do
-  local target=part("CourseTarget",Vector3.new(3,5,5),course.layout.range+Vector3.new(i*6,3.2,(i-2)*10),Color3.fromRGB(248,126,64))
+ for i,spec in course.layout.rangeTargets do
+  local target=part("CourseTarget",Vector3.new(1.5,5.5,if i==1 then 7 else 6),course:targetPosition(i,0),Color3.fromRGB(51,66,75))
   target.CanCollide=false;target:SetAttribute("ScannerType","object")
+  target:SetAttribute("RangeDistance",spec.distance)
+  local face=Instance.new("SurfaceGui");face.Face=Enum.NormalId.Left;face.Parent=target
+  for ring=1,3 do
+   local mark=Instance.new("Frame");mark.AnchorPoint=Vector2.new(.5,.5);mark.Position=UDim2.fromScale(.5,.5)
+   local diameter=.9-(ring-1)*.28
+   mark.Size=UDim2.fromScale(diameter,diameter);mark.BorderSizePixel=0;mark.ZIndex=ring
+   mark.BackgroundColor3=if ring==2 then Color3.fromRGB(44,57,66) else Color3.fromRGB(255,174,71)
+   mark.Parent=face
+   local round=Instance.new("UICorner");round.CornerRadius=UDim.new(.5,0);round.Parent=mark
+  end
   course.targets[target]=i
  end
 end
@@ -740,6 +750,7 @@ local function launchShell(id, tank, origin, direction, deferEffects)
  end
 	shell.owner = id
 	shell.courseRun=tank.course
+	shell.rangeShot=course and tank.course and course:fromFiringLine(tank.state.position)
 	shell.scoreOwner = if royale then royale:scoreActor(tank) else nil
 	shell.weaponType=Components.get(tank.state).Weapon.WeaponType
 	addShellVisual(shell,id,small)
@@ -759,7 +770,7 @@ local function updateShells(now)
 		if not hit then hit = Projectiles.step(workspace,shell,Config.Step) end
 		poseShell(shell)
 		if hit then
-   if course then course:hit(hit.Instance,tanks[shell.owner],shell.courseRun) end
+   if shell.rangeShot then course:hit(hit.Instance,tanks[shell.owner],shell.courseRun) end
 			local _, before, after = PracticeTargets.impact(hit,targets,now,shell.damage)
    if worldObjects then
     local record,_,_,destroyed=worldObjects:impact(hit,shell.damage,shell)
@@ -802,15 +813,13 @@ local function updateShells(now)
 		if shell.done then shell.model:Destroy(); table.remove(shells,i) end
 	end
 end
-local gauntletTuning={Range=52,ShellSpeed=34,ShellRadius=.45,Damage=14,MuzzleOffset=0}
-local function fireGauntlet()
- for index=0,2 do
-  local origin=course.layout.gauntlet+Vector3.new(index*8,2.5,if index%2==0 then -26 else 26)
-  local direction=Vector3.new(0,0,if index%2==0 then 1 else -1)
-  local shell=Projectiles.new(origin,direction,{shellFolder},gauntletTuning)
-  shell.owner="course:emitters"
-  addShellVisual(shell,shell.owner,false)
- end
+local gauntletTuning={Range=109,ShellSpeed=62,ShellRadius=.65,Damage=20,MuzzleOffset=0}
+local function fireGauntlet(turret)
+ local origin=turret.base+Vector3.new(0,2.7,0)+turret.direction*6
+ local shell=Projectiles.new(origin,turret.direction,{shellFolder},gauntletTuning)
+ shell.owner="course:emitters"
+ addShellVisual(shell,shell.owner,false)
+ shot:FireAllClients(shell.owner,origin,turret.direction,"Boomer",0,nil,"weapon.cannon")
 end
 local function reset(battle,reason)
 	for i=#shells,1,-1 do
@@ -1156,7 +1165,8 @@ RunService.Heartbeat:Connect(function(dt)
      local state=tank.state
      if not tank.course and state.controlMode=="Manual" and state.configurationZone=="course:start" then course:begin(tank,simulationTime) end
      if tank.course then
-      if not Playground.inCourse(environment.playground,state.position,2) and tank.course.phase~="Complete" then
+      if not Playground.inCourse(environment.playground,state.position,2) and tank.course.phase~="Complete"
+       and Playground.safe(environment.playground,state.position,1,true) then
        tank.course=nil;state.course=nil
       else
        course:advance(tank,simulationTime);course:publish(tank,simulationTime)

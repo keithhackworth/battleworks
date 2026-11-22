@@ -45,8 +45,8 @@ function Builder.build(arena,data,floor)
    local wall=part("BarracksWall",Vector3.new(r.sx,r.sy,r.sz),CFrame.new(r.x,r.y,r.z),Color3.fromRGB(104,119,92),Enum.Material.Concrete,true)
    wall:SetAttribute("ScannerType","object");wall:SetAttribute("WorldObjectId","proving:barracks");wall:SetAttribute("ScannerObjectName","Barracks")
   end
-  local function sign(name,text,x,y,z)
-   local board=part(name,Vector3.new(18*scale,3,.3),CFrame.new(x,y,z),Color3.fromRGB(49,65,52),Enum.Material.Metal,false)
+  local function sign(name,text,x,y,z,width)
+   local board=part(name,Vector3.new(width or 18*scale,if width and width>=8 then 6 else 3,.3),CFrame.new(x,y,z),Color3.fromRGB(49,65,52),Enum.Material.Metal,false)
    for _,face in {Enum.NormalId.Front,Enum.NormalId.Back}do
    local gui=Instance.new("SurfaceGui");gui.Face=face;gui.Parent=board
    local label=Instance.new("TextLabel");label.Size=UDim2.fromScale(1,1);label.BackgroundTransparency=1;label.TextColor3=Color3.fromRGB(235,235,216);label.TextScaled=true;label.Text=text;label.Parent=gui
@@ -55,24 +55,48 @@ function Builder.build(arena,data,floor)
   sign("BarracksSign","BARRACKS",170*scale,13,195*scale)
   local course=data.course
   if course then
-   for _,marker in {
-    {"PROVING GROUNDS  /  START",course.start.X,0},
-    {"A  /  RAVINE CROSSING",-31,0},
-    {"B  /  MOVING TARGET RANGE",course.range.X-8,-14},
-    {"C  /  BULLET GAUNTLET",course.gauntlet.X,-14},
-    {"FINISH",course.finish,0},
-   } do
-    sign("CourseMarker",marker[1],marker[2],4,marker[3])
-    part("CourseLine",Vector3.new(1,.04,22),CFrame.new(marker[2],.05,0),Color3.fromRGB(244,187,86),Enum.Material.SmoothPlastic,false)
+   local orange=Color3.fromRGB(246,159,55)
+   local green=Color3.fromRGB(96,222,147)
+   local metal=Enum.Material.Metal
+   local function paint(name,size,x,y,z,color)
+    return part(name,size,CFrame.new(x,y,z),color,Enum.Material.SmoothPlastic,false)
    end
-   for _,z in {course.z0,course.z1} do
-    part("CourseEdge",Vector3.new(course.x1-course.x0,.04,.45),CFrame.new((course.x0+course.x1)/2,.07,z),Color3.fromRGB(244,187,86),Enum.Material.SmoothPlastic,false)
+   sign("ProvingGroundsGuide","PROVING GROUNDS   ↑",course.start.X,5,53,34)
+   sign("CourseStart","A  /  RAVINE TRIAL",course.start.X,5,course.start.Z+12,32)
+   sign("BridgeExit","B  /  RANGE  →",34,5,14,24)
+   sign("RangeEntry","B  /  MOVING TARGET RANGE",course.range.X+13,6,59,40)
+   sign("RangeDeparture","C  /  CANNON COURT  ↑",194,5,59,32)
+   sign("GauntletStart","CANNON COURT   /   START",course.gauntlet.X,7,course.gauntlet.Z+1,44)
+   sign("GauntletFinish","FINISH   /   PROVING GROUNDS",course.finish.X,7,course.finish.Z-2,46)
+   for i,point in course.bridgeGates do
+    sign("BridgeCheckpoint",tostring(i),point.X,point.Y+2.2,point.Z,3)
    end
-   for index=0,2 do
-    local side=if index%2==0 then -1 else 1
-    local emitter=part("GauntletEmitter",Vector3.new(3,2.5,5),CFrame.new(course.gauntlet.X+index*8,2.5,side*28.5),Color3.fromRGB(213,122,58),Enum.Material.Metal,false)
-    emitter:SetAttribute("CourseEmitter",true)
-    part("GauntletLane",Vector3.new(.35,.03,48),CFrame.new(course.gauntlet.X+index*8,.05,0),Color3.fromRGB(213,122,58),Enum.Material.SmoothPlastic,false)
+   for _,route in {{43,44,0,24},{118,0,57,59},{194,23,0,68},{178,-34,32,0}} do
+    paint("CourseRoute",Vector3.new(math.max(route[3],.5),.03,math.max(route[4],.5)),route[1],.08,route[2],orange)
+   end
+   paint("RangeFiringLine",Vector3.new(1.2,.05,36),course.range.X,.08,course.range.Z,orange)
+   for _,target in course.rangeTargets do
+    local x,z=course.range.X+target.distance,course.range.Z+target.lane
+    paint("TargetTrack",Vector3.new(2,.06,2*target.travel),x,.07,z,Color3.fromRGB(61,83,94))
+    sign("RangeDistance",tostring(target.distance).." STUDS",x,3,z-target.travel-3,16)
+   end
+   local court=course.court
+   local middle=(court.x0+court.x1)/2
+   local width=court.x1-court.x0
+   paint("CourtSurface",Vector3.new(width,.04,court.z1-court.z0),middle,.035,(court.z0+court.z1)/2,Color3.fromRGB(42,49,56))
+   paint("CourtStartLine",Vector3.new(width,.04,1.8),middle,.075,court.z1,orange)
+   paint("CourtFinishLine",Vector3.new(width,.04,1.8),middle,.075,court.z0,green)
+   for _,x in {court.x0,court.x1} do
+    paint("CourtSideline",Vector3.new(.75,.04,court.z1-court.z0),x,.08,(court.z0+court.z1)/2,orange)
+   end
+   for _,turret in course.turrets do
+    local base=turret.base
+    part("CannonPedestal",Vector3.new(6,2,6),CFrame.new(base+Vector3.new(0,1,0)),Color3.fromRGB(72,83,91),metal,false)
+    local pivot=base+Vector3.new(0,2.7,0)
+    local frame=CFrame.lookAt(pivot,pivot+turret.direction)
+    part("CannonMount",Vector3.new(4.6,2.8,4.8),frame,Color3.fromRGB(103,123,129),metal,false)
+    local barrel=part("CannonBarrel",Vector3.new(6,1.7,1.7),frame*CFrame.new(0,0,-3)*CFrame.Angles(0,math.pi/2,0),Color3.fromRGB(173,118,61),metal,false)
+    barrel.Shape=Enum.PartType.Cylinder
    end
   end
   for _,strip in data.strips do

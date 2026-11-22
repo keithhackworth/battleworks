@@ -150,15 +150,15 @@ local function worldRequest(action,payload)
  if courseRemote then
   coursePanel=Instance.new("Frame");coursePanel.Name="ProvingGroundsHUD"
   coursePanel.AnchorPoint=Vector2.new(1,0);coursePanel.Position=UDim2.new(1,-12,0,96)
-  coursePanel.Size=UDim2.fromOffset(244,90);coursePanel.BackgroundColor3=Color3.fromRGB(20,42,55)
+  coursePanel.Size=UDim2.fromOffset(270,108);coursePanel.BackgroundColor3=Color3.fromRGB(20,42,55)
   coursePanel.Visible=false;coursePanel.Parent=navigation
   local corner=Instance.new("UICorner");corner.CornerRadius=UDim.new(0,8);corner.Parent=coursePanel
-  courseLabel=Instance.new("TextLabel");courseLabel.Size=UDim2.new(1,-12,0,48);courseLabel.Position=UDim2.fromOffset(6,0)
+  courseLabel=Instance.new("TextLabel");courseLabel.Size=UDim2.new(1,-12,0,62);courseLabel.Position=UDim2.fromOffset(6,0)
   courseLabel.BackgroundTransparency=1;courseLabel.TextColor3=menu.TextColor3;courseLabel.TextSize=14
   courseLabel.Font=Enum.Font.GothamMedium;courseLabel.TextWrapped=true;courseLabel.Parent=coursePanel
   local function actionButton(name,action,x)
-   local button=Instance.new("TextButton");button.Name=name;button.Text=name;button.Position=UDim2.fromOffset(x,48)
-   button.Size=UDim2.fromOffset(112,36);button.BackgroundColor3=menu.BackgroundColor3
+   local button=Instance.new("TextButton");button.Name=name;button.Text=name;button.Position=UDim2.fromOffset(x,65)
+   button.Size=UDim2.fromOffset(122,36);button.BackgroundColor3=menu.BackgroundColor3
    button.TextColor3=menu.TextColor3;button.Font=menu.Font;button.TextSize=13;button.Parent=coursePanel
    button.Activated:Connect(function()
     if coursePanel.Visible and reading and reading.mode=="Tank" then courseRemote:FireServer(action,reading.selected,reading.epoch) end
@@ -166,7 +166,7 @@ local function worldRequest(action,payload)
    return button
   end
   courseRestart=actionButton("Restart Course","Restart",6)
-  courseReturn=actionButton("Leave Course","Return",126)
+  courseReturn=actionButton("Leave Course","Return",140)
  end
  network:WaitForChild("Snapshot").OnClientEvent:Connect(function(states,battles,revision,tankScores)
   showScores(battles,revision,tankScores)
@@ -176,8 +176,9 @@ local function worldRequest(action,payload)
    local progress=own and own.controlEpoch==reading.epoch and own.course
    coursePanel.Visible=progress~=nil and progress~=false
    if progress then
-    local details=if progress.phase=="Moving Target Range" then string.format("  •  Hits %d/%d",progress.hits,progress.required) else ""
-    courseLabel.Text=string.format("%s  •  %.1fs%s",progress.phase,progress.elapsed,details)
+    local details=if progress.phase=="Moving Target Range" then string.format("  •  Hits %d/%d",progress.hits,progress.required)
+     elseif progress.phase=="Ravine Crossing" and progress.bridgeTotal then string.format("  •  Gates %d/%d",progress.bridgePassed,progress.bridgeTotal) else ""
+    courseLabel.Text=string.format("%s  •  %.1fs%s%s",progress.phase,progress.elapsed,details,if progress.destination then "\n"..progress.destination else "")
     courseRestart.Text=if progress.phase=="Complete" then "Replay" else "Restart Course"
     courseReturn.Text=if progress.phase=="Complete" then "Return to Playground" else "Leave Course"
    end

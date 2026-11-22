@@ -461,8 +461,8 @@ function C.obstacles(environment,mapSize,radius)
   table.insert(out,zone)
  end
  local course=environment and environment.playground and environment.playground.course
- if course then
-  local zone=C.box("course:boundary",Vector3.new((course.x0+course.x1)/2,0,(course.z0+course.z1)/2),(course.x1-course.x0)/2,(course.z1-course.z0)/2,-math.huge,math.huge)
+ for index,area in course and course.areas or {} do
+  local zone=C.box("course:boundary:"..index,Vector3.new((area.x0+area.x1)/2,0,(area.z0+area.z1)/2),(area.x1-area.x0)/2,(area.z1-area.z0)/2,-math.huge,math.huge)
   zone.configurationOnly=true
   table.insert(out,zone)
  end

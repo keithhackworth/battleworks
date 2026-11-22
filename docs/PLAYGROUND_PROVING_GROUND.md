@@ -111,7 +111,7 @@ The default layout includes six blue-striped protected configuration pads. Stop 
 
 ## Obstacle course
 
-Drive a Manual tank into **PROVING GROUNDS / START** on the west side of the ravine. Take the offset timber crossing east, hit all three moving targets with the tank's real weapon, then drive past the gauntlet’s marked firing lanes to **FINISH**. The HUD shows the current section, time, and target count. It offers **Restart Course** during a run and **Replay** and **Return to Playground** at the finish.
+From the dry west-bank spawn, follow the Proving Grounds sign to **A / Ravine Trial**. Drive a Manual tank through the five numbered gates on the 10-stud-wide timber decks. Follow the east-bank sign to **B / Moving Target Range**. Hit the steel plates from the firing line at 43, 88, and 146 studs. They move laterally at 7, 15, and 23 studs per second. Follow the orange route north to **C / Cannon Court**, a 112 × 112 stud square. Enter at the orange start line and reach the green finish line while eight side-mounted cannons fire staggered crossing shots. The HUD tracks section progress and offers Restart, Replay, and Return to Playground.
 
 The server excludes public spawns from the course and uses the vehicle contact solver to keep autonomous public tanks out. Progress belongs to each participating tank. The range and gauntlet share physical targets and emitters across participants, and their patterns reset when their section becomes idle. Manual runs use the same tank movement, line of sight, weapons, and damage pipeline as the surrounding arena. BW execution is currently blocked in the course, and BW receives no hidden route or challenge state. There is no new mode or Place.
 

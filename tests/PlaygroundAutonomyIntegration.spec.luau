@@ -105,7 +105,7 @@ wall+=1;remote.OnServerEvent:Fire(first,"Manual",3,a,autoEpoch);advance(4)
 check(controls[101].controlMode=="Manual"and not snapshots[a].bwRunning,"Manual stops all BW work")
 wall+=1
 -- Move to safe land before testing the established exit/ejection path.
-live[snapshots[a].personalityId].position=Vector3.new(110,0,60)
+live[snapshots[a].personalityId].position=Vector3.new(110,0,-17)
 remote.OnServerEvent:Fire(first,"Exit",4,a,controls[101].epoch);advance(4)
 check(not controls[101].selected and snapshots[a].controlMode=="Auto"and snapshots[a].bwRunning,"vacating restores personality without ownership")
 enter(first,b,5)
@@ -127,7 +127,9 @@ for _,category in Hardware.Categories do if previous[category]~=replacement.allo
 check(changed,"replenishment rerolls the bus while preserving the personality's rules")
 check(snapshots[b].generation>generation and snapshots[b].personalityId==personality and snapshots[b].controlMode=="Auto"and snapshots[b].bwRunning,"replenishment preserves personality and starts Auto with fresh state")
 check(not royale.members[101].tank,"unoccupied autonomous replacement remains available")
-enter(second,a,3);players.PlayerRemoving:Fire(second);advance(4)
+enter(second,a,3)
+runtimeTanks[snapshots[a].personalityId].state.position=Vector3.new(110,0,-12)
+players.PlayerRemoving:Fire(second);advance(4)
 check(not snapshots[a].occupantUserId and snapshots[a].controlMode=="Auto"and snapshots[a].bwRunning,"disconnect releases tank back to Auto")
 check(execution and execution:GetAttribute("Enabled")==true,"Studio starts with live BW execution ON")
 local auto=runtimeTanks[snapshots[a].personalityId]
@@ -136,7 +138,7 @@ roots[101],humanoids[101]=character(first)
 first.CharacterAdded:Fire(first.Character)
 wall+=1;enter(first,b,6)
 check(controls[101].selected==b and manual.state.controlMode=="Manual","manual tank is occupied during the diagnostic")
-auto.state.position=Vector3.new(110,0,60)
+auto.state.position=Vector3.new(110,0,-17)
 check(BW.start(auto,"marker = 42\nforward()\nlook = Scanner(0)\nwait_for_clock(get_clock().time + 10)"),"fixture schedules persistent drive, scan and clock wait")
 local runtime=auto.bw
 for _=1,40 do
