@@ -4,6 +4,16 @@ const {builtinCatalog}=require('../tools/world-builder/catalog');
 const {fresh,validate,compileDocument,migrate,serialize}=require('../tools/world-builder/document');
 const {Store}=require('../tools/world-builder/store');const {createServer}=require('../tools/world-builder/server');
 const items=builtinCatalog();
+test('sculpted terrain survives offline serialization, compilation, and migration',()=>{
+ const d=fresh('terrain_world');
+ const heights=Array(37*37).fill(0);heights[102]=87;heights[233]=-156;
+ d.settings.terrain={version:1,columns:36,rows:36,heights};
+ const built=compileDocument(JSON.parse(serialize(d)),items);
+ assert.deepEqual(built.manifest.builderSettings.terrain,d.settings.terrain);
+ assert.deepEqual(migrate(built.manifest,items,'terrain_copy').settings.terrain,d.settings.terrain);
+ d.settings.terrain.heights[102]=769;
+ assert.throws(()=>compileDocument(d,items),/invalid height sample/);
+});
 function object(extra={}){return {id:'obstacle_1',type:'builtin.block',position:[0,0,-25],rotation:[0,30,0],scale:1,solid:true,destructible:false,hp:100,...extra};}
 async function fixture(t){const root=await fs.mkdtemp(path.join(os.tmpdir(),'bw-builder-'));t.after(()=>fs.rm(root,{recursive:true,force:true}));await fs.mkdir(path.join(root,'assets/roblox'),{recursive:true});await fs.mkdir(path.join(root,'worlds'),{recursive:true});await fs.writeFile(path.join(root,'worlds/roblox-assets.json'),'{}');const store=new Store(root);await store.init();return store;}
 test('builder catalog has stable reusable types and sensible tree/fence behaviors',()=>{assert.equal(new Set(items.map(i=>i.id)).size,items.length);assert.ok(items.length>=10);assert.equal(items.find(i=>i.id==='builtin.tree').destructible,true);assert.equal(items.find(i=>i.id==='builtin.wall').solid,true);});

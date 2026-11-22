@@ -4,6 +4,7 @@ local Document=require(Shared.WorldEditorDocument)
 local Math=require(Shared.WorldEditorMath)
 local Snap=require(Shared.WorldEditorSnap)
 local Visual=require(Shared.AssetGeometry)
+local Heightfield=require(Shared.WorldHeightfield)
 local View=require(script.Parent.WorldEditorView)
 local Scene=require(script.Parent.WorldEditorScene)
 local UIS=game:GetService("UserInputService")
@@ -15,7 +16,8 @@ function Controller.new(context)
  if not context.editorAssets and context.getEditorAssets then context.editorAssets=context.getEditorAssets() end
  local view=View.new(context)
  local self=setmetatable({context=context,view=view,frame=view.frame,buttons=view.buttons,state=State.new(Document.editorFresh()),catalog=Document.catalog({}),prefix="",page=1,mode="Move",runtime={},keys={},yaw=.55,pitch=1,distance=210,focus=Vector3.zero},Controller)
- self.state.snap=false
+ self.state.snap=false;self.assetScales={};self.cameraSensitivity=1;self.recentAssets={}
+ self.brush={operation="Raise",radius=26,strength=24,falloff=.65,elevation=0}
  self.library=require(script.Parent.WorldLibrary).new(view.frame,context.worldRequest,function(document)
   self:replaceDocument(document)
   return self.state.document
@@ -24,9 +26,71 @@ function Controller.new(context)
  self:loadCatalog()
  local function action(event,fn) view:on(event,function(...) if self.active then fn(...) end end) end
  for mode,button in view.tools do action(button.Activated,function() self:setMode(mode) end) end
+ action(view.terrain.Activated,function() self:setMode(if self.mode=="Terrain" then "Move" else "Terrain") end)
+ action(view.traversability.Activated,function()
+  self.traversability=not self.traversability
+  view.traversability.BackgroundColor3=if self.traversability then View.activeColor else View.buttonColor
+  view.traversalLegend.Visible=self.traversability
+  self:refresh()
+ end)
+ for operation,control in view.terrainTools do
+  action(control.Activated,function()
+   self:finishTerrain(false);self.brush.operation=operation;self:setMode("Terrain")
+  end)
+ end
+ local bounds={radius={2,160},strength={.5,96},falloff={0,1},elevation={-Heightfield.MaxHeight,Heightfield.MaxHeight}}
+ for key,field in view.brushFields do
+  action(field.FocusLost,function()
+   local value=tonumber(field.Text);local range=bounds[key]
+   if value and value>=range[1] and value<=range[2] then self.brush[key]=value
+   else view:message(string.format("Enter a value from %g to %g.",range[1],range[2])) end
+   field.Text=tostring(self.brush[key])
+  end)
+ end
  for axis,button in view.rotationAxes do action(button.Activated,function() self.rotationAxis=axis;self:setMode("Rotate") end) end
  action(view.undo.Activated,function() self:history(false) end);action(view.redo.Activated,function() self:history(true) end)
+ action(view.newWorld.Activated,function()
+  if self:perform(function()
+   self.state.document=Document.editorFresh()
+   self.state.document.id="world_"..Http:GenerateGUID(false):gsub("-","")
+   self.state.selection={};self.state.pins={}
+  end,"New world. Undo restores the previous draft.") then self:frameWorld() end
+ end)
+ action(view.openWorld.Activated,function() self:cancel();self.library:open(self.state.document) end)
+ action(view.saveWorld.Activated,function() self:cancel();self.library:open(self.state.document,"save") end)
+ action(view.saveAs.Activated,function() self:cancel();self.library:open(self.state.document,"copy") end)
+ for axis,field in view.dimensions do action(field.FocusLost,function()
+  local value=tonumber(field.Text)
+  if value~=self.state.document.settings[axis] then
+   self:perform(function()
+    assert(value and value%1==0 and value>=25 and value<=2000,"Use a whole number from 25 to 2000 studs.")
+    assert(not self.state.document.settings.terrain,"Set map dimensions before sculpting. Undo the first terrain stroke to change dimensions.")
+    self.state.document.settings[axis]=value
+   end,"Map dimensions updated. Undo restores the previous size.")
+  end
+ end) end
+ action(view.cameraSensitivity.FocusLost,function()
+  local value=tonumber(view.cameraSensitivity.Text)
+  if value and value>=.2 and value<=3 then self.cameraSensitivity=value
+  else view:message("Camera sensitivity must be between 0.2 and 3.") end
+  view.cameraSensitivity.Text=tostring(self.cameraSensitivity)
+ end)
  action(view.duplicate.Activated,function() self:perform(function() self.state:duplicate() end,"Duplicated selection. Drag the new object to move it.") end)
+ action(view.repeatPlacement.Activated,function()
+  self.repeatPlacement=not self.repeatPlacement
+  view.repeatPlacement.Text=if self.repeatPlacement then "Repeat: On" else "Repeat: Off"
+ end)
+ action(view.recentAssets.Activated,function()
+  self.showRecent=not self.showRecent;self.page=1;self:browse()
+ end)
+ action(view.copyScale.Activated,function()
+  local entry=self:selected();if not entry or entry.slot then return end
+  self.copiedScale=entry.scale;view:message("Copied uniform scale. Select another object to apply it.")
+ end)
+ action(view.pasteScale.Activated,function()
+  local entry=self:selected();if not entry or entry.slot or not self.copiedScale then return end
+  if self:perform(function() entry.scale=self.copiedScale end,"Applied copied scale.") then self.assetScales[entry.asset]=entry.scale end
+ end)
  action(view.delete.Activated,function()
   if not self:selected() then view:message("Select an object or starting zone, then click Delete.");return end
   self:perform(function() self.state:delete() end,"Deleted selection. Undo restores it.")
@@ -35,7 +99,10 @@ function Controller.new(context)
   if #self.state.document.spawns>=5 then view:message("All five starts are placed. Select a marked area to move or delete it.");return end
   self:cancel();self.placingStart=true;view:message("Click clear ground to place the next numbered starting area. Each area holds three tanks; keep centers 40 studs apart. Esc cancels.")
  end)
- action(view.up.Activated,function() self.prefix=self.prefix:gsub("[^/]+/$","");self.page=1;self:browse() end)
+ action(view.up.Activated,function()
+  if self.showRecent then self.showRecent=false else self.prefix=self.prefix:gsub("[^/]+/$","") end
+  self.page=1;self:browse()
+ end)
  action(view.nextPage.Activated,function() self.page=self.page%self.pages+1;self:browse() end)
  view:on(view.search:GetPropertyChangedSignal("Text"),function() if self.active then self.page=1;self:browse() end end)
  action(view.snap.Activated,function() self.state.snap=not self.state.snap;self:updateGrid() end)
@@ -58,7 +125,7 @@ function Controller.new(context)
  for key,field in view.fields do action(field.FocusLost,function()
   local entry=self:selected();if not entry then return end
   local n=tonumber(field.Text)
-  self:perform(function()
+  local changed=self:perform(function()
    assert(n and n==n and math.abs(n)<math.huge,"Enter a finite number")
    if entry.slot then
     assert(key=="x" or key=="z" or key=="yaw","Starting areas stay on the ground; edit X, Z or yaw")
@@ -67,8 +134,13 @@ function Controller.new(context)
    end
    if key=="x" or key=="y" or key=="z" then self.state.pins[entry.id]=nil
    elseif self.state.pins[entry.id] and key~="hp" then self.state.pins[entry.id].second=nil end
-   if key=="x" then entry.position[1]=n elseif key=="y" then entry.position[2]=n elseif key=="z" then entry.position[3]=n elseif key=="pitch" then entry.rotation[1]=n elseif key=="yaw" then entry.rotation[2]=n elseif key=="roll" then entry.rotation[3]=n elseif key=="scale" then entry.scale=n else entry.hp=n end
+   local axis=({sizeX=1,sizeY=2,sizeZ=3})[key]
+   if axis then
+    entry.stretch=entry.stretch or {1,1,1}
+    entry.stretch[axis]=n/(entry.bounds[axis]*entry.scale)
+   elseif key=="x" then entry.position[1]=n elseif key=="y" then entry.position[2]=n elseif key=="z" then entry.position[3]=n elseif key=="pitch" then entry.rotation[1]=n elseif key=="yaw" then entry.rotation[2]=n elseif key=="roll" then entry.rotation[3]=n elseif key=="scale" then entry.scale=n else entry.hp=n end
   end,"Updated "..key)
+  if changed and key=="scale" then self.assetScales[entry.asset]=entry.scale end
  end) end
  action(view.solid.Activated,function() local o=self:selected();if o and not o.slot then self:perform(function() o.solid=not o.solid end,"Collision updated.") end end)
  action(view.destructible.Activated,function() local o=self:selected();if o and not o.slot then self:perform(function() o.destructible=not o.destructible end,"Destructibility updated.") end end)
@@ -83,6 +155,7 @@ function Controller.new(context)
 end
 function Controller:replaceDocument(document)
  self:cancel()
+ local previous=self.state:snapshot()
  document=Document.numberStarts(State.copy(document))
  local candidate
  local ok,reason=pcall(function()
@@ -96,6 +169,7 @@ function Controller:replaceDocument(document)
  end
  if self.scene then self.scene:destroy() end
  self.scene=candidate;self.state=State.new(document);self.state.snap=false
+ self.state:record(previous)
  self.view.name.Text=document.name;self.view.worldId.Text=document.id
  self:frameWorld();self:refresh();self:updateGrid();self:setMode(self.mode)
 end
@@ -127,8 +201,14 @@ function Controller:selected()
  for id in self.state.selection do return self.state:find(id) end
 end
 function Controller:refresh()
+ for axis,field in self.view.dimensions do
+  if UIS:GetFocusedTextBox()~=field then field.Text=tostring(self.state.document.settings[axis]) end
+ end
  self.view.placeStart.Text="Place start zone  •  "..#self.state.document.spawns.."/5"
- if self.scene then self.scene:sync(self.state.document,self.catalog) end
+ if self.scene then
+  self.scene.traversability=self.traversability
+  self.scene:sync(self.state.document,self.catalog)
+ end
  local selected=self:selected();self.view:selection(selected,selected and self.catalog.byPath[selected.asset])
  if self.scene then self.scene:selection(selected and selected.id,self.distance) end
  self:updateSnap()
@@ -185,8 +265,19 @@ function Controller:history(redo)
  self:refresh();self.view:message(if changed then (if redo then "Redone." else "Undone.") else "No more history.")
 end
 function Controller:browse()
- local dirs,items=Document.tree(self.catalog,self.prefix,self.view.search.Text)
- self.page,self.pages=self.view:paletteEntries(dirs,items,self.prefix,self.page,self.context.editorAssets,function(folder)
+ local query=self.view.search.Text
+ local dirs,items,prefix
+ if self.showRecent and query=="" then
+  dirs,items,prefix={},{},"Recent"
+  for _,path in self.recentAssets do
+   local item=self.catalog.byPath[path]
+   if item then table.insert(items,item) end
+  end
+ else
+  dirs,items=Document.tree(self.catalog,self.prefix,query);prefix=self.prefix
+ end
+ self.view.recentAssets.BackgroundColor3=if self.showRecent then View.activeColor else View.buttonColor
+ self.page,self.pages=self.view:paletteEntries(dirs,items,prefix,self.page,self.context.editorAssets,function(folder)
   self.prefix..=folder.."/";self.page=1;self:browse()
  end,function(item) self:choose(item) end)
 end
@@ -202,16 +293,32 @@ end
 function Controller:setMode(mode)
  self:cancel();self.mode=mode
  self.edgeSnap=mode=="Snap"
+ self.view:terrainMode(mode=="Terrain",self.brush.operation)
  if self.scene then
   self.scene:setMode(mode,self.rotationAxis or "Yaw")
   local selected=self:selected();self.scene:selection(selected and selected.id,self.distance)
  end
- for axis,button in self.view.rotationAxes do button.BackgroundColor3=if axis==(self.rotationAxis or "Yaw") then Color3.fromRGB(133,94,38) else Color3.fromRGB(43,61,66) end
- for name,button in self.view.tools do button.BackgroundColor3=if name==mode then Color3.fromRGB(133,94,38) else Color3.fromRGB(43,61,66) end
+ for axis,button in self.view.rotationAxes do button.BackgroundColor3=if axis==(self.rotationAxis or "Yaw") then View.activeColor else View.buttonColor end
+ for name,button in self.view.tools do button.BackgroundColor3=if name==mode then View.activeColor else View.buttonColor end
  self:updateSnap()
- self.view:message(if mode=="Move" then "Move • red X / blue Z slides; green Y raises or lowers. Height Y also accepts an exact value." elseif mode=="Rotate" then "Rotate • choose local X, Y or Z on the left, then drag the ring. Axes follow the object; grid snaps the turn to 15°." elseif mode=="Snap" then "Snap • drag any of the four side handles onto a surface edge. Choose Scale or Stretch on the left." else "Scale • drag the green anchor to resize uniformly.")
+ self.view:message(if mode=="Terrain" then self.brush.operation.." Terrain · hold and drag on the ground. Escape cancels the stroke." elseif mode=="Move" then "Move • red X / blue Z slides; green Y raises or lowers." elseif mode=="Rotate" then "Rotate • choose a local axis, then drag the ring." elseif mode=="Snap" then "Snap • drag a side handle onto a surface edge." elseif mode=="Select" then "Select an object or navigate the scene." else "Scale • drag the green anchor to resize uniformly.")
 end
 function Controller:frameWorld() self.focus=Vector3.zero;self.distance=math.max(self.state.document.settings.width,self.state.document.settings.depth)*.95;self.pitch=1;self.yaw=.55 end
+function Controller:focusSelected()
+ local selected=self:selected()
+ if not selected then self:frameWorld();return end
+ self.focus=Vector3.new(table.unpack(selected.position))
+ local record=self.scene and self.scene.models[selected.id]
+ local size
+ if record then local _,bounds=record.model:GetBoundingBox();size=bounds end
+ self.distance=if size then math.clamp(size.Magnitude*1.8,20,1600) else 48
+end
+function Controller:zoom(delta)
+ local point=self:pointer()
+ local nextDistance=math.clamp(self.distance*math.exp(-delta*.12*self.cameraSensitivity),20,2200)
+ if point then self.focus+=(point-self.focus)*(1-nextDistance/self.distance) end
+ self.distance=nextDistance
+end
 function Controller:mousePosition()
  local origin=game:GetService("GuiService"):GetInsetArea(Enum.ScreenInsets.None).Min
  return Math.guiPoint(UIS:GetMouseLocation(),origin)
@@ -220,11 +327,43 @@ function Controller:pointer()
  local mouse=self:mousePosition()
  if not self.scene then return nil,nil,nil,mouse end
  local origin,direction=Math.ray(self.scene.camera.CFrame,self.view.viewport.AbsoluteSize,mouse-self.view.viewport.AbsolutePosition,self.scene.camera.FieldOfView)
- return Math.ground(origin,direction),origin,direction,mouse
+ local settings=self.state.document.settings
+ local point=if self.mode=="Terrain" and settings.terrain then Heightfield.pick(settings.terrain,settings.width,settings.depth,origin,direction) else Math.ground(origin,direction)
+ if self.mode=="Terrain" and point and (math.abs(point.X)>settings.width/2 or math.abs(point.Z)>settings.depth/2) then point=nil end
+ return point,origin,direction,mouse
+end
+function Controller:paintTerrain(point,dt)
+ local stroke=self.terrainStroke
+ local settings=self.state.document.settings
+ local field=settings.terrain or stroke.field
+ local brush=self.brush
+ local previous=stroke.previous or point
+ local spacing=math.max(2,brush.radius*.4)
+ local stamps=math.clamp(math.ceil((point-previous).Magnitude/spacing),1,24)
+ local dirty={}
+ for i=1,stamps do
+  local center=previous+(point-previous)*(i/stamps)
+  for id,chunk in Heightfield.brush(field,settings.width,settings.depth,center,brush.operation,brush.radius,brush.strength,brush.falloff,brush.elevation,dt/stamps,stroke.remainder) do
+   dirty[id]=chunk
+  end
+ end
+ if next(dirty) then
+  settings.terrain=field
+  self.scene:syncTerrain(settings,dirty)
+ end
+ stroke.previous=point
+end
+function Controller:finishTerrain(cancel)
+ local stroke=self.terrainStroke
+ if not stroke then return end
+ self.terrainStroke=nil
+ if cancel then self.state:restore(stroke.before)
+ else self.state:record(stroke.before) end
+ self:refresh()
 end
 function Controller:candidate(point)
  local item=self.placing
- return {id="placement_preview",type=item.id,asset=item.model,position={self.state:snapValue(point.X),0,self.state:snapValue(point.Z)},rotation={0,0,0},scale=item.defaultScale or 1,solid=item.solid or false,destructible=item.destructible or false,hp=item.hp or 100,bounds=State.copy(item.size)}
+ return {id="placement_preview",type=item.id,asset=item.model,position={self.state:snapValue(point.X),0,self.state:snapValue(point.Z)},rotation={0,0,0},scale=self.assetScales[item.model] or item.defaultScale or 1,solid=item.solid or false,destructible=item.destructible or false,hp=item.hp or 100,bounds=State.copy(item.size)}
 end
 function Controller:place(point)
  if self.placingStart and point then
@@ -235,14 +374,22 @@ function Controller:place(point)
  local item=self.placing
  local valid,reason=pcall(Document.checkEntry,self.state.document,self.catalog,self:candidate(point))
  if not valid then self.view:message(reason);return end
- self:perform(function() self.state:add(item,{point.X,0,point.Z},item.size) end,"Placed "..item.model..". Drag the object to move it.")
+ if self:perform(function() self.state:add(item,{point.X,0,point.Z},item.size,self.assetScales[item.model]) end,"Placed "..item.model) then
+  local previous=table.find(self.recentAssets,item.model)
+  if previous then table.remove(self.recentAssets,previous) end
+  table.insert(self.recentAssets,1,item.model)
+  if #self.recentAssets>12 then table.remove(self.recentAssets) end
+  if self.repeatPlacement then self.placing=item end
+ end
 end
 function Controller:cancel()
+ self:finishTerrain(true)
  if self.gesture then self.state:restore(self.gesture.before);self.gesture=nil;if self.scene then self.scene:sync(self.state.document,self.catalog) end end
  self.placing=nil;self.placingStart=nil;self.paletteDrag=nil;self:stopCamera()
  self.snapPreview=nil
  if self.scene then self.scene:snapFeedback(nil);self.scene:setSnap(self.edgeSnap,self.state.pins,self.snapSide) end
  if self.scene then self.scene:clearGhost();self.scene:startPreview(nil) end
+ if self.scene then self.scene:brushFootprint(nil) end
 end
 function Controller:finishGesture(cancel)
  local g=self.gesture;if not g then return end
@@ -258,7 +405,11 @@ function Controller:finishGesture(cancel)
   end
   Document.export(self.state.document,self.catalog)
  end)
- if cancel or not ok then self.state:restore(g.before) else self.state:record(g.before) end
+ if cancel or not ok then self.state:restore(g.before) else
+  self.state:record(g.before)
+  local entry=self.state:find(g.id)
+  if entry and entry.asset and entry.scale~=g.base.scale then self.assetScales[entry.asset]=entry.scale end
+ end
  self.snapPreview=nil;if self.scene then self.scene:snapFeedback(nil) end
  self:refresh();self.view:message(if cancel then "Transform canceled." elseif ok then "Transform applied." else tostring(err))
 end
@@ -284,7 +435,7 @@ function Controller:stopCamera()
 end
 function Controller:beginCamera(input)
  if self.cameraDrag then return self.cameraDrag.button==input.UserInputType end
- if not self.active or not self.scene or self.paused or UIS:GetFocusedTextBox() or self.view:isModal() or not self.view:isScene(self:mousePosition()) then return false end
+ if not self.active or not self.scene or self.terrainStroke or self.paused or UIS:GetFocusedTextBox() or self.view:isModal() or not self.view:isScene(self:mousePosition()) then return false end
  local button=input.UserInputType
  if button~=Enum.UserInputType.MouseButton2 and button~=Enum.UserInputType.MouseButton3 then return false end
  if self.gesture then self:finishGesture(true) end
@@ -312,9 +463,21 @@ function Controller:begin(input,processed)
  if not origin or not direction or not self.view:isScene(mouse) then return end
  if processed then return end
  if processed or input.UserInputType~=Enum.UserInputType.MouseButton1 then return end
+ if self.mode=="Terrain" then
+  if point and not self.terrainStroke then
+   local settings=self.state.document.settings
+   self.terrainStroke={before=self.state:snapshot(),field=settings.terrain or Heightfield.new(settings.width,settings.depth),remainder={},elapsed=0}
+   self:paintTerrain(point,.05)
+  end
+  return
+ end
  if self.placing or self.placingStart then self:place(point);return end
  local id,handle=self.scene:pick(origin,direction,mouse-self.view.viewport.AbsolutePosition,self.view.viewport.AbsoluteSize)
  if id then self.state:select(id);self:refresh() end
+ if self.mode=="Select" then
+  if not id then self.state.selection={};self:refresh() end
+  return
+ end
  local entry=self:selected()
  if entry and entry.slot then
   local start=Math.ground(origin,direction)
@@ -340,8 +503,7 @@ function Controller:key(input,processed)
  self.keys[input.KeyCode]=true
  local control=UIS:IsKeyDown(Enum.KeyCode.LeftControl) or UIS:IsKeyDown(Enum.KeyCode.RightControl) or UIS:IsKeyDown(Enum.KeyCode.LeftMeta) or UIS:IsKeyDown(Enum.KeyCode.RightMeta)
  local shift=UIS:IsKeyDown(Enum.KeyCode.LeftShift) or UIS:IsKeyDown(Enum.KeyCode.RightShift)
- if input.KeyCode==Enum.KeyCode.Q and self.cameraDrag then return end
- if input.KeyCode==Enum.KeyCode.Escape or input.KeyCode==Enum.KeyCode.Q then self:cancel();self:refresh()
+ if input.KeyCode==Enum.KeyCode.Escape then self:cancel();self:refresh()
  elseif control and input.KeyCode==Enum.KeyCode.Z then self:history(shift)
  elseif control and input.KeyCode==Enum.KeyCode.Y then self:history(true)
  elseif control and input.KeyCode==Enum.KeyCode.D then self:perform(function() self.state:duplicate() end,"Duplicated selection.")
@@ -350,33 +512,44 @@ function Controller:key(input,processed)
  elseif input.KeyCode==Enum.KeyCode.Three then self:setMode("Scale")
  elseif input.KeyCode==Enum.KeyCode.Four then self:setMode("Snap")
  elseif input.KeyCode==Enum.KeyCode.G then self.state.snap=not self.state.snap;self:updateGrid()
- elseif input.KeyCode==Enum.KeyCode.F then self:frameWorld() end
+ elseif input.KeyCode==Enum.KeyCode.F then self:focusSelected()
+ elseif input.KeyCode==Enum.KeyCode.Home then self:frameWorld() end
 end
 function Controller:step(dt)
  local scene=self.scene;if not scene then return end
  local mouse=self:mousePosition()
  if self.cameraDrag then
   UIS.MouseBehavior=Enum.MouseBehavior.LockCurrentPosition
-  local delta=self.cameraDelta;self.cameraDelta=Vector2.zero
+  local delta=self.cameraDelta*self.cameraSensitivity;self.cameraDelta=Vector2.zero
   local shift=UIS:IsKeyDown(Enum.KeyCode.LeftShift) or UIS:IsKeyDown(Enum.KeyCode.RightShift)
   if self.cameraDrag.button==Enum.UserInputType.MouseButton3 or shift then
    self.focus+=Math.cameraPan(scene.camera.CFrame,self.view.viewport.AbsoluteSize,delta,self.distance,scene.camera.FieldOfView)
    self.focus=Vector3.new(self.focus.X,math.max(0,self.focus.Y),self.focus.Z)
   else self.yaw-=delta.X*.006;self.pitch+=delta.Y*.004 end
  end
- if not self.paused and not UIS:GetFocusedTextBox() and not self.gesture and (not self.placing or self.cameraDrag) and not self.view:isModal() then
+ if not self.paused and not UIS:GetFocusedTextBox() and not self.gesture and not self.terrainStroke and (not self.placing or self.cameraDrag) and not self.view:isModal() then
   local forward=(if self.keys[Enum.KeyCode.W] then 1 else 0)-(if self.keys[Enum.KeyCode.S] then 1 else 0)
   local right=(if self.keys[Enum.KeyCode.D] then 1 else 0)-(if self.keys[Enum.KeyCode.A] then 1 else 0)
   if UIS:IsKeyDown(Enum.KeyCode.LeftControl) or UIS:IsKeyDown(Enum.KeyCode.RightControl) then forward=0;right=0 end
-  self.focus+=(Vector3.new(-math.sin(self.yaw),0,-math.cos(self.yaw))*forward+Vector3.new(math.cos(self.yaw),0,-math.sin(self.yaw))*right)*self.distance*math.min(dt,.1)*.6
-  if self.cameraDrag then
-   local vertical=(if self.keys[Enum.KeyCode.E] then 1 else 0)-(if self.keys[Enum.KeyCode.Q] then 1 else 0)
-   self.focus=Vector3.new(self.focus.X,math.max(0,self.focus.Y+vertical*self.distance*math.min(dt,.1)*.6),self.focus.Z)
-  end
+  local vertical=(if self.keys[Enum.KeyCode.E] then 1 else 0)-(if self.keys[Enum.KeyCode.Q] then 1 else 0)
+  local boost=if UIS:IsKeyDown(Enum.KeyCode.LeftShift) or UIS:IsKeyDown(Enum.KeyCode.RightShift) then 2.5 else 1
+  local travel=self.distance*math.min(dt,.1)*.6*boost
+  self.focus+=(Vector3.new(-math.sin(self.yaw),0,-math.cos(self.yaw))*forward+Vector3.new(math.cos(self.yaw),0,-math.sin(self.yaw))*right+Vector3.new(0,vertical,0))*travel
+  self.focus=Vector3.new(self.focus.X,math.max(0,self.focus.Y),self.focus.Z)
  end
  self.pitch=Math.cameraPitch(self.pitch,self.focus.Y,self.distance)
  scene.camera.CFrame=CFrame.lookAt(self.focus+Vector3.new(math.sin(self.yaw)*math.cos(self.pitch),math.sin(self.pitch),math.cos(self.yaw)*math.cos(self.pitch))*self.distance,self.focus)
  local point,origin,direction=self:pointer()
+ if self.mode=="Terrain" then
+  local brushPoint=if not self.cameraDrag and not self.paused and self.view:isScene(mouse) then point else nil
+  scene:brushFootprint(brushPoint,self.brush.radius)
+  local stroke=self.terrainStroke
+  if stroke and brushPoint then
+   stroke.elapsed+=math.min(dt,.1)
+   if stroke.elapsed>=.05 then self:paintTerrain(brushPoint,stroke.elapsed);stroke.elapsed=0 end
+  elseif stroke then stroke.previous=nil;stroke.elapsed=0 end
+  return
+ end
  if self.placingStart and point and self.view:isScene(mouse) then
   local used={};for _,p in self.state.document.spawns do used[p.slot]=true end
   local slot=1;while used[slot] do slot+=1 end
@@ -436,7 +609,7 @@ function Controller:step(dt)
     end
    end
   end
-  scene:sync(self.state.document,self.catalog)
+  scene:sync(self.state.document,self.catalog,true)
   scene:snapFeedback(self.snapPreview and self.snapPreview.target,not self.snapPreview or self.snapPreview.valid)
  end
  if self.placing and point and self.view:isScene(mouse) then
@@ -486,6 +659,7 @@ function Controller:enter()
    if self.paletteDrag then
     local start=self.paletteDrag;self.paletteDrag=nil
     if point and (mouse-start).Magnitude>6 and self.view:isScene(mouse) then self:place(point) end
+   elseif self.terrainStroke then self:finishTerrain(false)
    elseif self.gesture then self:finishGesture(false) end
   end
  end)
@@ -493,7 +667,7 @@ function Controller:enter()
   if self.cameraDrag and input.UserInputType==Enum.UserInputType.MouseMovement then
    self.cameraDelta+=Vector2.new(input.Delta.X,input.Delta.Y)
   end
-  if input.UserInputType==Enum.UserInputType.MouseWheel and not self.paused and not UIS:GetFocusedTextBox() and not self.view:isModal() and self.view:isScene(self:mousePosition()) then self.distance=math.clamp(self.distance*math.exp(-input.Position.Z*.12),20,1600) end
+  if input.UserInputType==Enum.UserInputType.MouseWheel and not self.paused and not self.gesture and not self.terrainStroke and not UIS:GetFocusedTextBox() and not self.view:isModal() and self.view:isScene(self:mousePosition()) then self:zoom(input.Position.Z) end
  end)
  connect(UIS.WindowFocusReleased,function() self:cancel();self.keys={};self:refresh() end)
  connect(UIS.TextBoxFocused,function() self:stopCamera();self.keys={} end)

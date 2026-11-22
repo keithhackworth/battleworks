@@ -1,23 +1,23 @@
-# In-game World Builder proof of concept
+# BattleWorks World Editor
 
 Open **Main Menu → World Editor**. No Studio plugin or loopback bridge is needed
 for authoring. **← Main Menu** returns home; the draft and undo history stay in
 this client session. The existing Studio plugin is retained for compatibility.
 
-This is a desktop-first editor for a new 230 × 230 world with a flat base floor. It uses the
+The editor starts with a 230 × 230 world and a flat base floor. It uses the
 existing catalog, authoring-v2 JSON document, native model placement math, and
 compiler/export pipeline. It never edits the running arena.
 
 ## Mouse and keyboard workflow
 
-1. Browse the **Asset Library** in the top-right panel. Click directory tiles to
+1. Browse the **Object Library** in the bottom dock. Click directory tiles to
    drill into the actual asset hierarchy, and **↑** to go up. Leaf tiles show
-   native 3D thumbnails. Search finds names and complete paths across folders;
+   native 3D thumbnails. Search finds names and complete paths across folders. **Recent** shows the last 12 placed asset types;
    Next pages through up to 24 entries at a time.
 2. Drag an asset tile onto the terrain and release. A translucent green preview
    follows the cursor. Red means the placement is invalid. Alternatively click
    a tile to arm it, then click the ground. Each successful placement creates a
-   separate instance and selects it. Escape or Q cancels an armed placement.
+   separate instance and selects it. **Repeat** leaves the asset armed for more placements. Escape cancels an armed placement.
 3. Click an object to select it. In **Move**, drag its body freely on the ground
    or use the red X / blue Z anchors. The green **Y** anchor raises/lowers it.
    In **Rotate**, choose **Tilt X**, **Yaw Y** or **Tilt Z** on the left and drag
@@ -32,19 +32,50 @@ compiler/export pipeline. It never edits the running arena.
 5. Grid snapping starts **OFF**. Toggle it and choose 0.1–50 studs when useful.
    Rotation snaps to 15° when grid snapping is enabled. The visual grid shows
    bounded major lines on fine grids; snapping still uses the exact entered size.
-6. Right-drag orbits down to eye level; Shift+right-drag or middle-drag pans
-   in the screen plane. WASD moves across the scene, E/Q raises/lowers the
-   viewpoint while a camera drag is held, and the wheel zooms. **F** or
-   Frame world resets the camera. Use a desktop window around 1280 × 720 or larger.
+6. Right-drag orbits down to eye level. Middle-drag or Shift+right-drag pans.
+   WASD moves across the scene, Q/E lowers/raises the camera, and Shift increases travel speed.
+   Scroll over the viewport to zoom toward the cursor. **F** focuses the selection,
+   **Home** frames the entire world, and the inspector controls mouse sensitivity.
+   Use **Tools**, **Inspector**, and **Object Library** to make more space for the viewport.
 
 Shortcuts: **1** Move, **2** Rotate, **3** Scale;
 **Ctrl/Cmd+D** duplicate; **Delete/Backspace** delete; **Ctrl/Cmd+Z** undo;
 **Ctrl/Cmd+Y** or **Ctrl/Cmd+Shift+Z** redo; **G** toggle snapping.
-Shortcuts yield to focused text fields. Roblox's own Escape menu is preserved;
-Q is an alternative cancel key when not holding a camera drag. Opening CoreGui or losing window focus cancels
+Shortcuts yield to focused text fields. Roblox's own Escape menu is preserved.
+Opening CoreGui or losing window focus cancels
 an active gesture. Every complete drag is one undo action, not one action per frame.
 
-The current format supports uniform scaling only. Stretch remains removed.
+The inspector shows local dimensions for all placed assets and allows axis resizing
+for stretchable native blocks. Imported assemblies retain uniform scaling.
+The editor remembers the last edited scale for each asset during the session.
+**Copy scale** and **Apply copied scale** transfer the uniform multiplier between assets.
+
+**Open**, **Save**, **Save As**, and **Save & Play Test** use the existing server
+world service. **New World** is undoable, and opening a world puts the
+previous draft one Undo away. Change width or depth in **World Settings**.
+The editor rejects a reduction that would cut through an object or starting area.
+
+The document and compiler still use rectangular bounds. Terrain brushes edit elevation within
+those bounds. Boundary shapes and editable river paths are separate milestones.
+
+## Sculpt and play-test terrain
+
+1. Open **Main Menu → World Editor** and choose **New World**. Set width and depth before sculpting.
+2. Choose **Terrain → Raise Terrain**. Move the orange footprint over the ground and drag to form a hill.
+3. Choose **Lower Terrain** and drag beside the hill. **Smooth Terrain** blends nearby heights. **Flatten Terrain** brings the brush area toward the inspector’s chosen elevation.
+4. Set **Radius**, **Strength**, and **Falloff** in the brush inspector. A falloff of zero gives an even brush. Higher values soften the edge. Each drag is one Undo or Redo action. Escape cancels a stroke.
+5. **Save**, then **Open** the saved world to restore the terrain. Place five start zones on relatively level ground before selecting **Save & Play Test**.
+6. In Studio, run the playtest in **Classic** using **ServerStorage → BattleWorksStudio → GameMode**, then drive up the hill and into the depression. Published private playtests use the existing saved-world travel flow.
+
+Terrain is an optional height grid in the existing world document. Each axis uses 4–36 cells and heights are stored in eighth-stud increments between −96 and +96 studs. The editor updates only changed chunks during a drag. The playtest uses the same triangulated surface for tank height and slope, with native queryable ground parts for character collision, scanners, and projectiles. Legacy worlds without terrain retain their flat floor. The grid supports one elevation per horizontal point. Vertical caves, overhangs, and river tools are outside this milestone.
+
+### Terrain Traversability
+
+Turn on **Terrain Traversability** in the Terrain inspector. The overlay uses the same uphill grip calculation as the simulation. Green means both drivetrains have a useful uphill reserve, yellow means tracks have the reserve, and red means neither can reliably climb. It reads the ground material and covers sculpted terrain and solid single-block ramps. Multipart and irregular assets may have no overlay. The colors estimate uphill performance with an operational drive and leave local footprint support, crest clearance, momentum, steering, and bus power to the simulation.
+
+On an incline, the drivetrain spends grip countering downhill gravity before it can accelerate, brake, or turn. Tracks retain useful grip through steeper grades. On level ground the existing propulsion and grip budgets still apply. The provisional dry-grass tuning gives both drivetrains useful grip at 15°, favors tracks at 32°, and causes both to slide back at 44°. The 55° support ceiling on constructed faces is a geometric safeguard. Heightfield movement also rejects abrupt or wall-like rises while allowing downhill movement and falls.
+
+For a live Studio check, make slopes near 15°, 32°, and 44° using both sculpted grass and placed ramps. With comparable drivetrain allocations, drive both tank types uphill, coast and brake downhill, stop halfway up, and turn across the incline. Check seams, raised-deck clearance, and falling at a gap. Reload the same save, then profile a session with 30 tanks to check the server accumulator and contact timings.
 
 ## Ramps and raised bridges
 
@@ -66,7 +97,7 @@ The current format supports uniform scaling only. Stretch remains removed.
   remains optional and rounds rotation to 15°. If a ring is edge-on to the
   camera, orbit slightly or enter its numeric angle.
 - **Collision: SOLID** is required for tank support; NONE stays decorative.
-  Save & Play uses the same server simulation. Gentle upper faces up to 45° can
+  Save & Play uses the same server simulation. Structurally reachable upper faces can
   support tanks, with a maximum 1.5-stud step. Tall ends/sides remain obstacles.
   Tanks can drive underneath a raised deck if their hull has enough clearance.
   Destructible decks lose support on destruction; normal reset restores it.
@@ -83,13 +114,13 @@ Save & Play and JSON export. Existing Y=0, yaw-only worlds remain compatible.
 
 ## Save and play without commands
 
-Choose **My Worlds / Save & Play** on the left of the editor.
+Choose **Save & Play Test** on the editor toolbar.
 
 1. Enter a world name and a World ID (letters first, then letters/numbers/underscores/hyphens).
 2. **Save** stores the current layout privately. **Save & Play** saves, validates,
    then launches it through the existing simulator.
-3. Use **Open** on a saved row to restore it for editing. Opening replaces the
-   current draft and clears its undo history. Open an existing save before updating
+3. Use **Open** on a saved row to restore it for editing. Undo can restore the previous draft.
+   Open an existing save before updating
    it; change World ID to create a separate slot. Refresh lists your saved worlds.
 4. Return with the battle HUD's **Main Menu**, then open World Editor to continue
    your draft. In a private battle server, Play BattleWorks re-enters that world.
@@ -413,13 +444,12 @@ Uphill track points are no longer rejected solely for being above the chassis's
 step limit. A real footprint contact can support the opposite track over a narrow
 board edge or short joint; when every contact leaves or the object is destroyed,
 the existing gravity path takes over. Platform side contacts account for the
-supported hull incline, and a small normal tolerance preserves 45° ramps with
+supported hull incline, and a small normal tolerance preserves boundary ramps with
 native CFrame precision. These changes preserve underneath clearance and tall-end
 blocking and do not introduce a second physics engine.
 
-Regression tests cover 30°, 40° and 45° narrow boards, 0.35-stud platform joins,
-per-tick support/pitch checks, both tank types, X/Z approach directions and native
-45° float rounding. CLI tests do not establish native rendering or driving feel.
+Regression tests cover gentle narrow boards, 0.35-stud platform joins,
+per-tick support/pitch checks, both tank types, X/Z approach directions, and floating-point support tolerance.
 
 With the Rojo plugin connected, sync the source and **stop/restart Play** once
 (ModuleScripts are cached during a running session). Re-test the reported board:

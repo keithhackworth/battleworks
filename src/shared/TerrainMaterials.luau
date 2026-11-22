@@ -5,6 +5,8 @@ M.Definitions=table.freeze({
  Pavement=table.freeze({speed=1,wetSpeed=.92,static=16,kinetic=12,wetGrip=.72,depthDrag=0,trackBenefit=0}),
  Dirt=table.freeze({speed=.94,wetSpeed=.74,static=10,kinetic=7,wetGrip=.7,depthDrag=.25,trackBenefit=.1}),
  Grass=table.freeze({speed=1,wetSpeed=.85,static=12,kinetic=8,wetGrip=.65,depthDrag=.1,trackBenefit=.04}),
+ Rock=table.freeze({speed=1,wetSpeed=.86,static=14,kinetic=10,wetGrip=.68,depthDrag=0,trackBenefit=0}),
+ Sand=table.freeze({speed=.78,wetSpeed=.71,static=9,kinetic=6,wetGrip=.8,depthDrag=.3,trackBenefit=.22}),
  Snow=table.freeze({speed=.8,wetSpeed=.62,static=5,kinetic=3,wetGrip=.8,depthDrag=.5,trackBenefit=.25}),
  Ice=table.freeze({speed=.9,wetSpeed=.78,static=.04,kinetic=.025,wetGrip=.65,depthDrag=0,trackBenefit=0}),
  Mud=table.freeze({speed=.65,wetSpeed=.45,static=4,kinetic=2.5,wetGrip=.8,depthDrag=.7,trackBenefit=.35}),
@@ -33,5 +35,21 @@ function M.annotate(part,profile)
  part:SetAttribute("TerrainWetnessObservable",true)
  part:SetAttribute("TerrainDepth",profile.depth)
  part:SetAttribute("TerrainConsistency",profile.consistency)
+end
+local aliases={Asphalt="Pavement",Concrete="Pavement",Pavement="Pavement",Ground="Dirt",Dirt="Dirt",Grass="Grass",LeafyGrass="Grass",
+ Rock="Rock",Slate="Rock",Cobblestone="Rock",Wood="Rock",WoodPlanks="Rock",Sand="Sand",Snow="Snow",Ice="Ice",Mud="Mud"}
+local dryProfiles,wetProfiles={},{}
+function M.fromMaterial(material,wet)
+ local name=if type(material)=="string" then material else material and material.Name
+ local kind=aliases[name] or "Grass"
+ local profiles=if wet then wetProfiles else dryProfiles
+ if not profiles[kind] then
+  local loose=if kind=="Sand" or kind=="Mud" then .7 elseif kind=="Dirt" then .4 else 0
+  profiles[kind]=M.profile(kind,if wet then 1 else 0,loose,1)
+ end
+ return profiles[kind]
+end
+function M.forGround(material,zone)
+ return if zone=="Mud" then M.fromMaterial("Mud") else M.fromMaterial(material,zone=="Water")
 end
 return M

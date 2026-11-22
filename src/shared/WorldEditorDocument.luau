@@ -59,7 +59,7 @@ function Document.export(doc,catalog)
  assert(doc.schemaVersion==2 and #doc.objects<=512,"Invalid authoring document")
  assert(doc.id:match("^[a-zA-Z][a-zA-Z0-9_-]*$") and doc.id~="default" and #doc.id<=64,"Invalid world ID")
  assert(type(doc.name)=="string" and doc.name:find("%S") and #doc.name<=100,"World name must contain 1–100 characters")
- Settings.validate({width=doc.settings.width,depth=doc.settings.depth,ground=doc.settings.ground,boundary=doc.settings.boundary,spawns=doc.spawns,zones={}},true)
+ Settings.validate({width=doc.settings.width,depth=doc.settings.depth,ground=doc.settings.ground,boundary=doc.settings.boundary,terrain=doc.settings.terrain,spawns=doc.spawns,zones={}},true)
  local ids={}
  for _,spawn in doc.spawns do assert(not ids[spawn.id],"Duplicate starting position ID");ids[spawn.id]=true end
  for _,o in doc.objects do assert(not ids[o.id],"Duplicate object ID");ids[o.id]=true;Document.checkEntry(doc,catalog,o) end

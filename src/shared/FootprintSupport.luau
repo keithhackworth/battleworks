@@ -1,8 +1,10 @@
 -- Structural support is the intersection of real top faces with the chassis,
 -- never an expanded platform or a bridge inserted into the world.
 local Geometry=require(script.Parent.WorldObjectGeometry)
+local Traversal=require(script.Parent.TerrainTraversal)
 local F={}
 local epsilon=1e-6
+local maxGradient=math.tan(math.rad(Traversal.MaxSupportAngle))
 local function cross(a,b,c)return (b.x-a.x)*(c.z-a.z)-(b.z-a.z)*(c.x-a.x)end
 local function clip(poly,axis,limit,sign)
  local out={}
@@ -63,9 +65,14 @@ function F.solve(boxes,position,yaw,shape)
   end
  end
  local contacts={};local weight,sx,sz,sy,sxx,szz,sxz,sxy,szy=0,0,0,0,0,0,0,0,0
+ local material,bestArea=nil,0
  for _,candidate in candidates do
   -- Distant lower decks cannot prop up a chassis above a cliff or upper level.
   if candidate.height>=highest-Geometry.MaxStep-.001 then
+   local profile=candidate.box.material
+   if profile and (candidate.area>bestArea or (candidate.area==bestArea and material and profile.surfaceType<material.surfaceType)) then
+    material=profile;bestArea=candidate.area
+   end
    local w=candidate.area/#candidate.poly
    for _,p in candidate.poly do
     local x,z=position.X+c*p.x-s*p.z,position.Z-s*p.x-c*p.z
@@ -84,9 +91,9 @@ function F.solve(boxes,position,yaw,shape)
  local determinant=xx*zz-xz*xz
  local roll,pitch=0,0
  if determinant>epsilon then roll=(xy*zz-zy*xz)/determinant;pitch=(zy*xx-xy*xz)/determinant end
- roll=math.clamp(roll,-1,1);pitch=math.clamp(pitch,-1,1)
+ roll=math.clamp(roll,-maxGradient,maxGradient);pitch=math.clamp(pitch,-maxGradient,maxGradient)
  local height=-math.huge
  for _,p in contacts do height=math.max(height,p.y-roll*p.x-pitch*p.z)end
- return height,math.atan(pitch),math.atan(roll)
+ return height,math.atan(pitch),math.atan(roll),material
 end
 return F

@@ -175,6 +175,8 @@ try {
     ['InnovationLabClient'],
     ['InnovationLabTravel'],
     ['InnovationLabEntry'],
+    ['TerrainEditorRuntime'],
+    ['TerrainTraversal'],
   ];
   if (groupIndex === null) {
     const worldTests = spawnSync(process.execPath, ['--test', ...(await readdir('tests')).filter(name=>name.endsWith('.test.js')).sort().map(name=>'tests/'+name)], { stdio: 'inherit' });
@@ -193,6 +195,10 @@ try {
       if(suite==='RoyaleTeamClientIntegration'){
         const source=await readFile('tests/RoyaleClientIntegration.spec.luau','utf8');
         tests+='\ndo\n'+source.replace('IsStudio=function() return false end','IsStudio=function() return true end')+'\nend\n';
+      } else if(suite==='TerrainEditorRuntime'){
+        const harness=await readFile('tests/ServerIntegration.spec.luau','utf8');
+        const editor=await readFile('tests/InGameEditorRuntime.spec.luau','utf8');
+        tests+='\ndo\n'+harness.slice(0,harness.indexOf('Vector3.one='))+editor.slice(0,editor.indexOf('check(controller.scene.world.Parent'))+await readFile('tests/TerrainEditorRuntime.spec.luau','utf8')+'\nend\n';
       } else if(suite==='InnovationLabClient'){
         const source=await readFile('tests/RoyaleClientIntegration.spec.luau','utf8');
         const setup=source.slice(0,source.indexOf('local client=require("RoyaleClient")'));

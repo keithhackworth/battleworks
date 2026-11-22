@@ -4,6 +4,10 @@ local Components = require(script.Parent.VehicleComponents)
 local Drive = require(script.Parent.RattlerDrive)
 local Motion = require(script.Parent.VehicleMotion)
 local Surface = require(script.Parent.SurfacePhysics)
+local Materials = require(script.Parent.TerrainMaterials)
+local Heightfield = require(script.Parent.WorldHeightfield)
+local Traversal = require(script.Parent.TerrainTraversal)
+local Geometry = require(script.Parent.WorldObjectGeometry)
 local Contacts = require(script.Parent.VehicleContacts)
 local Config = require(script.Parent.TankConfig)
 local Environment = require(script.Parent.Environment)
@@ -56,8 +60,9 @@ local function suspension(state, dt)
 end
 function Simulation.moveBody(state,command,dt,mapSize,environment,deferContacts)
  local c=Components.get(state)
- local support=state.groundPlaneY or 0
- if environment then support+=Environment.pose(environment,state.position,state.yaw,c.Chassis) end
+ local ground,pitch,roll,_,_,material=0,0,0,nil,nil,nil
+ if environment then ground,pitch,roll,_,_,material=Environment.pose(environment,state.position,state.yaw,c.Chassis) end
+ local support=ground+(state.groundPlaneY or 0)
  Environment.applyForces(environment,state)
  local supported=state.position.Y<=support+0.001 and Motion.ensure(state).Y<=0 and (state.lift or 0)<=0.001
  Motion.beginStep(state,dt)
@@ -69,19 +74,36 @@ function Simulation.moveBody(state,command,dt,mapSize,environment,deferContacts)
  if state.position.Y>support+0.001 then state.lift=math.max(state.lift or 0,state.position.Y-support) end
  local airborne=Recoil.airborne(state)
  local speedScale=if environment then select(3,Environment.sample(environment,state.position.X,state.position.Z,state.position.Y+1.5)) else 1
- local static,kinetic,resistance,passiveGrip,terrainScale=Surface.contact(environment and environment.physicsSurfaces,state.position,state.yaw,c.Chassis,c.Mobility.Kind)
+ local base=if environment and environment.weather~="IceWind" and math.abs(pitch)+math.abs(roll)>.0001 then material else nil
+ local static,kinetic,resistance,passiveGrip,terrainScale=Surface.contact(if base then nil else environment and environment.physicsSurfaces,state.position,state.yaw,c.Chassis,c.Mobility.Kind,base)
  if environment and environment.materialTerrain then
   -- Apply the approved tracked base factor ONCE, after footprint blending.
-  terrainScale*=if c.Mobility.Kind=="Tracked"then require(script.Parent.TerrainMaterials).TrackedBaseSpeed else 1
-  local normal=math.max(.1,math.cos(state.groundPitch or 0)*math.cos(state.groundRoll or 0))
-  static*=normal;kinetic*=normal
+  terrainScale*=if c.Mobility.Kind=="Tracked"then Materials.TrackedBaseSpeed else 1
  end
  speedScale*=terrainScale;state.terrainSpeedScale=speedScale
- if not airborne then Drive.ground(state,command,dt,speedScale,static,kinetic,resistance,passiveGrip) end
+ if not airborne then
+  state.terrainSpeedScale=Drive.ground(state,command,dt,speedScale,static,kinetic,resistance,passiveGrip,pitch,roll)
+ end
  -- No traction, steering, coasting or ground damping is applied in the air.
  state.motionStepStart=state.position; state.motionYawStart=state.yaw
  state.motionForwardStart=state.motionForwardTravel or 0; state.motionYawTravelStart=state.motionYawTravel or 0
  Motion.integrateHorizontal(state,dt)
+ local terrain=environment and environment.terrainSettings
+ if terrain then
+  local start,finish=state.motionStepStart,state.position
+  local distance=math.sqrt((finish.X-start.X)^2+(finish.Z-start.Z)^2)
+  if distance>1e-5 then
+   local a=Heightfield.sample(terrain.terrain,terrain.width,terrain.depth,start.X,start.Z)
+   local b=Heightfield.sample(terrain.terrain,terrain.width,terrain.depth,finish.X,finish.Z)
+   -- High traction cannot lift the hull through a wall-like heightfield
+   -- jump. Only uphill moves are rejected; the suspension still handles falls.
+   if b-a>math.min(Geometry.MaxStep,distance*Traversal.MaxGradient)+.01 then
+    state.position=start;state.motionForwardTravel=state.motionForwardStart
+    local velocity=Motion.ensure(state)
+    Motion.setVelocity(state,Vector3.new(0,velocity.Y,0))
+   end
+  end
+ end
  if not deferContacts then
   Contacts.solve({Contacts.body("vehicle",state,c.Chassis)},Contacts.obstacles(environment,mapSize or Vector2.new(Config.ArenaLimit*2,Config.ArenaLimit*2)),dt)
  end

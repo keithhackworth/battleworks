@@ -55,11 +55,11 @@ function State:snapValue(value) return if self.snap then math.round(value/self.g
 function State:nextId()
  local n=1; while self:find("object_"..n) do n+=1 end; return "object_"..n
 end
-function State:add(item,position,bounds)
+function State:add(item,position,bounds,scale)
  assert(#self.document.objects<512,"Object limit: 512")
  local id=self:nextId()
  self:change(function()
-  table.insert(self.document.objects,{id=id,type=item.id,asset=item.model,position={self:snapValue(position[1]),0,self:snapValue(position[3])},rotation={0,0,0},scale=item.defaultScale or 1,solid=item.solid or false,destructible=item.destructible or false,hp=item.hp or 100,bounds=copy(bounds or item.size)})
+  table.insert(self.document.objects,{id=id,type=item.id,asset=item.model,position={self:snapValue(position[1]),0,self:snapValue(position[3])},rotation={0,0,0},scale=scale or item.defaultScale or 1,solid=item.solid or false,destructible=item.destructible or false,hp=item.hp or 100,bounds=copy(bounds or item.size)})
   self.selection={[id]=true}
  end)
  return id

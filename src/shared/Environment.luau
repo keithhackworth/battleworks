@@ -5,6 +5,8 @@ local Playground=require(script.Parent.PlaygroundTerrain)
 local Surface=require(script.Parent.SurfacePhysics)
 local Motion=require(script.Parent.VehicleMotion)
 local WorldGeometry=require(script.Parent.WorldObjectGeometry)
+local Heightfield=require(script.Parent.WorldHeightfield)
+local Materials=require(script.Parent.TerrainMaterials)
 -- Gentle crosswind exceeds passive rolling resistance, not powered ice grip.
 Environment.IceWind=table.freeze({direction=Vector3.new(1,0,-0.35).Unit,maxForce=1.2,driftSpeed=1.5})
 Environment.WindyIce=table.freeze({staticFriction=Surface.Profiles.Ice.staticFriction,kineticFriction=Surface.Profiles.Ice.kineticFriction,resistance=Surface.Profiles.Ice.resistance,passiveGrip=0.15})
@@ -74,6 +76,10 @@ end
 function Environment.sample(data,x,z,maxHeight)
 	local height,kind,speed=0,if data.weather=="IceWind" then "Ice" else "Grass",1
  if data.playground then return Playground.sample(data.playground,x,z),"Grass",1 end
+ if data.terrainSettings then
+  local settings=data.terrainSettings
+  height=Heightfield.sample(settings.terrain,settings.width,settings.depth,x,z)
+ end
  local supportingSurface
 	for _,zone in data.zones do
 		if inside(zone,x,z) and data.weather~="IceWind" then kind=zone.kind; speed=zone.speed end
@@ -104,9 +110,9 @@ function Environment.pose(data,position,yaw,footprint)
  local shape=footprint or DefaultFootprint
  if data.playground then return Playground.pose(data.playground,position,yaw,shape)end
  local structural=data.worldObjects and data.worldObjects.footprintSupport
- local structureHeight,structurePitch,structureRoll
+ local structureHeight,structurePitch,structureRoll,structureMaterial
  if structural then
-  structureHeight,structurePitch,structureRoll=data.worldObjects:footprintSupport(position,yaw,shape)
+  structureHeight,structurePitch,structureRoll,structureMaterial=data.worldObjects:footprintSupport(position,yaw,shape)
  end
  local length,width=shape.ContactLength,shape.ContactWidth
 	local x,z=position.X,position.Z
@@ -150,8 +156,11 @@ function Environment.pose(data,position,yaw,footprint)
  end
  local center,front,rear,right,left=table.unpack(heights)
  local terrainHeight=math.max(center,(front+rear+right+left)/4)
- if structureHeight and structureHeight>=terrainHeight then return structureHeight,structurePitch,structureRoll,"Structure",1 end
+ if structureHeight and structureHeight>=terrainHeight then return structureHeight,structurePitch,structureRoll,"Structure",1,structureMaterial end
+ local material=if reference then reference.material
+  elseif data.terrainSettings then Materials.forGround(data.terrainSettings.ground.material,kind)
+  elseif kind=="Rock" or kind=="Log" then Materials.fromMaterial("Rock") else nil
 	return terrainHeight, math.atan2(front-rear,length),
-		math.atan2(right-left,width),kind,speed
+		math.atan2(right-left,width),kind,speed,material
 end
 return Environment

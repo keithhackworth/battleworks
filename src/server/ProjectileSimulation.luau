@@ -25,6 +25,17 @@ end
 function Projectiles.overlaps(part, point, radius)
 	local q=part.CFrame:PointToObjectSpace(point)
 	local half=part.Size/2
+ if part.Shape==Enum.PartType.Wedge then
+  local dx=math.max(0,math.abs(q.X)-half.X)
+  local y,z=q.Y,q.Z
+  if y>=-half.Y and z<=half.Z and y<=z*half.Y/half.Z then return dx<=radius end
+  local function edge(y1,z1,y2,z2)
+   local dy,dz=y2-y1,z2-z1
+   local t=math.clamp(((y-y1)*dy+(z-z1)*dz)/(dy*dy+dz*dz),0,1)
+   return (y-y1-dy*t)^2+(z-z1-dz*t)^2
+  end
+  return dx*dx+math.min(edge(-half.Y,-half.Z,-half.Y,half.Z),edge(-half.Y,half.Z,half.Y,half.Z),edge(half.Y,half.Z,-half.Y,-half.Z))<=radius*radius
+ end
 	if part.Shape==Enum.PartType.Ball then
 		local ax,ay,az=half.X^2,half.Y^2,half.Z^2
 		if q.X^2/ax+q.Y^2/ay+q.Z^2/az<=1 then return true end

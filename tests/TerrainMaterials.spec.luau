@@ -14,7 +14,7 @@ local function check(ok,m)count+=1;assert(ok,m)end
 local function near(a,b,epsilon)return math.abs(a-b)<(epsilon or .01)end
 local function environment(profile)
  local env=E.create(T.ReferenceSize);T.configure(env,T.ReferenceSize)
- env.trees={};env.playground.staticBoxes={}
+ env.trees={};env.playground.staticBoxes={};env.playground.course=nil;env.playground.configurationZones=nil
  env.physicsSurfaces=Surface.prepare({{id="uniform",shape="box",x=0,z=0,rx=1000,rz=1000,surface=profile}})
  return env
 end
@@ -133,7 +133,7 @@ end
 local Auto=require("PlaygroundAutonomy")
 for _,kind in {"Boomer","Rattler"}do
  local state=Sim.new(Vector3.new(150,0,0),kind)
- local record={state=state};Auto.hardware(record)
+ local record={state=state,hitbox=Instance.new("Part")};Auto.attach(record,1,1)
  local config=C.get(state);local profile=Materials.profile("Grass",0,0,1)
  local env=environment(profile)
  for _=1,300 do Sim.step(state,drive,1/60,T.ReferenceSize,env)end

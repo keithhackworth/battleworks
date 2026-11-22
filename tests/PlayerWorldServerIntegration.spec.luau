@@ -2,6 +2,11 @@ local arena=workspace:FindFirstChild("Arena")
 local worlds=network:FindFirstChild("PlayerWorlds")
 check(worlds and worlds.OnServerInvoke,"production server exposes saved-world service")
 local doc=require("WorldEditorDocument").fresh();doc.id="players_forest"
+local H=require("WorldHeightfield")
+doc.settings.terrain=H.new(230,230)
+H.brush(doc.settings.terrain,230,230,Vector3.new(-27,0,34.5),"Raise",20,7,1,0,1)
+H.brush(doc.settings.terrain,230,230,Vector3.new(45,0,-35),"Lower",22,12,1,0,1)
+local savedHeights=table.concat(doc.settings.terrain.heights,",")
 doc.spawns={{id="start_1",slot=1,position={-45,0,34.5},heading=90},{id="start_2",slot=2,position={45,0,34.5},heading=270},{id="start_3",slot=3,position={-70,0,-70},heading=0},{id="start_4",slot=4,position={70,0,-70},heading=0},{id="start_5",slot=5,position={0,0,80},heading=0}}
 doc.objects={{id="wall_1",type="builtin.block",asset="Builtin/BW_block",position={0,0,34.5},rotation={0,0,0},scale=1,bounds={.01,.01,.01},solid=true,destructible=true,hp=75}}
 doc.objects[2]={id="ramp_1",type="builtin.bridge",asset="Builtin/BW_bridge",position={0,8,-50},rotation={15,25,-5},scale=1,bounds={.01,.01,.01},solid=true,destructible=true,hp=75}
@@ -13,7 +18,7 @@ check(not worlds.OnServerInvoke(first,"Play",{id=doc.id,revision=1}).ok and aren
 session.OnServerEvent:Fire(first,"Leave",2);session.OnServerEvent:Fire(second,"Leave",2);advance(61)
 local oldScenery=arena:FindFirstChild("WorldScenery")
 result=worlds.OnServerInvoke(first,"Play",{id=doc.id,revision=1})
-check(result.ok and result.launch,"empty Studio battlefield accepts a validated saved-world launch")
+check(result.ok and result.launch,"empty Studio battlefield accepts a validated saved-world launch: "..tostring(result.message))
 check(oldScenery.destroyed and arena:GetAttribute("WorldId")==doc.id,"world swaps once after staging succeeds")
 check(arena:GetAttribute("MapWidth")==230 and arena:GetAttribute("Weather")=="Normal","simulation and replication use saved world dimensions/weather")
 local scenery=arena:FindFirstChild("WorldScenery")
@@ -25,14 +30,34 @@ local rampModel=scenery:FindFirstChild("ramp_1")
 local rampProxy=rampModel:FindFirstChild("WorldObstacleHitbox")
 local loaded=worlds.OnServerInvoke(first,"Load",doc.id)
 check(loaded.ok and loaded.document.objects[2].position[2]==8 and loaded.document.objects[2].rotation[1]==15 and loaded.document.objects[2].rotation[3]==-5,"save/load preserves elevated pitch/yaw/roll")
+check(table.concat(loaded.document.settings.terrain.heights,",")==savedHeights,"server save and reload preserves the sculpted hill and pit exactly")
 check(rampProxy.CFrame.Position.Y>8 and math.abs(rampProxy.CFrame.UpVector.Z)>.1,"saved tilted item loads with an elevated oriented collision proxy")
 session.OnServerEvent:Fire(first,"Enter",3);advance(4)
 check(snapshots[boomerId] and snapshots[rattlerId] and not snapshots["102"],"saved-world entry preserves owned tank collections without orphaned opponents")
 check(math.abs(snapshots[boomerId].position.Z-34.5)<1e-5,"existing tank spawn code consumes saved settings")
 command.throttle=1
-for _=1,180 do tick(false)end
+local peak=snapshots[boomerId].position.Y
+for _=1,180 do tick(false);peak=math.max(peak,snapshots[boomerId].position.Y)end
+check(peak>2,"tank climbs the saved hill during the production playtest")
 check(snapshots[boomerId].position.X< -5,"existing server physics blocks movement through player-authored scenery")
 local areas=arena:FindFirstChild("Environment")
+local surface=areas:FindFirstChild("AuthoredTerrain")
+check(surface and #surface:GetChildren()>0 and not arena:FindFirstChild("Floor").CanQuery,"terrain displaces the flat collision floor")
+local wedges=0
+for _,part in surface:GetChildren() do
+ check(part.CanCollide and part.CanQuery,"terrain surfaces participate in engine collision and queries")
+ if part.Shape==Enum.PartType.Wedge then wedges+=1 end
+end
+check(wedges>0,"raised and lowered ground generate native sloped triangle surfaces")
+do
+ local env=require("Environment").create(Vector2.new(230,230),"Normal")
+ env.terrainSettings=loaded.document.settings
+ local tank=Sim.new(Vector3.new(45,0,-35),"Rattler")
+ local neutral=require("InputCommand").neutral()
+ for _=1,120 do Sim.step(tank,neutral,1/60,Vector2.new(230,230),env) end
+ check(tank.position.Y< -4 and math.abs(tank.position.Y-tank.groundHeight)<.05,
+  "a tank settles on the saved pit below the old flat floor")
+end
 for slot=1,5 do
  local area=areas:FindFirstChild("StartingPosition"..slot)
  check(area and area:FindFirstChild("Number"..slot),"playable world retains numbered caution starting markings")

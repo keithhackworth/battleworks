@@ -5,6 +5,7 @@ local Geometry=require(game.ReplicatedStorage.Shared.WorldObjectGeometry)
 local Visual=require(game.ReplicatedStorage.Shared.AssetGeometry)
 local Fit=require(script.Parent.MeshCollisionFit)
 local Footprint=require(game.ReplicatedStorage.Shared.FootprintSupport)
+local Materials=require(game.ReplicatedStorage.Shared.TerrainMaterials)
 local Objects={}; Objects.__index=Objects
 local function finite(n) return type(n)=="number" and n==n and math.abs(n)<math.huge end
 function Objects.new()
@@ -70,6 +71,8 @@ function Objects:add(model,spec)
   table.insert(proxies,proxy);table.insert(bodies,body);table.insert(geometries,geometry)
  end
  end
+ local material=Materials.fromMaterial((model.PrimaryPart or Visual.parts(model)[1]).Material)
+ for _,geometry in geometries do geometry.material=material end
  local record={id=spec.id,model=model,proxy=proxies[1],proxies=proxies,body=bodies[1],bodies=bodies,geometry=geometries[1],geometries=geometries,visuals=visuals,solid=v.solid,destructible=v.destructible,maxHealth=v.hp,health=v.hp,destroyed=v.destructible and v.hp<=0}
  for _,proxy in proxies do self.byPart[proxy]=record end
  self.records[record.id]=record
@@ -82,7 +85,7 @@ function Objects:footprintSupport(position,yaw,shape)
    for _,box in record.geometries do table.insert(boxes,box)end
   end
  end
- return Footprint.solve(boxes,position,yaw,shape)
+ if #boxes>0 then return Footprint.solve(boxes,position,yaw,shape) end
 end
 function Objects:support(x,z,maxHeight)
  local height,surface

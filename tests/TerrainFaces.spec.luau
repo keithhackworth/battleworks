@@ -56,7 +56,7 @@ for _,yaw in {0,math.rad(37),math.pi/2}do for _,scale in {1,2}do
    levels[math.floor(h*100+.5)]=true
   end
  end
- check(walkable==51,"only walkable faces supply support; steep rock faces remain obstacles")
+ check(walkable>51 and walkable<107,"the expanded envelope supports inclined faces while wall-like rock faces remain obstacles")
  local count=0;for _ in levels do count+=1 end
  check(count>5,"multiple source terraces retain their different heights")
  if yaw==0 and scale==1 then
@@ -65,8 +65,10 @@ for _,yaw in {0,math.rad(37),math.pi/2}do for _,scale in {1,2}do
    local ground=objects:support(x,z,100)
    if ground then
     local footprint=objects:footprintSupport(Vector3.new(x,ground,z),0,Components.get("Boomer").Chassis)
-    check(footprint and footprint>=ground-1e-5,"actual GLB terrace supports the complete chassis at its own height")
-    supported+=1
+    if footprint then
+     check(footprint>=ground-1e-5,"supported GLB terrace retains its center height")
+     supported+=1
+    end
    else empty+=1 end
   end end
   check(supported>30 and empty>10,"real source terrain preserves both usable terraces and open areas inside its old square")

@@ -1,6 +1,7 @@
 -- Oriented native bounding boxes, shared by authoring and server world contacts.
 -- Position retains the existing placement contract: lowest visual point, not pivot.
-local G={MaxStep=1.5,MinSupportNormal=math.cos(math.rad(45))}
+local Traversal=require(script.Parent.TerrainTraversal)
+local G={MaxStep=1.5,MinSupportNormal=Traversal.MinSupportNormal}
 local function dot(a,b)return a.X*b.X+a.Y*b.Y+a.Z*b.Z end
 function G.axes(rotation)
  local x,y,z=math.rad(rotation[1]),math.rad(rotation[2]),math.rad(rotation[3])
@@ -102,8 +103,8 @@ function G.spawnBlocked(box,yaw,spawn,radius)
  return math.abs(p.c*x-p.s*z)<p.hx+radius and math.abs(p.s*x+p.c*z)<p.hz+radius
 end
 function G.planeHeight(box,x,z)
- -- Native CFrame components have float precision; an authored 45-degree face
- -- must not switch between walkable and non-walkable at the exact limit.
+ -- Keep a geometric ceiling for wall-like faces. The drivetrain sets the
+ -- useful uphill limit within the supported range.
  if box.up.Y<G.MinSupportNormal-1e-6 then return nil end
  local top=if box.vertices then box.vertices[1] else box.position+box.up*(box.size.Y/2)
  return top.Y-(box.up.X*(x-top.X)+box.up.Z*(z-top.Z))/box.up.Y
@@ -151,8 +152,9 @@ function G.canTraverse(box,position,radius,state)
   -- as a flat body whose entire bottom is at center height.
   local dx,dz=point.X-position.X,point.Z-position.Z
   local s,c=math.sin(state.yaw),math.cos(state.yaw)
-  local pitch=math.clamp(state.groundPitch or 0,-math.pi/4,math.pi/4)
-  local roll=math.clamp(state.groundRoll or 0,-math.pi/4,math.pi/4)
+  local limit=math.rad(Traversal.MaxSupportAngle)
+  local pitch=math.clamp(state.groundPitch or 0,-limit,limit)
+  local roll=math.clamp(state.groundRoll or 0,-limit,limit)
   support+=(-s*dx-c*dz)*math.tan(pitch)+(c*dx-s*dz)*math.tan(roll)
  end
  return point and point.Y<=support+G.MaxStep+.001

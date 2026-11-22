@@ -51,6 +51,9 @@ if not studio and game.PrivateServerId and game.PrivateServerId~="" and game.Pri
  if join.SourcePlaceId==game.PlaceId
   and type(data)=="table" and data.mode=="InnovationLab" and data.owner==arriving.UserId then
   gameMode="InnovationLab";labOwner=arriving.UserId
+ elseif join.SourcePlaceId==game.PlaceId and type(data)=="table" and data.battleWorksWorld==true
+  and data.owner==arriving.UserId and type(data.id)=="string" and type(data.revision)=="number" then
+  gameMode="Classic"
  end
 end
 local isLab=gameMode=="InnovationLab"
@@ -127,7 +130,10 @@ elseif isRoyale and not worldSettings and not singleModelWorld then mapSize=Play
 local function createEnvironment(size)
  local data=Environment.create(size,weather)
  if singleModelWorld or isLab then data.rocks={}; data.logs={}; data.trees={}; data.zones={} end
- if worldSettings then data.zones=table.clone(worldSettings.zones);data.startPositions=worldSettings.spawns end
+ if worldSettings then
+  data.zones=table.clone(worldSettings.zones);data.startPositions=worldSettings.spawns
+  if worldSettings.terrain then data.terrainSettings=worldSettings end
+ end
  if isRoyale and not isLab and not worldSettings then
   Playground.configure(data,size)
  end
@@ -315,7 +321,7 @@ local function findSpawn(tank)
   return true
  end
  local function supported(p)
-  if tank.characterUserId~=nil then
+  if tank.characterUserId~=nil or environment.terrainSettings then
    local height=Environment.sample(environment,p.X,p.Z,p.Y+1.5)
    return Vector3.new(p.X,height,p.Z)
   end

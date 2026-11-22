@@ -27,6 +27,7 @@ mt.__mul=function(a,b)
  return frame(a.p+rotate(a.m,b.p),m)
 end
 CFrame.new=function(x,y,z) return frame(if type(x)=="number" then Vector3.new(x,y,z) else x or Vector3.zero) end
+CFrame.fromMatrix=function(p,x,y,z) return frame(p,{x.X,y.X,z.X,x.Y,y.Y,z.Y,x.Z,y.Z,z.Z}) end
 CFrame.Angles=function(x,y,z)
  local cx,sx,cy,sy,cz,sz=math.cos(x),math.sin(x),math.cos(y),math.sin(y),math.cos(z),math.sin(z)
  return frame(Vector3.zero,{1,0,0,0,cx,-sx,0,sx,cx})*frame(Vector3.zero,{cy,0,sy,0,1,0,-sy,0,cy})*frame(Vector3.zero,{cz,-sz,0,sz,cz,0,0,0,1})

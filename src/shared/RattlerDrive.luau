@@ -3,13 +3,22 @@
 local Components=require(script.Parent.VehicleComponents)
 local Motion=require(script.Parent.VehicleMotion)
 local Surface=require(script.Parent.SurfacePhysics)
+local Traversal=require(script.Parent.TerrainTraversal)
 local Drive={}
-function Drive.ground(state,command,dt,surfaceScale,static,kinetic,resistance,passiveGrip)
+function Drive.ground(state,command,dt,surfaceScale,static,kinetic,resistance,passiveGrip,pitch,roll)
  local c=Components.get(state); local p,m=c.Drivetrain,c.Mobility
  local v=Motion.ensure(state); local omega=state.angularVelocity.Y
  local fx,fz=-math.sin(state.yaw),-math.cos(state.yaw)
  local rx,rz=math.cos(state.yaw),-math.sin(state.yaw)
- local forward=v.X*fx+v.Z*fz; local lateral=v.X*rx+v.Z*rz
+ local forward=v.X*fx+v.Z*fz
+ local normalAcceleration=math.max(0,c.Recoil.Gravity-(state.motionExternalY or 0)/state.motionMass)
+ local downhill,sidehill,climb
+ downhill,sidehill,static,kinetic,climb=Traversal.contact(pitch,roll,m.Kind=="Tracked",static or Surface.Profiles.Normal.staticFriction,kinetic or Surface.Profiles.Normal.kineticFriction)
+ if downhill~=0 or sidehill~=0 then
+  local delta=normalAcceleration*dt
+  v=Vector3.new(v.X+(downhill*fx+sidehill*rx)*delta,v.Y,v.Z+(downhill*fz+sidehill*rz)*delta)
+  if downhill*command.throttle<0 then surfaceScale*=climb end
+ end
  local target=command.throttle*(if command.throttle>=0 then p.Speed else p.ReverseSpeed)*surfaceScale*(state.drivePerformance or 1)
  local acceleration=p.Acceleration or 2880; local braking=p.Braking or 2880; local coast=(p.CoastDrag or 1440)*(resistance or 1)
  local rated=(if command.throttle>=0 then p.Speed else p.ReverseSpeed)*surfaceScale*(state.drivePerformance or 1)
@@ -36,7 +45,6 @@ function Drive.ground(state,command,dt,surfaceScale,static,kinetic,resistance,pa
  local lat=(dx*rx+dz*rz)/m.LateralGrip
  local spin=dw*state.yawInertia/(state.motionMass*c.Chassis.Radius)
  local demand=math.sqrt(long*long+lat*lat+spin*spin)
- local normalAcceleration=math.max(0,c.Recoil.Gravity-(state.motionExternalY or 0)/state.motionMass)
  state.motionBrakeAcceleration=math.min(braking,(kinetic or Surface.Profiles.Normal.kineticFriction)*normalAcceleration*m.LongitudinalGrip)
  -- Unpowered resistance is a request budget, distinct from the full grip
  -- available to actual propulsion/differential steering. Wheel positioning
@@ -51,6 +59,7 @@ function Drive.ground(state,command,dt,surfaceScale,static,kinetic,resistance,pa
  state.motionTraction=scale
  Motion.setVelocity(state,Vector3.new(v.X+dx*scale,v.Y,v.Z+dz*scale))
  Motion.setYawVelocity(state,omega+dw*scale)
+ return surfaceScale
 end
 -- Compatibility entry for direct steering tests/older callers. Production
 -- Simulation uses ground() then advances the common pose exactly once.

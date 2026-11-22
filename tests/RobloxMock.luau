@@ -19,12 +19,14 @@ local function vectorType(kind)
 		if key == "Magnitude" then return math.sqrt(v.X ^ 2 + v.Y ^ 2 + v.Z ^ 2) end
 		if key == "Unit" then return v / v.Magnitude end
 		if key == "Lerp" then return function(a,b,t) return a+(b-a)*t end end
+		if key == "Dot" then return function(a,b) return a.X*b.X+a.Y*b.Y+a.Z*b.Z end end
+		if key == "Cross" then return function(a,b) return new(a.Y*b.Z-a.Z*b.Y,a.Z*b.X-a.X*b.Z,a.X*b.Y-a.Y*b.X) end end
 	end
 	mt.__add = function(a, b) return new(a.X + b.X, a.Y + b.Y, a.Z + b.Z) end
 	mt.__sub = function(a, b) return new(a.X - b.X, a.Y - b.Y, a.Z - b.Z) end
 	mt.__mul = function(a, b) return new(a.X * b, a.Y * b, a.Z * b) end
 	mt.__div = function(a, b) return new(a.X / b, a.Y / b, a.Z / b) end
-	return { new = new, zero = new(0, 0, 0) }
+	return { new = new, zero = new(0, 0, 0), one = new(1, 1, 1) }
 end
 local Vector2, Vector3 = vectorType("Vector2"), vectorType("Vector3")
 local originalTypeof = typeof

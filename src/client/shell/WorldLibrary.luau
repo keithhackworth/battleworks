@@ -61,6 +61,7 @@ function Library:fetch(epoch)
     if not self:current(token) then return end
     self.revisions[world.id]=saved.revision
     self.document=self.onLoad(saved.document)
+    self.copyMode=false
     self.name.Text=saved.document.name;self.id.Text=saved.document.id
     self.status.Text="Opened revision "..saved.revision..". Return to editing, or Save & Play."
    end)
@@ -69,10 +70,13 @@ function Library:fetch(epoch)
  self.status.Text=(if result.temporary then "STUDIO: saves last only until you stop Play. " elseif result.storage=="Http" then "Saved privately to the BattleWorks world service. " else "Saved privately to your Roblox account. ").."Open a save before updating it. Opening replaces your draft. Change World ID for a separate save."
  if result.teamTest then self.status.Text="TEAM TEST • Your Studio saves. Open a world, then Save & Play to load it for everyone in this test session."..(if #result.worlds==0 then " No saves found for this account; check that you saved in local Studio using the same account." else "") end
 end
-function Library:open(document)
+function Library:open(document,mode)
  self.epoch+=1;self.busy=false;self.document=document
- self.name.Text=document.name;self.id.Text=document.id;self.frame.Visible=true
- self:run(function(epoch) self:fetch(epoch) end)
+ self.name.Text=document.name;self.id.Text=if mode=="copy" then "" else document.id;self.frame.Visible=true
+ self.copyMode=mode=="copy"
+ if mode=="save" then self:saveWorld(false)
+ elseif self.copyMode then self.status.Text="Enter a new World ID and select Save."
+ else self:run(function(epoch) self:fetch(epoch) end) end
 end
 function Library:saveWorld(play)
  self:run(function(epoch)
@@ -80,9 +84,11 @@ function Library:saveWorld(play)
   local copy=require(game.ReplicatedStorage.Shared.WorldEditorState).copy(self.document)
   if play then require(game.ReplicatedStorage.Shared.WorldSettings).ready(copy) end
   copy.id=self.id.Text;copy.name=self.name.Text
-  local saved=self:call("Save",{document=copy,revision=self.revisions[copy.id] or 0})
+  if self.copyMode then assert(copy.id~="" and copy.id~=self.document.id,"Enter a different World ID to save a copy.") end
+  local saved=self:call("Save",{document=copy,revision=if self.copyMode then 0 else self.revisions[copy.id] or 0})
   if not self:current(epoch) then return end
   self.revisions[copy.id]=saved.revision
+  self.copyMode=false
   self.document.id=copy.id;self.document.name=copy.name
   self.status.Text=(if saved.temporary then "STUDIO SESSION ONLY • " elseif saved.storage=="Http" then "Saved to world service • " else "Saved to your account • ").."revision "..saved.revision
   if play then

@@ -3,7 +3,10 @@ local Placement=require(game.ReplicatedStorage.Shared.ModelPlacement)
 local Paths=require(game.ReplicatedStorage.Shared.AssetPaths)
 local View={};View.__index=View
 local ink=Color3.fromRGB(235,241,230)
-local accent=Color3.fromRGB(244,178,78)
+local accent=Color3.fromRGB(174,135,255)
+local panel=Color3.fromRGB(29,28,39)
+View.buttonColor=Color3.fromRGB(46,44,62)
+View.activeColor=Color3.fromRGB(92,65,145)
 local function make(class,parent,props)
  local p=Instance.new(class);for key,value in props do p[key]=value end;p.Parent=parent;return p
 end
@@ -11,10 +14,12 @@ local function text(parent,name,value,height)
  return make("TextLabel",parent,{Name=name,Text=value,Size=UDim2.new(1,-8,0,height or 24),BackgroundTransparency=1,TextColor3=ink,TextSize=13,Font=Enum.Font.GothamMedium,TextXAlignment=Enum.TextXAlignment.Left,TextWrapped=true})
 end
 local function button(parent,name,value,size,position)
- return make("TextButton",parent,{Name=name,Text=value,Size=size or UDim2.new(1,0,0,32),Position=position or UDim2.fromOffset(0,0),TextColor3=ink,BackgroundColor3=Color3.fromRGB(43,61,66),TextSize=13,Font=Enum.Font.GothamMedium,Selectable=true,BorderSizePixel=0,AutoButtonColor=true})
+ local control=make("TextButton",parent,{Name=name,Text=value,Size=size or UDim2.new(1,0,0,32),Position=position or UDim2.fromOffset(0,0),TextColor3=ink,BackgroundColor3=View.buttonColor,TextSize=13,Font=Enum.Font.GothamMedium,Selectable=true,BorderSizePixel=0,AutoButtonColor=true})
+ make("UICorner",control,{CornerRadius=UDim.new(0,5)})
+ return control
 end
 local function scrolling(parent,name,size,position)
- local p=make("ScrollingFrame",parent,{Name=name,Size=size,Position=position,BackgroundColor3=Color3.fromRGB(23,35,39),BorderSizePixel=0,CanvasSize=UDim2.fromOffset(0,0),AutomaticCanvasSize=Enum.AutomaticSize.Y,ScrollBarThickness=5,ScrollBarImageColor3=accent,Active=true})
+ local p=make("ScrollingFrame",parent,{Name=name,Size=size,Position=position,BackgroundColor3=panel,BorderSizePixel=0,CanvasSize=UDim2.fromOffset(0,0),AutomaticCanvasSize=Enum.AutomaticSize.Y,ScrollBarThickness=5,ScrollBarImageColor3=accent,Active=true})
  return p
 end
 local function rectContains(p,point)
@@ -51,15 +56,25 @@ function View.new(context)
  make("UIListLayout",self.properties,{Padding=UDim.new(0,6),SortOrder=Enum.SortOrder.LayoutOrder})
  local order=0
  local function row(p) order+=1;p.LayoutOrder=order;return p end
- row(text(self.properties,"PropertiesTitle","BATTLEWORKS PROPERTIES",24))
+ row(text(self.properties,"WorldTitle","WORLD SETTINGS",24))
+ self.dimensions={}
+ for _,axis in {"width","depth"} do
+  row(text(self.properties,axis.."Label",if axis=="width" then "Width (studs)" else "Depth (studs)",20))
+  self.dimensions[axis]=row(make("TextBox",self.properties,{Name=axis,Size=UDim2.new(1,-8,0,28),Text="",ClearTextOnFocus=false,TextColor3=ink,BackgroundColor3=View.buttonColor,Font=Enum.Font.Code,TextSize=14}))
+ end
+ row(text(self.properties,"CameraSensitivityLabel","Camera sensitivity",20))
+ self.cameraSensitivity=row(make("TextBox",self.properties,{Name="CameraSensitivity",Size=UDim2.new(1,-8,0,28),Text="1",ClearTextOnFocus=false,TextColor3=ink,BackgroundColor3=View.buttonColor,Font=Enum.Font.Code,TextSize=14}))
+ row(text(self.properties,"PropertiesTitle","OBJECT PROPERTIES",24))
  self.selected=row(text(self.properties,"SelectedObject","Select a placed object to inspect it.",46));self.selected.Size=UDim2.new(1,-8,0,0);self.selected.AutomaticSize=Enum.AutomaticSize.Y
- for _,spec in {{"x","Position X"},{"y","Height Y (lowest point)"},{"z","Position Z"},{"pitch","Tilt X / pitch (degrees)"},{"yaw","Yaw Y (degrees)"},{"roll","Tilt Z / roll (degrees)"},{"scale","Uniform scale"},{"hp","Durability / HP"}} do
+ for _,spec in {{"x","Position X"},{"y","Height Y (lowest point)"},{"z","Position Z"},{"pitch","Tilt X / pitch (degrees)"},{"yaw","Yaw Y (degrees)"},{"roll","Tilt Z / roll (degrees)"},{"scale","Uniform scale"},{"sizeX","Local width (studs)"},{"sizeY","Local height (studs)"},{"sizeZ","Local depth (studs)"},{"hp","Durability / HP"}} do
   row(text(self.properties,spec[1].."Label",spec[2],20))
   self.fields[spec[1]]=row(make("TextBox",self.properties,{Name=spec[1],Size=UDim2.new(1,-8,0,28),Text="",PlaceholderText="—",ClearTextOnFocus=false,TextColor3=ink,BackgroundColor3=Color3.fromRGB(43,61,66),TextSize=14,Font=Enum.Font.Code}))
  end
  self.solid=row(button(self.properties,"Collision","Collision: —"));self.destructible=row(button(self.properties,"Destructible","Destructible: —"))
  self.influences=row(text(self.properties,"Influences","Fixed objects • height / tilt • uniform scale",100))
  self.duplicate=row(button(self.properties,"Duplicate","Duplicate  •  Ctrl+D"))
+ self.copyScale=row(button(self.properties,"CopyScale","Copy scale"))
+ self.pasteScale=row(button(self.properties,"PasteScale","Apply copied scale"))
  local controls=make("Frame",frame,{Name="EditorOptions",Position=UDim2.fromOffset(12,66),Size=UDim2.fromOffset(208,76),BackgroundColor3=Color3.fromRGB(23,35,39),Active=true,BorderSizePixel=0});self.options=controls
  self.snap=button(controls,"GridSnap","Grid snap: OFF",UDim2.fromOffset(132,28),UDim2.fromOffset(8,8))
  self.grid=make("TextBox",controls,{Name="GridSize",Text="1",ClearTextOnFocus=false,Size=UDim2.fromOffset(48,28),Position=UDim2.fromOffset(150,8),BackgroundColor3=Color3.fromRGB(43,61,66),TextColor3=ink,TextSize=14,Font=Enum.Font.Code})
@@ -94,13 +109,128 @@ function View.new(context)
  self.import=button(overlay,"ImportJSON","Import JSON (replaces draft)",UDim2.fromOffset(226,30),UDim2.fromOffset(232,86));self.import.ZIndex=11
  self.closeExport=button(overlay,"CloseExport","Close",UDim2.fromOffset(72,30),UDim2.new(1,-88,1,-38));self.closeExport.ZIndex=11
  self.closeExport.Activated:Connect(function() overlay.Visible=false end)
+ frame.BackgroundColor3=Color3.fromRGB(17,16,24)
+ toolbar.BackgroundColor3=panel
+ title.Text="WORLD EDITOR";title.Position=UDim2.fromOffset(14,0);title.Size=UDim2.fromOffset(220,26)
+ local commands=scrolling(toolbar,"EditorCommands",UDim2.new(1,-16,0,36),UDim2.fromOffset(8,28))
+ commands.AutomaticCanvasSize=Enum.AutomaticSize.X;commands.ScrollingDirection=Enum.ScrollingDirection.X
+ make("UIListLayout",commands,{FillDirection=Enum.FillDirection.Horizontal,SortOrder=Enum.SortOrder.LayoutOrder,Padding=UDim.new(0,5)})
+ self.newWorld=button(commands,"NewWorld","New World")
+ self.openWorld=button(commands,"OpenWorld","Open")
+ self.saveWorld=button(commands,"SaveWorld","Save")
+ self.saveAs=button(commands,"SaveWorldAs","Save As")
+ self.toolShelf=button(commands,"ToggleTools","Tools")
+ self.inspect=button(commands,"Inspector","Inspector")
+ self.assets=button(commands,"Assets","Object Library")
+ self.terrain=button(commands,"TerrainMode","Terrain")
+ for index,control in {self.back,self.newWorld,self.openWorld,self.saveWorld,self.saveAs,self.undo,self.redo,self.terrain,self.toolShelf,self.inspect,self.assets,self.placeStart,self.worlds,self.export} do
+  control.Parent=commands;control.LayoutOrder=index
+  control.Size=UDim2.fromOffset(({100,90,55,55,74,68,68,78,62,80,108,156,156,100})[index],31)
+ end
+ self.worlds.Text="Save & Play Test";self.worlds.BackgroundColor3=View.activeColor
+ self.export.BackgroundColor3=View.buttonColor
+ local help=text(toolbar,"ToolbarHelp","",24);help.Position=UDim2.fromOffset(175,0);help.Size=UDim2.new(1,-185,0,24);help.TextColor3=accent
+ for control,description in {
+  [self.newWorld]="Start a blank draft. Undo restores the current world.",
+  [self.openWorld]="Browse your private saved worlds.",
+  [self.saveWorld]="Save a new revision of this world.",
+  [self.saveAs]="Save this draft under a different World ID.",
+  [self.inspect]="Show map dimensions and selected-object properties.",
+  [self.assets]="Show or hide the searchable native asset library.",
+  [self.worlds]="Save the draft and launch the existing private playtest.",
+ } do
+  self:on(control.MouseEnter,function() help.Text=description end)
+  self:on(control.MouseLeave,function() if help.Text==description then help.Text="" end end)
+ end
+ self.left=scrolling(frame,"ToolShelf",UDim2.fromOffset(208,400),UDim2.fromOffset(6,74))
+ local toolTitle=text(self.left,"ToolTitle","TOOLS",24);toolTitle.Position=UDim2.fromOffset(8,2)
+ self.terrainTools={}
+ for index,name in {"Raise","Lower","Smooth","Flatten"} do
+  self.terrainTools[name]=button(self.left,"Terrain"..name,name.." Terrain",UDim2.new(1,-18,0,29),UDim2.fromOffset(8,28+(index-1)*34))
+ end
+ self.tools.Select=button(self.left,"Select","Select / Navigate")
+ for index,name in {"Select","Move","Rotate","Scale","Snap"} do
+  local control=self.tools[name];control.Parent=self.left
+  control.Position=UDim2.fromOffset(8,28+(index-1)*34);control.Size=UDim2.new(1,-18,0,29)
+ end
+ self.delete.Parent=self.left;self.delete.Position=UDim2.fromOffset(8,198);self.delete.Size=UDim2.new(1,-18,0,29)
+ for _,record in {{controls,233},{rotations,315},{magnets,385}} do
+  record[1].Parent=self.left;record[1].Position=UDim2.fromOffset(0,record[2]);record[1].BackgroundColor3=panel
+ end
+ pane.BackgroundColor3=panel;pane.AnchorPoint=Vector2.zero
+ label.Text="OBJECT LIBRARY";label.Position=UDim2.fromOffset(10,1);label.Size=UDim2.fromOffset(160,24)
+ self.repeatPlacement=button(pane,"RepeatPlacement","Repeat: Off",UDim2.fromOffset(92,24),UDim2.new(1,-102,0,2))
+ self.recentAssets=button(pane,"RecentAssets","Recent",UDim2.fromOffset(62,24),UDim2.new(1,-169,0,2))
+ self.up.Position=UDim2.fromOffset(10,28)
+ self.breadcrumb.Position=UDim2.fromOffset(50,28);self.breadcrumb.Size=UDim2.new(.48,-54,0,28)
+ self.search.Position=UDim2.new(.48,0,0,26);self.search.Size=UDim2.new(.52,-10,0,28)
+ self.assetScroll.Position=UDim2.fromOffset(10,58);self.assetScroll.Size=UDim2.new(1,-20,1,-85)
+ grid.CellSize=UDim2.fromOffset(132,116)
+ self.frameWorld.Text="Frame world  •  Home"
+ self.brushPanel=scrolling(frame,"BrushSettings",UDim2.fromOffset(0,0),UDim2.fromOffset(0,0))
+ make("UIPadding",self.brushPanel,{PaddingLeft=UDim.new(0,10),PaddingTop=UDim.new(0,8)})
+ make("UIListLayout",self.brushPanel,{Padding=UDim.new(0,6),SortOrder=Enum.SortOrder.LayoutOrder})
+ self.brushFields={}
+ text(self.brushPanel,"BrushTitle","TERRAIN BRUSH",27).LayoutOrder=1
+ for i,spec in {{"radius","Radius (studs)",26},{"strength","Strength",24},{"falloff","Falloff (0–1)",.65},{"elevation","Flatten elevation (studs)",0}} do
+  text(self.brushPanel,spec[1].."Label",spec[2],22).LayoutOrder=i*2
+  self.brushFields[spec[1]]=make("TextBox",self.brushPanel,{Name=spec[1],LayoutOrder=i*2+1,Size=UDim2.new(1,-14,0,28),
+   Text=tostring(spec[3]),ClearTextOnFocus=false,TextColor3=ink,BackgroundColor3=View.buttonColor,Font=Enum.Font.Code,TextSize=14})
+ end
+ self.traversability=button(self.brushPanel,"TerrainTraversability","Terrain Traversability")
+ self.traversability.LayoutOrder=10;self.traversability.Size=UDim2.new(1,-14,0,34)
+ self.traversalLegend=text(self.brushPanel,"TraversalLegend","Uphill estimate\nGreen · Easy\nYellow · Requires treads\nRed · Unreliable climb",84)
+ self.traversalLegend.LayoutOrder=11;self.traversalLegend.Visible=false
+ self.hint.Text="Wheel zoom · MMB pan · RMB orbit · WASD / Q E fly · Shift boost · F focus · Home frame"
+ self.dockOpen=true;self.inspectorOpen=true
+ self:on(self.toolShelf.Activated,function()
+  self.toolsOpen=not self.left.Visible;self:layout()
+ end)
+ self:on(self.assets.Activated,function() self.dockOpen=not self.dockOpen;self:layout() end)
+ self:on(self.inspect.Activated,function() self.inspectorOpen=not self.inspectorOpen;self:layout() end)
+ self:on(frame:GetPropertyChangedSignal("AbsoluteSize"),function() self:layout() end)
+ self:layout()
  return self
+end
+function View:layout()
+ local size=self.frame.AbsoluteSize
+ local compact=size.X>0 and size.X<830
+ local toolsOpen=if self.toolsOpen==nil then not compact else self.toolsOpen
+ local left=if toolsOpen then (if compact then 0 else 220) else 0
+ local right=if self.inspectorOpen then (if compact then math.min(174,math.floor(size.X*.36)) else 258) else 0
+ local dock=if self.dockOpen and not self.terrainActive then (if size.Y>0 then math.min(218,math.floor(size.Y*.38)) else 218) else 0
+ self.toolbar.Size=UDim2.new(1,0,0,68)
+ self.left.Visible=toolsOpen;self.left.Size=UDim2.new(0,if compact then math.min(208,math.floor(size.X*.3)) else 208,1,-118)
+ self.left.ZIndex=if compact then 5 else 1
+ self.viewport.Position=UDim2.fromOffset(left,74);self.viewport.Size=UDim2.new(1,-left-right-6,1,-dock-122)
+ self.properties.Visible=self.inspectorOpen and not self.terrainActive;self.properties.Position=UDim2.new(1,-right,0,74)
+ self.properties.Size=UDim2.new(0,math.max(right-6,0),1,-122)
+ self.brushPanel.Position=self.properties.Position;self.brushPanel.Size=self.properties.Size
+ self.brushPanel.Visible=self.inspectorOpen and self.terrainActive==true
+ self.palette.Visible=self.dockOpen and not self.terrainActive;self.palette.Position=UDim2.new(0,left,1,-dock-48)
+ self.palette.Size=UDim2.new(1,-left-right-6,0,dock)
+ self.status.Position=UDim2.new(0,8,1,-46);self.status.Size=UDim2.new(1,-16,0,24)
+ self.hint.Position=UDim2.new(0,8,1,-23);self.hint.Size=UDim2.new(1,-16,0,22)
+ self.inspect.BackgroundColor3=if self.inspectorOpen then View.activeColor else View.buttonColor
+ self.assets.BackgroundColor3=if self.dockOpen then View.activeColor else View.buttonColor
+ self.toolShelf.BackgroundColor3=if toolsOpen then View.activeColor else View.buttonColor
+end
+function View:terrainMode(enabled,operation)
+ if enabled and not self.terrainActive then self.toolsOpen=true end
+ self.terrainActive=enabled
+ self.terrain.BackgroundColor3=if enabled then View.activeColor else View.buttonColor
+ for name,control in self.terrainTools do
+  control.Visible=enabled;control.BackgroundColor3=if operation==name then View.activeColor else View.buttonColor
+ end
+ for _,control in self.tools do control.Visible=not enabled end
+ for _,control in {self.delete,self.options,self.rotationPanel,self.magnets} do control.Visible=not enabled end
+ self:layout()
 end
 function View:on(event,callback) table.insert(self.connections,event:Connect(callback)) end
 function View:message(message) self.status.Text=tostring(message):gsub("^.-:%d+:%s*","") end
 function View:isModal() return self.overlay.Visible or (self.library and self.library.frame.Visible) end
 function View:isScene(point)
- return self.frame.Visible and not self:isModal() and not rectContains(self.placeStart,point) and not rectContains(self.worlds,point) and not rectContains(self.rotationPanel,point) and not rectContains(self.magnets,point) and rectContains(self.viewport,point) and not rectContains(self.toolbar,point) and not rectContains(self.palette,point) and not rectContains(self.properties,point) and not rectContains(self.options,point) and not rectContains(self.status,point) and not rectContains(self.hint,point)
+ return self.frame.Visible and not self:isModal() and rectContains(self.viewport,point) and not (self.left.Visible and rectContains(self.left,point))
 end
 function View:thumbnail(parent,item,assets)
  local templates=assets and assets:FindFirstChild("Templates")
@@ -153,6 +283,11 @@ function View:selection(entry,item)
  for _,field in self.fields do field.TextEditable=true end
  self.selected.Text=if entry then entry.id.."\n"..entry.asset else "Select a placed object to inspect it."
  local values=if entry then {x=entry.position[1],y=entry.position[2],z=entry.position[3],pitch=entry.rotation[1],yaw=entry.rotation[2],roll=entry.rotation[3],scale=entry.scale,hp=entry.hp} else {}
+ for axis,key in {"sizeX","sizeY","sizeZ"} do
+  local field=self.fields[key]
+  field.TextEditable=entry~=nil and item.stretchable==true and not item.zone
+  if entry then values[key]=entry.bounds[axis]*entry.scale*(entry.stretch and entry.stretch[axis] or 1) end
+ end
  for key,field in self.fields do field.Text=if values[key] then string.format("%.5g",values[key]) else "" end
  self.solid.Text="Collision: "..(if entry then (if entry.solid then "SOLID" else "NONE") else "—")
  self.destructible.Text="Destructible: "..(if entry then (if entry.destructible then "YES" else "NO") else "—")

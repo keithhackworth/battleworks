@@ -1,6 +1,8 @@
 -- Cosmetic terrain and queryable cover from the same deterministic terrain data.
 local Builder = {}
 local StartingAreas=require(game.ReplicatedStorage.Shared.StartingAreas)
+local Heightfield=require(game.ReplicatedStorage.Shared.WorldHeightfield)
+local TerrainSurface=require(game.ReplicatedStorage.Shared.WorldTerrainSurface)
 local function part(parent,name,size,frame,color,material,shape,query)
 	local p=Instance.new("Part")
 	p.Name=name; p.Size=size; p.CFrame=frame; p.Color=color; p.Material=material
@@ -21,7 +23,19 @@ function Builder.build(arena,data,floor)
 	local old=arena:FindFirstChild("Environment")
 	if old then old:Destroy() end
 	local folder=Instance.new("Folder"); folder.Name="Environment"; folder.Parent=arena
- for _,spawn in data.startPositions or {} do if spawn.slot then StartingAreas.make(folder,spawn,false) end end
+ local settings=data.terrainSettings
+ if floor then
+  if settings then
+   floor.Transparency=1;floor.CanCollide=false;floor.CanQuery=false
+  elseif floor.Transparency==1 then
+   floor.Transparency=0;floor.CanQuery=true
+  end
+ end
+ if settings then TerrainSurface.new(folder,settings,true):all() end
+ for _,spawn in data.startPositions or {} do if spawn.slot then
+  local height=if settings then Heightfield.sample(settings.terrain,settings.width,settings.depth,spawn.position[1],spawn.position[3]) else 0
+  StartingAreas.make(folder,spawn,false,height)
+ end end
 	for _,zone in data.zones do
 		local color=if zone.kind=="Water" then Color3.fromRGB(67,156,183) elseif zone.kind=="Mud" then Color3.fromRGB(103,70,43) else Color3.fromRGB(73,105,57)
 		local patch=part(folder,zone.kind,Vector3.new(zone.rx*2,0.16,zone.rz*2),CFrame.new(zone.x,0.08,zone.z),color,

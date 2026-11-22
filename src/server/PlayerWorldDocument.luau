@@ -20,10 +20,10 @@ function Adapter.validate(raw,items,assets)
  keys(raw,{schemaVersion=true,id=true,name=true,description=true,settings=true,objects=true,spawns=true,gameplay=true})
  assert(raw.schemaVersion==2,"Expected authoring schema v2")
  assert(type(raw.description)=="string" and #raw.description<=1000,"Description exceeds 1000 characters")
- keys(raw.settings,{width=true,depth=true,ground=true,boundary=true})
+ keys(raw.settings,{width=true,depth=true,ground=true,boundary=true,terrain=true})
  keys(raw.settings.ground,{material=true,color=true});array(raw.settings.ground.color,3)
  array(raw.objects,512);array(raw.spawns,5);keys(raw.gameplay,{})
- local settings={width=raw.settings.width,depth=raw.settings.depth,ground=raw.settings.ground,boundary=raw.settings.boundary,spawns=raw.spawns,zones={}}
+ local settings={width=raw.settings.width,depth=raw.settings.depth,ground=raw.settings.ground,boundary=raw.settings.boundary,terrain=raw.settings.terrain,spawns=raw.spawns,zones={}}
  local ids={}
  for _,spawn in raw.spawns do
   keys(spawn,{id=true,tank=true,slot=true,position=true,heading=true});array(spawn.position,3)

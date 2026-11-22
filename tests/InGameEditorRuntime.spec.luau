@@ -55,7 +55,7 @@ local http={JSONDecode=function(_,raw)
 end,JSONEncode=function(_,value)
  if value.schemaVersion then lastExport=State.copy(value);return "{\"schemaVersion\":2}" end
  published=State.copy(value);return "catalog"
-end}
+end,GenerateGUID=function()return "11111111-1111-1111-1111-111111111111" end}
 local replicated=Instance.new("Folder")
 local indexService=game.GetService
 game.GetService=function(self,name)if name=="HttpService" then return http end;return indexService(self,name)end
@@ -541,7 +541,7 @@ controller.scene.pick=savedPick;controller.pointer=oldPointer
 -- Ground-only, numbered areas use the actual editor placement and history path.
 controller.state=State.new(require("WorldEditorDocument").editorFresh());controller:refresh()
 check(#controller.state.document.spawns==0,"new editor draft requires designer-placed starting areas")
-check(controller.view.placeStart.Parent==controller.view.toolbar,"starting-zone placement is discoverable in the top toolbar")
+check(controller.view.placeStart.Parent.Parent==controller.view.toolbar,"starting-zone placement is discoverable in the top toolbar")
 for i,p in {Vector3.new(-60,0,-60),Vector3.new(0,0,-60),Vector3.new(60,0,-60),Vector3.new(-60,0,60),Vector3.new(60,0,60)} do
  controller.view.placeStart.Activated:Fire();controller:place(p)
  local spawn=controller.state.document.spawns[i]
@@ -554,6 +554,37 @@ controller.view.fields.x.Text="65";controller.view.fields.x.FocusLost:Fire()
 check(controller.state:find(spawn.id).position[1]==65,"starting area supports ground position editing")
 controller.view.delete.Activated:Fire();check(#controller.state.document.spawns==4,"starting areas can be deleted")
 controller:history(false);check(#controller.state.document.spawns==5,"undo restores numbered starting area")
+do
+ local view=controller.view
+ view.dimensions.width.Text="300";view.dimensions.width.FocusLost:Fire()
+ check(controller.state.document.settings.width==300 and controller.scene.floor.Size.X==300,"width updates both the draft and viewport")
+ view.dimensions.width.Text="25";view.dimensions.width.FocusLost:Fire()
+ check(controller.state.document.settings.width==300 and #controller.state.document.spawns==5,"shrinking across starts is rejected without losing data")
+ controller:history(false)
+ check(controller.scene.floor.Size.X==230,"undo restores the floor dimensions")
+ view.newWorld.Activated:Fire()
+ check(#controller.state.document.spawns==0 and controller.state.document.id:find("^world_"),"New World clears the draft with a unique save ID")
+ controller:history(false)
+ check(#controller.state.document.spawns==5,"New World is undoable")
+ view.saveAs.Activated:Fire()
+ check(controller.library.frame.Visible and controller.library.copyMode and controller.library.id.Text=="","Save As opens the existing library in copy mode")
+ controller.library:hide()
+ view.assets.Activated:Fire()
+ check(not view.palette.Visible,"the toolbar collapses the asset dock")
+ view.assets.Activated:Fire()
+ controller:choose(controller.catalog.byPath["Trees/Oak"]);controller:place(Vector3.new(0,0,70))
+ view.fields.scale.Text="1.5";view.fields.scale.FocusLost:Fire()
+ view.repeatPlacement.Activated:Fire()
+ controller:choose(controller.catalog.byPath["Trees/Oak"])
+ check(controller:candidate(Vector3.new(68,0,0)).scale==1.5,"new placement inherits the last edited scale of the asset")
+ controller:place(Vector3.new(68,0,0))
+ check(controller.placing~=nil and controller:selected().scale==1.5,"repeat placement remains armed and uses the preview scale")
+ controller:cancel()
+ controller:focusSelected()
+ check(controller.focus.X==68,"F focus targets the selected asset")
+ controller:frameWorld()
+ check(controller.focus==Vector3.zero,"frame world restores the scene-centered camera")
+end
 controller:destroy()
 check(cameraBindings.BattleWorksEditorCamera==nil,"destroy removes camera binding")
 Instance.new=baseFactory;game.GetService=oldService

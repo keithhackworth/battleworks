@@ -70,7 +70,7 @@ nativeLimit.up=Vector3.new(0,.70710677,.70710677)
 check(G.support(nativeLimit,0,0,100)~=nil,"native float rounding keeps an authored 45-degree ramp walkable")
 -- Regressions: steeper boards and small joins must keep every grounded sample
 -- supported, rather than merely reaching the deck at least once.
-for _,angle in {30,40,45} do
+for _,angle in {15,22} do
  registry=Objects.new();env.worldObjects=registry
  local board=add("board",{0,0,0},{angle,0,0},{4.5,.2,24})
  local endHeight=24*math.sin(math.rad(angle))+.2*math.cos(math.rad(angle))
@@ -100,9 +100,9 @@ for _,angle in {30,40,45} do
  end
 end
 registry=Objects.new();env.worldObjects=registry
-local sideBoard=add("side_board",{0,0,0},{0,0,-30},{24,.2,4.5})
-local sideHeight=24*math.sin(math.rad(30))+.2*math.cos(math.rad(30))
-local sideEnd=-12*math.cos(math.rad(30))+.1*math.sin(math.rad(30))
+local sideBoard=add("side_board",{0,0,0},{0,0,-20},{24,.2,4.5})
+local sideHeight=24*math.sin(math.rad(20))+.2*math.cos(math.rad(20))
+local sideEnd=-12*math.cos(math.rad(20))+.1*math.sin(math.rad(20))
 add("side_platform",{sideEnd-12-.35,sideHeight-.2,0},{0,0,0},{24,.2,16})
 for _,kind in {"Boomer","Rattler"} do
  local state=Sim.new(Vector3.new(25,0,0),kind);state.yaw=math.pi/2

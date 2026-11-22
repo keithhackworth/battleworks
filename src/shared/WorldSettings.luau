@@ -1,5 +1,6 @@
 -- Validated editor metadata; it never contains executable world behavior.
 local Settings={}
+local Heightfield=require(script.Parent.WorldHeightfield)
 local function finite(n) return type(n)=="number" and n==n and math.abs(n)<math.huge end
 local materials={Grass=true,Concrete=true,Sand=true,Slate=true,Ice=true,Mud=true,Asphalt=true,WoodPlanks=true}
 local function vector(v,n,limit)
@@ -17,6 +18,7 @@ function Settings.validate(v,draft)
  assert(type(v)=="table","Missing world settings")
  for _,n in {v.width,v.depth} do assert(finite(n) and n>=25 and n<=2000 and n%1==0,"World dimensions must be integers in [25,2000]") end
  assert(v.boundary==true,"World boundaries must be enabled")
+ if v.terrain~=nil then Heightfield.validate(v.terrain,v.width,v.depth) end
  assert(type(v.ground)=="table" and materials[v.ground.material],"Invalid ground material")
  vector(v.ground.color,3,255); for _,c in v.ground.color do assert(c>=0,"Invalid ground color") end
  assert(type(v.spawns)=="table","Missing starting positions")
@@ -48,7 +50,7 @@ function Settings.blocked(position,body,radius)
 end
 function Settings.checkSpawns(v,bodies)
  for _,spawn in v.spawns do
-  local p=Vector3.new(table.unpack(spawn.position))
+  local p=Vector3.new(spawn.position[1],Heightfield.sample(v.terrain,v.width,v.depth,spawn.position[1],spawn.position[3]),spawn.position[3])
   for _,body in bodies do assert(not Settings.blocked(p,body,if Settings.numbered(v) then 20 else 6),"Starting position "..tostring(spawn.slot or spawn.tank).." intersects solid "..tostring(body.id)) end
  end
 end
@@ -67,7 +69,7 @@ function Settings.spawn(v,kind,index,bodies)
    x=anchor.position[1]+math.cos(yaw)*side;z=anchor.position[3]-math.sin(yaw)*side
   end
   if z< -v.depth/2+7 then z=anchor.position[3]; x+=offset end
-  local p=Vector3.new(x,0,z)
+  local p=Vector3.new(x,Heightfield.sample(v.terrain,v.width,v.depth,x,z),z)
   local clear=math.abs(x)<=v.width/2-7 and math.abs(z)<=v.depth/2-7
   if clear then for _,body in bodies do if Settings.blocked(p,body) then clear=false; break end end end
   if clear then return p,-math.rad(anchor.heading) end

@@ -5,6 +5,10 @@ local Math=require(Shared.WorldEditorMath)
 local Snap=require(Shared.WorldEditorSnap)
 local Visual=require(Shared.AssetGeometry)
 local StartingAreas=require(Shared.StartingAreas)
+local Heightfield=require(Shared.WorldHeightfield)
+local TerrainSurface=require(Shared.WorldTerrainSurface)
+local Traversal=require(Shared.TerrainTraversal)
+local Materials=require(Shared.TerrainMaterials)
 local Scene={};Scene.__index=Scene
 local snapLabelSize=24
 local snapLabelOffset=Vector2.new(-12,-26)
@@ -40,12 +44,44 @@ function Scene:make(entry,item,parent)
  end
  return model,reason
 end
-function Scene:sync(document,catalog)
+function Scene:sync(document,catalog,preview)
  self.document=document
+ local settings=document.settings
+ if self.traversability and not preview then
+  local zones,keys={},{settings.ground.material}
+  for _,entry in document.objects do
+   local item=catalog.byPath[entry.asset]
+   if item.zone then
+    local zone={x=entry.position[1],z=entry.position[3],rx=entry.bounds[1]*entry.scale/2,rz=entry.bounds[3]*entry.scale/2,
+     profile=Materials.forGround(settings.ground.material,item.zone)}
+    table.insert(zones,zone);table.insert(keys,table.concat({item.zone,zone.x,zone.z,zone.rx,zone.rz},":"))
+   end
+  end
+  local key=table.concat(keys,";")
+  if self.overlayZoneKey~=key then
+   self.overlayZoneKey=key;self.overlayZones=zones
+   if self.terrainOverlay then self.terrainOverlay:destroy();self.terrainOverlay=nil end
+  end
+ end
+ self:syncTerrain(settings)
+ local size=Vector3.new(settings.width,1,settings.depth)
+ if self.floor.Size~=size then
+  self.floor.Size=size
+  if self.gridStep then self:grid(true,self.gridStep) end
+ end
+ local material=Enum.Material[settings.ground.material]
+ if self.floor.Material~=material then self.floor.Material=material end
+ local color=Color3.fromRGB(table.unpack(settings.ground.color))
+ if self.floor.Color~=color then self.floor.Color=color end
  local retained={}
  for _,entry in document.objects do
   retained[entry.id]=true
   local record=self.models[entry.id]
+  if record and record.entry.asset~=entry.asset then
+   if record.traversalMarker then record.traversalMarker:Destroy() end
+   record.model:Destroy()
+   record=nil
+  end
   if not record then
    local item=catalog.byPath[entry.asset];local model,err=self:make(entry,item)
    assert(model,err);record={model=model,scale=self:template(item):GetScale()};self.models[entry.id]=record
@@ -56,23 +92,98 @@ function Scene:sync(document,catalog)
    Placement.pose(record.model,record.scale,{position=Vector3.new(table.unpack(entry.position)),rotation=Vector3.new(table.unpack(entry.rotation)),scale=entry.scale,stretch=entry.stretch})
    record.stretchKey=stretchKey
    record.x=entry.position[1];record.y=entry.position[2];record.z=entry.position[3];record.pitch=entry.rotation[1];record.yaw=entry.rotation[2];record.roll=entry.rotation[3];record.objectScale=entry.scale
+   record.traversalDirty=true
+  end
+  if self.traversability and entry.solid and (record.traversalDirty or not record.traversalChecked) then
+   self:markStructure(record)
+  elseif (not self.traversability or not entry.solid) and record.traversalChecked then
+   if record.traversalMarker then record.traversalMarker:Destroy();record.traversalMarker=nil end
+   record.traversalChecked=false
   end
  end
- for id,record in self.models do if not retained[id] then record.model:Destroy();self.models[id]=nil end end
+ for id,record in self.models do if not retained[id] then
+  if record.traversalMarker then record.traversalMarker:Destroy() end
+  record.model:Destroy();self.models[id]=nil
+ end end
  local starts={}
  for _,spawn in document.spawns do if spawn.slot then
   starts[spawn.id]=true
-  local key=table.concat(spawn.position,",")..":"..spawn.heading..":"..spawn.slot
+  local height=Heightfield.sample(settings.terrain,settings.width,settings.depth,spawn.position[1],spawn.position[3])
+  local key=table.concat(spawn.position,",")..":"..spawn.heading..":"..spawn.slot..":"..height
   local old=self.spawnModels[spawn.id]
   if not old or old.key~=key then
    local model
    if old and old.heading==spawn.heading and old.slot==spawn.slot then
-    model=old.model;model:PivotTo(CFrame.new(spawn.position[1]-old.x,0,spawn.position[3]-old.z)*model:GetPivot())
-   else if old then old.model:Destroy() end;model=StartingAreas.make(self.root,spawn,true) end
-   self.spawnModels[spawn.id]={key=key,spawn=true,model=model,entry=spawn,x=spawn.position[1],z=spawn.position[3],heading=spawn.heading,slot=spawn.slot}
+    model=old.model;model:PivotTo(CFrame.new(spawn.position[1]-old.x,height-old.height,spawn.position[3]-old.z)*model:GetPivot())
+   else if old then old.model:Destroy() end;model=StartingAreas.make(self.root,spawn,true,height) end
+   self.spawnModels[spawn.id]={key=key,spawn=true,model=model,entry=spawn,x=spawn.position[1],z=spawn.position[3],height=height,heading=spawn.heading,slot=spawn.slot}
   end
  end end
  for id,record in self.spawnModels do if not starts[id] then record.model:Destroy();self.spawnModels[id]=nil end end
+end
+function Scene:markStructure(record)
+ record.traversalDirty=false;record.traversalChecked=true
+ local native=Placement.stretchPart(record.model)
+ if not native then return end
+ local slope=math.acos(math.clamp(native.CFrame.UpVector.Y,0,1))
+ local color=TerrainSurface.TraversalColors[Traversal.classify(slope,0,Materials.fromMaterial(native.Material))]
+ local marker=record.traversalMarker or part(self.world,"PlacedTraversability",Vector3.one,CFrame.new(),color,.38)
+ marker.Color=color;marker.Material=Enum.Material.Neon
+ marker.Size=Vector3.new(native.Size.X,.05,native.Size.Z)
+ marker.CFrame=native.CFrame*CFrame.new(0,native.Size.Y/2+.06,0)
+ record.traversalMarker=marker
+end
+function Scene:syncTerrain(settings,dirty)
+ if self.terrainData~=settings.terrain or (settings.terrain and self.terrain.settings~=settings) then
+  if self.terrain then self.terrain:destroy();self.terrain=nil end
+  self.terrainData=settings.terrain
+  if settings.terrain then self.terrain=TerrainSurface.new(self.world,settings,false);self.terrain:all() end
+ elseif dirty and self.terrain then
+  for _,chunk in dirty do self.terrain:chunk(chunk[1],chunk[2]) end
+ end
+ self.floor.Transparency=if self.terrain then 1 else 0
+ self.floor.CanQuery=self.terrain==nil
+ if self.traversability then
+  if not self.terrainOverlay or self.overlaySource~=settings.terrain or self.overlayWidth~=settings.width or self.overlayDepth~=settings.depth
+   or self.overlayMaterial~=settings.ground.material then
+   if self.terrainOverlay then self.terrainOverlay:destroy() end
+   local config=table.clone(settings)
+   config.traversalZones=self.overlayZones
+   config.terrain=settings.terrain or Heightfield.new(settings.width,settings.depth)
+   self.terrainOverlay=TerrainSurface.new(self.world,config,false,true);self.terrainOverlay:all()
+   self.overlaySource=settings.terrain;self.overlayWidth=settings.width;self.overlayDepth=settings.depth;self.overlayMaterial=settings.ground.material
+  elseif dirty then
+   for _,chunk in dirty do self.terrainOverlay:chunk(chunk[1],chunk[2]) end
+  end
+ elseif self.terrainOverlay then self.terrainOverlay:destroy();self.terrainOverlay=nil end
+end
+function Scene:brushFootprint(point,radius)
+ if not point then
+  if self.brushRing then self.brushRing.Parent=nil end
+  return
+ end
+ if not self.brushRing then
+  self.brushRing=Instance.new("Folder");self.brushRing.Name="TerrainBrushFootprint";self.brushLines={}
+  for i=1,28 do
+   local line=part(self.brushRing,"BrushEdge",Vector3.one,CFrame.new(),Color3.fromRGB(255,163,49))
+   line.Material=Enum.Material.Neon;self.brushLines[i]=line
+  end
+ end
+ if self.brushRing.Parent~=self.world then self.brushRing.Parent=self.world end
+ local settings=self.document.settings
+ local previous
+ for i=0,28 do
+  local angle=i*2*math.pi/28
+  local x,z=point.X+math.cos(angle)*radius,point.Z+math.sin(angle)*radius
+  local p=Vector3.new(x,.18+Heightfield.sample(settings.terrain,settings.width,settings.depth,x,z),z)
+  if previous then
+   local line=self.brushLines[i]
+   line.Size=Vector3.new(.18,.13,(p-previous).Magnitude)
+   line.CFrame=CFrame.lookAt((p+previous)*.5,p)
+   line.Transparency=if math.abs(x)>settings.width/2 or math.abs(z)>settings.depth/2 then 1 else 0
+  end
+  previous=p
+ end
 end
 function Scene:startPreview(spawn,valid)
  if not spawn then if self.startGhost then self.startGhost:Destroy();self.startGhost=nil end;return end
@@ -216,6 +327,7 @@ function Scene:snapFeedback(target,valid)
  end
 end
 function Scene:grid(enabled,step)
+ self.gridStep=if enabled then step else nil
  if self.gridFolder then self.gridFolder:Destroy();self.gridFolder=nil end
  if not enabled then return end
  local folder=Instance.new("Folder");folder.Name="Grid";folder.Parent=self.world;self.gridFolder=folder
@@ -270,5 +382,10 @@ function Scene:pick(origin,direction,pixel,viewportSize)
  local p=hit.Instance
  while p and p~=self.world do local id=p:GetAttribute("EditorObjectId");if id then return id end;p=p.Parent end
 end
-function Scene:destroy() self.world:Destroy();self.camera:Destroy();for _,label in self.snapLabels do label:Destroy() end end
+function Scene:destroy()
+ if self.terrain then self.terrain:destroy() end
+ if self.terrainOverlay then self.terrainOverlay:destroy() end
+ if self.brushRing then self.brushRing:Destroy() end
+ self.world:Destroy();self.camera:Destroy();for _,label in self.snapLabels do label:Destroy() end
+end
 return Scene

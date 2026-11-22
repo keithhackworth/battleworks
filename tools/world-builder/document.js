@@ -22,9 +22,18 @@ function validate(input,items){
  keys(input,['schemaVersion','id','name','description','settings','objects','spawns','gameplay'],'world');
  if(input.schemaVersion!==2)fail('schemaVersion','expected 2; import legacy worlds through migration');
  id(input.id,'id');text(input.name,100,'name');if(typeof input.description!=='string'||input.description.length>2000)fail('description','expected text <=2000 characters');
- keys(input.settings,['width','depth','ground','boundary'],'settings');
+ keys(input.settings,['width','depth','ground','boundary','terrain'],'settings');
  const {width,depth,ground}=input.settings;
  for(const [k,n] of [['width',width],['depth',depth]]){number(n,25,2000,`settings.${k}`);if(n%1)fail(`settings.${k}`,'expected integer studs');}
+ if (input.settings.terrain !== undefined) {
+  const terrain=input.settings.terrain;
+  keys(terrain,['version','columns','rows','heights'],'settings.terrain');
+  const grid=n=>Math.max(4,Math.min(36,Math.ceil(n/6)));
+  if (terrain.version!==1 || terrain.columns!==grid(width) || terrain.rows!==grid(depth)) fail('settings.terrain','grid does not match map dimensions');
+  const count=(terrain.columns+1)*(terrain.rows+1);
+  if (!Array.isArray(terrain.heights) || terrain.heights.length!==count) fail('settings.terrain.heights','incorrect sample count');
+  for (const value of terrain.heights) if (!Number.isInteger(value) || Math.abs(value)>768) fail('settings.terrain.heights','invalid height sample');
+ }
  bool(input.settings.boundary,'settings.boundary');
  if(!input.settings.boundary)fail('settings.boundary','open boundaries are not supported by current tank physics');
  keys(ground,['material','color'],'settings.ground');if(!Materials.includes(ground.material))fail('settings.ground.material','unsupported material');vector(ground.color,3,0,255,'settings.ground.color');
@@ -83,6 +92,11 @@ function compileDocument(input,items){
 }
 function migrate(manifest,items,newId){
  const doc=fresh(newId,manifest.name+' (editable copy)');const bindings=bindingsFor(items);
+ if (manifest.builderSettings?.terrain) {
+  const {width,depth,ground,boundary,terrain,spawns}=manifest.builderSettings;
+  doc.settings=structuredClone({width,depth,ground,boundary,terrain});
+  doc.spawns=structuredClone(spawns);
+ }
  const placements=manifest.objects.length?studioPlacements(manifest,bindings):[];
  if(!placements)fail('migration','legacy world contains unmapped assets, unsupported influences or nonuniform transforms');
  const used=new Set();doc.objects=placements.map((p,index)=>{

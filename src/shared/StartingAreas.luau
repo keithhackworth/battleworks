@@ -2,10 +2,10 @@
 -- No collision, ray queries, hit claims or simulation bodies in live play.
 local Areas={}
 local patterns={"bc","abged","abgcd","fgbc","afgcd"}
-function Areas.make(parent,spawn,editable)
+function Areas.make(parent,spawn,editable,height)
  local model=Instance.new("Model");model.Name="StartingPosition"..tostring(spawn.slot);model.Parent=parent
  model:SetAttribute("EditorObjectId",if editable then spawn.id else nil)
- local frame=CFrame.new(spawn.position[1],.035,spawn.position[3])*CFrame.Angles(0,-math.rad(spawn.heading),0)
+ local frame=CFrame.new(spawn.position[1],(height or 0)+.035,spawn.position[3])*CFrame.Angles(0,-math.rad(spawn.heading),0)
  local function piece(name,x,z,w,d,color,y,angle)
   local p=Instance.new("Part");p.Name=name;p.Anchored=true;p.CanCollide=false;p.CanTouch=false;p.CanQuery=false
   p.Size=Vector3.new(w,.025,d);p.CFrame=frame*CFrame.new(x,y or 0,z)*CFrame.Angles(0,angle or 0,0);p.Color=color;p.Material=Enum.Material.SmoothPlastic;p.Parent=model

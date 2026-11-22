@@ -49,7 +49,14 @@ function Preview:spawn(entry)
 end
 function Preview:rebuild(document,byType)
  self:clear(); local root=self:folder(); local errors={}
- local floor=Instance.new("Part"); floor.Name="EditorGround"; floor.Anchored=true; floor.Size=Vector3.new(document.settings.width,1,document.settings.depth); floor.Position=Vector3.new(0,-.5,0); floor.CanCollide=false; floor.Material=Enum.Material[document.settings.ground.material]; floor.Color=Color3.fromRGB(table.unpack(document.settings.ground.color)); floor.Locked=true; floor.Parent=root
+ local settings=document.settings
+ if settings.terrain then
+  local surface=require(script.Parent.WorldTerrainSurface).new(root,settings,false)
+  surface:all()
+  for _,part in surface.folder:GetChildren() do part.Locked=true end
+ else
+  local floor=Instance.new("Part"); floor.Name="EditorGround"; floor.Anchored=true; floor.Size=Vector3.new(settings.width,1,settings.depth); floor.Position=Vector3.new(0,-.5,0); floor.CanCollide=false; floor.Material=Enum.Material[settings.ground.material]; floor.Color=Color3.fromRGB(table.unpack(settings.ground.color)); floor.Locked=true; floor.Parent=root
+ end
  -- Thin boundary outlines; no per-frame grid geometry or instance polling.
  for _,v in {{0,-document.settings.depth/2,document.settings.width,.15},{0,document.settings.depth/2,document.settings.width,.15},{-document.settings.width/2,0,.15,document.settings.depth},{document.settings.width/2,0,.15,document.settings.depth}} do
   local line=Instance.new("Part"); line.Name="BoundaryOutline"; line.Size=Vector3.new(v[3],.2,v[4]); line.Position=Vector3.new(v[1],.1,v[2]); line.Anchored=true; line.CanCollide=false; line.CanQuery=false; line.Color=Color3.fromRGB(255,205,65); line.Parent=root

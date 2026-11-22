@@ -41,7 +41,8 @@ function S.weight(r,x,z)
  if (r.transition or 0)==0 then return 1 end
  local t=math.clamp(edge/r.transition,0,1); return t*t*(3-2*t)
 end
-function S.contact(prepared,position,yaw,chassis,mobility)
+function S.contact(prepared,position,yaw,chassis,mobility,base)
+ if not prepared or #prepared==0 then return S.sample(nil,position.X,position.Z,base,mobility) end
  local a,b,c,d,speed=0,0,0,0,0; local s,co=math.sin(yaw),math.cos(yaw)
  for _,side in {-1,1} do for _,endSign in {-1,1} do
   local x=side*chassis.ContactWidth/2; local z=endSign*chassis.ContactLength/2
@@ -52,8 +53,10 @@ function S.contact(prepared,position,yaw,chassis,mobility)
 end
 function S.sample(prepared,x,z,base,mobility)
  base=base or S.Profiles.Normal
- local a,b,c,d=base.staticFriction,base.kineticFriction,base.resistance,base.passiveGrip or 1
- local speed=1
+ local a=if mobility=="Tracked" then base.trackedStaticFriction or base.staticFriction else base.staticFriction
+ local b=if mobility=="Tracked" then base.trackedKineticFriction or base.kineticFriction else base.kineticFriction
+ local c,d=base.resistance,base.passiveGrip or 1
+ local speed=if mobility=="Tracked" then base.trackSpeed or 1 else base.wheelSpeed or 1
  local i=1
  while prepared and i<=#prepared do
   local priority=prepared[i].priority or 0; local sum,sa,sb,sc,sd,ss,coverage=0,0,0,0,0,0,0

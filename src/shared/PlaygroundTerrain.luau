@@ -147,7 +147,8 @@ function T.pose(data,position,yaw,shape)
   end
  end end
  if bestRegion then
-  return best,math.atan(-bestRegion.slope*c),math.atan(-bestRegion.slope*s),"Structure",1
+  return best,math.atan(-bestRegion.slope*c),math.atan(-bestRegion.slope*s),"Structure",1,
+   if bestRegion.name=="Bridge" then Materials.fromMaterial("WoodPlanks") else nil
  end
  return T.Depth,0,0,"Air",1
 end

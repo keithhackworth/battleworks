@@ -1,6 +1,10 @@
 {
   "name": "BattleWorksWorldBuilder",
   "tree": {
-    "$path": "studio/world-builder"
+    "$path": "studio/world-builder",
+    "WorldHeightfield": { "$path": "src/shared/WorldHeightfield.luau" },
+    "WorldTerrainSurface": { "$path": "src/shared/WorldTerrainSurface.luau" },
+    "TerrainTraversal": { "$path": "src/shared/TerrainTraversal.luau" },
+    "TerrainMaterials": { "$path": "src/shared/TerrainMaterials.luau" }
   }
 }
