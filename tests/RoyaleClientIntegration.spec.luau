@@ -12,7 +12,7 @@ local function named(name)
 end
 local remotes={}
 local requests={}
-for _,name in {"RoyaleControl","Input","Snapshot","Shot","SelectTank","PrepareShot","BWRun","BWStop","ResetBattle","BWOutput","BWHardware","BWRuntimeState"} do
+for _,name in {"RoyaleControl","RoyaleSprint","Input","Snapshot","Shot","SelectTank","PrepareShot","BWRun","BWStop","ResetBattle","BWOutput","BWHardware","BWRuntimeState"} do
  local remote={OnClientEvent=signal()}
  remote.FireServer=function(_,...) table.insert(requests,{name=name,args={...}}) end
  remotes[name]=remote
@@ -49,8 +49,10 @@ function chatService:FindFirstChild(name)return if name=="TextChannels"then chat
 function chatChannels:FindFirstChild(name)return if name=="RBXGeneral"then chatChannel else nil end
 function chatService:CanUserChatAsync()return true end
 Players.PlayerRemoving=signal()
+local prompts={Enabled=true}
 game.GetService=function(self,name)
  if name=="RunService" then return run elseif name=="ContextActionService"then return actions elseif name=="TextChatService"then return chatService end
+ if name=="ProximityPromptService" then return prompts end
  return originalService(self,name)
 end
 Enum.RenderPriority.Camera={Value=200}
@@ -88,8 +90,20 @@ else
  for _,widget in created do assert(widget.Name~="PlaygroundBWExecution","published HUD has no diagnostic toggle")end
 end
 remotes.RoyaleControl.OnClientEvent:Fire({revision=1,mode="OnFoot"})
+local shift={KeyCode=Enum.KeyCode.LeftShift}
+local sprint=bindings.BattleWorksSprint
+check(sprint(nil,Enum.UserInputState.Begin,shift)==Enum.ContextActionResult.Sink
+ and requests[#requests].name=="RoyaleSprint" and requests[#requests].args[1]==true,"on-foot Shift requests sprint")
+sprint(nil,Enum.UserInputState.End,shift)
+check(requests[#requests].args[1]==false,"Shift release requests normal walking")
 local state=require("TankSimulation").new(Vector3.zero,"Boomer");state.public=true;state.controlEpoch=2
-remotes.Snapshot.OnClientEvent:Fire({["public:1"]=state},{["101"]={royale=true,selected="public:1"}})
+remotes.Snapshot.OnClientEvent:Fire({["public:1"]=state},{
+ ["101"]={royale=true,selected="public:1",score={name="Driver",kills=0,deaths=1}},
+ ["102"]={royale=true,score={name="Leader",kills=1,deaths=0}},
+},1,{{name="Duelist",kills=2,deaths=0},{name="Wallflower",kills=0,deaths=0}})
+local scoreText=named("ScoreboardRows").Text
+check(named("PlaygroundScoreboard").Visible and scoreText:find("Duelist")==1
+ and scoreText:find("@Leader",1,true) and scoreText:find("Wallflower",1,true),"scoreboard ranks personalities and players together and includes zero scores")
 local initial=workspace.CurrentCamera.CFrame
 frame(1/30)
 check(#renderers==1 and not named("TankHUD").Enabled and workspace.CurrentCamera.CameraType=="Custom","on-foot players see public tank art without activating its HUD/camera")
@@ -100,8 +114,10 @@ local before=inputCount()
 UIS.InputBegan:Fire({KeyCode=Enum.KeyCode.W,UserInputType=Enum.UserInputType.Keyboard},false);frame(1/30)
 check(inputCount()==before,"on-foot held keys cannot send tank input, even when a stale snapshot selects a tank")
 remotes.RoyaleControl.OnClientEvent:Fire({revision=2,mode="Tank",selected="public:1",epoch=2})
+check(sprint(nil,Enum.UserInputState.Begin,shift)==Enum.ContextActionResult.Pass,"tank controls retain Shift")
 frame(1/30)
 check(named("TankHUD").Enabled and not client.gui.Enabled and not defaultControls.controlsEnabled,"server occupancy activates tank HUD and disables native character controls")
+check(not prompts.Enabled,"entering a tank hides local proximity prompts")
 check(lastInput().args[1].throttle==0 and lastInput().args[3]==2,"entry clears held keys and stamps authoritative control lease")
 UIS.InputBegan:Fire({KeyCode=Enum.KeyCode.W,UserInputType=Enum.UserInputType.Keyboard},false);frame(1/30)
 check(lastInput().args[1].throttle==1 and workspace.CurrentCamera.CameraType==Enum.CameraType.Scriptable,"existing keyboard path and battle camera drive occupied tank")
@@ -112,6 +128,7 @@ state.bwRequestId=firstRun.args[2];state.bwRunRequestId=firstRun.args[2];frame(1
 local function exitAndEnter(revision,epoch)
  remotes.RoyaleControl.OnClientEvent:Fire({revision=revision,mode="OnFoot"})
  check(defaultControls.controlsEnabled and defaultTouchGui.Enabled and not named("TankHUD").Enabled and client.gui.Enabled,"exit restores native movement, touch UI and on-foot presentation")
+ check(prompts.Enabled,"exiting restores on-foot proximity prompts")
  check(workspace.CurrentCamera.CameraType=="Custom" and workspace.CurrentCamera.CameraSubject==humanoid,"exit restores character camera subject/type")
  local total=inputCount();frame(1/30);check(total==inputCount(),"abandoned tank receives no more input")
  remotes.RoyaleControl.OnClientEvent:Fire({revision=revision-1,mode="Tank",selected="public:1",epoch=epoch-2})
@@ -242,8 +259,10 @@ check(client.chat.window==chatWindow and client.battle.inputController.textEntry
 chatBar.IsFocused=false;chatBar:GetPropertyChangedSignal("IsFocused"):Fire()
 client.chat:setExpanded(false)
 check(not client.battle.inputController.textEntryActive and named("MouseAimSelector"):GetAttribute("MouseAimMode")=="Mouse Points","chat blur restores existing input mode without changing aim preference")
+check(not prompts.Enabled,"closing chat while in a tank keeps prompts hidden")
 remotes.RoyaleControl.OnClientEvent:Fire({revision=116,mode="OnFoot"})
 check(defaultControls.controlsEnabled and client.chat.gui.Enabled,"on-foot native controls and chat resume after text entry")
+check(prompts.Enabled,"on-foot prompts return after the tank and chat both release suppression")
 named("RoyaleMainMenu").Activated:Fire();remotes.RoyaleControl.OnClientEvent:Fire({revision=117,mode="Menu"})
 check(not client.chat.gui.Enabled and not chatBar.Enabled,"menu and its World Editor do not retain active chat input")
 main.buttons[1].Activated:Fire();remotes.RoyaleControl.OnClientEvent:Fire({revision=118,mode="OnFoot"})

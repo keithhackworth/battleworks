@@ -243,6 +243,7 @@ end)
 function self:setActive(enabled)
  if active==enabled then return end
  active=enabled
+ if royale then controller:setTankPromptsSuppressed(enabled and driving) end
  gui.Enabled=enabled and driving; ide.gui.Enabled=enabled and driving
  battlefieldCamera.gui.Enabled=enabled and driving
  if battlefieldCamera.testPanel and battlefieldCamera.testPanel.gui then battlefieldCamera.testPanel.gui.Enabled=enabled and driving end
@@ -300,6 +301,7 @@ function self:setControl(reading)
  selectedId=if reading.mode=="Tank" then reading.selected else nil
  if selectedId~=previousId then battlefieldCamera:resetOrbit() end
  controlEpoch=if selectedId then reading.epoch else nil;driving=selectedId~=nil
+ controller:setTankPromptsSuppressed(driving)
  controller:setCharacterControl(not driving)
  if driving then
   local camera=workspace.CurrentCamera

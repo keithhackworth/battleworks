@@ -458,6 +458,9 @@ function IDE:renderRuntime()
    if d.acquisitionSeconds then
     table.insert(lines,string.format("  %.1f° / %.1f studs • %.2fs acquisition",d.coneWidth,d.range,d.acquisitionSeconds))
    end
+   if d.active and d.active.acquisitionRemaining then
+    table.insert(lines,string.format("  Scan in progress • %.2fs remaining",d.active.acquisitionRemaining))
+   end
    if d.lastScan then
     local reading=d.lastScan
     local result=if reading.status=="success" then tostring(reading.count).." objects" else reading.reason or "failed"

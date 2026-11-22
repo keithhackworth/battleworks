@@ -1,5 +1,5 @@
 -- Deterministic cooperative BW virtual CPU. Coroutines are resumable AST evaluation,
--- never Roblox tasks: only this scheduler resumes them in ascending bus order.
+-- never Roblox tasks: only this scheduler resumes them on CPU cycles.
 local Hardware=require(script.Parent.BWChassis)
 local Limits=require(script.Parent.BWConfig)
 local Expression=require(script.Parent.BWExpression)
@@ -11,6 +11,9 @@ local Adapter=require(script.Parent.BWTankAdapter)
 local SelfState=require(script.Parent.BWSelfState)
 local R={}; R.__index=R
 local instructionCost
+local function newThread(id,stream)
+ return {id=id,instructions=stream,index=1,state="running",credit=0,ticks=0,observed={},frames={}}
+end
 -- Only side-effect-free display expressions are waived. An expression that
 -- can drive a device or synchronize/query gameplay keeps its normal costs, so
 -- print(condition and fire().status == "success") is not a free control path.
@@ -36,17 +39,66 @@ function R.new(instructions,state,services,configuration,interpreterConfig)
  self.totalCallFrames=0; self.peakCallFrames=0
  self.devices=Devices.new(config,state,self.services)
  local spec=Hardware.Tiers[config.tier]
+ if instructions.eventHandlers then self.events={queue={},credit=0,sequence=0,dropped=0} end
  for id,stream in instructions.streams or {[1]=instructions} do
   if id>spec.threads then self.status="error"; self.message="Thread "..id.." exceeds "..config.tier.." chassis capacity."; break end
-  self.threads[id]={id=id,instructions=stream,index=1,state="running",credit=0,ticks=0,observed={},frames={}}
+  if not self.events or #stream>0 then self.threads[id]=newThread(id,stream) end
  end
  return self
+end
+-- Only trusted simulation producers call this boundary. Copy scalar fields
+-- so a producer cannot change an observation after it has entered the FIFO.
+function R:enqueueEvent(name,fields)
+ local events=self.events
+ local handler=events and self.instructions.eventHandlers[name]
+ if self.status~="running" or not handler then return false,"notSubscribed" end
+ if #events.queue>=Limits.MaxQueuedEvents then events.dropped+=1;return false,"eventQueueFull" end
+ if type(fields)~="table" then return false,"invalidEventPayload" end
+ local payload={}; local count,bytes=0,0
+ for key,value in fields do
+  count+=1
+  local kind=type(value)
+  if count>Limits.MaxArrayItems or type(key)~="string" or #key>Limits.MaxStringBytes
+   or (kind~="boolean" and not (kind=="string" and #value<=Limits.MaxStringBytes)
+    and not (kind=="number" and value==value and math.abs(value)<math.huge)) then
+   return false,"invalidEventPayload"
+  end
+  bytes+=#key+(if kind=="string" then #value else 8)
+  if bytes>Limits.MaxOutputBytes then return false,"invalidEventPayload" end
+  payload[key]=value
+ end
+ table.insert(events.queue,{name=name,handler=handler,payload=Value.dictionary(payload,true)})
+ return true
+end
+function R:dispatchEvents(threadCount)
+ local events=self.events
+ for id=1,threadCount do
+  if #events.queue==0 then break end
+  local old=self.threads[id]
+  if not old or old.state=="finished" or (old.event and old.state=="failed") then
+   local event=table.remove(events.queue,1)
+   local handler=event.handler
+   local call={kind="call",name=handler.name,line=handler.line,userFunction=true,
+    args={{expression={kind="literal",value=event.payload,line=handler.line}}}}
+   local thread=newThread(id,{{op="$call",expression=call,line=handler.line,text=handler.text}})
+   events.sequence+=1
+   thread.event,thread.commandOwner=event.name,-events.sequence
+   self.threads[id]=thread
+  end
+ end
 end
 function R:stop(reason,status)
  self.status=status or "stopped"; self.message=reason or "Stopped"
  self.devices:stop(self.time,if self.status=="stopped" then "commandCancelled" else "tankDestroyed")
- for _,t in self.threads do if t.state~="finished" then t.state="finished" end; t.coroutine=nil; t.pending=nil; t.frames={}; t.frame=nil end
+ for _,t in self.threads do
+  t.state="finished";t.coroutine=nil;t.pending=nil;t.frames={};t.frame=nil;t.reservation=nil
+  if t.event then t.instructions=nil end
+ end
  self.totalCallFrames=0
+ if self.events then
+  table.clear(self.events.queue)
+  self.events.reservedThread,self.events.reservation=nil,nil
+ end
  self.results={};self.lastObservation=nil;self.lastValue=nil
  self.devices:releasePayloads()
  if self.status~="completed" then self.variables={}; self.versions={} end
@@ -166,7 +218,7 @@ end
 function R:submit(t,instruction,line)
  local name=instruction.op; self:charge(t,name)
  local device=if name=="Scanner" then "sensor"..tostring(instruction.value) elseif name=="fire" then "weapon" elseif name=="aim_at"or name:sub(1,6)=="turret" then "turret" else "drivetrain"
- local result=self.devices:submit(device,instruction,self.time,t.id)
+ local result=self.devices:submit(device,instruction,self.time,t.id,t.commandOwner)
  if result.status=="fail" then
   if name=="Scanner" then result=Value.result(result.reason,{sensor=instruction.value}) end
   self:log(t,Value.format(result),line); return result
@@ -327,24 +379,30 @@ instructionCost=function(n,tier)
  if n.call then return estimate(n.call) end
  return Hardware.cost(n.op,tier)
 end
-function R:runThread(t)
+function R:runThread(t,sharedCredit,operationLimit)
  local spec=Hardware.Tiers[self.config.tier]
  local nextInstruction=t.instructions[t.index]
  local required=math.max(t.reservation or 0,if t.pending then t.pending.required or 0 else 0,if nextInstruction then instructionCost(nextInstruction,self.config.tier) else 0)
- if required>Hardware.MaxInstructionCredit then Commands.error(nextInstruction.line,"Instruction exceeds maximum CPU reservation.") end
- t.credit=math.min(math.max(spec.ticks*Hardware.CreditCycles,required),t.credit+spec.ticks)
+ if required>Hardware.MaxInstructionCredit then Commands.error(t.line or (nextInstruction and nextInstruction.line) or 1,"Instruction exceeds maximum CPU reservation.") end
+ t.credit=sharedCredit or math.min(math.max(spec.ticks*Hardware.CreditCycles,required),t.credit+spec.ticks)
  local operations=0
- while operations<Hardware.MaxOperationsPerCycle do
+ local maximum=operationLimit or Hardware.MaxOperationsPerCycle
+ while operations<maximum do
   operations+=1
   if t.pending then
-   if not self:ready(t.pending,t) then t.state="waiting"; return end
+   if not self:ready(t.pending,t) then t.state="waiting"; return t.pending.required end
    t.pending=nil
   end
   if not t.coroutine then
    local n=t.instructions[t.index]
-   if not n then t.state="finished"; return end
+   if not n then
+    t.state="finished"
+    if t.event then t.instructions=nil end
+    return
+   end
    t.line=n.line; t.text=n.text
-   if t.credit+1e-8<instructionCost(n,self.config.tier) then t.state="waiting"; t.waitReason="cpuBudget"; return end
+   local cost=instructionCost(n,self.config.tier)
+   if t.credit+1e-8<cost then t.state="waiting"; t.waitReason="cpuBudget"; return cost end
    t.waitReason=nil; t.coroutine=coroutine.create(function() self:instruction(t,n) end)
   end
   local ok,yielded=coroutine.resume(t.coroutine)
@@ -353,13 +411,42 @@ function R:runThread(t)
    local message=string.format("Thread %d, line %d: %s",t.id,t.line,t.error)
    if type(yielded)=="table" and yielded.threadOnly then
     self.totalCallFrames-=#t.frames; t.frames={}; t.frame=nil; t.coroutine=nil; t.pending=nil; t.reservation=nil
-    self.devices:stopThread(t.id,self.time); self.threadError=message
+    if t.event then t.instructions=nil end
+    self.devices:stopThread(t.commandOwner or t.id,self.time); self.threadError=message
     self:log(t,message,t.line,"diagnostic")
    else self:stop(message,"error"); t.state="failed" end
    return
   end
   if coroutine.status(t.coroutine)=="dead" then t.coroutine=nil else t.pending=yielded end
   t.state="running"
+ end
+end
+function R:runEventCycle()
+ local spec=Hardware.Tiers[self.config.tier]
+ local events=self.events
+ self:dispatchEvents(spec.threads)
+ events.credit=math.min(math.max(spec.ticks*Hardware.CreditCycles,events.reservation or 0),events.credit+spec.ticks)
+ local reservedThread=events.reservedThread
+ local start=reservedThread or events.nextThread or 1
+ if events.reservation and events.credit+1e-8<events.reservation then return end
+ events.reservedThread,events.reservation=nil,nil
+ -- After a reservation consumes another slot's normal turn, give the
+ -- slot following the reserving thread first access to the next grant.
+ events.nextThread=start%spec.threads+1
+ for offset=0,spec.threads-1 do
+  local id=(start+offset-1)%spec.threads+1
+  local thread=self.threads[id]
+  if thread and thread.state~="finished" and thread.state~="failed" then
+   local required=self:runThread(thread,events.credit,if id==reservedThread then 1 else nil)
+   events.credit=thread.credit
+   if self.status~="running" then return end
+   -- Let expensive instructions accumulate enough credit even if other
+   -- runnable threads would otherwise spend the pool every cycle.
+   if required and required>spec.ticks then
+    events.reservedThread,events.reservation=id,required
+    return
+   end
+  end
  end
 end
 function R:_step(state,dt)
@@ -376,11 +463,17 @@ function R:_step(state,dt)
    local first=self.threads[1]
    if first then for _,tip in self.instructions.tips or {} do self:log(first,tip.message,tip.line,"tip") end end
   end
-  for id=1,Hardware.Tiers[self.config.tier].threads do local t=self.threads[id]; if t and t.state~="finished" and t.state~="failed" then self:runThread(t); if self.status~="running" then return Input.neutral() end end end
+  if self.events then self:runEventCycle()
+  else
+   for id=1,Hardware.Tiers[self.config.tier].threads do local t=self.threads[id]; if t and t.state~="finished" and t.state~="failed" then self:runThread(t); if self.status~="running" then return Input.neutral() end end end
+  end
+  if self.status~="running" then return Input.neutral() end
  end
  local command=self.devices:step(state,dt,self.time)
- local allFinished=true; for _,t in self.threads do if t.state~="finished" and t.state~="failed" then allFinished=false end end
- if allFinished and not self.devices:busy() then self.status=if self.threadError then "error" else "completed"; self.message=self.threadError or "Program completed." end
+ if not self.events then
+  local allFinished=true; for _,t in self.threads do if t.state~="finished" and t.state~="failed" then allFinished=false end end
+  if allFinished and not self.devices:busy() then self.status=if self.threadError then "error" else "completed"; self.message=self.threadError or "Program completed." end
+ end
  local first=self.threads[1]; self.index=if first then (if first.frames[1] then first.frames[1].caller.index else first.index) else 1
  self.currentLine=if first then first.line else nil; self.currentText=if first then first.text else nil
  return command
@@ -394,9 +487,9 @@ function R:step(state,dt)
 end
 function R:diagnostics()
  local threads={}
- for id,t in self.threads do threads[id]={callDepth=#t.frames,peakCallDepth=t.peakCallDepth or 0,functionName=if t.frame then t.frame.name else "",error=t.error or "",id=id,prints=t.prints or 0,loopTests=t.loopTests or 0,line=t.line or 0,state=t.state,ticks=t.ticks,credit=t.credit,waiting=if t.pending then t.pending.kind else t.waitReason or ""} end
+ for id,t in self.threads do threads[id]={callDepth=#t.frames,peakCallDepth=t.peakCallDepth or 0,functionName=if t.frame then t.frame.name else "",error=t.error or "",id=id,event=t.event,prints=t.prints or 0,loopTests=t.loopTests or 0,line=t.line or 0,state=t.state,ticks=t.ticks,credit=t.credit,waiting=if t.pending then t.pending.kind else t.waitReason or ""} end
  local recent={}
  for id=math.max(1,self.devices.nextId-15),self.devices.nextId do local c=self.devices.commands[id]; if c then table.insert(recent,{id=id,device=c.device,state=c.state,reason=c.reason,thread=c.thread}) end end
- return {totalCallFrames=self.totalCallFrames,peakCallFrames=self.peakCallFrames,maxCallDepthPerThread=self.maxCallDepth,maxTotalCallFrames=self.maxTotalCallFrames,printCount=self.printCount or 0,emittedLogCount=self.emittedLogCount or 0,scanCount=self.scanCount,outputCount=self.outputCount,suppressedLogs=self.suppressedLogs or 0,retainedScans=#self.results,retainedCommands=self.devices.retainedCount,recent=recent,clock=self.time,tier=self.config.tier,ticksPerCycle=Hardware.Tiers[self.config.tier].ticks,threads=threads,devices=self.devices:diagnostics(),status=self.status}
+ return {totalCallFrames=self.totalCallFrames,peakCallFrames=self.peakCallFrames,maxCallDepthPerThread=self.maxCallDepth,maxTotalCallFrames=self.maxTotalCallFrames,printCount=self.printCount or 0,emittedLogCount=self.emittedLogCount or 0,scanCount=self.scanCount,outputCount=self.outputCount,suppressedLogs=self.suppressedLogs or 0,retainedScans=#self.results,retainedCommands=self.devices.retainedCount,recent=recent,clock=self.time,tier=self.config.tier,ticksPerCycle=Hardware.Tiers[self.config.tier].ticks,threads=threads,events=if self.events then {pending=#self.events.queue,dropped=self.events.dropped,dispatched=self.events.sequence,credit=self.events.credit} else nil,devices=self.devices:diagnostics(self.time),status=self.status}
 end
 return R

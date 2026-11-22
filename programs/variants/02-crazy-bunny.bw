@@ -16,6 +16,7 @@ while true:
         seed = random_step(seed)
         abort_command("turret")
         turret_right(to=seed * 360 / 997)
+        turret_up(to=0)
         abort_command("drivetrain")
         forward()
         hardware = get_tank_state()

@@ -1,8 +1,9 @@
 -- Native character lifecycle only. Tanks continue to use the existing custom
 -- simulation; characters never become damage/hit claims or tank physics bodies.
 local Characters={};Characters.__index=Characters
+local SprintMultiplier=1.5
 function Characters.new(findSafe)
- return setmetatable({findSafe=findSafe,records={}},Characters)
+ return setmetatable({findSafe=findSafe,records={},sprinting={}},Characters)
 end
 function Characters:root(player)
  local character=player.Character
@@ -12,7 +13,21 @@ function Characters:alive(player)
  local root,humanoid=self:root(player)
  return root and humanoid and humanoid.Health>0 and root.Parent~=nil
 end
+function Characters:setSprinting(player,enabled)
+ local previous=self.sprinting[player]
+ if not enabled then
+  self.sprinting[player]=nil
+  if previous and previous.humanoid.Parent then previous.humanoid.WalkSpeed=previous.speed end
+  return
+ end
+ if previous or self.records[player] then return end
+ local root,humanoid=self:root(player)
+ if not root or root.Anchored or not humanoid or humanoid.Health<=0 or humanoid.WalkSpeed<=0 then return end
+ self.sprinting[player]={humanoid=humanoid,speed=humanoid.WalkSpeed}
+ humanoid.WalkSpeed*=SprintMultiplier
+end
 function Characters:hide(player,position)
+ self:setSprinting(player,false)
  local root,humanoid=self:root(player);assert(root and humanoid and humanoid.Health>0,"Character unavailable")
  local record={root=root,humanoid=humanoid,parts={},speed=humanoid.WalkSpeed,jump=humanoid.JumpPower,rotate=humanoid.AutoRotate,display=humanoid.DisplayDistanceType,anchored=root.Anchored}
  self.records[player]=record -- rollback remains possible if presentation fails
@@ -26,6 +41,7 @@ function Characters:hide(player,position)
  humanoid.DisplayDistanceType=Enum.HumanoidDisplayDistanceType.None
 end
 function Characters:restore(player,preferred,kill,ejection)
+ self:setSprinting(player,false)
  local record=self.records[player];self.records[player]=nil
  if record then
   if record.connection then record.connection:Disconnect()end
@@ -49,5 +65,10 @@ function Characters:restore(player,preferred,kill,ejection)
   if kill then humanoid.Health=0 end
  end
 end
-function Characters:forget(player)local record=self.records[player];if record and record.connection then record.connection:Disconnect()end;self.records[player]=nil end
+function Characters:forget(player)
+ self:setSprinting(player,false)
+ local record=self.records[player]
+ if record and record.connection then record.connection:Disconnect()end
+ self.records[player]=nil
+end
 return Characters

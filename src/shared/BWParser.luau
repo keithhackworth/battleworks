@@ -50,6 +50,7 @@ local function parse(source)
     -- Like mutable BW names, constants have program-wide scope. Resolve in
     -- textual declaration order, including inside thread/branch blocks.
     local constants,mutableNames,aliases={},{},{}
+    local eventHandlers
     local function resolveConstants(n,required)
         if n.kind=="variable" then
             if aliases[n.name] then Commands.error(n.line,"Command alias must be called, not used as a value.")end
@@ -160,6 +161,21 @@ local function parse(source)
                  node.kind="const" -- retained for source diagnostics; emits nothing
                  node.name=name.value; node.value=value
                 end
+            elseif word=="on_event" and row.tokens[2].kind=="(" and not functions[word] and not aliases[word] then
+                local t=row.tokens
+                if indent~=0 or t[3].kind~="string" or t[4].kind~="," or t[5].kind~="id"
+                   or t[6].kind~=")" or t[7].kind~="eof" then
+                    Commands.error(row.line,'Expected top-level on_event("EventName", handler).')
+                end
+                local name,handler=t[3].value,functions[t[5].value]
+                if not Limits.ResponsiveEvents[name] then Commands.error(row.line,"Unknown event '"..name.."'.") end
+                if not handler or #handler.parameters~=1 or not handler.parameters[1].const then
+                    Commands.error(row.line,"Event handler must be a function with one const parameter.")
+                end
+                eventHandlers=eventHandlers or {}
+                if eventHandlers[name] then Commands.error(row.line,"Duplicate event registration for '"..name.."'.") end
+                eventHandlers[name]={name=handler.name,line=row.line,text=row.text}
+                node.kind="event"
             elseif word=="with" then
                 if indent~=0 then Commands.error(row.line,"Thread entry blocks must be at the top level.") end
                 local t=row.tokens
@@ -225,7 +241,7 @@ local function parse(source)
 		return result
 	end
 	local ast=block(0,0)
-	local tips=Analysis.validate(ast,functions,deadline)
+	local tips=Analysis.validate(ast,functions,deadline,eventHandlers)
 	local instructions={}
     local streams={[1]=instructions}; local declared={}
 	local function emit(op,node,fields)
@@ -284,6 +300,7 @@ local function parse(source)
 	compile(ast)
 	instructions.streams=streams
  instructions.functions=functions
+ instructions.eventHandlers=eventHandlers
  instructions.tips=tips or {}
     return instructions,ast
 end

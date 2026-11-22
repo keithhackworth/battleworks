@@ -9,7 +9,7 @@ In Edit mode, under **ServerStorage → BattleWorksStudio**:
 | Setting | Default | Behavior |
 | --- | --- | --- |
 | GameMode | BattleRoyale | Use Classic for the existing lobby, owned collections and saved-world launch workflow. Restart Play after changing. |
-| PublicTankCount | 15 | Integer 2–16; pool slots retry when the world has no safe spawn. |
+| PublicTankCount | 15 | Integer 2–100. Pool slots retry when the world has no safe spawn. |
 | PlaygroundBWEnabled | true | Set this BoolValue to false before Play to disable both built-in personality programs and BW Editor runs in Battle Royale. |
 | PublicTankReplenishDelay | 5 | Seconds, 1–60, from destruction to retirement/replacement. |
 

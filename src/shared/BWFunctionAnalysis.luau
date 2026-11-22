@@ -14,7 +14,7 @@ local function merge(a,b)
 end
 local function copy(v) local out=value(); merge(out,v); return out end
 local function reference(v) return v.unknown or next(v.refs)~=nil end
-function A.validate(ast,functions,deadline)
+function A.validate(ast,functions,deadline,eventHandlers)
  local limits=require(script.Parent.BWConfig)
  local work=0
  local function budget()
@@ -39,6 +39,7 @@ function A.validate(ast,functions,deadline)
   end
  end
  collect(ast); local threadCount=0; for _ in threads do threadCount+=1 end
+ if eventHandlers then threadCount=math.max(2,threadCount) end
  local function update(a,b) budget();if merge(a,b) then changed=true end end
  local function binding(ctx,name)
   return if ctx and ctx.fn.locals[name] then slot(ctx.env,name) else slot(globals,name)
@@ -54,6 +55,13 @@ function A.validate(ast,functions,deadline)
    local v=value(false,false,true);v.refs[id]=true;return v
   end
   return build(schema)
+ end
+ if eventHandlers then
+  local eventShape={["*"]=true}
+  for _,handler in eventHandlers do
+   local ctx=contexts[handler.name]
+   update(ctx.env[ctx.fn.parameters[1].name],shapeValue(handler,eventShape))
+  end
  end
  local eval
  eval=function(n,ctx)

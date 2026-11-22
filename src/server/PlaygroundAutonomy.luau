@@ -3,7 +3,7 @@ local BW=require(script.Parent.BWController)
 local Hardware=require(game.ReplicatedStorage.Shared.BWChassis)
 local Components=require(game.ReplicatedStorage.Shared.VehicleComponents)
 local Programs=require(script.Parent.PlaygroundPrograms)
-local A={}
+local A={PersonalityCount=#Programs}
 -- Spawn policy for the public pool. These are independent of the source-pack
 -- constraints used for the standalone personality scenarios.
 local busRules={
@@ -62,7 +62,7 @@ local function rollHardware(tank,focus,previous)
  return assert(Hardware.fromCategories({allocations=allocations,tuning={scanners=.5,weapon=.5}},Components.get(tank.state),"Bunny"))
 end
 function A.attach(tank,index,focus,previous)
- local entry=Programs[(index-1)%#Programs+1]
+ local entry=Programs[(index-1)%A.PersonalityCount+1]
  tank.personality=entry
  tank.state.personalityId=entry.id;tank.state.personalityName=entry.name;tank.state.personalityHash=entry.hash
  tank.hitbox:SetAttribute("Personality",entry.name)

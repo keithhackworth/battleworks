@@ -9,15 +9,28 @@ require("BattleRoyaleConfig").Personalities=false -- legacy public-pool regressi
 workspace:SetAttribute("BattleWorksGameMode","BattleRoyale")
 workspace:SetAttribute("ArenaWeather",nil) -- exercise the production default
 local controls={}
+local tankScores
+local Royale=require("BattleRoyale")
+local newRoyale=Royale.new
+local royale
+Royale.new=function(...)
+ royale=newRoyale(...)
+ return royale
+end
 local promptFactory=Instance.new
 Instance.new=function(class)
  local node=promptFactory(class)
  if class=="ProximityPrompt"then node.Triggered=signal()end
  if class=="RemoteEvent"then
   local fire=node.FireClient
+  local fireAll=node.FireAllClients
   node.FireClient=function(self,player,...)
    if self.Name=="RoyaleControl"then controls[player.UserId]=({...})[1]end
    return fire(self,player,...)
+  end
+  node.FireAllClients=function(self,states,battles,revision,scores,...)
+   if self.Name=="Snapshot" then tankScores=scores end
+   return fireAll(self,states,battles,revision,scores,...)
   end
  end
  return node
@@ -42,6 +55,7 @@ roots[101],humanoids[101]=character(first);roots[102],humanoids[102]=character(s
 local roster=players.GetPlayers
 if headlessStartup then players.GetPlayers=function()return {}end end
 require("ServerEntrypoint")
+Royale.new=newRoyale
 if headlessStartup then
  players.GetPlayers=roster;players.PlayerAdded:Fire(first);players.PlayerAdded:Fire(second)
 end
@@ -60,6 +74,8 @@ for _,p in created do
  check(p.Name~="WindArrow" and p.Name~="IceStreak","default arena creates no wind/ice presentation")
 end
 check(battleStates["101"].royale and battleStates["102"].royale and not battleStates["101"].selected,"both players join on foot without automatic tank control")
+check(battleStates["101"].score.kills==0 and battleStates["101"].score.deaths==0,"each Playground server starts with a clean scoreboard")
+check(#tankScores==6 and tankScores[1].kills==0 and tankScores[1].deaths==0,"every public tank has a scoreboard row before combat")
 check(not snapshots["101"] and not snapshots["101:Rattler"],"no personal collection is allocated")
 local ids={};for id in snapshots do table.insert(ids,id)end;table.sort(ids)
 check(#ids==6,"configured arena tank pool exists before player entry")
@@ -79,6 +95,15 @@ for i=1,4 do
 end
 local combinations=0;for _ in shapes do combinations+=1 end;check(combinations==4,"pool provides all supported cannon/Gatling and tracks/wheels combinations")
 local a,b=ids[1],ids[2]
+local sprint=network:FindFirstChild("RoyaleSprint")
+local footRevision=controls[101].revision
+sprint.OnServerEvent:Fire(first,true,footRevision-1)
+check(humanoids[101].WalkSpeed==16,"stale sprint requests are ignored")
+sprint.OnServerEvent:Fire(first,true,footRevision)
+check(humanoids[101].WalkSpeed==24,"on-foot sprint increases normal walking speed")
+sprint.OnServerEvent:Fire(first,false,footRevision)
+check(humanoids[101].WalkSpeed==16,"releasing sprint restores walking speed")
+sprint.OnServerEvent:Fire(first,true,footRevision)
 local function approach(player,id)roots[player.UserId].CFrame=CFrame.new(snapshots[id].position+Vector3.new(0,3,0))end
 local function enter(player,id,requestId)remote.OnServerEvent:Fire(player,"Enter",requestId,id,snapshots[id].controlEpoch);advance(4)end
 remote.OnServerEvent:Fire(first,"Enter",1,a,snapshots[a].controlEpoch);advance(4)
@@ -88,6 +113,8 @@ local initialEpoch=snapshots[a].controlEpoch
 remote.OnServerEvent:Fire(first,"Enter",2,a,initialEpoch);remote.OnServerEvent:Fire(second,"Enter",1,a,initialEpoch);advance(4)
 check(controls[101].selected==a and not controls[102].selected and snapshots[a].occupantUserId==101,"racing entrants produce exactly one occupant")
 check(roots[101].Anchored and roots[101].Transparency==1 and not roots[101].CanCollide and not roots[101].CanQuery and humanoids[101].WalkSpeed==0,"server hides/anchors character while driving without invisible projectile interference")
+sprint.OnServerEvent:Fire(first,true,controls[101].revision)
+check(humanoids[101].WalkSpeed==0,"sprint requests cannot change tank occupant speed")
 local epochA=controls[101].epoch
 local bunnyDiagnostics=false
 for _,event in privateRuntime do if event.recipient==first and event.args[1]==a and event.args[2].configuration.tier=="Bunny"then bunnyDiagnostics=true end end
@@ -138,6 +165,11 @@ input.OnServerEvent:Fire(first,move,a,epochA);bwRun.OnServerEvent:Fire(first,"fi
 check(not snapshots[a].firing and not snapshots[a].bwRunning and (snapshots[a].position-stopped).Magnitude<.01,"held/delayed commands cannot control an abandoned tank")
 approach(first,b);enter(first,b,4)
 check(controls[101].selected==b and not snapshots[a].occupantUserId,"same player can enter a different public tank")
+local scoringTank=royale.options.tanks[b]
+check(royale:scoreActor(scoringTank)==royale.scores[101],"manual tank credits its driver")
+scoringTank.state.controlMode="Auto"
+check(royale:scoreActor(scoringTank)==tankScores[scoringTank.slot.index],"occupied Auto tank credits its own row")
+scoringTank.state.controlMode="Manual"
 approach(second,a);prompts[a]=boxes[a]:FindFirstChild("EnterPublicTank");prompts[a].Triggered:Fire(second);advance(4)
 check(controls[102].selected==a,"another player can take the abandoned tank")
 local epochB=controls[101].epoch;local epochSecond=controls[102].epoch
@@ -152,6 +184,7 @@ end
 bwRun.OnServerEvent:Fire(first,"fire(10)",1,b,epochB)
 for _=1,1800 do advance(1);if snapshots[a].health<=0 then break end end
 check(hits==needed and snapshots[a].health==0,"occupied public tanks damage and destroy each other through actual weapon/projectile handling")
+check(battleStates["101"].score.kills==1 and battleStates["102"].score.deaths==1,"fatal projectile credits the shooter and the destroyed tank's occupant")
 check(not controls[102].selected and humanoids[102].Health==0 and not boxes[a].CanQuery and not prompts[a].Enabled,"destruction releases occupant, kills character for native respawn and disables tank interaction")
 input.OnServerEvent:Fire(second,move,a,epochSecond);remote.OnServerEvent:Fire(second,"Enter",3,a,snapshots[a].controlEpoch);advance(8)
 check(not controls[102].selected and snapshots[a].health==0,"wreck rejects input and entry")
@@ -165,6 +198,7 @@ check(snapshots[a].health==100 and snapshots[a].generation==deadGeneration+1 and
 check(not boxes[a].Parent,"old tank hitbox and prompt are retired")
 roots[102],humanoids[102]=character(second);second.CharacterAdded:Fire(second.Character);advance(4)
 check(humanoids[102].Health==100 and not roots[102].Anchored,"native character respawn rejoins on foot")
+check(battleStates["102"].score.deaths==1 and battleStates["101"].score.kills==1,"respawn and tank replenishment preserve scores")
 approach(second,a);enter(second,a,4)
 check(controls[102].selected==a,"respawned player can re-enter combat")
 remote.OnServerEvent:Fire(second,"Exit",5,a,epochSecond);advance(4)
@@ -204,6 +238,7 @@ check(remaining==6 and next(battleStates)==nil,"empty server keeps only its conf
 roots[101],humanoids[101]=character(first);players.PlayerAdded:Fire(first);advance(25)
 approach(first,b);enter(first,b,1)
 check(controls[101].selected==b,"rejoining creates fresh participation and can reuse available arena tanks")
+check(battleStates["101"].score.kills==1,"rejoining the same server preserves the player's scoreboard totals")
 local rejoinPosition=snapshots[b].position
 input.OnServerEvent:Fire(first,move,b,currentB);advance(6)
 check((snapshots[b].position-rejoinPosition).Magnitude<.01,"a previous connection's control lease cannot drive after rejoining")
@@ -261,16 +296,20 @@ local activeState
 for state in liveStates do if state.occupantUserId==105 then activeState=state end end
 check(activeState~=nil,"hazard fixture uses actual authoritative tank state")
 local priorGeneration=activeState.generation
+activeState.controlMode="Auto"
+local fallingTankScore=royale:scoreActor(royale.options.tanks[a])
 activeState.position=Vector3.new(0,0,26)
 remote.OnServerEvent:Fire(hazardPlayer,"Exit",2,a,controls[105].epoch);advance(4)
 check(controls[105].selected==a and string.find(controls[105].message,"Cannot exit"),"falling or edge exit stays occupied and returns clear feedback")
 for _=1,180 do advance(1);if snapshots[a].health<=0 then break end end
 check(snapshots[a].health==0 and snapshots[a].fatalWeapon=="Cannon" and snapshots[a].publicRetired,"falling public tank uses existing fatal explosion state and retirement")
 check(humanoids[105].Health==0 and not controls[105].selected and not snapshots[a].occupantUserId,"environmental death releases occupant and invokes native character death")
+check(fallingTankScore.deaths==1 and battleStates["105"].score.deaths==0,"occupied Auto death counts against the tank row, not the passenger")
 local serial=snapshots[a].damageSerial;advance(30)
 check(snapshots[a].damageSerial==serial,"remaining in hazard cannot record repeated deaths")
 advance(330)
 check(snapshots[a].health==100 and snapshots[a].generation==priorGeneration+1 and Terrain.safe(terrain,snapshots[a].position,7),"one safe replacement follows environmental destruction")
+check(royale:scoreActor(royale.options.tanks[a])==fallingTankScore and fallingTankScore.deaths==1,"replacement carries the tank's scoreboard record forward")
 roots[105],humanoids[105]=character(hazardPlayer);hazardPlayer.CharacterAdded:Fire(hazardPlayer.Character);advance(4)
 local respawn=roots[105].Position-Vector3.new(0,3,0)
 check(Terrain.safe(terrain,respawn,7),"destroyed occupant respawns on safe bank land")

@@ -67,7 +67,7 @@ end
 function Battlefield:orbit(delta)
 	if delta == Vector2.zero then return end
 	self.orbitAzimuth = ((self.orbitAzimuth or self.config.Azimuth) - delta.X * 0.35) % 360
-	self.orbitElevation = math.clamp((self.orbitElevation or self.config.Elevation) - delta.Y * 0.25, 30, 80)
+	self.orbitElevation = math.clamp((self.orbitElevation or self.config.Elevation) + delta.Y * 0.25, 30, 80)
 	self.orbitBasis = Math.basis(self.orbitElevation, self.orbitAzimuth)
 end
 function Battlefield:update(camera, _dt, state)

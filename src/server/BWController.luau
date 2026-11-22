@@ -42,6 +42,13 @@ function Controller.sync(tank)
 	tank.state.bwInstruction=runtime.currentText or (if instruction then instruction.text else "")
 end
 function Controller.running(tank) return tank.bw~=nil and tank.bw.status=="running" end
+function Controller.emitEvent(tank,name,payload)
+ local runtime=tank.bw
+ if not runtime or tank.state.health<=0 or tank.state.configurationZone or runtime.generation~=(tank.state.generation or 0) then
+  return false,"eventUnavailable"
+ end
+ return runtime:enqueueEvent(name,payload)
+end
 function Controller.stop(tank,reason)
 	if not Controller.running(tank) then if tank.bw then tank.bw.variables={}; tank.bw.versions={}; tank.bw.results={}; tank.bw.lastObservation=nil; tank.bw.lastValue=nil end; return false end
 	tank.bw:stop(reason or "Stopped by player.")

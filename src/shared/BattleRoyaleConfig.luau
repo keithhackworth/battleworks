@@ -1,5 +1,5 @@
 -- Startup policy only; hardware is assembled from existing registered parts.
-local C={Revision="playground-15-auto-v4",Mode="BattleRoyale",TankCount=15,Personalities=true,ReplenishDelay=5,InteractionDistance=12,ActionInterval=.35,EjectClearance=4,EjectSpeed=25}
+local C={Revision="playground-15-auto-v4",Mode="BattleRoyale",TankCount=15,MaxTankCount=100,Personalities=true,ReplenishDelay=5,InteractionDistance=12,ActionInterval=.35,EjectClearance=4,EjectSpeed=25}
 function C.mode(configuration,override)
  local setting=configuration and configuration:FindFirstChild("GameMode")
  local mode=override or (setting and setting.Value) or C.Mode
@@ -15,7 +15,7 @@ function C.settings(configuration)
   local item=configuration and configuration:FindFirstChild(name);local n=if item then item.Value else default
   assert(type(n)=="number" and n==n and n>=min and n<=max,"Invalid "..name);return n
  end
- local count=number("PublicTankCount",C.TankCount,2,16);assert(count%1==0,"PublicTankCount must be an integer")
+ local count=number("PublicTankCount",C.TankCount,2,C.MaxTankCount);assert(count%1==0,"PublicTankCount must be an integer")
  local flag=configuration and configuration:FindFirstChild("PlaygroundPersonalities")
  return {personalities=if flag then flag.Value==true else C.Personalities,count=count,delay=number("PublicTankReplenishDelay",C.ReplenishDelay,1,60)}
 end

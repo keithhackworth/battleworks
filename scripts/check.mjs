@@ -166,6 +166,9 @@ try {
     ['BWRetention'],
     ['VehicleContactsOptimization'],
     ['BusConfiguration'],
+    ['PlaygroundPopulation'],
+    ['BWEvents'],
+    ['BWEventStress'],
   ];
   if (groupIndex === null) {
     const worldTests = spawnSync(process.execPath, ['--test', ...(await readdir('tests')).filter(name=>name.endsWith('.test.js')).sort().map(name=>'tests/'+name)], { stdio: 'inherit' });

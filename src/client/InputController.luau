@@ -142,6 +142,24 @@ function Controller:refreshMode()
  self.mouseView:setVisible(resolved=="KeyboardMouse")
 	self.button.Text = "Input: " .. self.preference .. (if self.preference == "Auto" then " / " .. self.mode else "") .. "  ›"
 end
+function Controller:refreshProximityPrompts()
+ if self.tankPromptsSuppressed or self.textEntryActive then
+  if not self.promptService then
+   local service=game:GetService("ProximityPromptService")
+   if service then
+    self.promptService=service;self.savedPromptEnabled=service.Enabled
+    service.Enabled=false
+   end
+  end
+ elseif self.promptService then
+  self.promptService.Enabled=self.savedPromptEnabled
+  self.promptService=nil
+ end
+end
+function Controller:setTankPromptsSuppressed(suppressed)
+ self.tankPromptsSuppressed=suppressed
+ self:refreshProximityPrompts()
+end
 -- Shared modal focus bridge, including native chat fields in CoreGui which
 -- need not appear in UserInputService:GetFocusedTextBox(). No aim-mode changes.
 function Controller:setTextEntryFocus(owner,focused)
@@ -151,11 +169,9 @@ function Controller:setTextEntryFocus(owner,focused)
  if was==self.textEntryActive then return end
  self:release()
  if self.textEntryActive then
-  self.promptService=game:GetService("ProximityPromptService")
-  if self.promptService then self.savedPromptEnabled=self.promptService.Enabled;self.promptService.Enabled=false end
   self:disableDefaultMovement()
  elseif self.characterControl==true or (self.characterControl==nil and self.mode~="Touch")then self:restoreDefaultMovement()end
- if not self.textEntryActive and self.promptService then self.promptService.Enabled=self.savedPromptEnabled;self.promptService=nil end
+ self:refreshProximityPrompts()
  self:refreshSuspension()
 end
 function Controller:bindTextEntry(name,callbacks)

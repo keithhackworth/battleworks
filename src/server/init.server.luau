@@ -67,6 +67,7 @@ local bwRun,bwStop = remote("BWRun"),remote("BWStop")
 local resetBattle = remote("ResetBattle")
 local battleSession = remote("BattleSession")
 local royaleControl=remote("RoyaleControl")
+local royaleSprint=if isRoyale then remote("RoyaleSprint") else nil
 network:SetAttribute("GameMode",gameMode)
 network:SetAttribute("PlaygroundBWEnabled",not isRoyale or RoyaleConfig.bwEnabled(studioConfiguration))
 local bwExecution
@@ -630,6 +631,7 @@ local function launchShell(id, tank, origin, direction, deferEffects)
   shell.pendingHitProtected=victim and victim.state.configurationZone~=nil
  end
 	shell.owner = id
+	shell.scoreOwner = if royale then royale:scoreActor(tank) else nil
 	shell.weaponType=Components.get(tank.state).Weapon.WeaponType
 	shell.visualScale = if small then 0.4 else 1
 	shell.model = Instance.new("Model"); shell.model.Name = "Shell_" .. id; shell.model.Parent = shellFolder
@@ -671,7 +673,7 @@ local function updateShells(now)
 				if other.hitbox == hit.Instance then
 					local battle=if other.public then royale.battle else battles[other.owner]
 					if not protected and Battle.damage(battle,other,tanks[shell.owner],shell.damage,shell.weaponType,hit.Position) and multiplayer and other.state.health<=0 then
-                        if other.public then royale:destroyed(other)else other.respawnAt=simulationTime+3 end
+                        if other.public then royale:destroyed(other,shell.scoreOwner)else other.respawnAt=simulationTime+3 end
                     end
 				end
 			end
@@ -846,6 +848,7 @@ if isRoyale then
   end)end
  end
  royaleControl.OnServerEvent:Connect(function(player,...)royale:request(player,...)end)
+ royaleSprint.OnServerEvent:Connect(function(player,enabled,revision)royale:sprint(player,enabled,revision)end)
  if bwExecution then
   bwExecution.OnServerEvent:Connect(function(player,enabled)
    if not RunService:IsStudio() or Players:GetPlayerByUserId(player.UserId)~=player
@@ -1039,8 +1042,8 @@ RunService.Heartbeat:Connect(function(dt)
             end
         end
         local battleStates={}
-		for owner,battle in battles do battleStates[tostring(owner)]={selected=battle.selected,winner=battle.winner,multiplayer=battle.multiplayer,royale=battle.royale,controlRevision=battle.controlRevision} end
-		snapshot:FireAllClients(states,battleStates)
+		for owner,battle in battles do battleStates[tostring(owner)]={selected=battle.selected,winner=battle.winner,multiplayer=battle.multiplayer,royale=battle.royale,controlRevision=battle.controlRevision,score=if royale then royale.scores[owner] else nil} end
+		snapshot:FireAllClients(states,battleStates,if royale then royale.scoreRevision else nil,if royale then royale.tankScores else nil)
 		profileEnd()
 	end
 	if diagnostics then

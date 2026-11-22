@@ -12,7 +12,7 @@ function D.new(config,state,services)
  for name,spec in config.devices do self.devices[name]={name=name,spec=spec,performance=Hardware.effective(config,name,self.components),queue={}} end
  return self
 end
-function D:submit(name,instruction,time,thread)
+function D:submit(name,instruction,time,thread,owner)
  local d=self.devices[name]
  if not d then return Value.result("deviceUnavailable") end
  if name:sub(1,6)=="sensor" and not self.components.Sensors[tonumber(name:sub(7))] then return Value.result("deviceUnavailable") end
@@ -36,7 +36,7 @@ function D:submit(name,instruction,time,thread)
   local c={id=self.nextId,instruction=instruction,thread=thread,submitted=time,started=time,completed=time,state="completed",device=name}
   self.commands[c.id]=c; self.retainedCount+=1; self:archive(c)
   if steering then
-   self.steeringThread=thread
+   self.steeringThread=owner or thread
    local max=self.components.Mobility.MaxSteer
    self.steering=if op=="steer_center" then 0 else math.min(math.rad(instruction.value),max)*(if op=="steer_left" then 1 else -1)
    return Value.result(nil,{commandId=c.id,steeringDegrees=math.deg(self.steering)})
@@ -45,7 +45,7 @@ function D:submit(name,instruction,time,thread)
  end
  if (d.active or #d.queue>0) and #d.queue>=Hardware.Tiers[self.config.tier].queue then return Value.result("deviceQueueFull") end
  self.nextId+=1
- local c={id=self.nextId,instruction=instruction,thread=thread,submitted=time,state=if d.active or #d.queue>0 then "queued" else "accepted",device=name,continuous=continuous}
+ local c={id=self.nextId,instruction=instruction,thread=thread,owner=owner,submitted=time,state=if d.active or #d.queue>0 then "queued" else "accepted",device=name,continuous=continuous}
  self.commands[c.id]=c; self.retainedCount+=1
  if not d.active and #d.queue==0 then d.active=c else table.insert(d.queue,c) end
  return Value.result(nil,{commandId=c.id})
@@ -80,14 +80,14 @@ function D:stopThread(thread,time)
  for _,d in self.devices do
   local retained={}
   for _,c in d.queue do
-   if c.thread==thread then
+   if (c.owner or c.thread)==thread then
     c.state="cancelled"; c.reason="commandCancelled"; c.completed=time
     if d.name:sub(1,6)=="sensor" then c.result=Value.result("commandCancelled",{sensor=c.instruction.value}) end
     self:archive(c)
    else table.insert(retained,c) end
   end
   d.queue=retained
-  if d.active and d.active.thread==thread then self:terminal(d,d.active,"cancelled","commandCancelled",time) end
+  if d.active and (d.active.owner or d.active.thread)==thread then self:terminal(d,d.active,"cancelled","commandCancelled",time) end
  end
 end
 function D:stop(time,reason)
@@ -181,12 +181,15 @@ function D:step(state,dt,time)
  end
  return input
 end
-function D:diagnostics()
+function D:diagnostics(time)
  local out={}
  for name,d in self.devices do
   local queue={}; for _,c in d.queue do table.insert(queue,{id=c.id,op=c.instruction.op,thread=c.thread}) end
   out[name]={steeringDegrees=if name=="drivetrain" then math.deg(self.steering) else nil,bus=d.spec.bus,allocation=d.spec.allocation,performance=d.performance,scanAttempts=d.scanAttempts or 0,scanSuccesses=d.scanSuccesses or 0,scanFailures=d.scanFailures or 0,lastScan=d.lastScan,capacity=Hardware.Tiers[self.config.tier].queue,
    active=if d.active then {id=d.active.id,op=d.active.instruction.op,thread=d.active.thread,state=d.active.state} else false,queue=queue}
+  if time and d.active and d.active.acquireAt then
+   out[name].active.acquisitionRemaining=math.max(0,d.active.acquireAt-time)
+  end
   if self.config.allocations and name:sub(1,6)=="sensor" then
    local entry=out[name]
    entry.range=if d.performance>0 then d.spec.range*d.spec.distancePercent/100 else 0
