@@ -61,6 +61,7 @@ function C.default(tier,vehicle)
 end
 function C.forTank(vehicle) local profile=Components.get(vehicle); return C.default(profile.Computer.Tier,profile) end
 C.Categories={"drivetrain","turret","weapon","scanners"}
+C.RetaliatorMesh=Catalog["sensor.retaliator_mesh"]
 local ProjectileFloor,TradeoffFloor=.65,.75
 local function boosted(base,floor,power)
  return base*(floor+(1-floor)*power)
@@ -92,8 +93,14 @@ end
 function C.effective(config,name,vehicle)
  local device=config.devices[name]
  if not device then return 0 end
+ if name=="retaliatorMesh" then return if C.retaliatorOperational(config) then 1 else 0 end
  if name=="weapon" then return (C.weaponStats(config,vehicle)) end
  return C.devicePerformance(name,device.allocation,vehicle)
+end
+function C.retaliatorOperational(config)
+ local device=config and config.devices.retaliatorMesh
+ return device~=nil and device.componentId==C.RetaliatorMesh.Id
+  and device.allocation>=C.RetaliatorMesh.Properties.MinimumAllocation
 end
 function C.driveRates(vehicle,power)
  local mobility=vehicle.Mobility
@@ -131,6 +138,12 @@ function C.fromCategories(draft,vehicle,tier)
   if not bounded(value,100) then return nil,"invalidAllocation" end
   allocations[name]=value;total+=value
  end
+ local meshAllocation=draft.allocations.retaliatorMesh
+ if meshAllocation~=nil then
+  if not bounded(meshAllocation,100) then return nil,"invalidAllocation" end
+  allocations.retaliatorMesh=meshAllocation
+  total+=meshAllocation
+ end
  if total>100+1e-8 then return nil,"busOverallocated" end
  for _,name in {"scanners","weapon"} do
   local bias=draft.tuning[name]
@@ -142,6 +155,9 @@ function C.fromCategories(draft,vehicle,tier)
  if count==0 and allocations.scanners>0 then return nil,"noScanners" end
  local config={tier=tier,devices={},allocations=allocations,tuning=tuning}
  for _,name in {"drivetrain","turret","weapon"} do config.devices[name]={bus=1,allocation=allocations[name]} end
+ if meshAllocation~=nil then
+  config.devices.retaliatorMesh={bus=1,allocation=meshAllocation,componentId=C.RetaliatorMesh.Id}
+ end
  if count>0 then
   local allocation=allocations.scanners/count
   local bias=tuning.scanners
@@ -170,11 +186,14 @@ end
 function C.validate(config)
  if type(config)~="table" or not C.Tiers[config.tier] or type(config.devices)~="table" then return nil,"invalidChassis" end
  local spec=C.Tiers[config.tier]; local sums={}; local count=0
+ local maxDevices=if config.devices.retaliatorMesh then 12 else 11
  for name,d in config.devices do
   count+=1
-  if count>11 or type(name)~="string" or not (name=="drivetrain" or name=="turret" or name=="weapon" or (name:match("^sensor%d+$") and table.find(C.Angles,tonumber(name:sub(7))))) then return nil,"invalidDevice" end
+  if count>maxDevices or type(name)~="string" or not (name=="drivetrain" or name=="turret" or name=="weapon" or name=="retaliatorMesh" or (name:match("^sensor%d+$") and table.find(C.Angles,tonumber(name:sub(7))))) then return nil,"invalidDevice" end
   if type(d)~="table" or type(d.bus)~="number" or d.bus%1~=0 or d.bus<1 or d.bus>spec.threads then return nil,"invalidBus" end
   if type(d.allocation)~="number" or d.allocation~=d.allocation or d.allocation<0 or d.allocation>100 then return nil,"invalidAllocation" end
+  if name=="retaliatorMesh" and (d.componentId~=C.RetaliatorMesh.Id or d.bus~=1
+   or type(config.allocations)~="table" or d.allocation~=config.allocations.retaliatorMesh) then return nil,"invalidDevice" end
   if d.acquisition~=nil and (type(d.acquisition)~="number" or d.acquisition~=d.acquisition or d.acquisition<0 or d.acquisition>5) then return nil,"invalidAcquisition" end
   if d.range~=nil and (type(d.range)~="number" or d.range~=d.range or d.range<=0 or d.range>ScannerConfig.MaxHardwareRange) then return nil,"invalidRange" end
   if d.distancePercent~=nil and (type(d.distancePercent)~="number" or d.distancePercent~=d.distancePercent or d.distancePercent<0 or d.distancePercent>100) then return nil,"invalidRange" end
@@ -189,7 +208,7 @@ end
 function C.copy(config)
  local out={tier=config.tier,devices={}}
  if config.allocations then out.allocations=table.clone(config.allocations);out.tuning=table.clone(config.tuning) end
- for k,d in config.devices do out.devices[k]={bus=d.bus,allocation=d.allocation,acquisition=d.acquisition,range=d.range,distancePercent=d.distancePercent,coneWidth=d.coneWidth,cooldown=d.cooldown,originHeight=d.originHeight} end
+ for k,d in config.devices do out.devices[k]={bus=d.bus,allocation=d.allocation,acquisition=d.acquisition,range=d.range,distancePercent=d.distancePercent,coneWidth=d.coneWidth,cooldown=d.cooldown,originHeight=d.originHeight,componentId=d.componentId} end
  return out
 end
 return C

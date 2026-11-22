@@ -460,6 +460,12 @@ function C.obstacles(environment,mapSize,radius)
   zone.configurationOnly=true
   table.insert(out,zone)
  end
+ local course=environment and environment.playground and environment.playground.course
+ if course then
+  local zone=C.box("course:boundary",Vector3.new((course.x0+course.x1)/2,0,(course.z0+course.z1)/2),(course.x1-course.x0)/2,(course.z1-course.z0)/2,-math.huge,math.huge)
+  zone.configurationOnly=true
+  table.insert(out,zone)
+ end
  for i,t in environment and environment.trees or {} do table.insert(out,C.box("tree:"..i,Vector3.new(t.x,0,t.z),t.radius,t.radius,0,t.height or math.huge)) end
  if environment then environment.motionObstacles={width=mapSize and mapSize.X,depth=mapSize and mapSize.Y,records=out} end
  return out

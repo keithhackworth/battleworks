@@ -1,0 +1,25 @@
+# Retaliator Mesh demo for a tracked Boomer with drivetrain power.
+# A damage event wakes this idle program and sends the tank away from the hit.
+function evade(const event):
+    print(event)
+    if event.direction == null:
+        back(6)
+        return
+
+    heading = get_tank_direction().world_direction + event.direction + 180
+    turn = turn_right(to=heading)
+    if turn.status == "fail":
+        return
+
+    deadline = get_clock().time + 10
+    state = command_status(turn.commandId)
+    while (state.state == "accepted" or state.state == "queued" or state.state == "running") and get_clock().time < deadline:
+        wait_for_clock(get_clock().time + 0.1)
+        state = command_status(turn.commandId)
+
+    if state.state == "completed" and state.completionReason == null:
+        forward(12)
+    elif state.state == "running":
+        abort_command("drivetrain")
+
+on_event("OnDamageTaken", evade)

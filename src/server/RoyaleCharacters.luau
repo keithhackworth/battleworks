@@ -71,4 +71,14 @@ function Characters:forget(player)
  if record and record.connection then record.connection:Disconnect()end
  self.records[player]=nil
 end
+function Characters:seat(player,position)
+ local root=self:root(player)
+ local record=self.records[player]
+ if record and record.root==root then
+  root.CFrame=CFrame.new(position+Vector3.new(0,3,0))
+ else
+  self:forget(player)
+  self:hide(player,position)
+ end
+end
 return Characters

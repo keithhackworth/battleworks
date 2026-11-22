@@ -68,6 +68,11 @@ local function advance(frames)for _=1,frames do time+=1/60;heartbeat:Fire(1/60)e
 advance(4)
 check((network:FindFirstChild("PlaygroundBWExecution")~=nil)==not headlessStartup,"diagnostic remote exists only in Studio")
 check(players.CharacterAutoLoads and network:GetAttribute("GameMode")=="BattleRoyale","Royale is native-character automatic admission, not menu admission")
+local entryTerrain=require("PlaygroundTerrain")
+local layout=entryTerrain.create(entryTerrain.DefaultSize)
+check(first.RespawnLocation and first.RespawnLocation==second.RespawnLocation and first.RespawnLocation.Name=="PlaygroundCharacterSpawn","Roblox spawns both avatars at the designated Playground entry")
+check(entryTerrain.safe(layout,first.RespawnLocation.Position,7) and not entryTerrain.inCourse(layout,first.RespawnLocation.Position,8),"native entry is on the dry bank outside the course")
+check(entryTerrain.safe(layout,roots[101].Position-Vector3.new(0,3,0),7),"server placement keeps the on-foot avatar on supported dry land")
 for _,p in created do
  if p.Name=="Arena"then check(p:GetAttribute("Weather")=="Normal","default Royale arena has normal weather")end
  if p.Name=="Floor"then check(p.Material==Enum.Material.Grass,"default Royale floor is grass rather than ice")end
@@ -176,6 +181,34 @@ local epochB=controls[101].epoch;local epochSecond=controls[102].epoch
 remote.OnServerEvent:Fire(first,"Exit",3,b,epochB);advance(4)
 check(controls[101].selected==b,"stale request IDs cannot release a newer occupancy")
 -- Authoritative projectiles cause cross-player damage; no client hit remote.
+local victim=royale.options.tanks[a]
+local previousPosition=victim.state.position
+local terrainFactory=require("PlaygroundTerrain")
+local zone=terrainFactory.create(terrainFactory.DefaultSize).configurationZones[1]
+victim.state.position=Vector3.new(zone.x,zone.y,zone.z)
+local garage=network:FindFirstChild("GarageConfiguration")
+local equipped=garage.OnServerInvoke(second,"SaveZone",a,{allocations={drivetrain=25,turret=15,weapon=20,scanners=15,retaliatorMesh=25},tuning={weapon=.5,scanners=.5}},epochSecond)
+check(not equipped.ok and not require("BWChassis").retaliatorOperational(victim.hardware),"Playground rejects lab equipment even on a forged zone save")
+do
+ local before=victim.state
+ local kind=if victim.kind=="Boomer" then "Rattler" else "Boomer"
+ local weaponId=if before.weaponId=="weapon.cannon" then "weapon.gatling" else "weapon.cannon"
+ local draft={kind=kind,weapon=weaponId,allocations={drivetrain=32,turret=15,weapon=33,scanners=20},tuning={weapon=.35,scanners=.65}}
+ local motion=require("VehicleMotion")
+ motion.setVelocity(before,Vector3.new(2,0,0))
+ check(not garage.OnServerInvoke(second,"SaveZone",a,draft,epochSecond).ok,"moving tanks cannot change physical equipment")
+ motion.setVelocity(before,Vector3.zero)
+ draft.weapon="weapon.invalid"
+ check(not garage.OnServerInvoke(second,"SaveZone",a,draft,epochSecond).ok,"invalid equipment selection is rejected")
+ draft.weapon=weaponId
+ check(garage.OnServerInvoke(second,"SaveZone",a,draft,epochSecond).ok,"stationary occupant can swap hardware")
+ check(victim.state~=before and victim.state.generation==before.generation+1 and victim.state.health==before.health and victim.occupant==102,
+  "equipment rebuild keeps health and ownership with a new physical generation")
+ local rebuilt=require("VehicleComponents").get(victim.state)
+ check(rebuilt.Mobility.Kind==(if kind=="Boomer" then "Tracked" else "Wheeled") and rebuilt.Installed.Weapon==weaponId,
+  "new mobility and weapon are installed in the actual simulation")
+end
+victim.state.position=previousPosition
 local hits=0;local weapon=require("VehicleComponents").forWeapon(snapshots[b].tankType,snapshots[b].weaponId).Weapon
 local needed=math.ceil(snapshots[a].health/weapon.Damage)
 workspace.Spherecast=function(_,origin,_,delta,params)
@@ -191,23 +224,21 @@ check(not controls[102].selected and snapshots[a].health==0,"wreck rejects input
 local deadGeneration=snapshots[a].generation
 local Settings=require("WorldSettings");local originalBlocked=Settings.blocked
 Settings.blocked=function()return true end
+roots[102],humanoids[102]=character(second);second.CharacterAdded:Fire(second.Character)
 advance(320)
-check(snapshots[a]==nil,"blocked replenishment retires the wreck and waits instead of spawning inside solid geometry")
+check(snapshots[a].health==0 and not controls[102].selected,"blocked coordinated respawn waits for a legal spawn")
 Settings.blocked=originalBlocked;advance(65)
-check(snapshots[a].health==100 and snapshots[a].generation==deadGeneration+1 and not snapshots[a].occupantUserId,"pool replenishes as a fresh arena tank, never the former occupant's personal tank")
-check(not boxes[a].Parent,"old tank hitbox and prompt are retired")
-roots[102],humanoids[102]=character(second);second.CharacterAdded:Fire(second.Character);advance(4)
-check(humanoids[102].Health==100 and not roots[102].Anchored,"native character respawn rejoins on foot")
-check(battleStates["102"].score.deaths==1 and battleStates["101"].score.kills==1,"respawn and tank replenishment preserve scores")
-approach(second,a);enter(second,a,4)
-check(controls[102].selected==a,"respawned player can re-enter combat")
+check(snapshots[a].health==100 and snapshots[a].generation==deadGeneration+1 and snapshots[a].occupantUserId==102,"replacement preserves the slot and automatically seats the former occupant")
+check(roots[102].Anchored and (roots[102].Position-snapshots[a].position-Vector3.new(0,3,0)).Magnitude<.01,"character and replacement tank spawn together")
+check(controls[102].selected==a and controls[102].controlMode=="Manual","client receives the new Manual lease for camera restoration")
+check(victim.hardware.allocations.drivetrain==32 and victim.hardware.tuning.weapon==.35 and victim.state.weaponId==victim.assembly.Weapon,"respawn retains the applied physical equipment and bus configuration")
+check(battleStates["102"].score.deaths==1 and battleStates["101"].score.kills==1,"coordinated respawn preserves scores")
 remote.OnServerEvent:Fire(second,"Exit",5,a,epochSecond);advance(4)
-check(controls[102].selected==a,"old lease cannot exit a replenished tank")
+check(controls[102].selected==a,"old lease cannot exit a replacement tank")
 humanoids[102].Health=0;humanoids[102].Died:Fire();advance(4)
-check(not controls[102].selected and snapshots[a].health==100 and not snapshots[a].occupantUserId,"native character death releases an intact tank without repairing or destroying it")
+check(not controls[102].selected and snapshots[a].health==0,"native character death queues coordinated replacement")
 roots[102],humanoids[102]=character(second);second.CharacterAdded:Fire(second.Character);advance(25)
-approach(second,a);enter(second,a,6)
-check(controls[102].selected==a,"character death/respawn permits another clean occupancy")
+check(controls[102].selected==a and snapshots[a].generation==deadGeneration+2 and not snapshots[a].bwRunning,"repeated deaths produce one new generation each with no orphaned program")
 for _,p in created do if p.Name=="TankHitbox" and p:GetAttribute("TankId")==a and not p.destroyed then boxes[a]=p end end
 local retaliated=false;local beforeRetaliation=snapshots[b].health
 workspace.Spherecast=function(_,origin,_,delta,params)
@@ -222,10 +253,19 @@ players.PlayerAdded:Fire(third);advance(4)
 check(battleStates["103"].royale and not controls[103].selected and #ids==6,"late join is admitted on foot into the existing public battlefield")
 local currentB=controls[101].epoch
 local abandonedHealth=snapshots[b].health
-bwRun.OnServerEvent:Fire(first,"forward(100)",2,b,currentB);advance(4)
-check(snapshots[b].bwRunning,"disconnect fixture has active occupant BW")
+local leavingTank=royale.options.tanks[b]
+bwRun.OnServerEvent:Fire(first,[[function drive(const event):
+    forward()
+    wait_for_clock(get_clock().time + 20)
+on_event("OnDamageTaken", drive)]],2,b,currentB)
+local leavingRuntime=leavingTank.bw
+for _=1,2 do check(require("BWController").emitEvent(leavingTank,"OnDamageTaken",{}),"disconnect fixture queues a handler") end
+advance(8)
+check(snapshots[b].bwRunning and leavingRuntime.devices:busy() and #leavingRuntime.events.queue==1,"disconnect fixture has active and queued BW work")
 players.PlayerRemoving:Fire(first);advance(4)
 check(snapshots[b] and not snapshots[b].occupantUserId and not snapshots[b].bwRunning and not snapshots[b].firing and not battleStates["101"],"disconnect stops AI/input and releases public tank without deleting it")
+check(leavingRuntime.status=="stopped" and #leavingRuntime.events.queue==0 and not leavingRuntime.devices:busy()
+ and leavingRuntime.totalCallFrames==0 and leavingTank.bw==nil,"disconnect releases the previous occupant's invocation and all remaining work")
 check(snapshots[b].health==abandonedHealth,"release/disconnect never repairs an injured public tank")
 local currentA=controls[102].epoch
 move.fire=true
@@ -283,7 +323,7 @@ for _,part in created do
   check(math.abs(top.Y-Terrain.sample(terrain,top.X,top.Z))<.001,"native sloped top matches authoritative terrain plane")
  end
 end
-check(bridge and bridge.CanCollide and bridge.Size.Z==24,"native bridge supports avatars with room for two tank lanes")
+check(bridge and bridge.CanCollide and bridge.Size.Z<16,"native bridge has a narrow deck for a single tank")
 local hazardPlayer={UserId=105,Name="Hazard Tester",CharacterAdded=signal()}
 roots[105],humanoids[105]=character(hazardPlayer);players.PlayerAdded:Fire(hazardPlayer);advance(25)
 check(Terrain.safe(terrain,roots[105].Position-Vector3.new(0,3,0),7),"new character spawns on designated land clear of water/cliffs")
@@ -296,37 +336,79 @@ local activeState
 for state in liveStates do if state.occupantUserId==105 then activeState=state end end
 check(activeState~=nil,"hazard fixture uses actual authoritative tank state")
 local priorGeneration=activeState.generation
-activeState.controlMode="Auto"
+activeState.controlMode="Manual"
 local fallingTankScore=royale:scoreActor(royale.options.tanks[a])
-activeState.position=Vector3.new(0,0,26)
+activeState.position=Vector3.new(0,0,34)
 remote.OnServerEvent:Fire(hazardPlayer,"Exit",2,a,controls[105].epoch);advance(4)
 check(controls[105].selected==a and string.find(controls[105].message,"Cannot exit"),"falling or edge exit stays occupied and returns clear feedback")
 for _=1,180 do advance(1);if snapshots[a].health<=0 then break end end
 check(snapshots[a].health==0 and snapshots[a].fatalWeapon=="Cannon" and snapshots[a].publicRetired,"falling public tank uses existing fatal explosion state and retirement")
 check(humanoids[105].Health==0 and not controls[105].selected and not snapshots[a].occupantUserId,"environmental death releases occupant and invokes native character death")
-check(fallingTankScore.deaths==1 and battleStates["105"].score.deaths==0,"occupied Auto death counts against the tank row, not the passenger")
+check(fallingTankScore.deaths==1 and battleStates["105"].score.deaths==1,"occupied Manual death counts against the driver")
 local serial=snapshots[a].damageSerial;advance(30)
 check(snapshots[a].damageSerial==serial,"remaining in hazard cannot record repeated deaths")
 advance(330)
-check(snapshots[a].health==100 and snapshots[a].generation==priorGeneration+1 and Terrain.safe(terrain,snapshots[a].position,7),"one safe replacement follows environmental destruction")
-check(royale:scoreActor(royale.options.tanks[a])==fallingTankScore and fallingTankScore.deaths==1,"replacement carries the tank's scoreboard record forward")
-roots[105],humanoids[105]=character(hazardPlayer);hazardPlayer.CharacterAdded:Fire(hazardPlayer.Character);advance(4)
-local respawn=roots[105].Position-Vector3.new(0,3,0)
-check(Terrain.safe(terrain,respawn,7),"destroyed occupant respawns on safe bank land")
-for _,state in snapshots do check((respawn-state.position).Magnitude>7,"character respawn avoids every occupied or unoccupied public tank")end
-roots[105].CFrame=CFrame.new(0,-30,30);advance(4)
-check(humanoids[105].Health==0,"on-foot river fall kills avatar server-side")
+check(snapshots[a].health==0 and fallingTankScore.deaths==1,"no replacement before the new character exists")
 roots[105],humanoids[105]=character(hazardPlayer);hazardPlayer.CharacterAdded:Fire(hazardPlayer.Character);advance(25)
-check(Terrain.safe(terrain,roots[105].Position-Vector3.new(0,3,0),7),"infantry river death respawns on designated dry land")
-approach(hazardPlayer,a);enter(hazardPlayer,a,3);advance(4)
+check(snapshots[a].health==100 and snapshots[a].generation==priorGeneration+1 and Terrain.safe(terrain,snapshots[a].position,7),"environmental destruction restores the driver and tank to a safe position")
+check(controls[105].selected==a and snapshots[a].controlMode=="Manual","environmental respawn restores Manual control")
 local falling
 Sim.step=function(state,...)if state.occupantUserId==105 then falling=state end;return realStep(state,...)end
 advance(4);Sim.step=realStep
 check(falling~=nil,"respawned hazard tester can re-enter")
-falling.position=Vector3.new(0,-10,30);players.PlayerRemoving:Fire(hazardPlayer);advance(180)
+do
+ local course=terrain.course
+ local tank=royale.options.tanks[a]
+ falling.position=course.start;advance(4)
+ check(tank.course and tank.course.phase=="Ravine Crossing","entering the course start pad starts the timer")
+ falling.position=Vector3.new(0,2.2,21);advance(2)
+ falling.position=course.range;advance(2)
+ check(tank.course.phase=="Moving Target Range","reaching the range after the deck advances the run")
+ local hitTargets={}
+ for _,target in created do if target.Name=="CourseTarget" then table.insert(hitTargets,target) end end
+ check(#hitTargets==3,"three physical course targets exist")
+ local hitIndex=0
+ workspace.Spherecast=function(_,origin,_,delta,params)
+  local target=hitTargets[hitIndex+1]
+  if target and params.FilterDescendantsInstances[1]==boxes[a] then
+   hitIndex+=1;return {Instance=target,Position=origin+delta.Unit*.01,Distance=.01}
+  end
+ end
+ local driveAndFire={throttle=0,steer=0,fire=false,aimMode="Rate",turretX=0,turretY=0}
+ input.OnServerEvent:Fire(hazardPlayer,driveAndFire,a,controls[105].epoch);advance(4)
+ driveAndFire.fire=true
+ for _=1,1200 do
+  input.OnServerEvent:Fire(hazardPlayer,driveAndFire,a,controls[105].epoch)
+  advance(1)
+  if tank.course.hits==3 then break end
+ end
+ check(tank.course.hits==3,"authoritative shell impacts credit the three unique targets")
+ falling.position=course.gauntlet;advance(4)
+ check(tank.course.phase=="Bullet Gauntlet","range completion unlocks the gauntlet")
+ workspace.Spherecast=function(_,origin,_,delta,params)
+  if params.FilterDescendantsInstances[1]~=boxes[a] and math.abs(origin.X-course.gauntlet.X)<18 then
+   return {Instance=boxes[a],Position=origin+delta.Unit*.01,Distance=.01}
+  end
+ end
+ local health=falling.health
+ advance(80)
+ check(falling.health<health and falling.health>0,"gauntlet projectiles use authoritative damage")
+ workspace.Spherecast=function()return nil end
+ falling.position=Vector3.new(course.finish+1,0,0);advance(4)
+ check(tank.course.phase=="Complete","reaching the gauntlet exit alive records completion")
+ network:FindFirstChild("ProvingGroundsAction").OnServerEvent:Fire(hazardPlayer,"Restart",a,controls[105].epoch)
+ falling=tank.state;advance(4)
+ check(tank.course.phase=="Ravine Crossing" and tank.course.hits==0 and (falling.position-course.start).Magnitude<.1,"Replay resets course state and returns the occupied tank to the start")
+ falling.position=Vector3.new(0,-30,34);advance(4)
+ check(not controls[105].selected,"course ravine fall uses the coordinated respawn path")
+ roots[105],humanoids[105]=character(hazardPlayer);hazardPlayer.CharacterAdded:Fire(hazardPlayer.Character);advance(4)
+ falling=tank.state
+ check(controls[105].selected==a and (falling.position-course.start).Magnitude<.1,"after falling the driver respawns in their tank at the course start")
+end
+falling.position=Vector3.new(0,-30,34);players.PlayerRemoving:Fire(hazardPlayer);advance(180)
 check(not snapshots[a].occupantUserId and snapshots[a].health==0 and not battleStates["105"],"disconnect during a fall releases control but does not spare the public tank")
 advance(330)
-check(snapshots[a].generation==priorGeneration+2 and snapshots[a].health==100,"disconnect/fall replenishes exactly once")
+check(snapshots[a].generation==priorGeneration+4 and snapshots[a].health==100,"disconnect/fall replenishes exactly once")
 local safeCalls=0
 local characterAdapter=require("RoyaleCharacters").new(function()safeCalls+=1;return Vector3.zero end)
 characterAdapter:hide(first,Vector3.new(40,50,-20))

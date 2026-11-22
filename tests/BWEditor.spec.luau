@@ -308,6 +308,25 @@ UIS.focusedTextBox=Instance.new('TextBox'); local unchanged=box.Text; press('Tab
 UIS.focusedTextBox=box
 ed:bind('b','second'); native('second edited',14); flush(); ed:bind('a','ignored'); equal(box.Text,nativeBefore,'per-tank source and history retained')
 ed:bind('b','ignored'); ed:key('undo'); equal(box.Text,'second','per-tank undo isolated')
+local wordSource='fire_now(42)\nback()'
+ed:bind('word-selection',wordSource)
+native(wordSource,1); flush()
+down[Enum.KeyCode.LeftShift]=true
+local wordUpdates=updates
+press('Right'); native(wordSource,2,1); frame()
+native(wordSource,2,1); flush()
+check(box.CursorPosition==9 and box.SelectionStart==1,'Shift+Right selects the identifier before the opening parenthesis despite native echoes')
+for _,cursor in {10,12,13,14,18} do
+ press('Right'); release('Right')
+ check(box.CursorPosition==cursor and box.SelectionStart==1,'Shift+Right stops at boundary '..cursor)
+end
+press('Left'); release('Left'); flush()
+check(box.CursorPosition==14 and box.SelectionStart==1,'reversing direction shrinks the selection from the same anchor')
+check(updates==wordUpdates and #ed.history.undoStack==0,'word selection does not edit the source or create undo entries')
+down[Enum.KeyCode.LeftShift]=false
+local unicode='a—b\r\nc'
+check(T.selectWord(unicode,2,-1,1)==5 and T.selectWord(unicode,5,-1,-1)==2,'UTF-8 separator stays whole')
+check(T.selectWord(unicode,6,-1,1)==8 and T.selectWord(unicode,8,-1,-1)==6,'CRLF stays whole')
 native('late edit',10); local beforeDestroy=updates; ed:destroy(); flush(); check(updates==beforeDestroy,'destroy cancels deferred writes')
 -- IDE Run submits bytes verbatim; undo buttons use the same atomic history.
 local sent

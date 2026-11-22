@@ -9,7 +9,20 @@ local ScannerConfig=require(script.Parent.ScannerConfig)
 local D={}; D.__index=D
 function D.new(config,state,services)
  local self=setmetatable({config=config,services=services or {},devices={},commands={},completed={},retainedCount=0,nextId=0,generation=state.generation,tankType=state.tankType,components=Components.get(state),steering=0},D)
- for name,spec in config.devices do self.devices[name]={name=name,spec=spec,performance=Hardware.effective(config,name,self.components),queue={}} end
+ local names,sensors,sensorSlots={},{},{}
+ for name,spec in config.devices do
+  self.devices[name]={name=name,spec=spec,performance=Hardware.effective(config,name,self.components),queue={}}
+  table.insert(names,name)
+ end
+ table.sort(names)
+ for index,name in names do
+  if name:sub(1,6)=="sensor" then
+   sensorSlots[index]=#sensors
+   table.insert(sensors,name)
+  end
+ end
+ table.sort(sensors,function(a,b)return tonumber(a:sub(7))<tonumber(b:sub(7))end)
+ self.deviceOrder,self.sensorOrder,self.sensorSlots=names,sensors,sensorSlots
  return self
 end
 function D:submit(name,instruction,time,thread,owner)
@@ -60,9 +73,9 @@ end
 function D:terminal(d,c,state,reason,time)
  c.state=state; c.reason=reason; c.completed=time;c.executor=nil
  if d.name:sub(1,6)=="sensor" and not c.result then c.result=Value.result(reason or "commandCancelled",{sensor=c.instruction.value}) end
- if d.name=="weapon" and state~="completed" and self.services.cancelWeapon then self.services.cancelWeapon() end
  self:archive(c)
  d.active=nil
+ if d.name=="weapon" and state~="completed" and self.services.cancelWeapon then self.services.cancelWeapon() end
  -- Starting the next command is deferred to the next fixed simulation tick.
 end
 function D:manage(name,abort,time)
@@ -77,7 +90,9 @@ function D:manage(name,abort,time)
 end
 function D:stopThread(thread,time)
  if self.steeringThread==thread then self.steering=0; self.steeringThread=nil end
- for _,d in self.devices do
+ for _,name in self.deviceOrder do
+  local d=self.devices[name]
+  if not d then continue end
   local retained={}
   for _,c in d.queue do
    if (c.owner or c.thread)==thread then
@@ -92,7 +107,9 @@ function D:stopThread(thread,time)
 end
 function D:stop(time,reason)
  self.steering=0
- for name,d in self.devices do
+ for _,name in self.deviceOrder do
+  local d=self.devices[name]
+  if not d then continue end
   self:manage(name,false,time)
   if d.active then self:terminal(d,d.active,"cancelled",reason or "commandCancelled",time) end
  end
@@ -117,22 +134,16 @@ function D:step(state,dt,time)
  if state.health<=0 or state.generation~=self.generation then self:stop(time,"tankDestroyed"); return input end
  local drive=self.devices.drivetrain
  if drive and drive.performance>0 and self.components.Mobility.Kind=="Wheeled" then input.steer=self:steerInput() end
- local names={}; for name in self.devices do table.insert(names,name) end; table.sort(names)
  -- The query-budget guard is shared, but sensor cooldowns are not. Rotate
  -- acquisition priority each cooldown interval so fixed lexical order cannot
  -- repeatedly deny the same lens when many sensors become ready together.
- local sensors={}
- for _,name in names do if name:sub(1,6)=="sensor" then table.insert(sensors,name) end end
- table.sort(sensors,function(a,b) return tonumber(a:sub(7))<tonumber(b:sub(7)) end)
- if #sensors>0 then
-  local start=math.floor(time/ScannerConfig.SensorCooldown+1e-7)%#sensors
-  local index=0
-  for i,name in names do
-   if name:sub(1,6)=="sensor" then names[i]=sensors[(index+start)%#sensors+1]; index+=1 end
-  end
- end
- for _,name in names do
+ local sensors=self.sensorOrder
+ local start=if #sensors>0 then math.floor(time/ScannerConfig.SensorCooldown+1e-7)%#sensors else 0
+ for index,orderedName in self.deviceOrder do
+  local slot=self.sensorSlots[index]
+  local name=if slot then sensors[(slot+start)%#sensors+1] else orderedName
   local d=self.devices[name]
+  if not d then continue end
   if not d.active and #d.queue>0 then d.active=table.remove(d.queue,1) end
   local c=d.active
   if not c then continue end
@@ -156,6 +167,7 @@ function D:step(state,dt,time)
    d.readyAt=time+(d.spec.cooldown or self.components.Sensor.Cooldown)
    d.scanAttempts=(d.scanAttempts or 0)+1
    if self.services.scan then observation,reason=self.services.scan(c.instruction.value,d.performance,time,{range=d.spec.range,distancePercent=d.spec.distancePercent,coneWidth=d.spec.coneWidth,cooldown=d.spec.cooldown,originHeight=d.spec.originHeight}) else reason="deviceUnavailable" end
+   if d.active~=c then continue end -- A synchronous producer may have stopped the invocation.
    if observation then
     d.scanSuccesses=(d.scanSuccesses or 0)+1
     d.lastScan={status="success",count=observation.value.count or 0,timestamp=observation.timestamp or time}

@@ -22,7 +22,10 @@ function Chat.new(playerGui,input,mode)
  local box=Instance.new("TextBox");box.Name="ChatInput";box.Text="";box.PlaceholderText="Connecting to Roblox chat…";box.ClearTextOnFocus=false;box.MultiLine=false;box.TextEditable=false;box.TextSize=16;box.Font=Enum.Font.Gotham;box.TextColor3=Color3.fromRGB(237,239,224);box.BackgroundColor3=Color3.fromRGB(40,55,61);box.Size=UDim2.new(1,-12,0,44);box.Position=UDim2.new(0,6,1,-70);box.Parent=panel;self.box=box
  local status=label(panel,"ChatStatus","Connecting to Roblox chat…",UDim2.new(1,-12,0,24));status.Position=UDim2.new(0,6,1,-24);status.TextSize=12;self.status=status
  self:connect(toggle.Activated,function()self:setExpanded(not self.state.expanded)end)
- self:connect(box.Focused,function()self.fieldFocused=true;self:focusChanged()end)
+ self:connect(box.Focused,function()
+  if not self.active or not self.state.expanded then box:ReleaseFocus();return end
+  self.fieldFocused=true;self:focusChanged()
+ end)
  self:connect(box.FocusLost,function()self.fieldFocused=false;self:focusChanged()end)
  self:connect(gui:GetPropertyChangedSignal("AbsoluteSize"),function()self:layout();self:focusChanged()end)
  self:connect(input.button.Activated,function()self:layout();self:focusChanged()end)
@@ -128,7 +131,7 @@ function Chat:checkPermission()
 end
 function Chat:focusChanged()
  if self.destroyed then return end
- local focused=self.active and (self.fieldFocused or (self.bar and self.bar.IsFocused==true)or (self.compact and self.state.expanded))
+ local focused=self.active and self.state.expanded and (self.fieldFocused or (self.bar and self.bar.IsFocused==true)or self.compact)
  self.input:setTextEntryFocus("PlaygroundChat",focused)
 end
 function Chat:refresh()
@@ -136,7 +139,7 @@ function Chat:refresh()
  self.gui.Enabled=self.active
  self.panel.Visible=self.state.expanded
  self.toggle.Text=(if self.state.expanded then "Chat  ▾"else "Chat  ▸")..(if self.state.unread>0 then "  ("..self.state.unread..")"else "  •  Enter")
- self.box.TextEditable=self.active and self.ready==true and self.allowed
+ self.box.TextEditable=self.active and self.state.expanded and self.ready==true and self.allowed
  if self.bar then self.bar.Enabled=self.active and self.state.expanded and self.allowed end
  self.box.PlaceholderText=if self.allowed then "Enter a message…"else (self.reason or "Connecting to Roblox chat…")
  self.status.Text=self.reason or (if self.allowed then "Roblox chat • filtered and moderated"else "Connecting to Roblox chat…")
@@ -144,12 +147,16 @@ function Chat:refresh()
 end
 function Chat:setExpanded(expanded)
  if expanded and self.ready and not self.allowed then self:checkPermission()end
- self.state:setExpanded(expanded);self:refresh()
+ self.state:setExpanded(expanded)
+ if not self.state.expanded then
+  self.fieldFocused=false
+  self.box:ReleaseFocus()
+ end
+ self:refresh()
 end
 function Chat:setActive(active)
  self.active=active==true;self.state:setActive(self.active)
- if not self.active then self.state:setExpanded(false)end
- self:refresh()
+ if not self.active then self:setExpanded(false)else self:refresh()end
 end
 function Chat:destroy()
  if self.destroyed then return end

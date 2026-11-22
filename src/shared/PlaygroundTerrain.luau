@@ -19,7 +19,15 @@ function T.create(size)
  add("EastBank",22,x,-z,z)
  add("NorthLand",-22,22,-z,-75)
  add("SouthLand",-22,22,65,z)
- add("Bridge",-22,22,-12,12)
+ if proving then
+  add("Bridge",-22,-6,-7,7)
+  add("Bridge",-18,-4,7,17,0,.22)
+  add("Bridge",-18,11,17,30,2.2)
+  add("Bridge",4,17,-3,17,0,.11)
+  add("Bridge",4,22,-16,-3)
+ else
+  add("Bridge",-22,22,-12,12)
+ end
  local entries={}
  for _,z0 in {84,104,44,24}do for _,x0 in {-90,-66,-42,42,66,90}do table.insert(entries,Vector3.new(x0,0,z0))end end
  local data={regions=regions,entries=entries,hazards={
@@ -30,7 +38,6 @@ function T.create(size)
  if scale<1 then
   for _,r in regions do
    r.x0*=scale;r.x1*=scale;r.z0*=scale;r.z1*=scale;r.y*=scale
-   if r.name=="Bridge" then r.z0=-T.BridgeWidth/2;r.z1=T.BridgeWidth/2 end
   end
   for _,r in data.hazards do r.x0*=scale;r.x1*=scale;r.z0*=scale;r.z1*=scale end
   for _,points in {data.entries,data.spawns} do
@@ -46,6 +53,17 @@ function T.create(size)
    for _,r in list do r.x*=scale;r.z*=scale;r.rx*=scale;r.rz*=scale end
   end
  end
+ if proving then
+  -- Keep the deck and pad widths in physical studs at Playground scale.
+  for _,r in regions do if r.name=="Bridge" then r.x0/=scale;r.x1/=scale;r.z0/=scale;r.z1/=scale;r.y/=scale end end
+  data.course={x0=-108*scale,x1=220*scale,z0=-40,z1=43,
+   start=Vector3.new(-78*scale,0,0),range=Vector3.new(100*scale,0,0),
+   gauntlet=Vector3.new(164*scale,0,0),finish=205*scale}
+  for _,pad in {{id="course:start",x=-78*scale,z=0},{id="course:range",x=70*scale,z=0},{id="course:gauntlet",x=143*scale,z=0}} do
+   pad.y=0;pad.halfX=11;pad.halfZ=11;table.insert(data.configurationZones,pad)
+  end
+ end
+ data.characterSpawn=Vector3.new(-90*scale,0,104*scale)
  return data
 end
 -- Attach to the existing Environment. Authored worlds never call this factory.
@@ -64,6 +82,10 @@ end
 local function inside(r,x,z,margin)
  margin=margin or 0
  return x>=r.x0+margin and x<=r.x1-margin and z>=r.z0+margin and z<=r.z1-margin
+end
+function T.inCourse(data,position,margin)
+ local course=data and data.course
+ return course~=nil and inside(course,position.X,position.Z,-(margin or 0))
 end
 function T.sample(data,x,z)
  for _,r in data.regions do if inside(r,x,z)then return r.y+(z-r.z0)*r.slope,r end end

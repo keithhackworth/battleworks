@@ -5,9 +5,10 @@ local function startup(stage) if Run:IsStudio() then print("[BattleWorks startup
 startup("client started (Royale startup v1)")
 local network=game.ReplicatedStorage:WaitForChild("TankNetwork")
 print(string.format("[BattleWorks client] serverRevision=%s mode=%s",tostring(network:GetAttribute("BuildRevision")),tostring(network:GetAttribute("GameMode"))))
-if network:GetAttribute("GameMode")=="BattleRoyale" then
+local mode=network:GetAttribute("GameMode")
+if mode=="BattleRoyale" or mode=="InnovationLab" then
  startup("initializing Battle Royale client")
- require(script.RoyaleClient).start()
+ require(script.RoyaleClient).start(mode=="InnovationLab")
  startup("Battle Royale client ready")
  return
 end

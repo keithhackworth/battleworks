@@ -31,9 +31,32 @@ end
 check(ownLogs>0,"production user program produced private output")
 wall+=1
 bwRun.OnServerEvent:Fire(first,"forward()\nwait_for_clock(get_clock().time + 30)",2,a,controls[101].epoch);advance(8)
-network:FindFirstChild("BWStop").OnServerEvent:Fire(first,3,a,controls[101].epoch);advance(130)
+check(editorTank.state.controlMode=="Auto","running editor code gives the occupied tank Auto control")
+local edited="resume_marker = 42\nwait_for_clock(get_clock().time + 30)"
+wall+=1
+bwRun.OnServerEvent:Fire(first,edited,3,a,controls[101].epoch);advance(12)
+local editedRuntime=editorTank.bw
+check(editedRuntime.variables.resume_marker==42,"an edit run while in Auto takes effect")
+wall+=1
+remote.OnServerEvent:Fire(first,"Manual",2,a,controls[101].epoch);advance(15)
+check(editorTank.bw==nil and editedRuntime.status=="stopped" and snapshots[a].controlMode=="Manual","Manual stops the edited invocation")
+local manualSource
+for _,event in privateRuntime do
+ local diagnostic=event.args[2]
+ if event.recipient==first and diagnostic.controlEpoch==controls[101].epoch and diagnostic.source then manualSource=diagnostic.source end
+end
+check(manualSource and manualSource.text==edited and manualSource.kind=="Player","the manual lease still reports the last successfully run source")
+wall+=1
+remote.OnServerEvent:Fire(first,"Auto",3,a,controls[101].epoch);advance(15)
+check(editorTank.bw~=editedRuntime and editorTank.bwSource==edited and editorTank.bw.variables.resume_marker==42
+ and editorTank.state.bwProgramKind=="Player" and not editorTank.autonomyActive,"Manual to Auto restarts the occupant's exact edited program")
+network:FindFirstChild("BWStop").OnServerEvent:Fire(first,4,a,controls[101].epoch);advance(130)
 check(not editorTank.state.bwRunning and editorTank.state.controlMode=="Manual"and not editorTank.autonomyActive,"Stop cannot cause the public Auto retry loop to resume a personality")
 wall+=1
+editorTank.state.position=Vector3.new(110,0,40)
+remote.OnServerEvent:Fire(first,"Exit",4,a,controls[101].epoch);advance(4)
+check(not controls[101].selected and editorTank.occupantBWSource==nil and editorTank.bwSource==editorTank.personality.source
+ and editorTank.state.bwProgramKind=="Personality","vacating discards the occupant's edit and restores the public personality")
 os.clock=oldClock
 print("Playground editor program isolation passed: "..count.." assertions")
 end

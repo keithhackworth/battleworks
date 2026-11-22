@@ -17,6 +17,8 @@ for _,name in {"RoyaleControl","RoyaleSprint","Input","Snapshot","Shot","SelectT
  remote.FireServer=function(_,...) table.insert(requests,{name=name,args={...}}) end
  remotes[name]=remote
 end
+local courseActions={}
+remotes.ProvingGroundsAction={FireServer=function(_,...)table.insert(courseActions,{...})end}
 local network={WaitForChild=function(_,name) return assert(remotes[name],name) end,FindFirstChild=function(_,name)return remotes[name]end,ChildAdded=signal()}
 remotes.GarageConfiguration={InvokeServer=function(_,action,id,draft,epoch)
  table.insert(requests,{name=action,args={id,epoch}})
@@ -139,6 +141,7 @@ local function exitAndEnter(revision,epoch)
  remotes.RoyaleControl.OnClientEvent:Fire({revision=revision+1,mode="Tank",selected="public:1",epoch=epoch})
  frame(1/30)
  check(not lastInput().args[1].fire and lastInput().args[1].throttle==0,"re-entry starts with released controls")
+ check(workspace.CurrentCamera.CameraType==Enum.CameraType.Scriptable,"a replacement Tank lease restores the tank camera without input")
 end
 exitAndEnter(3,4)
 named("Run").Activated:Fire()
@@ -157,6 +160,14 @@ local function finger(x,y)return {UserInputType=Enum.UserInputType.Touch,Positio
 drive.InputBegan:Fire(finger(80,8));named("Fire").InputBegan:Fire(finger(200,100));frame(1/30)
 check(lastInput().args[1].throttle>.5 and lastInput().args[1].fire,"touch drive/fire paths remain usable in occupied tank")
 exitAndEnter(7,8)
+state.course={phase="Complete",elapsed=28.5,hits=3,required=3}
+remotes.Snapshot.OnClientEvent:Fire({["public:1"]=state},{["101"]={royale=true}})
+check(named("ProvingGroundsHUD").Visible and named("Restart Course").Text=="Replay","a completed run offers Replay")
+named("Restart Course").Activated:Fire()
+check(courseActions[1][1]=="Restart" and courseActions[1][2]=="public:1" and courseActions[1][3]==8,"replay uses the current possession lease")
+state.course=nil
+remotes.Snapshot.OnClientEvent:Fire({["public:1"]=state},{["101"]={royale=true}})
+check(not named("ProvingGroundsHUD").Visible,"the course HUD only shows for an active run")
 UIS.WindowFocusReleased:Fire();frame(1/30)
 check(not lastInput().args[1].fire and lastInput().args[1].throttle==0,"window focus loss releases all tank intent")
 UIS.WindowFocused:Fire();frame(1/30)
@@ -183,10 +194,22 @@ if run:IsStudio()then
 end
 -- The actual existing shell is created once, and its first action returns to
 -- the same Royale session without allocating a second battle client.
+local background=require("MenuBackground")
+local createBackground=background.new
+local previousRequest=client.session.requestId
+background.new=function() error("injected menu startup failure") end
 named("RoyaleMainMenu").Activated:Fire()
+check(client.session.mode=="Battle" and client.session.requestId==previousRequest and client.navigation.Enabled,
+ "menu startup failure leaves the current Playground session and navigation active")
+background.new=createBackground
+local labScreen=Shell.ShellInnovationLab
+Shell.ShellInnovationLab=nil
+named("RoyaleMainMenu").Activated:Fire()
+Shell.ShellInnovationLab=labScreen
 local shell=client.getShell()
 local menuRequest=client.session.requestId
 check(shell and shell.manager.current=="MainMenu" and requests[#requests].args[1]=="Menu","battlefield Main Menu opens the existing shell and requests server departure")
+check(shell.gui.Enabled and shell.manager:get("MainMenu").frame.Visible,"Playground menu is visible without requiring the Lab screen module")
 check(not client.navigation.Enabled and not defaultControls.controlsEnabled and not named("TankHUD").Enabled,"menu suspends native movement and every battlefield control layer")
 remotes.RoyaleControl.OnClientEvent:Fire({revision=100,mode="Menu",requestId=menuRequest})
 remotes.RoyaleControl.OnClientEvent:Fire({revision=101,mode="Tank",selected="public:1",epoch=20,requestId=menuRequest-1})
@@ -305,7 +328,34 @@ frame(1/30)
 check(client.modeSwitch.Text:find("AUTO",1,true)and client.battle.inputController.externalControl,"Auto mode suspends manual providers while keeping tank camera")
 client.modeSwitch.Activated:Fire()
 check(requests[#requests].args[1]=="Manual"and requests[#requests].args[4]==31,"same touch/click button requests Manual with refreshed lease")
-remotes.RoyaleControl.OnClientEvent:Fire({revision=121,mode="OnFoot"})
+state.controlEpoch=32;state.controlMode="Manual";state.bwRunning=false
+remotes.Snapshot.OnClientEvent:Fire({["public:1"]=state},{})
+remotes.RoyaleControl.OnClientEvent:Fire({revision=121,mode="Tank",selected="public:1",epoch=32,controlMode="Manual",personality="Marauder"})
+local hardwareButton=named("Hardware")
+local hardwareBox=named("HardwareConfiguration")
+hardwareBox.ReleaseFocus=function(self)
+ if UIS.focusedTextBox==self then UIS.focusedTextBox=nil end
+end
+local function focusHardware()
+ UIS.focusedTextBox=hardwareBox
+ UIS.TextBoxFocused:Fire(hardwareBox)
+ check(client.battle.inputController.suspended,"hardware typing suspends gameplay")
+end
+editorToggle.Activated:Fire()
+hardwareButton.Activated:Fire()
+focusHardware()
+hardwareButton.Activated:Fire()
+check(UIS.focusedTextBox==nil,"leaving the hardware panel releases its hidden text box")
+hardwareButton.Activated:Fire()
+focusHardware()
+named("CloseEditor").Activated:Fire()
+frame(1/30)
+UIS.InputBegan:Fire({KeyCode=Enum.KeyCode.W,UserInputType=Enum.UserInputType.Keyboard},false)
+frame(1/30)
+check(UIS.focusedTextBox==nil and lastInput().args[1].throttle==1,"closing editor restores keyboard motion even without a focus-release signal")
+bindings.BattleWorksExitTank(nil,Enum.UserInputState.Begin)
+check(requests[#requests].name=="RoyaleControl" and requests[#requests].args[1]=="Exit","F exits the tank without an alt-tab after closing the editor")
+remotes.RoyaleControl.OnClientEvent:Fire({revision=122,mode="OnFoot"})
 check(not client.modeSwitch.Visible,"switch hides outside occupancy")
 Players.PlayerRemoving:Fire(player)
 check(client.chat.destroyed and not bindings.BattleWorksTextEntry_PlaygroundChat,"production departure cleans chat input route and native wrapper")

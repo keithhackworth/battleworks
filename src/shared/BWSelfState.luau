@@ -19,7 +19,7 @@ local positionShape=shape("x y z")
 local turretShape=shape("world_direction mount_yaw mount_pitch world_pitch max_rotation_speed effective_rotation_speed min_pitch max_pitch",{pivot=positionShape,muzzle_position=positionShape,direction=positionShape})
 local readinessShape=shape("ready state remaining_seconds operation heat max_heat burst_seconds max_burst_seconds overheat_seconds fire_interval_seconds effective_fire_interval_seconds preparation_seconds effective_preparation_seconds")
 local busShape=shape("tier bus_count",{buses={["*"]=shape("index allocated available")},devices={["*"]=shape("bus allocation performance")},
- allocations=shape("drivetrain turret weapon scanners"),tuning=shape("scanners weapon")})
+ allocations=shape("drivetrain turret weapon scanners retaliatorMesh"),tuning=shape("scanners weapon")})
 local motionShape=shape("speed forward_speed vertical_speed max_speed max_reverse_speed effective_max_speed effective_reverse_speed drivetrain_type drivetrain_id mobility_id steering_mode steering_angle max_steering_angle wheelbase wheel_count turning_radius min_turning_radius can_pivot can_reverse immobilized airborne terrain_speed_scale ground_max_speed")
 local sensorShape=shape("device id mounting_degrees reference world_direction cone_degrees effective_cone_degrees catalog_range max_range distance_percent configured_range effective_range performance enabled acquisition_seconds cooldown_seconds origin_height ground_observations ground_operational")
 local snapshotShape=shape("scanner_count",{coordinates=positionShape,chassis=shape("world_direction turn_rate max_turn_rate effective_max_turn_rate"),turret=turretShape,motion=motionShape,

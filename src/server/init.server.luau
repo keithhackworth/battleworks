@@ -43,9 +43,22 @@ local storage=game:GetService("ServerStorage")
 local studioConfiguration=if storage then storage:FindFirstChild("BattleWorksStudio") else nil
 local RoyaleConfig=require(Shared.BattleRoyaleConfig)
 local gameMode=RoyaleConfig.mode(studioConfiguration,workspace:GetAttribute("BattleWorksGameMode"))
-local isRoyale=gameMode=="BattleRoyale"
+local labOwner
+if not studio and game.PrivateServerId and game.PrivateServerId~="" and game.PrivateServerOwnerId==0 then
+ local arriving=Players:GetPlayers()[1] or Players.PlayerAdded:Wait()
+ local join=arriving:GetJoinData()
+ local data=join.TeleportData
+ if join.SourcePlaceId==game.PlaceId
+  and type(data)=="table" and data.mode=="InnovationLab" and data.owner==arriving.UserId then
+  gameMode="InnovationLab";labOwner=arriving.UserId
+ end
+end
+local isLab=gameMode=="InnovationLab"
+local Lab=if isLab then require(script.InnovationLab) else nil
+local lab=Lab and Lab.new(labOwner)
+local isRoyale=gameMode=="BattleRoyale" or isLab
 local diagnostics
-if isRoyale and RunService:IsStudio() then
+if isRoyale and not isLab and studio then
  local setting=studioConfiguration and studioConfiguration:FindFirstChild("PlaygroundProfileWindowSeconds")
  local window=if setting and setting:IsA("IntValue") then math.clamp(setting.Value,1,30) else 5
  diagnostics=require(script.PlaygroundDiagnostics).new(window,os.clock())
@@ -68,8 +81,10 @@ local resetBattle = remote("ResetBattle")
 local battleSession = remote("BattleSession")
 local royaleControl=remote("RoyaleControl")
 local royaleSprint=if isRoyale then remote("RoyaleSprint") else nil
+local labTravel=if isRoyale then remote("InnovationLabTravel") else nil
+local courseAction=if isRoyale and not isLab then remote("ProvingGroundsAction") else nil
 network:SetAttribute("GameMode",gameMode)
-network:SetAttribute("PlaygroundBWEnabled",not isRoyale or RoyaleConfig.bwEnabled(studioConfiguration))
+network:SetAttribute("PlaygroundBWEnabled",isLab or not isRoyale or RoyaleConfig.bwEnabled(studioConfiguration))
 local bwExecution
 if diagnostics and network:GetAttribute("PlaygroundBWEnabled") then
  bwExecution=remote("PlaygroundBWExecution")
@@ -89,7 +104,7 @@ local shells = {}
 local editorPreview=workspace:FindFirstChild("BattleWorksEditorPreview"); if editorPreview then editorPreview:Destroy() end
 local arena = Instance.new("Folder")
 arena.Name = "Arena"; arena.Parent = workspace
-local editorMetadata=if studioConfiguration then studioConfiguration:FindFirstChild("EditorAssetCatalog") else nil
+local editorMetadata=if not isLab and studioConfiguration then studioConfiguration:FindFirstChild("EditorAssetCatalog") else nil
 if editorMetadata then
  startup("publishing editor asset library")
  local ok,reason=pcall(function() require(script.EditorAssetCatalog).publish(storage,ReplicatedStorage,editorMetadata,game:GetService("HttpService")) end)
@@ -97,7 +112,7 @@ if editorMetadata then
 end
 local publishedWorld=if studioConfiguration then studioConfiguration:FindFirstChild("PublishedWorld") else nil
 local productionWorld=if not RunService:IsStudio() and publishedWorld and publishedWorld:IsA("StringValue") and publishedWorld.Value~="" then publishedWorld.Value else nil
-if RunService:IsStudio() or productionWorld then
+if not isLab and (studio or productionWorld) then
  local selection=require(script.StudioWorldSelector).start(RunService,storage,arena,nil,productionWorld)
  singleModelWorld=selection.active.profile=="single-model"
  worldObjects=selection.objects
@@ -106,19 +121,21 @@ if RunService:IsStudio() or productionWorld then
 end
 -- The imported-asset world uses ground/boundaries and registered model placements.
 -- Normal arena creation, including weather and terrain, is unchanged.
-if singleModelWorld then weather="Normal" end
-if isRoyale and not worldSettings and not singleModelWorld then mapSize=Playground.DefaultSize end
+if singleModelWorld or isLab then weather="Normal" end
+if isLab then mapSize=Lab.Size
+elseif isRoyale and not worldSettings and not singleModelWorld then mapSize=Playground.DefaultSize end
 local function createEnvironment(size)
  local data=Environment.create(size,weather)
- if singleModelWorld then data.rocks={}; data.logs={}; data.trees={}; data.zones={} end
+ if singleModelWorld or isLab then data.rocks={}; data.logs={}; data.trees={}; data.zones={} end
  if worldSettings then data.zones=table.clone(worldSettings.zones);data.startPositions=worldSettings.spawns end
- if isRoyale and not worldSettings then
+ if isRoyale and not isLab and not worldSettings then
   Playground.configure(data,size)
  end
  data.worldObjects=worldObjects
  return data
 end
 environment=createEnvironment(mapSize)
+local course=if environment.playground and environment.playground.course then require(script.ProvingGrounds).new(environment.playground.course) else nil
 arena:SetAttribute("DebugCombat", false)
 arena:SetAttribute("Weather",weather)
 if environment.wind then
@@ -131,6 +148,13 @@ local function part(name, size, position, color, deferParent)
 	if not deferParent then p.Parent = arena end
 	return p
 end
+if course then
+ for i=1,3 do
+  local target=part("CourseTarget",Vector3.new(3,5,5),course.layout.range+Vector3.new(i*6,3.2,(i-2)*10),Color3.fromRGB(248,126,64))
+  target.CanCollide=false;target:SetAttribute("ScannerType","object")
+  course.targets[target]=i
+ end
+end
 -- Build the ground with the arena rather than relying on an optional place
 -- Baseplate or Terrain. Its top is exactly the simulation's ground plane Y=0.
 local floor = part("Floor", Vector3.new(240, 1, 240), Vector3.new(0, -0.5, 0), Color3.fromRGB(100, 112, 86))
@@ -142,12 +166,16 @@ floor.CanQuery = true -- downward combat rays should still hit the ground
 floor.Material = Enum.Material.Grass
 EnvironmentBuilder.build(arena,environment,floor)
 if environment.playground then require(script.PlaygroundBuilder).build(arena,environment.playground,floor)end
-if worldSettings then
+if isLab then
+ floor.Size=Vector3.new(mapSize.X+8,1,mapSize.Y+8)
+ floor.Material=Enum.Material.Concrete
+ floor.Color=Color3.fromRGB(120,127,130)
+elseif worldSettings then
  floor.Size=Vector3.new(mapSize.X+10,1,mapSize.Y+10)
  floor.Material=Enum.Material[worldSettings.ground.material]
  floor.Color=Color3.fromRGB(table.unpack(worldSettings.ground.color))
 end
-if not singleModelWorld and not environment.playground then
+if not isLab and not singleModelWorld and not environment.playground then
  local stick=part("CenterStick",Vector3.new(10,1,1),Vector3.new(0,.5,0),Color3.fromRGB(125,79,40))
  stick.Shape=Enum.PartType.Cylinder; stick.Material=Enum.Material.Wood
  stick.CanCollide=false; stick.CanTouch=false; stick.CanQuery=false
@@ -156,7 +184,14 @@ local walls = {}
 for _, data in ipairs({ {Vector3.new(0, 3, -118), Vector3.new(240, 6, 4)}, {Vector3.new(0, 3, 118), Vector3.new(240, 6, 4)}, {Vector3.new(-118, 3, 0), Vector3.new(4, 6, 240)}, {Vector3.new(118, 3, 0), Vector3.new(4, 6, 240)} }) do
 	table.insert(walls, part("Boundary", data[2], data[1], Color3.fromRGB(57, 66, 73)))
 end
-if worldSettings or environment.playground then
+if isLab then
+ for i,wall in walls do
+  local axis=if i<=2 then mapSize.Y else mapSize.X
+  local edge=(axis/2+2)*(if i%2==1 then -1 else 1)
+  wall.Size=if i<=2 then Vector3.new(mapSize.X+8,16,4) else Vector3.new(4,16,mapSize.Y)
+  wall.Position=if i<=2 then Vector3.new(0,8,edge) else Vector3.new(edge,8,0)
+ end
+elseif worldSettings or environment.playground then
  walls[1].Size=Vector3.new(mapSize.X+10,6,4); walls[1].Position=Vector3.new(0,3,-mapSize.Y/2-3)
  walls[2].Size=walls[1].Size; walls[2].Position=Vector3.new(0,3,mapSize.Y/2+3)
  walls[3].Size=Vector3.new(4,6,mapSize.Y+10); walls[3].Position=Vector3.new(-mapSize.X/2-3,3,0)
@@ -164,7 +199,7 @@ if worldSettings or environment.playground then
 end
 local scannerScene=require(script.ScannerScene).new(arena,workspace,floor,tanks,targets)
 local function buildTargets(size)
- if singleModelWorld then return end
+ if isLab or singleModelWorld then return end
 	local locations=environment.playground and environment.playground.targets
  local count = if locations then #locations else math.clamp(math.floor((size.X-10)/9),1,5)
 	for i = 1, count do
@@ -245,6 +280,7 @@ local function findSpawn(tank)
   end
  end
  local preferred,yaw=Battle.pose(mapSize,tank.spawnIndex,tank.kind)
+ if isLab and tank.public then preferred,yaw=Lab.pose(tank.spawnIndex) end
  if environment.playground then preferred=environment.playground.spawns[(tank.spawnIndex-1)%#environment.playground.spawns+1]end
  if worldSettings then
   -- Use authored headings/anchors, then the same bounded fallback search.
@@ -255,6 +291,9 @@ local function findSpawn(tank)
   if ok then preferred,yaw=position,heading end
  end
  local function clear(p)
+  if Playground.inCourse(environment.playground,p,8) then return false end
+  local entry=environment.playground and environment.playground.characterSpawn
+  if tank.public and entry and (p-entry).Magnitude<14 then return false end
   if tank.public then
    for _,other in tanks do
     if other~=tank and not other.state.waitingForSpawn and (p-other.state.position).Magnitude<14 then return false end
@@ -284,9 +323,8 @@ local function findSpawn(tank)
     if clear(p)then return p,math.random()*math.pi*2 end
    end
   end
-  if not tank.characterUserId and clear(preferred)then return preferred,yaw end
+  if clear(preferred)then return preferred,yaw end
   for _,entry in environment.playground.entries do if clear(entry)then return entry,yaw end end
-  return nil -- keep retrying rather than spawning over the ravine or a tank
  end
  if clear(preferred) then return preferred,yaw end
  if isRoyale then
@@ -303,8 +341,11 @@ local function findSpawn(tank)
  end
  return nil
 end
-local function removeTank(id,tank)
+local function removeOwnedShells(id)
  for i=#shells,1,-1 do if shells[i].owner==id then shells[i].model:Destroy(); table.remove(shells,i) end end
+end
+local function removeTank(id,tank)
+ removeOwnedShells(id)
  BWController.stop(tank,"Tank removed.")
  tank.hitbox:Destroy(); tanks[id]=nil
 end
@@ -330,7 +371,8 @@ end
 local function autoBlocked(tank)
  local chassis=Components.get(tank.state).Chassis
  local x,z=(chassis.CollisionWidth or chassis.Radius*2)/2,(chassis.CollisionLength or chassis.Radius*2)/2
- return zoneAt(tank.state.position,math.sqrt(x*x+z*z)+VehicleContacts.Skin)~=nil
+ local clearance=math.sqrt(x*x+z*z)+VehicleContacts.Skin
+ return zoneAt(tank.state.position,clearance)~=nil or Playground.inCourse(environment.playground,tank.state.position,clearance)
 end
 local function syncConfigurationZone(tank)
  local state=tank.state
@@ -340,6 +382,30 @@ local function syncConfigurationZone(tank)
  state.configurationZone=id
  if id and BWController.running(tank) then BWController.stop(tank,"BW is disabled in configuration zones.") end
  BWController.disarm(tank)
+end
+local function resetOccupiedTank(tank,player)
+ tank.characterUserId=player.UserId
+ local checkpoint=course and tank.course and course.layout.start
+ if checkpoint then
+  local safe
+  for _,offset in {Vector3.zero,Vector3.new(0,0,-14),Vector3.new(0,0,14),Vector3.new(-14,0,0)} do
+   local candidate=checkpoint+offset
+   local occupied=false
+   for _,other in tanks do
+    if other~=tank and other.state.health>0 and (other.state.position-candidate).Magnitude<13 then occupied=true;break end
+   end
+   if not occupied then safe=candidate;break end
+  end
+  if not safe then tank.characterUserId=nil;return false end
+  checkpoint=safe
+ end
+ local reset=Battle.resetTank(tank,mapSize,tank.spawnIndex,"Respawned.",checkpoint,if checkpoint then -math.pi/2 else nil)
+ tank.characterUserId=nil
+ if reset then
+  removeOwnedShells(tank.id)
+  if checkpoint then course:begin(tank,simulationTime);syncConfigurationZone(tank) end
+ end
+ return reset
 end
 local function createTank(id,player,kind,index,assembly)
  local owner=if player then player.UserId else 0
@@ -449,12 +515,16 @@ local function leaveBattle(player)
 end
 Players.PlayerAdded:Connect(registerPlayer)
 Players.PlayerRemoving:Connect(function(player)
+ if lab and royale then lab:clear(royale,player,true) end
  if royale then royale:remove(player)else leaveBattle(player)end
  sessions[player.UserId]=nil
  if playerWorlds then playerWorlds:remove(player) end
 end)
 for _,player in Players:GetPlayers() do registerPlayer(player) end
 local function saveGarage(session,key,draft,vehicle,tier)
+ if isRoyale and type(draft)=="table" and type(draft.allocations)=="table" and draft.allocations.retaliatorMesh~=nil then
+  return nil,"Retaliator Mesh is available in the Innovation Lab."
+ end
  local configuration,reason=Hardware.fromCategories(draft,vehicle,tier)
  if not configuration then return nil,reason end
  session.garage=session.garage or {}
@@ -462,6 +532,7 @@ local function saveGarage(session,key,draft,vehicle,tier)
  return configuration
 end
 garage.OnServerInvoke=function(player,action,key,draft,epoch)
+ if isLab then return {ok=false,message="Lab equipment is set by the experiment."} end
  local session=sessions[player.UserId]
  if session and (action=="ReadZone" or action=="SaveZone") then
   local tank=royale and royale:controlled(player,key,epoch)
@@ -472,14 +543,39 @@ garage.OnServerInvoke=function(player,action,key,draft,epoch)
   local tier=vehicle.Computer.Tier
   local weapon=vehicle.Installed.Weapon
   if action=="ReadZone" then
-   return {ok=true,choices={{id=key,kind=tank.kind,weapon=weapon,tier=tier,assembly=tank.assembly,
+   return {ok=true,choices={{id=key,kind=tank.kind,weapon=weapon,tier=tier,assembly=tank.assembly,allowRetaliatorMesh=false,
     current=Hardware.copy(tank.hardware),draft=Hardware.categoryDraft(tank.hardware)}}}
   end
-  local configuration,reason=saveGarage(session,tank.kind.."/"..weapon,draft,vehicle,tier)
+  local kind=if type(draft)=="table" and draft.kind~=nil then draft.kind else tank.kind
+  local nextWeapon=if type(draft)=="table" and draft.weapon~=nil then draft.weapon else weapon
+  local swapping=kind~=tank.kind or nextWeapon~=weapon
+  local assembly
+  if swapping then
+   assembly=Components.zoneAssembly(tank.assembly,kind,nextWeapon)
+   if not assembly then return {ok=false,message="Choose a supported drivetrain and weapon."} end
+   local state=tank.state
+   if not state.linearVelocity or state.linearVelocity.Magnitude>.5 or (state.angularVelocity and state.angularVelocity.Magnitude>.1) or (state.lift or 0)>.05 then
+    return {ok=false,message="Bring the tank to a complete stop before changing equipment."}
+   end
+   vehicle=Components.resolve(assembly)
+  end
+  local configuration,reason=saveGarage(session,kind.."/"..nextWeapon,draft,vehicle,tier)
   if not configuration then return {ok=false,message=reason} end
+  if swapping then
+   local previous=tank.state
+   tank.assembly=assembly;tank.kind=kind;tank.hardware=configuration
+   Battle.resetTank(tank,mapSize,tank.spawnIndex,"Equipment changed.",previous.position,previous.yaw)
+   local state=tank.state
+   state.health=math.min(previous.health,vehicle.Chassis.Health)
+   for _,key in {"public","controlEpoch","occupantUserId","controlMode","personalityName","personalityId","personalityHash","configurationZone","damageByWeapon","course"} do state[key]=previous[key] end
+   tank.slot.generation=state.generation
+   tank.lastInput=-math.huge;tank.tickCommand=nil;tank.lastBWRequest=0
+   DamageEffects.severity(state)
+   removeOwnedShells(tank.id)
+  end
   BWController.clearInputs(tank)
   applyGarageConfiguration(player,tank)
-  return {ok=true,draft=Hardware.categoryDraft(configuration)}
+  return {ok=true,draft=Hardware.categoryDraft(configuration),kind=kind,weapon=nextWeapon,assembly=tank.assembly}
  end
  if not session or battles[player.UserId] then return {ok=false,message="Open Garage from Main Menu."} end
  if action~="Read" and action~="Save" then return {ok=false,message="Invalid request."} end
@@ -499,7 +595,7 @@ garage.OnServerInvoke=function(player,action,key,draft,epoch)
    elseif action=="Read" then
     local saved=session.garage and session.garage[id]
     local original=if isRoyale then Hardware.playgroundDefault(vehicle) else Hardware.forTank(kind)
-    choices[#choices+1]={id=id,kind=kind,weapon=weapon,tier=tier,draft=Hardware.categoryDraft(saved or original)}
+    choices[#choices+1]={id=id,kind=kind,weapon=weapon,tier=tier,allowRetaliatorMesh=not isRoyale,draft=Hardware.categoryDraft(saved or original)}
    end
   end
  end
@@ -557,7 +653,7 @@ bwRun.OnServerEvent:Connect(function(player,source,requestId,id,epoch)
 	local now=os.clock()
 	if not tank or not acceptBWRequest(tank,requestId) then return end
 	if autoBlocked(tank) then
-		BWController.reject(tank,"Drive clear of the configuration zone before running BW.")
+		BWController.reject(tank,"Drive clear of the configuration zone or course before running BW.")
 		return
 	end
 	if not network:GetAttribute("PlaygroundBWEnabled") then
@@ -573,7 +669,10 @@ bwRun.OnServerEvent:Connect(function(player,source,requestId,id,epoch)
 	end
 	tank.lastBWRun=now
  local ok=BWController.start(tank,source)
- if tank.personality and ok then tank.state.controlMode="Auto"end
+ if tank.personality and ok then
+  tank.occupantBWSource=source
+  tank.state.controlMode="Auto"
+ end
 end)
 bwStop.OnServerEvent:Connect(function(player,requestId,id,epoch)
 	local tank=owned(player,id,epoch)
@@ -614,6 +713,15 @@ local function poseShell(shell)
 	shell.nose.CFrame = frame
 	shell.band.CFrame = frame * CFrame.new(0,0,1.1*(shell.visualScale or 1)) * CFrame.Angles(0,math.pi/2,0)
 end
+local function addShellVisual(shell,id,small)
+ shell.visualScale=if small then .4 else 1
+ local scale=shell.visualScale
+ shell.model=Instance.new("Model");shell.model.Name="Shell_"..id;shell.model.Parent=shellFolder
+ shell.body=shellPart(shell.model,"Body",Vector3.new(1.5,1.3,1.3)*scale,Color3.fromRGB(77,87,57),Enum.PartType.Cylinder)
+ shell.nose=shellPart(shell.model,"Nose",Vector3.new(1.3,1.3,1.3)*scale,Color3.fromRGB(244,158,36),Enum.PartType.Ball)
+ shell.band=shellPart(shell.model,"Band",Vector3.new(.3,1.4,1.4)*scale,Color3.fromRGB(255,215,64),Enum.PartType.Cylinder)
+ poseShell(shell);table.insert(shells,shell)
+end
 local function launchShell(id, tank, origin, direction, deferEffects)
 	-- Spawn at the muzzle after checking the pivot-to-tip path for cover.
 	tank.state.weaponShotSerial=(tank.state.weaponShotSerial or 0)+1
@@ -631,14 +739,10 @@ local function launchShell(id, tank, origin, direction, deferEffects)
   shell.pendingHitProtected=victim and victim.state.configurationZone~=nil
  end
 	shell.owner = id
+	shell.courseRun=tank.course
 	shell.scoreOwner = if royale then royale:scoreActor(tank) else nil
 	shell.weaponType=Components.get(tank.state).Weapon.WeaponType
-	shell.visualScale = if small then 0.4 else 1
-	shell.model = Instance.new("Model"); shell.model.Name = "Shell_" .. id; shell.model.Parent = shellFolder
-	shell.body = shellPart(shell.model,"Body",Vector3.new(1.5,1.3,1.3)*(if small then 0.4 else 1),Color3.fromRGB(77,87,57),Enum.PartType.Cylinder)
-	shell.nose = shellPart(shell.model,"Nose",Vector3.new(1.3,1.3,1.3)*(if small then 0.4 else 1),Color3.fromRGB(244,158,36),Enum.PartType.Ball)
-	shell.band = shellPart(shell.model,"Band",Vector3.new(0.3,1.4,1.4)*(if small then 0.4 else 1),Color3.fromRGB(255,215,64),Enum.PartType.Cylinder)
-	poseShell(shell); table.insert(shells,shell)
+	addShellVisual(shell,id,small)
 	if not deferEffects then shot:FireAllClients(id,shell.position,direction,tank.state.tankType,tank.state.generation,nil,tank.state.weaponId) end
 	if arena:GetAttribute("DebugCombat") then
 		print("[BattleWorks shell launch]",id,"muzzle",shell.position,"direction",direction,"speed",shell.speed)
@@ -655,6 +759,7 @@ local function updateShells(now)
 		if not hit then hit = Projectiles.step(workspace,shell,Config.Step) end
 		poseShell(shell)
 		if hit then
+   if course then course:hit(hit.Instance,tanks[shell.owner],shell.courseRun) end
 			local _, before, after = PracticeTargets.impact(hit,targets,now,shell.damage)
    if worldObjects then
     local record,_,_,destroyed=worldObjects:impact(hit,shell.damage,shell)
@@ -672,7 +777,15 @@ local function updateShells(now)
 			for _, other in tanks do
 				if other.hitbox == hit.Instance then
 					local battle=if other.public then royale.battle else battles[other.owner]
-					if not protected and Battle.damage(battle,other,tanks[shell.owner],shell.damage,shell.weaponType,hit.Position) and multiplayer and other.state.health<=0 then
+                    local applied=false
+                    if not protected then
+                     if shell.owner=="course:emitters" then
+                      if other.course and other.course.phase=="Bullet Gauntlet" then applied=Battle.courseProjectileDamage(battle,other,shell.damage,hit.Position,shell.direction) end
+                     elseif not shell.courseRun and not other.course then
+                      applied=Battle.damage(battle,other,tanks[shell.owner],shell.damage,shell.weaponType,hit.Position,shell.direction)
+                     end
+                    end
+					if applied and multiplayer and other.state.health<=0 then
                         if other.public then royale:destroyed(other,shell.scoreOwner)else other.respawnAt=simulationTime+3 end
                     end
 				end
@@ -688,6 +801,16 @@ local function updateShells(now)
 		end
 		if shell.done then shell.model:Destroy(); table.remove(shells,i) end
 	end
+end
+local gauntletTuning={Range=52,ShellSpeed=34,ShellRadius=.45,Damage=14,MuzzleOffset=0}
+local function fireGauntlet()
+ for index=0,2 do
+  local origin=course.layout.gauntlet+Vector3.new(index*8,2.5,if index%2==0 then -26 else 26)
+  local direction=Vector3.new(0,0,if index%2==0 then 1 else -1)
+  local shell=Projectiles.new(origin,direction,{shellFolder},gauntletTuning)
+  shell.owner="course:emitters"
+  addShellVisual(shell,shell.owner,false)
+ end
 end
 local function reset(battle,reason)
 	for i=#shells,1,-1 do
@@ -802,8 +925,18 @@ end
 if isRoyale then
  multiplayer=true
  local settings=RoyaleConfig.settings(studioConfiguration)
+ local characterEntry=environment.playground and environment.playground.characterSpawn
+ local nativeSpawn
+ if characterEntry then
+  nativeSpawn=Instance.new("SpawnLocation")
+  nativeSpawn.Name="PlaygroundCharacterSpawn";nativeSpawn.Neutral=true;nativeSpawn.Duration=0
+  nativeSpawn.Size=Vector3.new(6,.2,6);nativeSpawn.Position=characterEntry+Vector3.new(0,.15,0)
+  nativeSpawn.Anchored=true;nativeSpawn.Transparency=1
+  nativeSpawn.CanCollide=false;nativeSpawn.CanTouch=false;nativeSpawn.CanQuery=false
+  nativeSpawn.Parent=arena
+ end
  local Characters=require(script.RoyaleCharacters).new(function(preferred,player)
-  return findSpawn({kind="Boomer",spawnIndex=1,characterUserId=player and player.UserId,preferred=preferred or Vector3.new(0,0,mapSize.Y*.35)})
+  return findSpawn({kind="Boomer",spawnIndex=1,characterUserId=player and player.UserId,preferred=preferred or characterEntry or Vector3.new(0,0,mapSize.Y*.35)})
  end)
  -- Only native characters collide with this geometry: tank bodies/art remain
  -- anchored/non-collidable and continue through VehicleContacts exclusively.
@@ -813,7 +946,12 @@ if isRoyale then
  if worldObjects then worldObjects.characterCollision=true;for _,record in worldObjects.records do worldObjects:sync(record)end end
  local bwEnabled=network:GetAttribute("PlaygroundBWEnabled")
  startup("Playground BW execution enabled: "..tostring(bwEnabled))
- royale=require(script.BattleRoyale).new({count=settings.count,delay=settings.delay,autonomy=if bwEnabled and settings.personalities then require(script.PlaygroundAutonomy)else nil,tanks=tanks,characters=Characters,
+ royale=require(script.BattleRoyale).new({count=if lab then 0 else settings.count,delay=settings.delay,
+  autonomy=if lab then Lab.autonomy elseif bwEnabled and settings.personalities then require(script.PlaygroundAutonomy)else nil,tanks=tanks,characters=Characters,
+  startInMenu=isLab,loadout=Lab and Lab.loadout,
+  nativeSpawn=nativeSpawn,
+  beforeJoin=if lab then function(member,id)return lab:start(royale,member,id)end else nil,
+  onMenu=if lab then function(player)lab:clear(royale,player)end else nil,
   hazard=function(position)return environment.playground and Playground.hazard(environment.playground,position)end,
   autoBlocked=autoBlocked,
   safeExit=function(tank)
@@ -826,13 +964,14 @@ if isRoyale then
   clock=function()return simulationTime end,
   autonomyClock=if diagnostics then function()return diagnostics.clock end else nil,
   create=function(id,kind,index,assembly)return createTank(id,nil,kind,index,assembly)end,remove=removeTank,
+  respawn=if lab then nil else resetOccupiedTank,
   admit=function(player,member)battles[player.UserId]={owner=player.UserId,index=player.UserId,tanks={},multiplayer=true,royale=true,controlRevision=member.revision}end,
   depart=function(player)battles[player.UserId]=nil end,
-  select=function(player,tank,member)
+  select=function(player,tank,member,preserveHardware)
    local battle=battles[player.UserId];battle.tanks={};battle.selected=if tank then tank.id else nil;battle.controlRevision=member.revision
    if tank then
     battle.tanks[tank.id]=tank
-    if tank.state.controlMode=="Manual" then applyGarageConfiguration(player,tank) end
+    if not preserveHardware and not isLab and tank.state.controlMode=="Manual" then applyGarageConfiguration(player,tank) end
    end
   end,
   notify=function(player,reading)royaleControl:FireClient(player,reading)end,
@@ -848,6 +987,46 @@ if isRoyale then
   end)end
  end
  royaleControl.OnServerEvent:Connect(function(player,...)royale:request(player,...)end)
+ if course and courseAction then
+  courseAction.OnServerEvent:Connect(function(player,action,id,epoch)
+   local tank=royale:controlled(player,id,epoch)
+   if not tank or not tank.course or tank.state.controlMode~="Manual" or (action~="Restart" and action~="Return") then return end
+   if simulationTime<(tank.courseActionAt or 0) then return end
+   tank.courseActionAt=simulationTime+1
+   local run=tank.course
+   if action=="Return" then tank.course=nil end
+   if resetOccupiedTank(tank,player) then
+    royale:seatReplacement(royale.members[player.UserId],tank,if action=="Return" then "Returned to the Playground." else "Course restarted.")
+   else tank.course=run end
+  end)
+ end
+ local teleport=if not studio then game:GetService("TeleportService") else nil
+ if teleport then
+  teleport.TeleportInitFailed:Connect(function(player,_,message)
+   local session=sessions[player.UserId]
+   if session and session.labTravel then session.labTravel=nil;labTravel:FireClient(player,message)end
+  end)
+ end
+ labTravel.OnServerEvent:Connect(function(player,action)
+  local session=sessions[player.UserId]
+  if not session or Players:GetPlayerByUserId(player.UserId)~=player or session.labTravel
+   or action~=(if lab then "Return" else "Enter") then return end
+  if not teleport then
+   labTravel:FireClient(player,if lab then "In Studio, restart Play with GameMode set to BattleRoyale." else "In Studio, restart Play with GameMode set to InnovationLab.")
+   return
+  end
+  session.labTravel=true
+  local ok=pcall(function()
+   local options=Instance.new("TeleportOptions")
+   if lab then options.ForcePublicServer=true
+   else
+    options.ReservedServerId=game:GetService("HttpService"):GenerateGUID(false)
+    options:SetTeleportData({mode="InnovationLab",owner=player.UserId})
+   end
+   teleport:TeleportAsync(game.PlaceId,{player},options)
+  end)
+  if not ok then session.labTravel=nil;labTravel:FireClient(player,"Travel failed. Try again.") end
+ end)
  royaleSprint.OnServerEvent:Connect(function(player,enabled,revision)royale:sprint(player,enabled,revision)end)
  if bwExecution then
   bwExecution.OnServerEvent:Connect(function(player,enabled)
@@ -864,7 +1043,7 @@ if isRoyale then
   end)
  end
 end
-local layout=if environment.playground and environment.playground.provingGround then "ProvingGround"elseif worldSettings or singleModelWorld then "AuthoredWorld"elseif environment.playground then "LegacyPlayground"else "ClassicArena"
+local layout=if isLab then "InnovationLab"elseif environment.playground and environment.playground.provingGround then "ProvingGround"elseif worldSettings or singleModelWorld then "AuthoredWorld"elseif environment.playground then "LegacyPlayground"else "ClassicArena"
 local publicCount,autoCount=0,0
 for _,tank in tanks do if tank.public then publicCount+=1;if tank.state.controlMode=="Auto"then autoCount+=1 end end end
 arena:SetAttribute("BuildRevision",RoyaleConfig.Revision);arena:SetAttribute("StartupLayout",layout)
@@ -970,6 +1149,26 @@ RunService.Heartbeat:Connect(function(dt)
         profileEnd()
         local projectileStarted=if diagnostics then os.clock() else 0
         profileBegin("BattleWorks.Projectiles")
+  if course then
+   local gauntlet,rangeActive=false,false
+   for _,tank in tanks do
+    if tank.occupant and tank.state.health>0 then
+     local state=tank.state
+     if not tank.course and state.controlMode=="Manual" and state.configurationZone=="course:start" then course:begin(tank,simulationTime) end
+     if tank.course then
+      if not Playground.inCourse(environment.playground,state.position,2) and tank.course.phase~="Complete" then
+       tank.course=nil;state.course=nil
+      else
+       course:advance(tank,simulationTime);course:publish(tank,simulationTime)
+       gauntlet=gauntlet or tank.course.phase=="Bullet Gauntlet"
+       rangeActive=rangeActive or tank.course.phase=="Moving Target Range"
+      end
+     end
+    end
+   end
+   if not gauntlet and course.nextVolley~=0 then removeOwnedShells("course:emitters") end
+   course:step(simulationTime,fireGauntlet,gauntlet,rangeActive)
+  end
 		updateShells(now)
 		for id, tank in tanks do
 			if tank.state.configurationZone or (paused and tank.state.controlMode=="Auto") then continue end
@@ -1028,8 +1227,10 @@ RunService.Heartbeat:Connect(function(dt)
                 for id,tank in battle.tanks do
                     if simulationTime-(tank.lastDiagnostics or -math.huge)>=0.2 then
                         tank.lastDiagnostics=simulationTime
-                        local source=if tank.state.bwProgramKind=="Player"then tank.bwSource elseif tank.personality then tank.personality.source else tank.bwSource
-                        local kind=if tank.state.bwProgramKind=="Player"then "Player"elseif tank.personality then "Personality"else "Player"
+                        local source=if tank.state.bwProgramKind=="Player" then tank.bwSource
+                         elseif tank.occupantBWSource then tank.occupantBWSource
+                         elseif tank.personality then tank.personality.source else tank.bwSource
+                        local kind=if tank.personality and tank.state.bwProgramKind~="Player" and not tank.occupantBWSource then "Personality" else "Player"
                         local previous=tank.sourceDelivery
                         local delivery
                         if source and(not previous or previous.player~=owner or previous.epoch~=tank.state.controlEpoch or previous.generation~=tank.state.generation or previous.serial~=tank.state.bwProgramSerial or previous.text~=source or previous.kind~=kind)then

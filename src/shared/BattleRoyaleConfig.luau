@@ -3,7 +3,7 @@ local C={Revision="playground-15-auto-v4",Mode="BattleRoyale",TankCount=15,MaxTa
 function C.mode(configuration,override)
  local setting=configuration and configuration:FindFirstChild("GameMode")
  local mode=override or (setting and setting.Value) or C.Mode
- assert(mode=="Classic" or mode=="BattleRoyale","GameMode must be Classic or BattleRoyale")
+ assert(mode=="Classic" or mode=="BattleRoyale" or mode=="InnovationLab","GameMode must be Classic, BattleRoyale, or InnovationLab")
  return mode
 end
 function C.bwEnabled(configuration)

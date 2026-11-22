@@ -196,6 +196,11 @@ function Controller:takeOrbitDelta(allowExternal)
 	return mouse:takeOrbitDelta() + touch:takeOrbitDelta()
 end
 function Controller:sample(camera,context,dt)
+	-- Some native UI transitions clear the focused TextBox without sending
+	-- our focus-release signal. Re-read it while waiting on that signal.
+	if self.suspended and not self.textEntryActive and not self.externalControl and self.focused and not self.menuOpen then
+		self:refreshSuspension()
+	end
 	local command = if self.suspended then Command.neutral() else self.providers[self.mode]:sample(camera,context,dt)
  self.mouseView:update(self.providers.KeyboardMouse,self.mode=="KeyboardMouse"and not self.suspended)
 	self.providers.Touch:showDebug(command, self.mode)

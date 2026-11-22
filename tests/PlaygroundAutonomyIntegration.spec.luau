@@ -35,6 +35,7 @@ local boxes={};local ids={};local names={};local generalistLeads={}
 for _,p in created do if p.Name=="TankHitbox"and not p.destroyed then boxes[p:GetAttribute("TankId")]=p end end
 for id,s in snapshots do
  table.insert(ids,id);check(s.public and s.controlMode=="Auto"and s.bwRunning,"all default public tanks start autonomous")
+ check(not Terrain.inCourse(terrain,s.position,8),"public tanks spawn clear of the course")
  check(not names[s.personalityId],"one independently assigned personality per tank");names[s.personalityId]=true
  check(require("VehicleComponents").get(live[s.personalityId]).Computer.Tier=="Bunny","single-thread computer")
  local hardware=runtimeTanks[s.personalityId].hardware
@@ -104,25 +105,30 @@ wall+=1;remote.OnServerEvent:Fire(first,"Manual",3,a,autoEpoch);advance(4)
 check(controls[101].controlMode=="Manual"and not snapshots[a].bwRunning,"Manual stops all BW work")
 wall+=1
 -- Move to safe land before testing the established exit/ejection path.
-live[snapshots[a].personalityId].position=Vector3.new(110,0,40)
+live[snapshots[a].personalityId].position=Vector3.new(110,0,60)
 remote.OnServerEvent:Fire(first,"Exit",4,a,controls[101].epoch);advance(4)
 check(not controls[101].selected and snapshots[a].controlMode=="Auto"and snapshots[a].bwRunning,"vacating restores personality without ownership")
 enter(first,b,5)
 check(controls[101].selected==b and snapshots[b].controlMode=="Manual","switching tanks always returns to Manual")
 local generation=snapshots[b].generation;local personality=snapshots[b].personalityId
 local previous=runtimeTanks[personality].spawnHardware.allocations
+royale:release(royale.members[101],"Test vacates tank before autonomous death.",false,true)
+local execution=network:FindFirstChild("PlaygroundBWExecution")
 BW.input=function(tank,...)if tank.id==b then runtimeTanks[personality]=tank end;return bwInput(tank,...)end
-live[personality].health=0;advance(310);BW.input=bwInput
+-- The offline runner has a fixed heap. Age the wreck with interpreters paused,
+-- then resume them to check that the replacement actually runs its personality.
+execution.OnServerEvent:Fire(first,false)
+live[personality].health=0;advance(305)
+execution.OnServerEvent:Fire(first,true);advance(5);BW.input=bwInput
 local replacement=runtimeTanks[personality].spawnHardware
 checkRoll(personality,replacement)
 local changed=false
 for _,category in Hardware.Categories do if previous[category]~=replacement.allocations[category] then changed=true end end
 check(changed,"replenishment rerolls the bus while preserving the personality's rules")
 check(snapshots[b].generation>generation and snapshots[b].personalityId==personality and snapshots[b].controlMode=="Auto"and snapshots[b].bwRunning,"replenishment preserves personality and starts Auto with fresh state")
-check(not controls[101].selected,"destroyed occupant is released")
+check(not royale.members[101].tank,"unoccupied autonomous replacement remains available")
 enter(second,a,3);players.PlayerRemoving:Fire(second);advance(4)
 check(not snapshots[a].occupantUserId and snapshots[a].controlMode=="Auto"and snapshots[a].bwRunning,"disconnect releases tank back to Auto")
-local execution=network:FindFirstChild("PlaygroundBWExecution")
 check(execution and execution:GetAttribute("Enabled")==true,"Studio starts with live BW execution ON")
 local auto=runtimeTanks[snapshots[a].personalityId]
 local manual=runtimeTanks[snapshots[b].personalityId]
@@ -130,7 +136,7 @@ roots[101],humanoids[101]=character(first)
 first.CharacterAdded:Fire(first.Character)
 wall+=1;enter(first,b,6)
 check(controls[101].selected==b and manual.state.controlMode=="Manual","manual tank is occupied during the diagnostic")
-auto.state.position=Vector3.new(110,0,40)
+auto.state.position=Vector3.new(110,0,60)
 check(BW.start(auto,"marker = 42\nforward()\nlook = Scanner(0)\nwait_for_clock(get_clock().time + 10)"),"fixture schedules persistent drive, scan and clock wait")
 local runtime=auto.bw
 for _=1,40 do

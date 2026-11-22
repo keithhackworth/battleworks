@@ -9,6 +9,63 @@ function Value.array(items) arrays[items]=true; return table.freeze(items) end
 function Value.isArray(value) return type(value)=="table" and arrays[value]==true end
 function Value.dictionary(fields,immutable) dictionaries[fields]=true; return if immutable then table.freeze(fields) else fields end
 function Value.isDictionary(value) return type(value)=="table" and dictionaries[value]==true end
+-- Snapshot a trusted producer's data into the same frozen containers used by
+-- scan results. Count each occurrence, so a shared input subtree cannot
+-- expand into an unbounded payload. Empty plain tables are dictionaries.
+function Value.copyEventPayload(fields)
+ if type(fields)~="table" or fields==Value.Null or arrays[fields] then return nil end
+ local visiting={}
+ local elements,bytes=0,0
+ local function copy(source,depth)
+  if depth>Limits.MaxEventPayloadDepth or visiting[source] or getmetatable(source)~=nil then return nil end
+  local isArray
+  if arrays[source] then
+   if dictionaries[source] then return nil end
+   isArray=true
+  elseif depth==1 or dictionaries[source] then
+   isArray=false
+  end
+  visiting[source]=true
+  local snapshot={}
+  local count,lastIndex=0,0
+  for key,item in next,source do
+   count+=1;elements+=1
+   if count>Limits.MaxArrayItems or elements>Limits.MaxEventPayloadElements then return nil end
+   local arrayKey=type(key)=="number"
+   if isArray==nil then isArray=arrayKey end
+   if arrayKey~=isArray then return nil end
+   if isArray then
+    if key%1~=0 or key<1 or key>Limits.MaxArrayItems then return nil end
+    lastIndex=math.max(lastIndex,key)
+   else
+    if type(key)~="string" or #key>Limits.MaxStringBytes then return nil end
+    bytes+=#key
+   end
+   local kind=type(item)
+   if kind=="string" then
+    if #item>Limits.MaxStringBytes then return nil end
+    bytes+=#item
+   elseif kind=="boolean" or item==Value.Null then
+    bytes+=8
+   elseif kind=="number" then
+    if item~=item or math.abs(item)==math.huge then return nil end
+    bytes+=8
+   elseif kind=="table" then
+    bytes+=8
+    item=copy(item,depth+1)
+    if not item then return nil end
+   else
+    return nil
+   end
+   if bytes>Limits.MaxEventPayloadBytes then return nil end
+   snapshot[key]=item
+  end
+  visiting[source]=nil
+  if isArray and lastIndex~=count then return nil end
+  return if isArray then Value.array(snapshot) else Value.dictionary(snapshot,true)
+ end
+ return copy(fields,1)
+end
 function Value.result(reason,fields)
  local result=fields or {}; result.status=if reason then "fail" else "success"; result.reason=reason or Value.Null
  return Value.dictionary(result,true)

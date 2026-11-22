@@ -5,7 +5,10 @@ local Hardware=require(Shared.BWChassis)
 local Components=require(Shared.VehicleComponents)
 local Timing=require(Shared.WeaponTiming)
 local Screen={}
-local labels={drivetrain="Drivetrain",turret="Turret",weapon="Weapon",scanners="Scanner array"}
+local labels={drivetrain="Drivetrain",turret="Turret",weapon="Weapon",scanners="Scanner array",retaliatorMesh=Hardware.RetaliatorMesh.DisplayName}
+local meshMinimum=Hardware.RetaliatorMesh.Properties.MinimumAllocation
+local categories=table.clone(Hardware.Categories)
+table.insert(categories,"retaliatorMesh")
 local tradeoffs={weapon={"Projectile Speed","Reload / Fire Rate"},scanners={"Cone Width","Range"}}
 local function label(parent,text,x,y,width,height)
  local item=Instance.new("TextLabel")
@@ -18,9 +21,11 @@ local function slider(parent,y)
  local track=Instance.new("Frame")
  track.Name="Slider";track.BackgroundColor3=Color3.fromRGB(53,70,74)
  track.Position=UDim2.new(.05,0,0,y);track.Size=UDim2.new(.9,0,0,16);track.Active=true;track.Parent=parent
+ local railCorner=Instance.new("UICorner");railCorner.CornerRadius=UDim.new(0,6);railCorner.Parent=track
  local thumb=Instance.new("Frame")
  thumb.Name="Thumb";thumb.AnchorPoint=Vector2.new(.5,.5);thumb.Size=UDim2.fromOffset(12,20)
  thumb.BackgroundColor3=Color3.fromRGB(240,158,69);thumb.Parent=track
+ local thumbCorner=Instance.new("UICorner");thumbCorner.CornerRadius=UDim.new(0,4);thumbCorner.Parent=thumb
  local tooltip=label(parent,"",0,y-24,.76,22)
  tooltip.BackgroundColor3=Color3.fromRGB(12,22,25);tooltip.BackgroundTransparency=0
  tooltip.ZIndex=5;tooltip.Visible=false
@@ -44,6 +49,8 @@ local function readout(config,profile,name)
   local detail=if profile.Weapon.Operation=="Heat" then string.format("Overheat cooldown %.2f sec",profile.Weapon.OverheatCooldown)
    else string.format("Windup %.2f sec",Timing.preparation(profile.Weapon,windup))
   return string.format("Projectile %.1f studs/sec | %s %.2f sec",speed,interval,Timing.interval(profile.Weapon,p)),detail
+ elseif name=="retaliatorMesh" then
+  return if p>0 then "Operational • OnDamageTaken" else string.format("Inactive • requires %.0f%% bus",meshMinimum)
  end
  local angle=next(profile.Sensors)
  local lens=angle and config.devices["sensor"..angle]
@@ -55,9 +62,10 @@ end
 function Screen.new(context)
  local inWorld=context.inWorld==true
  local view=View.new(context,if inWorld then "Tank Configuration" else "Garage",
-  if inWorld then "Allocate up to 100% of this tank’s bus." else "Allocate up to 100% of the bus. Save a setup before taking control.")
+  if inWorld then "Stop in the bay to swap equipment. Tune how this tank uses its shared bus." else "Allocate up to 100% of the bus. Save a setup before taking control.")
  local choices,index,draft,profile={},1,nil,nil
  local actual
+ local selectedKind,selectedWeapon
  local drag,requesting
  local revision=0
  local rows={}
@@ -73,6 +81,7 @@ function Screen.new(context)
  local function select(choice)
   draft=Hardware.categoryDraft(choice.draft)
   actual=choice.current
+  selectedKind,selectedWeapon=choice.kind,choice.weapon
   profile=if choice.assembly then Components.resolve(choice.assembly) else Components.forWeapon(choice.kind,choice.weapon)
  end
  local picker=view:button("Loadout","Load loadouts",function()
@@ -82,13 +91,45 @@ function Screen.new(context)
   select(choices[index])
   refresh()
  end)
+ local mobility,weapon
+ local function preview(kind,id)
+  if not draft or requesting or drag then return end
+  local assembly=Components.zoneAssembly(choices[index].assembly,kind,id)
+  if not assembly then return end
+  selectedKind,selectedWeapon=kind,id
+  profile=Components.resolve(assembly);actual=nil;refresh()
+ end
+ if inWorld then
+  view.frame.BackgroundColor3=Color3.fromRGB(13,30,46)
+  view.frame.BackgroundTransparency=0
+  picker.Size=UDim2.new(1,-4,0,32)
+  mobility=view:button("ZoneDrivetrain","Drivetrain",function()
+   preview(if selectedKind=="Boomer" then "Rattler" else "Boomer",selectedWeapon)
+  end)
+  weapon=view:button("ZoneWeapon","Weapon",function()
+   preview(selectedKind,if selectedWeapon=="weapon.cannon" then "weapon.gatling" else "weapon.cannon")
+  end)
+ end
  local total=view:paragraph("BusTotal","")
- for _,name in Hardware.Categories do
+ local mesh,status
+ for _,name in categories do
+  if name=="retaliatorMesh" then
+   mesh=view:button("RetaliatorMesh","Equip Retaliator Mesh",function()
+    if not draft or requesting or drag then return end
+    if draft.allocations.retaliatorMesh~=nil then
+     draft.allocations.retaliatorMesh=nil
+    else
+     draft.allocations.retaliatorMesh=0
+    end
+    actual=nil;status.Text="";refresh()
+   end)
+  end
   local secondary=tradeoffs[name]
   view.order+=1
   local card=Instance.new("Frame")
   card.Name="Allocation_"..name;card.Size=UDim2.new(1,-6,0,if secondary then 137 elseif name=="drivetrain" then 81 else 64)
-  card.LayoutOrder=view.order;card.BackgroundColor3=Color3.fromRGB(32,47,52);card.Parent=view.content
+  card.LayoutOrder=view.order;card.BackgroundColor3=if inWorld then Color3.fromRGB(23,47,67) else Color3.fromRGB(32,47,52);card.Parent=view.content
+  local corner=Instance.new("UICorner");corner.CornerRadius=UDim.new(0,8);corner.Parent=card
   local title=label(card,labels[name],0,0,1,21)
   local master=slider(card,25)
   local stats=label(card,"",0,if secondary then 94 else 43,1,20)
@@ -111,17 +152,20 @@ function Screen.new(context)
   connect(master.track.InputBegan,function(input) dragAt(master,input) end)
   if row.secondary then connect(row.secondary.track.InputBegan,function(input) dragAt(row.secondary,input) end) end
  end
- local status=view:paragraph("GarageStatus","")
+ status=view:paragraph("GarageStatus","")
  local save=view:button("SaveBus",if inWorld then "Apply to this tank" else "Save setup for this session",function()
   if not draft or requesting then return end
   requesting=true
   local choice=choices[index]
   local version=revision
-  local result=request("Save",choice.id,draft)
+  local payload=table.clone(draft)
+  if inWorld then payload.kind=selectedKind;payload.weapon=selectedWeapon end
+  local result=request("Save",choice.id,payload)
   if version~=revision then return end
   requesting=false
   if result.ok then
    actual=nil
+   if result.kind then choice.kind=result.kind;choice.weapon=result.weapon;choice.assembly=result.assembly end
    choice.draft=result.draft;draft=Hardware.categoryDraft(result.draft)
    refresh()
   end
@@ -132,16 +176,25 @@ function Screen.new(context)
   local choice=choices[index]
   if not choice or not draft then
    for _,row in rows do row.card.Visible=false end
-   total.Text="";save.Visible=false
+   total.Text="";save.Visible=false;mesh.Visible=false
+   if mobility then mobility.Visible=false;weapon.Visible=false end
    return
   end
   local config=actual or assert(Hardware.fromCategories(draft,profile,choice.tier))
-  picker.Text=choice.kind.." / "..profile.Weapon.WeaponType..(if inWorld then "" else "  ›")
+  picker.Text=if inWorld then "CONFIGURATION BAY" else choice.kind.." / "..profile.Weapon.WeaponType.."  ›"
+  if mobility then
+   mobility.Visible=true;weapon.Visible=true
+   mobility.Text="Drivetrain  ·  "..(if selectedKind=="Boomer" then "Tracks" else "Wheels").."  ›"
+   weapon.Text="Weapon  ·  "..profile.Weapon.WeaponType.."  ›"
+  end
   local sum=0
+  mesh.Visible=choice.allowRetaliatorMesh~=false
+  mesh.Text=if draft.allocations.retaliatorMesh==nil then "Equip Retaliator Mesh" else "Remove Retaliator Mesh"
   for name,row in rows do
    local allocation=draft.allocations[name]
+   row.card.Visible=allocation~=nil
+   if allocation==nil then continue end
    sum+=allocation
-   row.card.Visible=true
    row.title.Text=string.format("%s  %.1f%%",labels[name],allocation)
    local value,detail=readout(config,profile,name)
    row.stats.Text=value;row.master.tooltip.Text=value

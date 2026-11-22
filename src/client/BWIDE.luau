@@ -137,23 +137,29 @@ function IDE.new(playerGui,onRun,onStop,onConfigure,onSource)
         self.logPageIndex=nil; self:setOutput(self.fullOutputMessage or self.output.Text,true); self:renderLogStatus()
     end)
     connect(handbook.Activated,function()
-        editor:ReleaseFocus(); output:ReleaseFocus(); configEditor:ReleaseFocus()
+        self:releaseTextFocus()
         self.handbook:open()
     end)
-    connect(hardware.Activated,function() panel.Visible=not panel.Visible; scroll.Visible=not panel.Visible; tools.Visible=not panel.Visible end)
+    connect(hardware.Activated,function()
+        self:releaseTextFocus()
+        panel.Visible=not panel.Visible; scroll.Visible=not panel.Visible; tools.Visible=not panel.Visible
+    end)
     connect(apply.Activated,function()
+        configEditor:ReleaseFocus()
         local configuration,reason=self:parseHardware(configEditor.Text)
         if not configuration then diagnostics.Text="Configuration: "..reason; return end
         if onConfigure then onConfigure(configuration) end
     end)
     connect(toggle.Activated,function()
-		frame.Visible=not frame.Visible
-  if frame.Visible and self.onSource then self.onSource()end
-		if not frame.Visible then self:close() end
+		if frame.Visible then self:close()
+		else
+			frame.Visible=true
+			if self.onSource then self.onSource()end
+		end
 	end)
 	connect(run.Activated,function()
 		if (self.running and not self.personalityRunning)or self.pendingRequest then return end
-		self.editorController:release();self.handbook:close();editor:ReleaseFocus();self.output:ReleaseFocus()
+		self.editorController:release();self.handbook:close();self:releaseTextFocus()
 		local source=editor.Text
 		self.logPageIndex=nil; self.fullOutputMessage=nil
 		self.pendingRequest=onRun(source)
@@ -166,7 +172,7 @@ function IDE.new(playerGui,onRun,onStop,onConfigure,onSource)
 		self:setOutput("Submitted for server validation…")
 	end)
 	connect(stop.Activated,function()
-		editor:ReleaseFocus()
+		self:releaseTextFocus()
 		self.pendingRequest=onStop()
 		self:setOutput("Stop requested…"..(if self.scanOutputs[self.tankId] then self.scanOutputs[self.tankId].text else ""))
 	end)
@@ -201,12 +207,16 @@ function IDE:fitAboveTouchDrive(touchRoot,driveStick)
  table.insert(self.connections,driveStick:GetPropertyChangedSignal("Size"):Connect(position))
  position()
 end
+function IDE:releaseTextFocus()
+ self.editor:ReleaseFocus()
+ self.output:ReleaseFocus()
+ self.configEditor:ReleaseFocus()
+end
 function IDE:close()
  if self.window then self.window.stop()end
  self.editorController:release()
 	self.handbook:close()
-	self.output:ReleaseFocus()
-	self.editor:ReleaseFocus()
+	self:releaseTextFocus()
 	self.frame.Visible=false
 end
 -- Editing and pending acknowledgments belong to the selected persistent tank.
@@ -218,8 +228,7 @@ function IDE:bind(id)
 		self.sources[self.tankId]=self.editor.Text
 		self.requests[self.tankId]=self.pendingRequest
 	end
-	self.editor:ReleaseFocus()
-	self.output:ReleaseFocus()
+	self:releaseTextFocus()
 	self.logPageIndex=nil; self.fullOutputMessage=nil; self.outputPages=nil; self.currentLogPage=nil
 	self.tankId=id;self.loadingTankSource=true
  self.editorController:bind(id,self.sources[id] or Config.DefaultSource)

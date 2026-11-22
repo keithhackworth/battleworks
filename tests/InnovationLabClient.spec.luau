@@ -1,0 +1,27 @@
+local labRemote={OnClientEvent=signal()}
+labRemote.FireServer=function(_,...)table.insert(requests,{name="InnovationLabTravel",args={...}})end
+remotes.InnovationLabTravel=labRemote
+local client=require("RoyaleClient").start(true)
+local function receive(revision,mode)
+ remotes.RoyaleControl.OnClientEvent:Fire({revision=revision,mode=mode,requestId=client.session.requestId})
+end
+local shell=client.getShell()
+check(shell.manager.current=="InnovationLab" and not client.navigation.Enabled,"lab starts at the technology catalog")
+receive(1,"Menu")
+check(named("Experiment_retaliator").Text:find("Available") and named("Technology_viper").Text:find("Unavailable"),"working and placeholder cards expose their availability")
+named("Experiment_retaliator").Activated:Fire()
+check(requests[#requests].args[1]=="Join" and requests[#requests].args[3]=="retaliator","the technology card sends a single authoritative join request")
+receive(2,"OnFoot")
+check(shell.manager.current=="Battle" and client.navigation.Enabled,"the accepted experiment switches to normal gameplay")
+named("RoyaleMainMenu").Activated:Fire()
+check(shell.manager.current=="InnovationLab" and requests[#requests].args[1]=="Menu" and not client.navigation.Enabled,"Tech Catalog leaves the match")
+receive(3,"Menu")
+named("Experiment_retaliator").Activated:Fire()
+check(requests[#requests].args[1]=="Join" and requests[#requests].args[3]=="retaliator","the same card can restart an experiment")
+receive(4,"OnFoot")
+named("RoyaleMainMenu").Activated:Fire();receive(5,"Menu")
+named("ReturnToPlayground").Activated:Fire()
+check(requests[#requests].name=="InnovationLabTravel" and requests[#requests].args[1]=="Return","return uses the server's dedicated travel boundary")
+labRemote.OnClientEvent:Fire("Travel failed.")
+check(named("LabStatus").Text=="Travel failed.","travel errors are visible in the catalog")
+print("Innovation Lab catalog and transitions passed: "..count.." assertions")

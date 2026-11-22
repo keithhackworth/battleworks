@@ -163,8 +163,23 @@ local input={UserInputType=Enum.UserInputType.MouseButton1,Position=Vector3.new(
 scanner.InputBegan:Fire(input)
 check(scannerTip.Text~=initial and thumb.Position.X.Scale==.5,"master drag updates calculated tooltip while preserving the tuning thumb")
 UIS.InputEnded:Fire(input)
-view.buttons[2].Activated:Fire()
+local save,meshButton
+for _,button in view.buttons do
+ if button.Name=="SaveBus" then save=button elseif button.Name=="RetaliatorMesh" then meshButton=button end
+end
+save.Activated:Fire()
 check(saved and saved.allocations.scanners==50 and saved.tuning.scanners==.5,"Garage clamps the sum and saves the same configuration the server compiles")
 check(scannerTip.Text==string.format("Cone %.1f° | Range %.1f studs",saved.devices.sensor0.coneWidth,saved.devices.sensor0.range),"Garage tooltip equals server effective lens geometry")
+input.Position=Vector3.new(scanner.AbsolutePosition.X,0,0)
+scanner.InputBegan:Fire(input);UIS.InputEnded:Fire(input)
+meshButton.Activated:Fire()
+local meshSlider=masters.Allocation_retaliatorMesh
+check(meshSlider.Parent.Visible,"equipping the Mesh opens its bus allocation slider")
+input.Position=Vector3.new(meshSlider.AbsolutePosition.X+.25*meshSlider.AbsoluteSize.X,0,0)
+meshSlider.InputBegan:Fire(input);UIS.InputEnded:Fire(input)
+save.Activated:Fire()
+check(saved.allocations.retaliatorMesh==25 and Hardware.retaliatorOperational(saved),"the Garage equips and powers the actual device")
+meshButton.Activated:Fire();save.Activated:Fire()
+check(not meshSlider.Parent.Visible and saved.devices.retaliatorMesh==nil,"the Garage removes the device and frees its bus allocation")
 view:destroy();Instance.new=oldCreate
 print("Garage dynamic preview and save passed")

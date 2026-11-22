@@ -20,8 +20,29 @@ end
 function R.new(options)
  local self=setmetatable({options=options,members={},slots={},scores={},tankScores={},scoreRevision=0,battle={multiplayer=true}},R)
  if options.autonomy then self.busOffset=math.random(0,#Hardware.Categories-1) end
- for i=1,options.count do self.slots[i]={id="public:"..i,index=i,epoch=0,generation=-1};self:spawn(self.slots[i])end
+ self:resetPool(options.count,"public:")
  return self
+end
+function R:resetPool(count,prefix)
+ for _,slot in self.slots do
+  local tank=slot.tank
+  if tank then
+   tank.state.publicRetired=true
+   local occupant=tank.occupant and self.members[tank.occupant]
+   if occupant then self:release(occupant,"Experiment reset.",false,true) end
+   if tank.promptConnection then tank.promptConnection:Disconnect() end
+   self.options.remove(slot.id,tank)
+  end
+ end
+ table.clear(self.slots);table.clear(self.tankScores)
+ self.scoreRevision+=1
+ local complete=true
+ for index=1,count do
+  local slot={id=prefix..index,index=index,epoch=0,generation=-1}
+  self.slots[index]=slot;self:spawn(slot)
+  complete=complete and slot.tank~=nil
+ end
+ return complete
 end
 function R:reading(member,message)
  local tank=member.tank
@@ -32,7 +53,7 @@ function R:notify(member,message)
 end
 function R:spawn(slot)
  local kind,assembly=slot.kind,slot.assembly
- if not kind then kind,assembly=Config.loadout(slot.index,if self.options.autonomy then math.random else nil);slot.kind=kind;slot.assembly=assembly end
+ if not kind then kind,assembly=(self.options.loadout or Config.loadout)(slot.index,if self.options.autonomy then math.random else nil);slot.kind=kind;slot.assembly=assembly end
  local tank=self.options.create(slot.id,kind,slot.index,assembly)
  if not tank then slot.retryAt=self.options.clock()+1;return end
  slot.retryAt=nil;slot.generation+=1;slot.epoch+=1;slot.tank=tank
@@ -70,21 +91,29 @@ function R:attachPrompt(tank)
 end
 function R:register(player)
  if self.members[player.UserId]then return end
+ if self.options.nativeSpawn then player.RespawnLocation=self.options.nativeSpawn end
  self.scores[player.UserId]=self.scores[player.UserId] or {name=player.Name,kills=0,deaths=0}
  self.scoreRevision+=1
- local member={player=player,inBattle=true,revision=1,lastRequest=0,lastAction=-math.huge};self.members[player.UserId]=member
- self.options.admit(player,member)
+ local member={player=player,inBattle=not self.options.startInMenu,revision=1,lastRequest=0,lastAction=-math.huge};self.members[player.UserId]=member
+ if member.inBattle then self.options.admit(player,member)end
  local function added(character)
   if member.deathConnection then member.deathConnection:Disconnect();member.deathConnection=nil end
-  if member.tank then self:release(member,"Character changed.")end
+  if member.tank and not member.respawnTank then
+   if self.options.respawn then self:destroyed(member.tank,nil,true) else self:release(member,"Character changed.") end
+  end
   task.spawn(function()
    local root=character:WaitForChild("HumanoidRootPart",10);local humanoid=character:WaitForChild("Humanoid",10)
    if self.members[player.UserId]~=member or player.Character~=character or not root or not humanoid then return end
-   self.options.characters:restore(player,nil,false)
+   if member.respawnTank then
+    self.options.characters:seat(player,member.respawnTank.state.position)
+    self:tryRespawn(member)
+   else self.options.characters:restore(player,nil,false) end
    if not member.inBattle then self:park(member)end
    member.deathConnection=humanoid.Died:Connect(function()
     self.options.characters:setSprinting(player,false)
-    if member.tank then self:release(member,"Character died.")end
+    if member.tank then
+     if self.options.respawn then self:destroyed(member.tank,nil,true) else self:release(member,"Character died.") end
+    end
    end)
   end)
  end
@@ -106,7 +135,7 @@ function R:controlled(player,id,epoch)
 end
 function R:enter(player,id,epoch)
  local member=self.members[player.UserId]
- if not member or not member.inBattle or member.tank or type(id)~="string" then return false end
+ if not member or not member.inBattle or member.tank or member.respawnTank or type(id)~="string" then return false end
  local tank=self.options.tanks[id]
  if not tank or not tank.public or tank.occupant or tank.state.publicRetired or tank.state.health<=0 or epoch~=tank.state.controlEpoch then return false end
  local now=os.clock();if now-member.lastAction<Config.ActionInterval then return false end
@@ -137,6 +166,8 @@ function R:release(member,reason,kill,silent,eject)
   ejection={position=tank.state.position+Vector3.new(0,top+Config.EjectClearance,0),velocity=Vector3.new(velocity.X,Config.EjectSpeed,velocity.Z)}
  end
  clearControl(tank,reason)
+ tank.course=nil;tank.state.course=nil
+ tank.occupantBWSource=nil
  if tank.personality then self.options.autonomy.hardware(tank)
  else
   Components.withComputer(tank.state,"Bunny");tank.hardware=Hardware.forTank(tank.state);BW.applyHardware(tank)
@@ -156,22 +187,31 @@ function R:park(member)
  local characters=self.options.characters
  if characters:alive(member.player)then
   local root=characters:root(member.player)
-  characters:hide(member.player,root.Position-Vector3.new(0,3,0))
+  characters:seat(member.player,root.Position-Vector3.new(0,3,0))
  end
 end
 function R:menu(member)
  if member.inBattle then
-  if member.tank then self:release(member,"Returned to Main Menu.",false,true)end
+  self:cancelRespawn(member)
+  if member.tank then
+   if self.options.onMenu then member.tank.state.publicRetired=true end
+   self:release(member,"Returned to Main Menu.",false,true)
+  end
   member.inBattle=false;member.revision+=1;self.options.depart(member.player);self:park(member)
+  if self.options.onMenu then self.options.onMenu(member.player)end
   self.scoreRevision+=1
  end
  self:notify(member)
  return true
 end
-function R:join(member)
+function R:join(member,experiment)
  if not member.inBattle then
   local now=os.clock()
   if now-(member.lastJoin or -math.huge)<.5 then member.revision+=1;self:notify(member,"Please wait a moment before rejoining.");return false end
+  if self.options.beforeJoin then
+   local ok,message=self.options.beforeJoin(member,experiment)
+   if not ok then member.revision+=1;self:notify(member,message);return false end
+  end
   member.lastJoin=now;member.inBattle=true;member.revision+=1
   self.scoreRevision+=1
   self.options.admit(member.player,member)
@@ -190,16 +230,24 @@ function R:request(player,action,requestId,id,epoch)
   local tank=self:controlled(player,id,epoch)
   if not tank or not tank.personality then return false end
   if action=="Auto" and self.options.autoBlocked and self.options.autoBlocked(tank) then
-   member.revision+=1;self:notify(member,"Drive clear of the configuration zone before switching to Auto.");return false
+   member.revision+=1;self:notify(member,"Drive clear of the configuration zone or course before switching to Auto.");return false
   end
   local now=os.clock();if now-member.lastAction<Config.ActionInterval then member.revision+=1;self:notify(member,"Please wait before switching control mode.");return false end
   member.lastAction=now
   clearControl(tank,"Control mode changed.")
   tank.slot.epoch+=1;tank.state.controlEpoch=tank.slot.epoch
-  if action=="Auto"then self.options.autonomy.hardware(tank);self:startAutonomy(tank)else tank.state.controlMode="Manual";tank.autoRestartAt=nil end
+  tank.state.controlMode="Manual";tank.autoRestartAt=nil
+  if action=="Auto" then
+   if tank.occupantBWSource then
+    tank.state.bwProgramKind="Player";tank.state.bwProgramName="Editor program"
+    if BW.start(tank,tank.occupantBWSource) then tank.state.controlMode="Auto" end
+   else
+    self.options.autonomy.hardware(tank);self:startAutonomy(tank)
+   end
+  end
   member.revision+=1;self.options.select(player,tank,member);self:notify(member);return true
  elseif action=="Menu"then return self:menu(member)
- elseif action=="Join"then return self:join(member)
+ elseif action=="Join"then return self:join(member,id)
  elseif action=="Enter"then return self:enter(player,id,epoch)
  elseif self:controlled(player,id,epoch)then
   if self.options.safeExit and not self.options.safeExit(member.tank)then
@@ -213,7 +261,37 @@ function R:scoreActor(tank)
  if tank.occupant and tank.state.controlMode=="Manual" then return self.scores[tank.occupant] end
  return tank.slot and self.tankScores[tank.slot.index]
 end
-function R:destroyed(tank,killer)
+function R:cancelRespawn(member)
+ local tank=member.respawnTank
+ if not tank then return end
+ member.respawnTank=nil;member.respawnRetryAt=nil;tank.course=nil;tank.retireAt=self.options.clock()
+end
+function R:tryRespawn(member)
+ local tank=member.respawnTank
+ if not tank or not member.inBattle or not self.options.characters:alive(member.player) then return end
+ local now=self.options.clock()
+ if now<(member.respawnRetryAt or 0) then return end
+ if not self.options.respawn(tank,member.player) then
+  member.respawnRetryAt=now+1
+  return
+ end
+ member.respawnTank=nil;member.respawnRetryAt=nil
+ self:seatReplacement(member,tank,if tank.course then "Course restarted. You’re back at the start." else "Respawned in your tank.")
+end
+function R:seatReplacement(member,tank,message)
+ self.options.characters:seat(member.player,tank.state.position)
+ member.tank=tank;tank.occupant=member.player.UserId
+ local slot=tank.slot
+ slot.epoch+=1;slot.generation=tank.state.generation
+ tank.state.public=true;tank.state.controlEpoch=slot.epoch;tank.state.occupantUserId=tank.occupant
+ tank.state.controlMode="Manual"
+ tank.state.personalityName=tank.personality and tank.personality.name
+ tank.state.personalityId=tank.personality and tank.personality.id
+ tank.state.personalityHash=tank.personality and tank.personality.hash
+ tank.hitbox:SetAttribute("OccupantUserId",tank.occupant)
+ member.revision+=1;self.options.select(member.player,tank,member,true);self:notify(member,message)
+end
+function R:destroyed(tank,killer,characterAlreadyDied)
  if tank.state.publicRetired then return end
  local victim=self:scoreActor(tank)
  if killer==victim then killer=nil end
@@ -221,22 +299,36 @@ function R:destroyed(tank,killer)
  if killer then killer.kills+=1 end
  if victim or killer then self.scoreRevision+=1 end
  tank.state.publicRetired=true;clearControl(tank,"Tank destroyed.")
+ tank.hitbox.CFrame=CFrame.new(tank.state.position+Vector3.new(0,Components.get(tank.state).Chassis.HitboxHeight,0))*CFrame.Angles(0,tank.state.yaw,0)
+ tank.hitbox.CanQuery=false
  Motion.setVelocity(tank.state,Vector3.zero)
  tank.state.angularVelocity=Vector3.zero;Motion.sync(tank.state)
  tank.prompt.Enabled=false;tank.retireAt=self.options.clock()+self.options.delay
  local member=tank.occupant and self.members[tank.occupant]
- if member then self:release(member,"Tank destroyed. Find another public tank.",true)end
+ if member then
+  if not self.options.respawn then
+   self:release(member,"Tank destroyed. Find another public tank.",true)
+  else
+   tank.state.health=0;tank.retireAt=nil
+   member.tank=nil;member.respawnTank=tank;tank.occupant=nil
+   tank.state.occupantUserId=nil;tank.hitbox:SetAttribute("OccupantUserId",nil)
+   member.revision+=1;self.options.select(member.player,nil,member)
+   if not characterAlreadyDied then self.options.characters:restore(member.player,tank.state.position,true) end
+   self:notify(member,"Respawning in your tank…")
+  end
+ end
 end
 function R:step(autonomyPaused)
  local now=self.options.clock()
  if self.options.hazard then
   for _,member in self.members do
-   if member.inBattle and not member.tank and self.options.characters:alive(member.player)then
+   if member.inBattle and not member.tank and not member.respawnTank and self.options.characters:alive(member.player)then
     local root,humanoid=self.options.characters:root(member.player)
     if self.options.hazard(root.Position)then humanoid.Health=0 end
    end
   end
  end
+ for _,member in self.members do if member.respawnTank then self:tryRespawn(member)end end
  for _,slot in self.slots do
   local tank=slot.tank
   if tank and tank.state.controlMode=="Parked" and tank.state.health>0 and not autonomyPaused and not self.options.autoBlocked(tank) then
@@ -257,6 +349,7 @@ end
 function R:remove(player)
  local member=self.members[player.UserId];if not member then return end
  self.scoreRevision+=1
+ self:cancelRespawn(member)
  if member.tank then self:release(member,"Occupant disconnected.",false,true)end
  if member.characterConnection then member.characterConnection:Disconnect()end
  if member.deathConnection then member.deathConnection:Disconnect()end

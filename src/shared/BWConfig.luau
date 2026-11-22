@@ -9,6 +9,7 @@ return table.freeze({
 	MaxScannerCalls=128, -- legacy serial-interpreter limit; production retains rolling snapshots
  MaxScannerHistory=128,MaxCommandHistory=512,MaxLogEventsPerCycle=64,MaxOutputEvents=256,MaxOutputBytes=2048,MaxOutputPageBytes=8192,MaxOutputPageLines=120,IndentWidth=4,
  MaxQueuedEvents=32,
+ MaxEventPayloadDepth=8,MaxEventPayloadElements=256,MaxEventPayloadBytes=2048,
  ResponsiveEvents=table.freeze({
   OnTankDetected=true,OnWallDetected=true,OnCliffDetected=true,OnDamageTaken=true,
   OnSoundDetected=true,OnMessageReceived=true,OnWeaponReady=true,OnFriendlyTankDeath=true,

@@ -46,28 +46,15 @@ function R.new(instructions,state,services,configuration,interpreterConfig)
  end
  return self
 end
--- Only trusted simulation producers call this boundary. Copy scalar fields
--- so a producer cannot change an observation after it has entered the FIFO.
+-- Copy once at admission. Dispatch carries the same immutable BW value.
 function R:enqueueEvent(name,fields)
  local events=self.events
  local handler=events and self.instructions.eventHandlers[name]
  if self.status~="running" or not handler then return false,"notSubscribed" end
  if #events.queue>=Limits.MaxQueuedEvents then events.dropped+=1;return false,"eventQueueFull" end
- if type(fields)~="table" then return false,"invalidEventPayload" end
- local payload={}; local count,bytes=0,0
- for key,value in fields do
-  count+=1
-  local kind=type(value)
-  if count>Limits.MaxArrayItems or type(key)~="string" or #key>Limits.MaxStringBytes
-   or (kind~="boolean" and not (kind=="string" and #value<=Limits.MaxStringBytes)
-    and not (kind=="number" and value==value and math.abs(value)<math.huge)) then
-   return false,"invalidEventPayload"
-  end
-  bytes+=#key+(if kind=="string" then #value else 8)
-  if bytes>Limits.MaxOutputBytes then return false,"invalidEventPayload" end
-  payload[key]=value
- end
- table.insert(events.queue,{name=name,handler=handler,payload=Value.dictionary(payload,true)})
+ local payload=Value.copyEventPayload(fields)
+ if not payload then return false,"invalidEventPayload" end
+ table.insert(events.queue,{name=name,handler=handler,payload=payload})
  return true
 end
 function R:dispatchEvents(threadCount)
@@ -88,6 +75,8 @@ function R:dispatchEvents(threadCount)
  end
 end
 function R:stop(reason,status)
+ if self.stopping then return end
+ self.stopping=true
  self.status=status or "stopped"; self.message=reason or "Stopped"
  self.devices:stop(self.time,if self.status=="stopped" then "commandCancelled" else "tankDestroyed")
  for _,t in self.threads do
@@ -102,6 +91,7 @@ function R:stop(reason,status)
  self.results={};self.lastObservation=nil;self.lastValue=nil
  self.devices:releasePayloads()
  if self.status~="completed" then self.variables={}; self.versions={} end
+ self.stopping=false
 end
 function R:log(t,text,line,kind,observation,angle)
  local enabled=not self.services.outputEnabled or self.services.outputEnabled()
@@ -127,6 +117,7 @@ function R:log(t,text,line,kind,observation,angle)
  elseif kind=="print" and self.services.onPrint then self.services.onPrint(text,line,t.id) end
 end
 function R:charge(t,category,cost)
+ if self.status~="running" then coroutine.yield();return end
  if (t.debugDepth or 0)>0 and (category=="read" or category=="access" or category=="arithmetic" or category=="comparison" or category=="logical") then return end
  cost=cost or Hardware.cost(category,self.config.tier)
  -- A call can execute arbitrarily many statements. Suspend before charging;
@@ -390,7 +381,7 @@ function R:runThread(t,sharedCredit,operationLimit)
  while operations<maximum do
   operations+=1
   if t.pending then
-   if not self:ready(t.pending,t) then t.state="waiting"; return t.pending.required end
+   if not self:ready(t.pending,t) then t.state="waiting"; return t.pending.required,operations end
    t.pending=nil
   end
   if not t.coroutine then
@@ -398,14 +389,15 @@ function R:runThread(t,sharedCredit,operationLimit)
    if not n then
     t.state="finished"
     if t.event then t.instructions=nil end
-    return
+    return nil,operations
    end
    t.line=n.line; t.text=n.text
    local cost=instructionCost(n,self.config.tier)
-   if t.credit+1e-8<cost then t.state="waiting"; t.waitReason="cpuBudget"; return cost end
+   if t.credit+1e-8<cost then t.state="waiting"; t.waitReason="cpuBudget"; return cost,operations end
    t.waitReason=nil; t.coroutine=coroutine.create(function() self:instruction(t,n) end)
   end
   local ok,yielded=coroutine.resume(t.coroutine)
+  if self.status~="running" then return nil,operations end
   if not ok then
    t.state="failed"; t.error=if type(yielded)=="table" and yielded.bwError then yielded.message else "Internal BW error: "..tostring(yielded)
    local message=string.format("Thread %d, line %d: %s",t.id,t.line,t.error)
@@ -415,11 +407,12 @@ function R:runThread(t,sharedCredit,operationLimit)
     self.devices:stopThread(t.commandOwner or t.id,self.time); self.threadError=message
     self:log(t,message,t.line,"diagnostic")
    else self:stop(message,"error"); t.state="failed" end
-   return
+   return nil,operations
   end
   if coroutine.status(t.coroutine)=="dead" then t.coroutine=nil else t.pending=yielded end
   t.state="running"
  end
+ return nil,operations
 end
 function R:runEventCycle()
  local spec=Hardware.Tiers[self.config.tier]
@@ -433,17 +426,26 @@ function R:runEventCycle()
  -- After a reservation consumes another slot's normal turn, give the
  -- slot following the reserving thread first access to the next grant.
  events.nextThread=start%spec.threads+1
+ local remaining=Hardware.MaxOperationsPerCycle
  for offset=0,spec.threads-1 do
   local id=(start+offset-1)%spec.threads+1
   local thread=self.threads[id]
   if thread and thread.state~="finished" and thread.state~="failed" then
-   local required=self:runThread(thread,events.credit,if id==reservedThread then 1 else nil)
+   local required,used=self:runThread(thread,events.credit,if id==reservedThread then 1 else remaining)
    events.credit=thread.credit
    if self.status~="running" then return end
    -- Let expensive instructions accumulate enough credit even if other
    -- runnable threads would otherwise spend the pool every cycle.
    if required and required>spec.ticks then
     events.reservedThread,events.reservation=id,required
+    return
+   end
+   -- A fulfilled reservation is its own turn. Allowing another slot to
+   -- reserve here could repeatedly steal the next slot's first turn.
+   if id==reservedThread then return end
+   remaining-=used
+   if remaining==0 then
+    events.nextThread=id%spec.threads+1
     return
    end
   end
@@ -470,6 +472,7 @@ function R:_step(state,dt)
   if self.status~="running" then return Input.neutral() end
  end
  local command=self.devices:step(state,dt,self.time)
+ if self.status~="running" then return Input.neutral() end
  if not self.events then
   local allFinished=true; for _,t in self.threads do if t.state~="finished" and t.state~="failed" then allFinished=false end end
   if allFinished and not self.devices:busy() then self.status=if self.threadError then "error" else "completed"; self.message=self.threadError or "Program completed." end
@@ -479,10 +482,13 @@ function R:_step(state,dt)
  return command
 end
 function R:step(state,dt)
+ if self.stepping then return Input.neutral() end
+ self.stepping=true
  local ok,result=pcall(self._step,self,state,dt)
- if ok then return result end
+ if ok then self.stepping=false;return result end
  if type(result)=="table" and result.bwError then self:stop(string.format("Line %d: %s",result.line or 1,result.message),"error")
  else self:stop("Internal BW engine error: "..tostring(result),"error") end
+ self.stepping=false
  return Input.neutral()
 end
 function R:diagnostics()

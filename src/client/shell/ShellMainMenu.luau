@@ -5,6 +5,15 @@ function Screen.new(context)
  for _,item in {{"Lobby","Play BattleWorks"},{"Garage","Garage"},{"Store","Store"}} do
   view:button(item[1],if context.royale and item[1]=="Lobby" then "The Playground" else item[2],function() if context.royale and item[1]=="Lobby" then context.join()else context.navigate(item[1])end end,item[1]=="Lobby")
  end
+ if context.labTravel then
+  local status
+  view:button("InnovationLab","Innovation Lab",function()
+   status.Text="Opening the Innovation Lab…"
+   context.labTravel("Enter")
+  end)
+  status=view:paragraph("LabTravelStatus","")
+  function view:setStatus(message)status.Text=message or "" end
+ end
  view:separator()
  for _,item in {{"WorldEditor","World Editor"},{"Preferences","Preferences"},{"Manuals","Manuals"}} do
   view:button(item[1],item[2],function() context.navigate(item[1]) end)

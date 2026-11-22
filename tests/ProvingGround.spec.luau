@@ -27,13 +27,32 @@ for _,target in compact.targets do
  check(target.x<90*layoutScale or target.x>250*layoutScale or target.z<195*layoutScale or target.z>295*layoutScale,"no practice targets inside the barracks")
 end
 for _,zone in compact.configurationZones do
- check(zone.halfX>=12 and zone.halfZ>=12 and T.safe(compact,Vector3.new(zone.x,zone.y,zone.z),7),"compact configuration pad fits a tank on supported ground")
+ check(zone.halfX>=11 and zone.halfZ>=11 and T.safe(compact,Vector3.new(zone.x,zone.y,zone.z),7),"compact configuration pad fits a tank on supported ground")
 end
+local segments,ramps=0,0
 for _,region in compact.regions do
- if region.name=="Bridge" then check(region.z1-region.z0==24,"compact bridge preserves driving clearance") end
+ if region.name=="Bridge" then
+  segments+=1
+  if region.slope>0 then ramps+=1 end
+  check(math.min(region.x1-region.x0,region.z1-region.z0)<=14.001,"deck sections are single-lane")
+ end
+end
+check(segments==5 and ramps==2,"switchback has two sloped sections")
+local widthProfile=C.get("Boomer").Chassis
+local route={{-27,0},{-11,0},{-11,23},{10,23},{10,-9},{23,-9}}
+for i=1,#route-1 do
+ local a,b=route[i],route[i+1]
+ local yaw=math.atan2(a[1]-b[1],a[2]-b[2])
+ for j=0,20 do
+  local u=j/20
+  local x,z=a[1]+(b[1]-a[1])*u,a[2]+(b[2]-a[2])*u
+  local y=T.sample(compact,x,z)
+  local h=T.pose(compact,Vector3.new(x,y,z),yaw,widthProfile)
+  check(h>T.Depth,string.format("single tank footprint fits the bridge route at %.1f, %.1f",x,z))
+ end
 end
 check(#data.targets==10 and #data.staticBoxes<50 and #data.trees>=12,"bounded scenery and intentional target placements")
-check(#data.configurationZones==3,"three configuration pads use the proving-ground layout")
+check(#data.configurationZones==6,"the three course bays supplement the existing pads")
 local Motion=require("VehicleMotion")
 local west=data.configurationZones[1]
 local zoneBounds=Contacts.obstacles({playground=data},size)
@@ -96,7 +115,7 @@ for _,p in made do
  end
  if p:GetAttribute("TerrainWetnessObservable")then table.insert(terrainParts,p)end
 end
-check(pads==3 and signs==3 and stripes>pads,"each configuration zone has a striped pad and ground sign")
+check(pads==6 and signs==6 and stripes>pads,"each configuration zone has a striped pad and ground sign")
 check(#walls==#data.staticBoxes and #trunks==#data.trees,"native and custom collision geometry share exact definitions")
 local function intersection(p,origin,delta)
  local a=origin-p.CFrame.Position;local h=p.Size/2;local low,high=0,1;local normal=Vector3.new(0,1,0)

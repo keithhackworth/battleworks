@@ -1,22 +1,61 @@
 # Crazy, single-thread edition: independent hardware queues share one CPU.
-# Our simple random walk could remember where it recently got stuck.
-# A timed direction change is easy to follow; could motion feedback do better?
+# Movement feedback backs the tank away from walls without a scanner.
+function await_recovery(const command, const timeout):
+    if command.status == "fail":
+        return
+    deadline = get_clock().time + timeout
+    state = command_status(command.commandId)
+    while (state.state == "accepted" or state.state == "queued" or state.state == "running") and get_clock().time < deadline:
+        wait_for_clock(get_clock().time + 0.1)
+        state = command_status(command.commandId)
+    if state.state == "accepted" or state.state == "queued" or state.state == "running":
+        abort_command(state.device)
+
+function level_turret(target):
+    abort_command("turret")
+    await_recovery(turret_up(to=target), 10)
+
 seed = 73
 next_turn = 0
 phase = "chaos"
+progress_origin = get_current_coordinates()
+next_progress = get_clock().time + 2
 while true:
+    now = get_clock().time
+    if now >= next_progress:
+        position = get_current_coordinates()
+        dx = position.x - progress_origin.x
+        dz = position.z - progress_origin.z
+        if dx * dx + dz * dz < 4:
+            abort_command("weapon")
+            stop()
+            steer_right(22)
+            await_recovery(back(8), 6)
+            steer_center()
+            next_turn = 0
+        progress_origin = get_current_coordinates()
+        next_progress = get_clock().time + 2
     ready = is_weapon_ready()
-    if ready.ready:
-        if ready.operation == "Heat":
-            fire(ready.max_burst_seconds)
-        else:
-            fire()
+    if ready.ready or ready.state == "cooldown" or ready.state == "overheated":
+        aim = get_turret_direction()
+        if aim.world_pitch < -2 or aim.world_pitch > 2:
+            # Compensate for the hull tilting while keeping the existing yaw.
+            target = aim.mount_pitch - aim.world_pitch
+            if target < aim.min_pitch:
+                target = aim.min_pitch
+            elif target > aim.max_pitch:
+                target = aim.max_pitch
+            level_turret(target)
+        elif ready.ready:
+            if ready.operation == "Heat":
+                fire(ready.max_burst_seconds)
+            else:
+                fire()
     now = get_clock().time
     if now >= next_turn:
         seed = random_step(seed)
         abort_command("turret")
         turret_right(to=seed * 360 / 997)
-        turret_up(to=0)
         abort_command("drivetrain")
         forward()
         hardware = get_tank_state()

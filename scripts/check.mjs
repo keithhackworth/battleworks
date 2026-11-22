@@ -74,7 +74,7 @@ try {
           ? await readFile('tests/fixtures/SwappedVehicleAssemblies.luau', 'utf8') : originalSource;
       const name = file.split('/').pop().replace('.luau', '');
       const parent = file.includes('/shell/') ? 'Shell' : file.includes('/shared/') ? 'Shared' : 'Client';
-      bundle += `\nloaders[${JSON.stringify(name)}] = function()\nlocal script = { Parent = ${parent}, PlaygroundAutonomy = "PlaygroundAutonomy", PlaygroundDiagnostics = "PlaygroundDiagnostics", PlaygroundBuilder = "PlaygroundBuilder", RoyaleCharacters = "RoyaleCharacters", BattleRoyale = "BattleRoyale", BWController = "BWController", LocalBattle = "LocalBattle", WorldTestContext = "WorldTestContext", StudioWorldSelector = "StudioWorldSelector", StudioAssetPlacement = "StudioAssetPlacement", WorldObjects = "WorldObjects", DirectionalScanner = "DirectionalScanner", ScannerScene = "ScannerScene", ManualScanner = "ManualScanner", EnvironmentBuilder = "EnvironmentBuilder", PlayerWorldStorage = "PlayerWorldStorage", PlayerWorldService = "PlayerWorldService", EditorAssetCatalog = "EditorAssetCatalog", PracticeTargets = "PracticeTargets", ProjectileSimulation = "ProjectileSimulation" }\n${source}\nend\n`;
+      bundle += `\nloaders[${JSON.stringify(name)}] = function()\nlocal script = { Parent = ${parent}, PlaygroundAutonomy = "PlaygroundAutonomy", PlaygroundDiagnostics = "PlaygroundDiagnostics", PlaygroundBuilder = "PlaygroundBuilder", ProvingGrounds = "ProvingGrounds", RoyaleCharacters = "RoyaleCharacters", BattleRoyale = "BattleRoyale", InnovationLab = "InnovationLab", BWController = "BWController", LocalBattle = "LocalBattle", WorldTestContext = "WorldTestContext", StudioWorldSelector = "StudioWorldSelector", StudioAssetPlacement = "StudioAssetPlacement", WorldObjects = "WorldObjects", DirectionalScanner = "DirectionalScanner", ScannerScene = "ScannerScene", ManualScanner = "ManualScanner", EnvironmentBuilder = "EnvironmentBuilder", PlayerWorldStorage = "PlayerWorldStorage", PlayerWorldService = "PlayerWorldService", EditorAssetCatalog = "EditorAssetCatalog", PracticeTargets = "PracticeTargets", ProjectileSimulation = "ProjectileSimulation" }\n${source}\nend\n`;
     }
     if (needed.has('EditorState')) bundle += `\nloaders.EditorState=function()\n${editorState}\nend\n`;
     bundle += '\nrequire = function(name)\nif name == "PlayerModule" then return { GetControls = function() return defaultControls end } end\nif cache[name] == nil then cache[name] = assert(loaders[name], "Unknown module " .. tostring(name))() end\nreturn cache[name]\nend\n';
@@ -167,8 +167,14 @@ try {
     ['VehicleContactsOptimization'],
     ['BusConfiguration'],
     ['PlaygroundPopulation'],
-    ['BWEvents'],
+    ['BWEvents', 'BWEventPayloads'],
     ['BWEventStress'],
+    ['BWEventAdversarial'],
+    ['RetaliatorMesh'],
+    ['InnovationLabServer'],
+    ['InnovationLabClient'],
+    ['InnovationLabTravel'],
+    ['InnovationLabEntry'],
   ];
   if (groupIndex === null) {
     const worldTests = spawnSync(process.execPath, ['--test', ...(await readdir('tests')).filter(name=>name.endsWith('.test.js')).sort().map(name=>'tests/'+name)], { stdio: 'inherit' });
@@ -187,12 +193,22 @@ try {
       if(suite==='RoyaleTeamClientIntegration'){
         const source=await readFile('tests/RoyaleClientIntegration.spec.luau','utf8');
         tests+='\ndo\n'+source.replace('IsStudio=function() return false end','IsStudio=function() return true end')+'\nend\n';
-      } else if(suite==='PlaygroundAutonomyIntegration'||suite==='PlaygroundEditorProgramIntegration'){
+      } else if(suite==='InnovationLabClient'){
+        const source=await readFile('tests/RoyaleClientIntegration.spec.luau','utf8');
+        const setup=source.slice(0,source.indexOf('local client=require("RoyaleClient")'));
+        tests+='\ndo\n'+setup+await readFile('tests/InnovationLabClient.spec.luau','utf8')+'\nend\n';
+      } else if(suite==='PlaygroundAutonomyIntegration'||suite==='PlaygroundEditorProgramIntegration'||suite==='InnovationLabServer'||suite==='InnovationLabTravel'||suite==='InnovationLabEntry'){
         const harness=await readFile('tests/ServerIntegration.spec.luau','utf8');
-        const setup=harness.slice(0,harness.indexOf(' require("ServerEntrypoint")'));
+        let setup=harness.slice(0,harness.indexOf(' require("ServerEntrypoint")'));
         let boot=await readFile('tests/RoyaleServerIntegration.spec.luau','utf8');
         boot=boot.slice(0,boot.indexOf('advance(4)')).replace('require("BattleRoyaleConfig").TankCount=6','').replace('require("BattleRoyaleConfig").Personalities=false','');
         if(suite==='PlaygroundEditorProgramIntegration')boot=boot.replace('require("ServerEntrypoint")','require("BattleRoyaleConfig").TankCount=2\nrequire("ServerEntrypoint")');
+        if(suite==='InnovationLabServer')boot=boot.replace('workspace:SetAttribute("BattleWorksGameMode","BattleRoyale")','workspace:SetAttribute("BattleWorksGameMode","InnovationLab")');
+        if(suite==='InnovationLabTravel'||suite==='InnovationLabEntry'){
+          setup=setup.replace('Heartbeat=heartbeat,IsStudio=function() return true end','Heartbeat=heartbeat,IsStudio=function() return false end');
+          const travel=await readFile('tests/InnovationLabTravelSetup.luau','utf8');
+          boot=boot.replace('require("ServerEntrypoint")','local labEntry='+String(suite==='InnovationLabEntry')+'\n'+travel+'\nrequire("ServerEntrypoint")');
+        }
         tests+='\ndo\nlocal headlessStartup=false\n'+setup+boot+await readFile('tests/'+suite+'.spec.luau','utf8')+'\nend\n';
       } else if(suite==='RoyaleServerIntegration'||suite==='RoyaleHeadlessServerIntegration'){
         const harness=await readFile('tests/ServerIntegration.spec.luau','utf8');
@@ -280,6 +296,10 @@ try {
       const examples = [...docs.matchAll(/```python\n([\s\S]*?)```/g)].map(match => match[1]);
       tests += '\ndo\nlocal examples = {' + examples.map(source => '[====[' + source + ']====]').join(',') + '}\n';
       tests += await readFile('tests/BWRuntimeExamples.luau', 'utf8') + '\nend\n';
+    }
+    if (group.includes('RetaliatorMesh')) {
+      const demo=await readFile('programs/examples/retaliator-mesh.bw','utf8');
+      tests='local retaliatorDemo=[====['+demo+']====]\n'+tests;
     }
     const bundle = await buildBundle(tests);
     await state.loadstring(bundle + tests, group.join('-'), true)();

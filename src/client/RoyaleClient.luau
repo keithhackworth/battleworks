@@ -1,6 +1,6 @@
 -- One simulator client, with the existing shell for leaving/rejoining the arena.
 local Client={}
-function Client.start()
+function Client.start(inLab)
  local Players=game:GetService("Players")
  local UIS=game:GetService("UserInputService")
  local Actions=game:GetService("ContextActionService")
@@ -8,12 +8,15 @@ function Client.start()
  local network=game.ReplicatedStorage:WaitForChild("TankNetwork")
  local remote=network:WaitForChild("RoyaleControl")
  local sprintRemote=network:WaitForChild("RoyaleSprint")
- require(script.Parent.PlaygroundPresentation).start(workspace:WaitForChild("Arena"))
- local reading,shell,gameplay
+ local labRemote=network:FindFirstChild("InnovationLabTravel")
+ if not inLab then require(script.Parent.PlaygroundPresentation).start(workspace:WaitForChild("Arena")) end
+ local reading,shell,gameplay,experiment
  local session=require(script.Parent.shell.GameplaySession).new(function(action,requestId)
-  remote:FireServer(if action=="Enter"then "Join"else "Menu",requestId,reading and reading.selected,reading and reading.epoch)
+  local joining=action=="Enter"
+  remote:FireServer(if joining then "Join"else "Menu",requestId,
+   if joining and inLab then experiment else reading and reading.selected,reading and reading.epoch)
  end)
- session.mode="Battle" -- first admission is automatic; tank leases still require acknowledgments
+ if not inLab then session.mode="Battle" end -- Playground admission is automatic.
  local function request(action)
   session.requestId+=1;remote:FireServer(action,session.requestId,reading and reading.selected,reading and reading.epoch)
  end
@@ -21,8 +24,8 @@ function Client.start()
  local playerGui=Players.LocalPlayer:WaitForChild("PlayerGui")
  local gui=Instance.new("ScreenGui");gui.Name="RoyaleOnFoot";gui.ResetOnSpawn=false;gui.ScreenInsets=Enum.ScreenInsets.CoreUISafeInsets;gui.Parent=playerGui
  local hint=Instance.new("TextLabel");hint.Size=UDim2.new(1,-40,0,48);hint.Position=UDim2.new(0,20,0,8);hint.BackgroundColor3=Color3.fromRGB(24,31,35);hint.BackgroundTransparency=.2;hint.TextColor3=Color3.fromRGB(237,239,224);hint.TextSize=16;hint.TextWrapped=true;hint.Font=Enum.Font.GothamMedium;hint.Parent=gui
- hint.Text="THE PLAYGROUND • Hold Shift to run • E / controller X / touch prompt to enter a nearby tank"
- local chat=require(script.Parent.PlaygroundChat).new(playerGui,battle.inputController,"BattleRoyale")
+ hint.Text=(if inLab then "INNOVATION LAB" else "THE PLAYGROUND").." • Hold Shift to run • E / controller X / touch prompt to enter a nearby tank"
+ local chat=if not inLab then require(script.Parent.PlaygroundChat).new(playerGui,battle.inputController,"BattleRoyale") else nil
  local navigation=Instance.new("ScreenGui");navigation.Name="RoyaleNavigation";navigation.ResetOnSpawn=false;navigation.ScreenInsets=Enum.ScreenInsets.CoreUISafeInsets;navigation.Parent=playerGui
  gameplay={}
  local shifts={}
@@ -34,7 +37,7 @@ function Client.start()
  function gameplay:setActive(enabled)
   if not enabled then stopSprint()end
   battle:setActive(enabled)
-  chat:setActive(enabled)
+  if chat then chat:setActive(enabled) end
   navigation.Enabled=enabled;gui.Enabled=enabled and (not reading or reading.mode=="OnFoot")
  end
  local function garageRequest(...)
@@ -48,16 +51,15 @@ local function worldRequest(action,payload)
  end
  local function ensureShell()
   if not shell then
-   shell=require(script.Parent.shell.ApplicationShell).new(playerGui,workspace:WaitForChild("Arena"),session,gameplay,nil,function()return game.ReplicatedStorage:FindFirstChild("BattleWorksEditorAssets")end,worldRequest,{royale=true,garageRequest=garageRequest})
+   shell=require(script.Parent.shell.ApplicationShell).new(playerGui,workspace:WaitForChild("Arena"),session,gameplay,nil,function()return game.ReplicatedStorage:FindFirstChild("BattleWorksEditorAssets")end,worldRequest,{
+    royale=true,garageRequest=garageRequest,
+    labTravel=if labRemote then function(action)labRemote:FireServer(action)end else nil,
+    selectExperiment=if inLab then function(id)experiment=id;session:join()end else nil,
+   })
   end
   return shell
  end
- local function home()
-  gameplay:setActive(false)
-  session:leave()
-  ensureShell().home()
- end
- local menu=Instance.new("TextButton");menu.Name="RoyaleMainMenu";menu.Text="Main Menu";menu.Position=UDim2.fromOffset(12,60);menu.Size=UDim2.fromOffset(120,44);menu.BackgroundColor3=Color3.fromRGB(32,47,52);menu.TextColor3=Color3.fromRGB(237,239,224);menu.Font=Enum.Font.GothamMedium;menu.TextSize=15;menu.Parent=navigation
+ local menu=Instance.new("TextButton");menu.Name="RoyaleMainMenu";menu.Text=if inLab then "Tech Catalog" else "Main Menu";menu.Position=UDim2.fromOffset(12,60);menu.Size=UDim2.fromOffset(120,44);menu.BackgroundColor3=Color3.fromRGB(32,47,52);menu.TextColor3=Color3.fromRGB(237,239,224);menu.Font=Enum.Font.GothamMedium;menu.TextSize=15;menu.Parent=navigation
  local execution=network:FindFirstChild("PlaygroundBWExecution")
  if execution then
   local toggle=Instance.new("TextButton")
@@ -94,7 +96,7 @@ local function worldRequest(action,payload)
  scores.Position=UDim2.fromOffset(8,0)
  local scoreRevision
  local function showScores(battles,revision,tankScores)
-  if revision==nil or revision==scoreRevision or not battles then return end
+  if inLab or revision==nil or revision==scoreRevision or not battles then return end
   scoreRevision=revision
   local roster={}
   for _,score in tankScores or {} do table.insert(roster,score)end
@@ -115,6 +117,16 @@ local function worldRequest(action,payload)
   scoreboard.Visible=#lines>0
  end
  local notice=Instance.new("TextLabel");notice.Name="RoyaleNotice";notice.Position=UDim2.fromOffset(144,60);notice.Size=UDim2.new(1,-164,0,60);notice.BackgroundColor3=Color3.fromRGB(32,47,52);notice.TextColor3=Color3.fromRGB(255,224,163);notice.Font=Enum.Font.GothamMedium;notice.TextSize=16;notice.TextWrapped=true;notice.Visible=false;notice.Parent=navigation
+ local function home()
+  local ok,result=pcall(ensureShell)
+  if not ok then
+   warn("BattleWorks could not open the menu: "..tostring(result))
+   notice.Text="Could not open the menu. Try again.";notice.Visible=true
+   return
+  end
+  result.home()
+  gameplay:setActive(false)
+ end
  local modeSwitch=Instance.new("TextButton");modeSwitch.Name="PlaygroundControlMode";modeSwitch.AnchorPoint=Vector2.new(.5,1);modeSwitch.Position=UDim2.new(.5,0,1,-12);modeSwitch.Size=UDim2.new(.42,0,0,56);modeSwitch.BackgroundColor3=Color3.fromRGB(32,81,69);modeSwitch.TextColor3=Color3.fromRGB(245,246,229);modeSwitch.Font=Enum.Font.GothamBold;modeSwitch.TextSize=18;modeSwitch.TextWrapped=true;modeSwitch.Visible=false;modeSwitch.Parent=navigation
  local currentMode="Manual"
  local inConfigurationZone=false
@@ -133,13 +145,52 @@ local function worldRequest(action,payload)
   battle.inputController:release()
   request(if currentMode=="Auto"then "Manual"else "Auto")
  end)
+ local courseRemote=network:FindFirstChild("ProvingGroundsAction")
+ local coursePanel,courseLabel,courseRestart,courseReturn
+ if courseRemote then
+  coursePanel=Instance.new("Frame");coursePanel.Name="ProvingGroundsHUD"
+  coursePanel.AnchorPoint=Vector2.new(1,0);coursePanel.Position=UDim2.new(1,-12,0,96)
+  coursePanel.Size=UDim2.fromOffset(244,90);coursePanel.BackgroundColor3=Color3.fromRGB(20,42,55)
+  coursePanel.Visible=false;coursePanel.Parent=navigation
+  local corner=Instance.new("UICorner");corner.CornerRadius=UDim.new(0,8);corner.Parent=coursePanel
+  courseLabel=Instance.new("TextLabel");courseLabel.Size=UDim2.new(1,-12,0,48);courseLabel.Position=UDim2.fromOffset(6,0)
+  courseLabel.BackgroundTransparency=1;courseLabel.TextColor3=menu.TextColor3;courseLabel.TextSize=14
+  courseLabel.Font=Enum.Font.GothamMedium;courseLabel.TextWrapped=true;courseLabel.Parent=coursePanel
+  local function actionButton(name,action,x)
+   local button=Instance.new("TextButton");button.Name=name;button.Text=name;button.Position=UDim2.fromOffset(x,48)
+   button.Size=UDim2.fromOffset(112,36);button.BackgroundColor3=menu.BackgroundColor3
+   button.TextColor3=menu.TextColor3;button.Font=menu.Font;button.TextSize=13;button.Parent=coursePanel
+   button.Activated:Connect(function()
+    if coursePanel.Visible and reading and reading.mode=="Tank" then courseRemote:FireServer(action,reading.selected,reading.epoch) end
+   end)
+   return button
+  end
+  courseRestart=actionButton("Restart Course","Restart",6)
+  courseReturn=actionButton("Leave Course","Return",126)
+ end
  network:WaitForChild("Snapshot").OnClientEvent:Connect(function(states,battles,revision,tankScores)
   showScores(battles,revision,tankScores)
   local own=reading and reading.selected and states[reading.selected]
   if own and own.controlEpoch==reading.epoch then showMode(own.controlMode,own.configurationZone)end
+  if coursePanel then
+   local progress=own and own.controlEpoch==reading.epoch and own.course
+   coursePanel.Visible=progress~=nil and progress~=false
+   if progress then
+    local details=if progress.phase=="Moving Target Range" then string.format("  •  Hits %d/%d",progress.hits,progress.required) else ""
+    courseLabel.Text=string.format("%s  •  %.1fs%s",progress.phase,progress.elapsed,details)
+    courseRestart.Text=if progress.phase=="Complete" then "Replay" else "Restart Course"
+    courseReturn.Text=if progress.phase=="Complete" then "Return to Playground" else "Leave Course"
+   end
+  end
  end)
  menu.Activated:Connect(home)
- gameplay:setActive(true)
+ gameplay:setActive(not inLab)
+ if inLab then ensureShell() end
+ if labRemote then labRemote.OnClientEvent:Connect(function(message)
+  if not shell then return end
+  local screen=shell.manager:get(shell.manager.current)
+  if screen.setStatus then screen:setStatus(message) end
+ end) end
  remote.OnClientEvent:Connect(function(nextReading)
   if type(nextReading)~="table" or type(nextReading.revision)~="number" or nextReading.revision~=nextReading.revision or (reading and nextReading.revision<=reading.revision)then return end
   local requestId=nextReading.requestId
@@ -151,6 +202,7 @@ local function worldRequest(action,payload)
   if not battle:setControl(control)then return end
   notice.Text=nextReading.message or "";notice.Visible=notice.Text~=""
   reading=nextReading
+  if coursePanel then coursePanel.Visible=false end
   if reading.mode~="OnFoot"then stopSprint()end
   modePending=false
   showMode(reading.controlMode)

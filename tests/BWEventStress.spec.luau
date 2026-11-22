@@ -4,7 +4,6 @@ local Hardware=require("BWChassis")
 local Simulation=require("TankSimulation")
 local hardware=Hardware.default("Hexadeca")
 local spec=Hardware.Tiers.Hexadeca
-local count=30
 local warmup,frames=60,240
 local step=1/60
 local eventSource=[[function spin(const event):
@@ -12,7 +11,7 @@ local eventSource=[[function spin(const event):
     while true:
         pulses = pulses + 1
 on_event("OnDamageTaken", spin)]]
-local function run(label,source,events)
+local function run(count,label,source,events)
  local instructions,err=Parser.parse(source)
  assert(instructions,err and err.message)
  local fleet={}
@@ -48,7 +47,9 @@ local function run(label,source,events)
  print(string.format("BW fleet %-13s %2d tanks | ms/fixed step avg %.3f p95 %.3f max %.3f",
   label,count,total/frames,samples[math.ceil(frames*.95)],samples[frames]))
 end
-run("legacy idle","wait_for_clock(179)",0)
-run("event idle",eventSource,0)
-run("16 busy slots",eventSource,spec.threads)
-print("BW 30-tank scheduling workload passed")
+for _,count in {30,50} do
+ run(count,"legacy idle","wait_for_clock(179)",0)
+ run(count,"event idle",eventSource,0)
+ run(count,"16 busy slots",eventSource,spec.threads)
+end
+print("BW 30- and 50-tank scheduling workloads passed")

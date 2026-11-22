@@ -53,6 +53,28 @@ function Builder.build(arena,data,floor)
    end
   end
   sign("BarracksSign","BARRACKS",170*scale,13,195*scale)
+  local course=data.course
+  if course then
+   for _,marker in {
+    {"PROVING GROUNDS  /  START",course.start.X,0},
+    {"A  /  RAVINE CROSSING",-31,0},
+    {"B  /  MOVING TARGET RANGE",course.range.X-8,-14},
+    {"C  /  BULLET GAUNTLET",course.gauntlet.X,-14},
+    {"FINISH",course.finish,0},
+   } do
+    sign("CourseMarker",marker[1],marker[2],4,marker[3])
+    part("CourseLine",Vector3.new(1,.04,22),CFrame.new(marker[2],.05,0),Color3.fromRGB(244,187,86),Enum.Material.SmoothPlastic,false)
+   end
+   for _,z in {course.z0,course.z1} do
+    part("CourseEdge",Vector3.new(course.x1-course.x0,.04,.45),CFrame.new((course.x0+course.x1)/2,.07,z),Color3.fromRGB(244,187,86),Enum.Material.SmoothPlastic,false)
+   end
+   for index=0,2 do
+    local side=if index%2==0 then -1 else 1
+    local emitter=part("GauntletEmitter",Vector3.new(3,2.5,5),CFrame.new(course.gauntlet.X+index*8,2.5,side*28.5),Color3.fromRGB(213,122,58),Enum.Material.Metal,false)
+    emitter:SetAttribute("CourseEmitter",true)
+    part("GauntletLane",Vector3.new(.35,.03,48),CFrame.new(course.gauntlet.X+index*8,.05,0),Color3.fromRGB(213,122,58),Enum.Material.SmoothPlastic,false)
+   end
+  end
   for _,strip in data.strips do
    local y=Terrain.sample(data,strip.x,strip.z)
    local profile=strip.profile

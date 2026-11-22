@@ -6,7 +6,7 @@ The server validates the installed loadout, allocation total, and tuning positio
 
 ## In-world configuration zones
 
-The default Playground has three blue-striped pads, each about 28 × 24 studs, west of the field, north of the field, and southeast of the barracks. Drive onto a pad in Manual and open the gear in the tank HUD. The panel uses the same Garage sliders and previews for the currently equipped chassis, weapon, and computer. **Apply to this tank** updates the running tank immediately and saves the same session preference as the Garage.
+The default Playground has three field pads and three Proving Grounds bays. Drive onto a blue-striped pad in Manual, stop, and open the gear in the tank HUD. Choose tracked or wheeled mobility and cannon or Gatling, then use the Garage sliders to preview and tune the selected hardware. **Apply to this tank** rebuilds the tank for physical equipment changes and saves the bus settings as a session preference for that loadout.
 
 The server authorizes live edits using the current tank lease and chassis position. The gear and an open panel disappear when the tank exits the pad or the lease ends. While the chassis center is inside the pad, tank combat damage and weapon fire are blocked at any height. Entry cancels cannon preparation and stops active BW. Closing the panel keeps those rules in effect until the tank leaves. Release the trigger before firing again after exit.
 

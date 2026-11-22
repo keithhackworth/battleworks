@@ -10,6 +10,11 @@ test('Crazy Bunny variant queues movement and blind native bursts on one thread'
  const source=fs.readFileSync('programs/variants/02-crazy-bunny.bw','utf8');
  assert.doesNotMatch(source,/with thread|Scanner\(|enemy\(|aim_at\(/);
  assert.match(source,/fire\(ready.max_burst_seconds\)/);
+ assert.match(source,/turret_up\(to=target\)/);
+ assert.match(source,/ready.state == "cooldown" or ready.state == "overheated"/);
+ assert.match(source,/await_recovery\(turret_up\(to=target\), 10\)/);
+ assert.match(source,/await_recovery\(back\(8\), 6\)/);
+ assert.equal(fs.readFileSync('src/server/PlaygroundPrograms.luau','utf8').match(/^ {id="P02",.*$/m)[0],playgroundModule().match(/^ {id="P02",.*$/m)[0]);
  assert.match(source,/turn_right\(/);
  assert.match(source,/wait_for_clock\(/);
 });

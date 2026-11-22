@@ -8,6 +8,29 @@ local function selection(source,cursor,anchor)
  anchor=if anchor and anchor>0 then math.clamp(anchor,1,#source+1) else cursor
  return math.min(cursor,anchor),math.max(cursor,anchor),cursor,anchor
 end
+local function wordByte(byte)
+ return byte and (byte==95 or (byte>=48 and byte<=57) or (byte>=65 and byte<=90) or (byte>=97 and byte<=122))
+end
+local function continuationByte(byte)
+ return byte and byte>=128 and byte<192
+end
+function Text.selectWord(source,cursor,anchor,direction)
+ local _,_,caret,mark=selection(source,cursor,anchor)
+ local offset=if direction<0 then -1 else 0
+ local adjacent=source:byte(caret+offset)
+ if wordByte(adjacent) then
+  repeat caret+=direction until not wordByte(source:byte(caret+offset))
+ elseif adjacent then
+  -- A separator is its own step, including a UTF-8 character or CRLF.
+  local lineBreak=if direction<0 then caret-2 else caret
+  if lineBreak>=1 and source:sub(lineBreak,lineBreak+1)=='\r\n' then
+   caret+=2*direction
+  else
+   repeat caret+=direction until not continuationByte(source:byte(caret))
+  end
+ end
+ return caret,if caret==mark then -1 else mark
+end
 local function startOfLine(source,position)
  return (source:sub(1,position-1):match(".*()\n") or 0)+1
 end

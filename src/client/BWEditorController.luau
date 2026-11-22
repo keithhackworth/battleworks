@@ -10,7 +10,7 @@ function Editor.new(box,changed)
  connect(box:GetPropertyChangedSignal('Text'),function() self:nativeChanged() end)
  for _,property in {'CursorPosition','SelectionStart'} do
   connect(box:GetPropertyChangedSignal(property),function()
-   if self.writing or self.historyAction or self.historyLatch then return end
+   if self.writing or self.historyAction or self.historyLatch or self.wordCaret then return end
    local caret=self.enterCaret
    if caret and caret.history==self.history and self.history.current==caret.state and box.Text==caret.state.text and box.CursorPosition==caret.nativeCursor then
     self:queueEnterCaret(); return
@@ -19,6 +19,8 @@ function Editor.new(box,changed)
   end)
  end
  connect(UIS.InputBegan,function(input)
+  local previousWord=self.wordCaret
+  self.wordCaret=nil
   self.guard=nil; self.enterCaret=nil
   if UIS:GetFocusedTextBox()~=box then return end
   local function down(name) return UIS.IsKeyDown and UIS:IsKeyDown(Enum.KeyCode[name]) end
@@ -44,6 +46,8 @@ function Editor.new(box,changed)
   end
   if control and key==Enum.KeyCode.Z then self:key(if shift then 'redo' else 'undo',key)
   elseif control and key==Enum.KeyCode.Y then self:key('redo',key)
+  elseif not control and shift and (key==Enum.KeyCode.Left or key==Enum.KeyCode.Right) then
+   self:selectWord(if key==Enum.KeyCode.Left then -1 else 1,previousWord)
   elseif not control and shift and key==Enum.KeyCode.Delete then self:key('deleteLine',key)
   elseif not control and (key==Enum.KeyCode.Return or key==Enum.KeyCode.KeypadEnter) then self.enterHeld=true; if not self.enterIntent then self:key('enter',key) end
   elseif not control and key==Enum.KeyCode.Tab then self:key(if shift then 'outdent' else 'indent',key)
@@ -61,6 +65,36 @@ function Editor.new(box,changed)
  end) end
  self:write(self.history.current)
  return self
+end
+function Editor:selectWord(direction,previous)
+ local box=self.box
+ if box.Text~=self.history.current.text then self:commitNative() end
+ local source=box.Text
+ local cursor,anchor=box.CursorPosition,box.SelectionStart
+ if previous and previous.history==self.history and previous.source==source then
+  cursor,anchor=previous.cursor,previous.anchor
+ end
+ cursor,anchor=Text.selectWord(source,cursor,anchor,direction)
+ local intent={history=self.history,source=source,cursor=cursor,anchor=anchor}
+ self.wordCaret=intent
+ local function restore()
+  if self.wordCaret~=intent or self.history~=intent.history or box.Text~=source or UIS:GetFocusedTextBox()~=box then return end
+  self.writing=true
+  box.CursorPosition=cursor
+  box.SelectionStart=anchor
+  self.writing=false
+  self.history:select(cursor,anchor)
+ end
+ restore()
+ -- The native TextBox can apply its own selection after InputBegan.
+ task.delay(0,function()
+  restore()
+  if self.wordCaret~=intent then return end
+  task.delay(0,function()
+   restore()
+   if self.wordCaret==intent then self.wordCaret=nil end
+  end)
+ end)
 end
 function Editor:write(state)
  self.writing=true
@@ -288,6 +322,7 @@ function Editor:focus()
  self.history:select(saved.cursor,saved.anchor); self:write(saved)
 end
 function Editor:release()
+ self.wordCaret=nil
  self:releaseHistoryLatch()
  self.guard=nil; self:finishEnter(); self.enterIntent=nil; self.enterCaret=nil; self.enterHeld=false; self:commitNative(); self.pasteGesture=nil; self.pasteBase=nil; self.pasteVerbatim=nil
 end
@@ -305,6 +340,7 @@ function Editor:loadSource(source)
  self:write(self.history.current)
 end
 function Editor:destroy()
+ self.wordCaret=nil
  self.destroyed=true; self.historyAction=nil; self.historyLatch=nil; self.guard=nil; self.enterIntent=nil; self.enterCaret=nil
  for _,connection in self.connections do connection:Disconnect() end
  self.connections={}; self.sessions={}; self.lastNativeFormat=nil

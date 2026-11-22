@@ -134,6 +134,15 @@ function C.default(id)
  if not defaults[id] then defaults[id]=C.resolve(id) end
  return defaults[id]
 end
+function C.zoneAssembly(assembly,kind,weapon)
+ if type(kind)~="string" then return nil end
+ local preset=Assemblies[kind]
+ if not preset or (weapon~="weapon.cannon" and weapon~="weapon.gatling") then return nil end
+ local result=copy(assembly)
+ result.Id=kind;result.DisplayName=preset.DisplayName
+ result.Drivetrain=preset.Drivetrain;result.Mobility=preset.Mobility;result.Weapon=weapon
+ return result
+end
 -- Small client visual descriptor resolves a registered weapon on existing art.
 function C.forWeapon(model,id)
  local profile=C.default(model)

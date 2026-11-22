@@ -23,7 +23,6 @@ function Shell.new(playerGui,arena,session,gameplay,presenter,editorAssets,world
  startup("creating shell GUI")
  local gui=Instance.new("ScreenGui"); gui.Name="BattleWorksShell"; gui.ResetOnSpawn=false
  gui.DisplayOrder=100; gui.ScreenInsets=Enum.ScreenInsets.CoreUISafeInsets; gui.ZIndexBehavior=Enum.ZIndexBehavior.Sibling
- gui.Parent=playerGui
  startup("creating menu background")
  local background=presenter or Background.new(gui,arena)
  startup("menu background created")
@@ -31,15 +30,22 @@ function Shell.new(playerGui,arena,session,gameplay,presenter,editorAssets,world
  content.Size=UDim2.fromScale(1,1); content.Parent=gui
  local self=setmetatable({gui=gui,background=background,session=session,gameplay=gameplay},Shell)
  local context={royale=options.royale==true,parent=content,session=session,gameplay=gameplay,trace=startup,worldRequest=worldRequest,garageRequest=options.garageRequest,
+  labTravel=options.labTravel,selectExperiment=options.selectExperiment,
   editorAssets=if type(editorAssets)=="function" then nil else editorAssets,
   getEditorAssets=if type(editorAssets)=="function" then editorAssets else function() return editorAssets end}
+ local homeScreen=if options.selectExperiment then "InnovationLab" else "MainMenu"
+ local screens=definitions
+ if options.selectExperiment then
+  screens=table.clone(definitions)
+  screens.InnovationLab=require(script.Parent.ShellInnovationLab)
+ end
  context.join=function() session:join() end
  context.home=function()
+  self.manager:show(homeScreen)
   if session.mode~="Menu" then session:leave() end
-  self.manager:show("MainMenu")
  end
  self.home=context.home
- self.manager=Manager.new(context,definitions,function(name)
+ self.manager=Manager.new(context,screens,function(name)
   gui.Enabled=name~="Battle"
   if name=="Battle" or name=="WorldEditor" then background:exit() else
    startup("showing menu background")
@@ -47,7 +53,17 @@ function Shell.new(playerGui,arena,session,gameplay,presenter,editorAssets,world
    startup("menu background shown")
   end
  end)
+ startup("creating main menu widgets")
+ self.manager:get(homeScreen)
+ startup("main menu widgets created")
+ self.manager:show(homeScreen)
+ gui.Parent=playerGui
  session.onState=function(mode,message)
+  if options.selectExperiment then
+   self.manager:show(if mode=="Battle" then "Battle" else homeScreen)
+   if mode~="Battle" then self.manager:get(homeScreen):setStatus(if mode=="Joining" then "Starting experiment…" else message) end
+   return
+  end
   if mode=="Battle" then self.manager:show("Battle")
   elseif mode=="Joining" then self.manager:show("Lobby")
   elseif self.manager.current=="Battle" then self.manager:show("MainMenu") end
@@ -81,10 +97,6 @@ function Shell.new(playerGui,arena,session,gameplay,presenter,editorAssets,world
  -- B returns home; Escape/CoreGui and gameplay input remain unchanged.
  Actions:BindActionAtPriority("BattleWorksShellNavigation",navigation,false,2000,
   Enum.KeyCode.Up,Enum.KeyCode.Down,Enum.KeyCode.DPadUp,Enum.KeyCode.DPadDown,Enum.KeyCode.Return,Enum.KeyCode.ButtonA,Enum.KeyCode.Backspace,Enum.KeyCode.ButtonB)
- startup("creating main menu widgets")
- self.manager:get("MainMenu")
- startup("main menu widgets created")
- self.manager:show("MainMenu")
  return self
 end
 function Shell:destroy()
