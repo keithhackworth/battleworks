@@ -4,8 +4,9 @@
 const fs=require('node:fs/promises');
 const path=require('node:path');
 const {catalogData}=require('./world-builder/catalog');
-async function buildEditorCatalog(root=path.resolve(__dirname,'..')) {
+async function buildEditorCatalog(root=path.resolve(__dirname,'..'),validate=()=>{}) {
  const {items,index,collisionReport}=await catalogData(root);
+ validate(items,collisionReport);
  const result=require('./catalog-chunks').catalogModel(items);
  const output=path.join(root,'assets/editor-catalog.model.json');
  const indexOutput=path.join(root,'assets/asset-index.model.json');

@@ -1,6 +1,13 @@
 -- Validated editor metadata; it never contains executable world behavior.
 local Settings={}
 local Heightfield=require(script.Parent.WorldHeightfield)
+local Traversal=require(script.Parent.TerrainTraversal)
+local defaultChassis=require(script.Parent.ComponentCatalog)["chassis.standard"].Properties
+function Settings.deepWater(v,p,chassis)
+ if not v.terrain or not v.terrain.water then return false end
+ local _,level=Heightfield.surface(v.terrain,v.width,v.depth,p.X,p.Z)
+ return level~=nil and Traversal.waterBlocked(level-p.Y,chassis or defaultChassis)
+end
 local function finite(n) return type(n)=="number" and n==n and math.abs(n)<math.huge end
 local materials={Grass=true,Concrete=true,Sand=true,Slate=true,Ice=true,Mud=true,Asphalt=true,WoodPlanks=true}
 local function vector(v,n,limit)
@@ -70,7 +77,7 @@ function Settings.spawn(v,kind,index,bodies)
   end
   if z< -v.depth/2+7 then z=anchor.position[3]; x+=offset end
   local p=Vector3.new(x,Heightfield.sample(v.terrain,v.width,v.depth,x,z),z)
-  local clear=math.abs(x)<=v.width/2-7 and math.abs(z)<=v.depth/2-7
+  local clear=math.abs(x)<=v.width/2-7 and math.abs(z)<=v.depth/2-7 and not Settings.deepWater(v,p)
   if clear then for _,body in bodies do if Settings.blocked(p,body) then clear=false; break end end end
   if clear then return p,-math.rad(anchor.heading) end
  end

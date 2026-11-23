@@ -67,6 +67,27 @@ check(oak.Parent==trees and trees.Parent==bundle,"bundle geometry stays in its o
 local template=library:FindFirstChild("Templates"):FindFirstChild("Trees"):FindFirstChild("Oak")
 check(template and not template:FindFirstChild("MustNotExecute") and not template:FindFirstChild("Trunk").CanCollide and not template:FindFirstChild("Trunk").CanQuery,"published templates strip executable content and all physical participation")
 check(not sourcePart.Anchored and not sourceScript.destroyed,"source gameplay templates are unchanged")
+do
+ local catalog=require("EditorAssetCatalog")
+ local service=game.GetService
+ local oldCreator,oldType=game.CreatorId,game.CreatorType
+ game.CreatorId=42;game.CreatorType={Name="User"}
+ local remote=node("Model","Cloud bridge")
+ local visual=node("Part","Deck",remote);visual.ClassName="Part";visual.Anchored=false
+ local scriptChild=node("Script","Removed",remote);scriptChild.ClassName="Script"
+ local calls=0
+ game.GetService=function(self,name)
+  if name=="InsertService" then return {LoadAsset=function(_,id)check(id==12345,"load uses the trusted catalog ID");calls+=1;return remote end} end
+  return service(self,name)
+ end
+ local cloudItem={model="Forest/CloudBridge",cloudModel={assetId="12345",creatorId="99",creatorType="User"}}
+ check(not pcall(catalog.loadCloudModel,source,cloudItem) and calls==0,"cloud asset checks owner before loading")
+ cloudItem.cloudModel.creatorId="42"
+ local loaded=catalog.loadCloudModel(source,cloudItem)
+ check(loaded.Name=="CloudBridge" and loaded.Parent.Name=="Forest" and loaded.Parent.Parent==source,"cloud model mounts at the same canonical path as native models")
+ check(visual.Anchored and not visual.CanCollide and not visual.CanQuery and scriptChild.destroyed,"cloud geometry is inert and scripts are stripped before mounting")
+ game.GetService=service;game.CreatorId=oldCreator;game.CreatorType=oldType
+end
 local oldService=game.GetService
 local stepping=signal()
 local cameraBindings={}
@@ -107,6 +128,22 @@ do
  local target=scene:snapTarget(Vector3.new(0,60,0),Vector3.new(0,-1,0),second.id)
  check(not target,"builtin snapping does not change to side-surface behavior")
  record.entry.asset=originalAsset;scene.world.Raycast=savedRaycast
+end
+do
+ local scene=controller.scene
+ local record=scene.models[first.id]
+ local previousItem,previousRaycast=record.item,scene.world.Raycast
+ record.item={collider={fit="faces",faces={
+  {{-.5,-.25,-.5},{-.5,-.25,.5},{.5,-.25,-.5}},
+  {{.5,-.25,-.5},{-.5,-.25,.5},{.5,-.25,.5}},
+ }}}
+ scene.world.Raycast=function()return nil end
+ local x,z=first.position[1],first.position[3]
+ local target=scene:snapTarget(Vector3.new(x+1.9,40,z),Vector3.new(0,-1,0),second.id)
+ check(target and target.targetId==first.id and target.kind=="edge" and math.abs(target.point[2]-3)<1e-5,"private viewport snaps to collision deck without a visible-mesh ray hit")
+ local nearby=scene:nearbySnap(first,Vector3.new(x+1.9,3,z))
+ check(nearby and nearby.kind=="edge","body magnets use the same imported collision edges")
+ record.item=previousItem;scene.world.Raycast=previousRaycast
 end
 -- A geometry-based query double: unlike an unconditional mocked hit, a wrong
 -- camera ray really misses. Use a nonzero Roblox top-bar inset and viewport offset.
@@ -210,6 +247,17 @@ controller:history(false);check(#controller.state.document.objects==4,"delete un
 controller:setMode("Rotate");check(controller.scene.anchors.Rotate1 and controller.scene.anchors.Rotate16,"rotation ring has visible 3D anchors")
 controller:setMode("Scale");check(controller.scene.anchors.Scale~=nil,"uniform scale has a 3D anchor")
 check(controller.view.tools.Stretch==nil,"toolbar exposes only supported transform tools")
+do
+ local policy=controller.catalog.byPath[first.asset]
+ local old=policy.resizeAxes
+ policy.resizeAxes={true,false,true}
+ controller.state:select(first.id);controller.view.tools.Resize.Activated:Fire();controller:refresh()
+ local handles=controller.scene.anchors
+ check(handles.ResizeX.CanQuery and not handles.ResizeY.CanQuery and handles.ResizeZ.CanQuery,"resize tool only exposes enabled handles")
+ check(controller.view.fields.sizeX.TextEditable and not controller.view.fields.sizeY.TextEditable and controller.view.fields.sizeZ.TextEditable,"dimension inspector follows the same axis policy")
+ policy.resizeAxes=old
+ controller:setMode("Scale")
+end
 -- Height-only and tilt-only edits must invalidate the actual scene pose cache.
 controller.state:select(first.id);controller:refresh()
 controller.view.fields.y.Text="6";controller.view.fields.y.FocusLost:Fire()
@@ -439,6 +487,19 @@ controller:beginSnap("C",selected)
 check(controller.gesture and controller.fitMode=="Scale","imported meshes can snap by falling back from unsupported stretch to proportional scale")
 controller:finishGesture(true);selected=controller:selected()
 check(controller.fitMode=="Scale","mesh snap fallback keeps Scale selected")
+do
+ local policy=controller.catalog.byPath[selected.asset]
+ local oldCollider,oldAxes=policy.collider,policy.resizeAxes
+ policy.collider=table.clone(oldCollider);policy.collider.explicitCollision=true
+ policy.resizeAxes={true,true,true}
+ controller.fitMode="Stretch";controller:beginSnap("C",selected)
+ check(controller.gesture and controller.fitMode=="Stretch","an imported collision asset keeps the requested stretch mode")
+ controller:finishGesture(true);selected=controller:selected()
+ policy.resizeAxes=nil
+ controller:beginSnap("C",selected)
+ check(not controller.gesture and controller.fitMode=="Stretch","an incompatible collision asset does not silently switch to uniform scaling")
+ policy.collider=oldCollider;policy.resizeAxes=oldAxes;controller.fitMode="Scale"
+end
 local endpointPixel=Math.project(controller.scene.camera.CFrame,controller.view.viewport.AbsoluteSize,controller.scene.snapEnds.A.CFrame.Position,controller.scene.camera.FieldOfView)
 local _,snapHandle=controller.scene:pick(Vector3.new(0,60,100),Vector3.new(0,-1,0),endpointPixel,controller.view.viewport.AbsoluteSize)
 check(snapHandle=="SnapA","endpoint pixel picking takes priority over model body")

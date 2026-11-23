@@ -9,12 +9,64 @@ local Heightfield=require(Shared.WorldHeightfield)
 local TerrainSurface=require(Shared.WorldTerrainSurface)
 local Traversal=require(Shared.TerrainTraversal)
 local Materials=require(Shared.TerrainMaterials)
+local Components=require(Shared.VehicleComponents)
+local Document=require(Shared.WorldEditorDocument)
 local Scene={};Scene.__index=Scene
 local snapLabelSize=24
 local snapLabelOffset=Vector2.new(-12,-26)
+local edgeLimit=32
 local function part(parent,name,size,frame,color,transparency)
  local p=Instance.new("Part");p.Name=name;p.Anchored=true;p.CanCollide=false;p.CanTouch=false;p.CanQuery=false
  p.Size=size;p.CFrame=frame;p.Color=color;p.Transparency=transparency or 0;p.Parent=parent;return p
+end
+function Scene:edgeMarkers(kind,candidates,chosen,pin)
+ self.edgeLabels=self.edgeLabels or {}
+ local labels=self.edgeLabels[kind] or {}
+ self.edgeLabels[kind]=labels
+ for i,candidate in candidates or {} do
+  local label=labels[i]
+  if not label then
+   label=Instance.new("TextLabel");label.Name=kind.."CollisionEdge";label.Text="●"
+   label.AnchorPoint=Vector2.new(.5,.5);label.Size=UDim2.fromOffset(18,18)
+   label.BackgroundTransparency=1;label.TextStrokeTransparency=.1;label.ZIndex=5
+   label.Parent=self.viewport;labels[i]=label
+  end
+  label.Position=UDim2.fromOffset(candidate.pixel.X,candidate.pixel.Y)
+  local active=(chosen and chosen.edge==candidate.edge) or (pin and pin.edgeIndex==candidate.edge.index)
+  label.TextColor3=if active then Color3.fromRGB(100,245,145) else Color3.fromRGB(90,210,255)
+  label.TextSize=if active then 17 else 12
+  label.Visible=true
+ end
+ for i=(candidates and #candidates or 0)+1,#labels do labels[i].Visible=false end
+ self.edgeLines=self.edgeLines or {}
+ local line=self.edgeLines[kind]
+ if chosen then
+  local camera=self.camera.CFrame
+  local a=Math.project(camera,self.viewport.AbsoluteSize,chosen.edge.a,self.camera.FieldOfView)
+  local b=Math.project(camera,self.viewport.AbsoluteSize,chosen.edge.b,self.camera.FieldOfView)
+  if a and b then
+   if not line then
+    line=Instance.new("Frame");line.Name=kind.."CollisionLine";line.AnchorPoint=Vector2.new(.5,.5)
+    line.BackgroundColor3=Color3.fromRGB(100,245,145);line.BorderSizePixel=0;line.ZIndex=4
+    line.Parent=self.viewport;self.edgeLines[kind]=line
+   end
+   local delta=b-a
+   line.Position=UDim2.fromOffset((a.X+b.X)/2,(a.Y+b.Y)/2)
+   line.Size=UDim2.fromOffset(delta.Magnitude,2)
+   line.Rotation=math.deg(math.atan2(delta.Y,delta.X))
+   line.Visible=true
+   return
+  end
+ end
+ if line then line.Visible=false end
+end
+function Scene:projectEdges(edges,pixel)
+ return Snap.screenEdges(edges,function(point)
+  return Math.project(self.camera.CFrame,self.viewport.AbsoluteSize,point,self.camera.FieldOfView)
+ end,pixel,edgeLimit)
+end
+function Scene:clearEdgeTargets()
+ self.edgeTargetId=nil;self:edgeMarkers("Target")
 end
 function Scene.new(viewport,assets,document)
  local world=Instance.new("WorldModel");world.Name="PrivateEditorWorld";world.Parent=viewport
@@ -37,7 +89,7 @@ end
 function Scene:template(item) return self.assets and Paths.resolve(self.assets:FindFirstChild("Templates"),item.model) end
 function Scene:make(entry,item,parent)
  local template=self:template(item);if not template then return nil,"Native template unavailable: "..item.model end
- local model,reason=Placement.place(self.assets:FindFirstChild("Templates"),{id=entry.id,template=item.model,position=Vector3.new(table.unpack(entry.position)),rotation=Vector3.new(table.unpack(entry.rotation)),scale=entry.scale,stretch=entry.stretch},nil,parent or self.root)
+ local model,reason=Placement.place(self.assets:FindFirstChild("Templates"),{id=entry.id,template=item.model,position=Vector3.new(table.unpack(entry.position)),rotation=Vector3.new(table.unpack(entry.rotation)),scale=entry.scale,stretch=entry.stretch,resizeAxes=item.resizeAxes},nil,parent or self.root)
  if model then
   model:SetAttribute("EditorObjectId",entry.id)
   for _,p in model:GetDescendants() do if p:IsA("BasePart") then p.CanQuery=Visual.visible(p) end end
@@ -86,11 +138,13 @@ function Scene:sync(document,catalog,preview)
    local item=catalog.byPath[entry.asset];local model,err=self:make(entry,item)
    assert(model,err);record={model=model,scale=self:template(item):GetScale()};self.models[entry.id]=record
   end
-  record.entry=entry
+  record.entry=entry;record.item=catalog.byPath[entry.asset]
   local stretchKey=if entry.stretch then table.concat(entry.stretch,",") else ""
   if record.stretchKey~=stretchKey or record.x~=entry.position[1] or record.y~=entry.position[2] or record.z~=entry.position[3] or record.pitch~=entry.rotation[1] or record.yaw~=entry.rotation[2] or record.roll~=entry.rotation[3] or record.objectScale~=entry.scale then
-   Placement.pose(record.model,record.scale,{position=Vector3.new(table.unpack(entry.position)),rotation=Vector3.new(table.unpack(entry.rotation)),scale=entry.scale,stretch=entry.stretch})
+   Placement.pose(record.model,record.scale,{position=Vector3.new(table.unpack(entry.position)),rotation=Vector3.new(table.unpack(entry.rotation)),scale=entry.scale,stretch=entry.stretch,resizeAxes=record.item.resizeAxes})
    record.stretchKey=stretchKey
+   record.snapGeometry=nil
+   record.snapSource=nil
    record.x=entry.position[1];record.y=entry.position[2];record.z=entry.position[3];record.pitch=entry.rotation[1];record.yaw=entry.rotation[2];record.roll=entry.rotation[3];record.objectScale=entry.scale
    record.traversalDirty=true
   end
@@ -127,6 +181,10 @@ function Scene:markStructure(record)
  if not native then return end
  local slope=math.acos(math.clamp(native.CFrame.UpVector.Y,0,1))
  local color=TerrainSurface.TraversalColors[Traversal.classify(slope,0,Materials.fromMaterial(native.Material))]
+ if not color then
+  if record.traversalMarker then record.traversalMarker:Destroy();record.traversalMarker=nil end
+  return
+ end
  local marker=record.traversalMarker or part(self.world,"PlacedTraversability",Vector3.one,CFrame.new(),color,.38)
  marker.Color=color;marker.Material=Enum.Material.Neon
  marker.Size=Vector3.new(native.Size.X,.05,native.Size.Z)
@@ -156,6 +214,50 @@ function Scene:syncTerrain(settings,dirty)
    for _,chunk in dirty do self.terrainOverlay:chunk(chunk[1],chunk[2]) end
   end
  elseif self.terrainOverlay then self.terrainOverlay:destroy();self.terrainOverlay=nil end
+end
+function Scene.buildTankScale(viewport)
+ local chassis=Components.get("Boomer").Chassis
+ local size=chassis.Hitbox
+ local camera=Instance.new("Camera")
+ camera.FieldOfView=36
+ camera.FieldOfViewMode=Enum.FieldOfViewMode.Vertical
+ camera.CFrame=CFrame.lookAt(Vector3.new(18,14,-19),Vector3.new(0,size.Y*.45,-1))
+ camera.Parent=viewport;viewport.CurrentCamera=camera
+ local function piece(name,dimensions,x,y,z,color)
+  part(viewport,name,dimensions,CFrame.new(x,y,z),color)
+ end
+ local hull=Color3.fromRGB(112,184,197)
+ local tracks=Color3.fromRGB(56,86,101)
+ piece("Footprint",Vector3.new(chassis.CollisionWidth,.04,chassis.CollisionLength),0,-.04,0,tracks)
+ for _,side in {-1,1} do
+  piece("Track",Vector3.new(size.X*.18,size.Y*.42,size.Z),side*size.X*.41,size.Y*.21,0,tracks)
+ end
+ piece("Hull",Vector3.new(size.X*.65,size.Y*.42,size.Z*.78),0,size.Y*.43,0,hull)
+ piece("Turret",Vector3.new(size.X*.45,size.Y*.36,size.Z*.39),0,size.Y*.82,0,hull)
+ piece("Barrel",Vector3.new(.65,.65,size.Z*.48),0,size.Y*.82,-size.Z*.40,hull)
+ return chassis.CollisionWidth,chassis.CollisionLength
+end
+function Scene:updateTankScale(view,offset,distance)
+ local size=self.viewport.AbsoluteSize
+ if size.X<=0 or size.Y<=0 then return end
+ local camera=view.tankScaleViewport.CurrentCamera
+ if self.scaleCameraOffset~=offset then
+  self.scaleCameraOffset=offset
+  camera.CFrame=CFrame.lookAt(offset,Vector3.zero)
+ end
+ local editorFov=self.camera.FieldOfView
+ if self.scaleViewportSize==size and self.scaleDistance==distance and self.scaleEditorFov==editorFov then return end
+ self.scaleViewportSize=size;self.scaleDistance=distance;self.scaleEditorFov=editorFov
+ local halfTangent=math.tan(math.rad(editorFov)/2)
+ -- Keep the same pixel focal length as the main viewport. The card can
+ -- grow to fit close-ups without making the tank itself larger or smaller.
+ local radius=10
+ local projected=math.ceil(size.Y*radius/(math.max(1,distance-radius)*halfTangent))
+ local height=math.clamp(projected,math.max(32,math.ceil(size.Y/45)),math.max(32,size.Y-60))
+ local cardSize=UDim2.fromOffset(math.max(112,math.min(projected,size.X-20)),height+40)
+ if view.tankScaleCard.Size~=cardSize then view.tankScaleCard.Size=cardSize end
+ local fieldOfView=math.deg(2*math.atan(halfTangent*height/size.Y))
+ if camera.FieldOfView~=fieldOfView then camera.FieldOfView=fieldOfView end
 end
 function Scene:brushFootprint(point,radius)
  if not point then
@@ -224,6 +326,8 @@ function Scene:setMode(mode,rotationAxis)
   local color=if self.rotationAxis=="Pitch" then Color3.fromRGB(248,105,90) elseif self.rotationAxis=="Roll" then Color3.fromRGB(85,170,255) else Color3.fromRGB(245,194,75)
   for i=1,16 do anchor(prefix..i,color) end
  elseif mode=="Scale" then anchor("Scale",Color3.fromRGB(120,232,174))
+ elseif mode=="Resize" then
+  anchor("ResizeX",Color3.fromRGB(248,105,90));anchor("ResizeY",Color3.fromRGB(120,232,174));anchor("ResizeZ",Color3.fromRGB(85,170,255))
  end
 end
 function Scene:selection(id,distance)
@@ -231,15 +335,26 @@ function Scene:selection(id,distance)
  local size=math.clamp(distance*.012,1,3)
  for _,p in self.gizmos:GetChildren() do
   local enabled=record~=nil and (not record.spawn or (self.mode=="Move" and p.Name~="MoveY"))
+  local axis=Math.resizeAxis(p.Name)
+  if axis then enabled=enabled and Document.canResize(record.item,axis) end
   p.Transparency=if enabled then 0 else 1;p.CanQuery=enabled
  end
  for endpoint,p in self.snapEnds do p.Transparency=1;p.CanQuery=false;self.snapLabels[endpoint].Visible=false end
- if not record then for _,p in self.wire do p.Transparency=1 end;return end
  local pin=self.snapPins and self.snapPins[id]
+ self.sourceChoices=nil
+ if self.mode=="Snap" and record and not record.spawn and record.item and self.sourcePixel and not self.draggingSnap then
+  if not record.snapSource then record.snapSource=Snap.sourceOptions(record.entry,record.item.collider) end
+  self.sourceChoices=record.snapSource
+  if self.sourceChoices then
+   local choice,candidates=self:projectEdges(self.sourceChoices,self.sourcePixel)
+   self:edgeMarkers("Source",candidates,choice,pin)
+  else self:edgeMarkers("Source") end
+ else self:edgeMarkers("Source") end
+ if not record then for _,p in self.wire do p.Transparency=1 end;return end
  if self.mode=="Snap" and not record.spawn then
-  local ends=Snap.ends(record.entry,if pin then pin.side else self.snapSide)
+  local ends=Snap.ends(record.entry,if pin then pin.side else self.snapSide,record.item and record.item.collider)
   for endpoint,p in self.snapEnds do
-   local pinned=pin and (pin.endpoint==endpoint or (pin.second and pin.second.endpoint==endpoint))
+   local pinned=pin and ((not pin.edgeIndex and pin.endpoint==endpoint) or (pin.second and not pin.second.edgeIndex and pin.second.endpoint==endpoint))
    p.Color=if pinned then Color3.fromRGB(100,245,145) elseif endpoint=="A" then Color3.fromRGB(80,215,255) else Color3.fromRGB(255,183,92)
    p.Transparency=0;p.CanQuery=true;p.Size=Vector3.new(size*1.3,size*1.3,size*1.3);p.CFrame=CFrame.new(ends[endpoint])
    local pixel=Math.project(self.camera.CFrame,self.viewport.AbsoluteSize,ends[endpoint],self.camera.FieldOfView)
@@ -253,7 +368,12 @@ function Scene:selection(id,distance)
  for code,p in self.anchors do
   p.Size=Vector3.new(size,size,size)
   local offset
-  if code=="MoveY" then offset=Vector3.new(0,reach,0)
+  local axis=Math.resizeAxis(code)
+  if axis then
+   local axes={box.RightVector,box.UpVector,box.LookVector*-1}
+   local extents={bounds.X,bounds.Y,bounds.Z}
+   offset=axes[axis]*(extents[axis]/2+size*2)
+  elseif code=="MoveY" then offset=Vector3.new(0,reach,0)
   elseif code:find("X",1,true) then offset=Vector3.new(reach,0,0)
   elseif code:find("Z",1,true) then offset=Vector3.new(0,0,reach)
   elseif code=="Scale" then offset=Vector3.new(reach,0,reach)
@@ -279,11 +399,50 @@ function Scene:selection(id,distance)
  end
 end
 function Scene:setSnap(enabled,pins,side)self.snapEnabled=enabled;self.snapPins=pins;self.snapSide=side or 0 end
-function Scene:snapTarget(origin,direction,ignore,previous)
+function Scene:collisionSnap(record)
+ local profile=record.item and record.item.collider
+ if not profile or profile.fit~="faces" then return nil end
+ if not record.snapGeometry or record.snapProfile~=profile then
+  record.snapGeometry=Snap.collisionGeometry(record.entry,profile);record.snapProfile=profile
+ end
+ return record.snapGeometry
+end
+function Scene:nearbySnap(entry,point)
+ local record=self.models[entry.id]
+ local geometry=record and self:collisionSnap(record)
+ if geometry then return Snap.collisionTarget(entry,geometry,point,Snap.Radius) end
+ return Snap.target(entry,point,Snap.Radius)
+end
+function Scene:snapTarget(origin,direction,ignore,previous,pixel)
  local include={self.floor}
- for id,record in self.models do if id~=ignore then table.insert(include,record.model) end end
+ local selected,selectedGeometry,contact,limit
+ limit=5000
+ for id,record in self.models do
+  if id~=ignore then
+   local geometry=self:collisionSnap(record)
+   if geometry then
+    local hit,distance=Snap.collisionHit(geometry,origin,direction,limit)
+    if hit then selected=record;selectedGeometry=geometry;contact=hit;limit=distance end
+   else table.insert(include,record.model) end
+  end
+ end
  local params=RaycastParams.new();params.FilterType=Enum.RaycastFilterType.Include;params.FilterDescendantsInstances=include;params.RespectCanCollide=false
  local hit=self.world:Raycast(origin,direction*5000,params)
+ local onCollision=contact and (not hit or limit<=(hit.Position-origin).Magnitude)
+ if pixel then
+  local hovered=if onCollision then selected else self.edgeTargetId and self.models[self.edgeTargetId]
+  local geometry=hovered and hovered.entry.id~=ignore and self:collisionSnap(hovered)
+  if geometry then
+   local choice,candidates=self:projectEdges(geometry.edges,pixel)
+   if #candidates>0 then
+    self.edgeTargetId=hovered.entry.id;self:edgeMarkers("Target",candidates,choice)
+    if choice then return Snap.edgeTarget(hovered.entry,choice) end
+   else self:clearEdgeTargets() end
+  else self:clearEdgeTargets() end
+ end
+ if onCollision then
+  return Snap.collisionTarget(selected.entry,selectedGeometry,contact.point,Snap.Radius,contact.normal)
+ end
  if not hit then return nil end
  if hit.Instance==self.floor then return {point={hit.Position.X,0,hit.Position.Z},normal={0,1,0},targetId="ground",kind="ground"} end
  local p=hit.Instance
@@ -366,6 +525,12 @@ function Scene:pick(origin,direction,pixel,viewportSize)
     end
    end
   end
+  if self.sourceChoices then
+   local choice=self:projectEdges(self.sourceChoices,pixel)
+   if choice and (not chosen or choice.priority>bestPriority or (choice.priority==bestPriority and choice.distance<best)) then
+    return nil,"Snap"..choice.edge.side,choice
+   end
+  end
   if chosen then return nil,kind(chosen) end
  end
  local params=RaycastParams.new();params.FilterType=Enum.RaycastFilterType.Include;params.RespectCanCollide=false
@@ -383,9 +548,12 @@ function Scene:pick(origin,direction,pixel,viewportSize)
  while p and p~=self.world do local id=p:GetAttribute("EditorObjectId");if id then return id end;p=p.Parent end
 end
 function Scene:destroy()
+ if self.tankScale then self.tankScale:Destroy() end
  if self.terrain then self.terrain:destroy() end
  if self.terrainOverlay then self.terrainOverlay:destroy() end
  if self.brushRing then self.brushRing:Destroy() end
  self.world:Destroy();self.camera:Destroy();for _,label in self.snapLabels do label:Destroy() end
+ for _,labels in self.edgeLabels or {} do for _,label in labels do label:Destroy() end end
+ for _,line in self.edgeLines or {} do line:Destroy() end
 end
 return Scene

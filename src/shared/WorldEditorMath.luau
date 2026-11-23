@@ -1,6 +1,8 @@
 -- Viewport picking independent of Workspace/current camera and native gizmos.
 local Math={}
 local Geometry=require(script.Parent.WorldObjectGeometry)
+local resizeAxes={ResizeX=1,ResizeY=2,ResizeZ=3}
+function Math.resizeAxis(kind)return resizeAxes[kind]end
 local function dot(a,b)return a.X*b.X+a.Y*b.Y+a.Z*b.Z end
 function Math.rotationBasis(base,kind)
  -- Handles use the complete object frame, not Euler component axes (which
@@ -55,9 +57,14 @@ function Math.ground(origin,direction,height)
 end
 function Math.dragPoint(kind,base,origin,direction,camera,pivot)
  local center=pivot or Vector3.new(table.unpack(base.position))
- if kind~="MoveY" and kind:sub(1,6)~="Rotate" then return Math.ground(origin,direction,center.Y) end
+ local index=Math.resizeAxis(kind)
+ if not index and kind~="MoveY" and kind:sub(1,6)~="Rotate" then return Math.ground(origin,direction,center.Y) end
  local n
- if kind=="MoveY" then n=Vector3.new(camera.LookVector.X,0,camera.LookVector.Z) else local _,_,normal=Math.rotationBasis(base,kind);n=normal end
+ if index then
+  local axes={Geometry.axes(base.rotation)}
+  local axis=axes[index]
+  n=camera.LookVector-axis*dot(camera.LookVector,axis)
+ elseif kind=="MoveY" then n=Vector3.new(camera.LookVector.X,0,camera.LookVector.Z) else local _,_,normal=Math.rotationBasis(base,kind);n=normal end
  local den=dot(direction,n)
  if math.abs(den)<.00001 then return nil end
  local distance=dot(center-origin,n)/den
@@ -67,7 +74,13 @@ function Math.transform(base,kind,startPoint,point,snap,grid,pivot)
  local copy={position=table.clone(base.position),rotation=table.clone(base.rotation),scale=base.scale}
  if base.stretch then copy.stretch=table.clone(base.stretch) end
  local function quantize(n) return if snap then math.round(n/grid)*grid else n end
- if kind=="MoveY" then copy.position[2]=quantize(base.position[2]+point.Y-startPoint.Y)
+ local index=Math.resizeAxis(kind)
+ if index then
+  local axes={Geometry.axes(base.rotation)}
+  local unit=base.bounds[index]*base.scale
+  copy.stretch=copy.stretch or {1,1,1}
+  copy.stretch[index]=math.clamp(quantize(unit*copy.stretch[index]+2*dot(point-startPoint,axes[index]))/unit,.001,1000)
+ elseif kind=="MoveY" then copy.position[2]=quantize(base.position[2]+point.Y-startPoint.Y)
  elseif kind=="Move" or kind=="MoveX" or kind=="MoveZ" then
   if kind~="MoveZ" then copy.position[1]=quantize(base.position[1]+point.X-startPoint.X) end
   if kind~="MoveX" then copy.position[3]=quantize(base.position[3]+point.Z-startPoint.Z) end

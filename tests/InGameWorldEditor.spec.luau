@@ -38,6 +38,18 @@ local rotated=Math.transform(base,"Rotate",Vector3.new(x+10,0,z),Vector3.new(x,0
 check(rotated.rotation[2]==270,"rotation follows Roblox yaw orientation")
 local scaled=Math.transform(base,"Scale",Vector3.new(x+10,0,z),Vector3.new(x+15,0,z),false,1)
 check(scaled.scale==1.5 and scaled.position[1]==x and scaled.position[3]==z,"scale anchor preserves object position and uniform proportions")
+do
+ local base={position={2,3,4},rotation={15,90,25},bounds={10,8,20},scale=2,stretch={1.5,1,1}}
+ local right,up,back=require("WorldObjectGeometry").axes(base.rotation)
+ for i,axis in {right,up,back} do
+  local transform=Math.transform(base,({"ResizeX","ResizeY","ResizeZ"})[i],Vector3.zero,axis*4,false,1)
+  for j,factor in transform.stretch do
+   local expected=base.stretch[j]+(if j==i then 8/(base.bounds[j]*base.scale) else 0)
+   check(math.abs(factor-expected)<1e-5,"resize drag changes only its rotated local axis")
+  end
+  check(transform.rotation[2]==90 and transform.scale==2 and transform.position[2]==3,"resize drag preserves rotation, grounding and uniform scale")
+ end
+end
 -- At Euler yaw=90 the previous component-edit rings collapsed onto X.
 local Geometry=require("WorldObjectGeometry")
 local function dot(a,b)return a.X*b.X+a.Y*b.Y+a.Z*b.Z end

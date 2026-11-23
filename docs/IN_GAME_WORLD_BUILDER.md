@@ -60,7 +60,7 @@ those bounds. Boundary shapes and editable river paths are separate milestones.
 
 ## Sculpt and play-test terrain
 
-1. Open **Main Menu → World Editor** and choose **New World**. Set width and depth before sculpting.
+1. Open **Main Menu → World Editor** and choose **New World**. Set **Width** and **Depth** under **World Size** in the inspector. These controls also appear in Terrain mode. Enter a whole number from 25 to 2,000 studs and press Enter or leave the field to apply it. Terrain scales around the world center, including paint and water. Resizing to a smaller grid can reduce detail. Objects and starting positions stay in place, and a resize that would put them outside their allowed bounds is rejected. Undo restores the previous size and exact terrain.
 2. Choose **Terrain → Raise Terrain**. Move the orange footprint over the ground and drag to form a hill.
 3. Choose **Lower Terrain** and drag beside the hill. **Smooth Terrain** blends nearby heights. **Flatten Terrain** brings the brush area toward the inspector’s chosen elevation.
 4. Set **Radius**, **Strength**, and **Falloff** in the brush inspector. A falloff of zero gives an even brush. Higher values soften the edge. Each drag is one Undo or Redo action. Escape cancels a stroke.
@@ -77,7 +77,21 @@ Terrain is an optional height grid in the existing world document. Each axis use
 
 ### Terrain Traversability
 
-Turn on **Terrain Traversability** in the Terrain inspector. The overlay uses the same uphill grip calculation as the simulation. Green means both drivetrains have a useful uphill reserve, yellow means tracks have the reserve, and red means neither can reliably climb. It reads the ground material and covers sculpted terrain and solid single-block ramps. Multipart and irregular assets may have no overlay. The colors estimate uphill performance with an operational drive and leave local footprint support, crest clearance, momentum, steering, and bus power to the simulation.
+**Terrain Traversability** is on by default in the editor and can be toggled in the Terrain inspector. The slope tint is editor-only. During play, water shades from light blue in the shallows to dark blue as depth increases. Untinted ground is suitable for both drivetrains, yellow indicates tracks, and red means the terrain is too steep for reliable climbing or the water is too deep. The overlay reads the ground material and covers sculpted terrain and solid single-block ramps. Multipart and irregular assets may have no overlay. Underwater ground looks and behaves like mud. Water deeper than half a tank's hull height blocks movement. That limit is 2.5 studs for the standard hull.
+
+### Resize imported objects
+
+Select an opted-in asset, then use **Tools → Resize** or enter the local width (X), height (Y), and length (Z) in the Inspector. Only enabled axes have handles or editable dimensions. The handles follow the object's orientation. **Scale** still changes all dimensions together. Resizing preserves the asset's orientation and lowest-point placement, subject to any existing snap pin. Undo and saved worlds retain the individual axis factors.
+
+GLBs with explicit collision meshes opt in on all three axes by default, including for **Snap → Stretch**. The runtime still checks which axes the visual model can resize. Use `worlds/asset-resizing.json` to override any asset's local X/Y/Z axes. For example, `"Forest/rope_bridge": [true, false, true]` permits width and length edits, and three false values disable resizing. Rebuild the catalog after editing the manifest.
+
+Native Roblox models support exact resizing when each child can represent the selected transform with its own size and rigid orientation. If a child is angled in a way that would require shear, the editor disables that axis. For example, a child rotated diagonally in the horizontal plane can still permit height changes. Bake child rotations into the mesh in Blender and keep object axes aligned when you need all three axes. Rigged or constrained models and legacy special meshes are outside this workflow. UVs, ropes, and boards stretch with the mesh. Resize does not add or repeat boards.
+
+For GLBs with explicit `COLLISION_` sections, BattleWorks rebuilds the collision faces from the same resized bounds it uses for the visible meshes. Deck gaps and clearance stay proportional to the resized asset, so verify tank clearance after shrinking a bridge. [Collision mesh export workflow](BULK_ASSET_COLLISION.md)
+
+When you snap onto an imported asset with a GLB face profile, the editor uses the collision edges, corners, and surfaces as targets. The dragged object's A–D handles also sit on its collision perimeter, so bridge connections line up with the deck below the ropes. Shared edges between coplanar triangles are omitted. Assets without a face profile use their placement bounds for A–D.
+
+In **Snap** mode, nearby collision edges also have blue dots, including separate ledges on the same side. Click a source dot to pin that exact ledge, or drag it to use that ledge as the moving contact. While dragging over a collision asset, aim at a target dot for its midpoint or along an edge for a point on the line. Orbit if multiple ledges overlap on screen.
 
 On an incline, the drivetrain spends grip countering downhill gravity before it can accelerate, brake, or turn. Tracks retain useful grip through steeper grades. On level ground the existing propulsion and grip budgets still apply. The provisional dry-grass tuning gives both drivetrains useful grip at 15°, favors tracks at 32°, and causes both to slide back at 44°. The 55° support ceiling on constructed faces is a geometric safeguard. Heightfield movement also rejects abrupt or wall-like rises while allowing downhill movement and falls.
 

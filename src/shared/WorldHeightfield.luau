@@ -136,6 +136,38 @@ function H.sample(field,width,depth,x,z,withGradient)
  end
  return height
 end
+-- Resize around the world center. Resample elevation at normalized grid
+-- positions and use nearest cells for discrete materials and water levels.
+function H.resize(field,width,depth,newWidth,newDepth)
+ local resized=H.new(newWidth,newDepth)
+ if resized.columns==field.columns and resized.rows==field.rows then
+  resized.heights=table.clone(field.heights)
+  resized.paint=field.paint and table.clone(field.paint)
+  resized.water=field.water and table.clone(field.water)
+  return resized
+ end
+ for z=0,resized.rows do
+  for x=0,resized.columns do
+   local height=H.sample(field,width,depth,(x/resized.columns-.5)*width,(z/resized.rows-.5)*depth)
+   resized.heights[H.index(resized,x,z)]=math.round(height*H.Unit)
+  end
+ end
+ for _,layer in {"paint","water"} do
+  local values=field[layer]
+  if values then
+   local result=table.create(resized.columns*resized.rows)
+   for z=0,resized.rows-1 do
+    for x=0,resized.columns-1 do
+     local oldX=math.floor((x+.5)*field.columns/resized.columns)
+     local oldZ=math.floor((z+.5)*field.rows/resized.rows)
+     result[z*resized.columns+x+1]=values[oldZ*field.columns+oldX+1]
+    end
+   end
+   resized[layer]=result
+  end
+ end
+ return resized
+end
 function H.brush(field,width,depth,point,mode,radius,strength,falloff,target,dt,remainder)
  local dx,dz=width/field.columns,depth/field.rows
  local dirty={}

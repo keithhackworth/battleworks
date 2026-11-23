@@ -38,7 +38,7 @@ function Objects:add(model,spec)
  for _,part in model:GetDescendants() do if part:IsA("BasePart") then visuals[part]=part.Transparency or 0 end end
  local proxies,bodies,geometries={},{},{}
  if v.fit=="faces" then
-  Visual.checkFaceProfile(size,v)
+  Visual.checkFaceProfile(size,v,spec.stretch)
   assert(v.fractions.X==1 and v.fractions.Y==1 and v.fractions.Z==1,"Face profiles require full dimensions")
   geometries=Geometry.faces(Geometry.fromBox(bounds,size),v.faces,v.bases,v.walls)
   for index,geometry in geometries do

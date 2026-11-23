@@ -18,7 +18,7 @@ local Shell=require(script.shell.ApplicationShell)
 local shell
 local gameplay=require(script.BattleClientHost).new(function()
  startup("initializing battle client")
- local client=require(script.BattleClient).new(function() shell.home() end)
+ local client=require(script.BattleClient).new(function() shell.exitBattle() end,{worldPlaytest=function()return shell.playtest~=nil end})
  startup("battle client ready")
  return client
 end,network)
@@ -51,5 +51,5 @@ task.spawn(function()
  local ok,result=pcall(worldRequest,"Bootstrap")
  if not ok then return end -- older places may omit the optional world service
  if not result.ok then worldMessage(result.message)
- elseif result.launch and session.mode=="Menu" and shell.manager.current=="MainMenu" then session:join() end
+ elseif result.launch and session.mode=="Menu" and shell.manager.current=="MainMenu" then shell.playWorld(result.document,result.revision) end
 end)

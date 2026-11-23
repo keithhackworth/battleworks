@@ -6,6 +6,9 @@ local H=require("WorldHeightfield")
 doc.settings.terrain=H.new(230,230)
 H.brush(doc.settings.terrain,230,230,Vector3.new(-27,0,34.5),"Raise",20,7,1,0,1)
 H.brush(doc.settings.terrain,230,230,Vector3.new(45,0,-35),"Lower",22,12,1,0,1)
+doc.settings.terrain.water=table.create(doc.settings.terrain.columns*doc.settings.terrain.rows,0)
+doc.settings.terrain.water[1]=H.WaterOffset+20
+doc.settings.terrain.water[2]=H.WaterOffset+21
 local savedHeights=table.concat(doc.settings.terrain.heights,",")
 doc.spawns={{id="start_1",slot=1,position={-45,0,34.5},heading=90},{id="start_2",slot=2,position={45,0,34.5},heading=270},{id="start_3",slot=3,position={-70,0,-70},heading=0},{id="start_4",slot=4,position={70,0,-70},heading=0},{id="start_5",slot=5,position={0,0,80},heading=0}}
 doc.objects={{id="wall_1",type="builtin.block",asset="Builtin/BW_block",position={0,0,34.5},rotation={0,0,0},scale=1,bounds={.01,.01,.01},solid=true,destructible=true,hp=75}}
@@ -44,11 +47,17 @@ local areas=arena:FindFirstChild("Environment")
 local surface=areas:FindFirstChild("AuthoredTerrain")
 check(surface and #surface:GetChildren()>0 and not arena:FindFirstChild("Floor").CanQuery,"terrain displaces the flat collision floor")
 local wedges=0
+local shallow,deep
 for _,part in surface:GetChildren() do
+ if part.Name=="WaterSurface" then
+  if part.Color[1]==93 then shallow=part elseif part.Color[1]==20 then deep=part end
+  continue
+ end
  check(part.CanCollide and part.CanQuery,"terrain surfaces participate in engine collision and queries")
  if part.Shape==Enum.PartType.Wedge then wedges+=1 end
 end
 check(wedges>0,"raised and lowered ground generate native sloped triangle surfaces")
+check(shallow and deep and shallow.CFrame.Position.Y<deep.CFrame.Position.Y,"water darkens above the shared half-hull cutoff")
 do
  local env=require("Environment").create(Vector2.new(230,230),"Normal")
  env.terrainSettings=loaded.document.settings

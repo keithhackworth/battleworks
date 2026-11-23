@@ -1,5 +1,31 @@
 # Import once, keep Roblox models in the repository
 
+## Import command
+
+Use `tools/import-glb.js` for static scenery. It checks geometry before uploading, keeps the original GLB, verifies the uploaded Model's creator, and rebuilds the catalog with the Roblox asset ID. It refuses to replace an existing native asset.
+
+Set `ROBLOX_API_KEY` in your local environment along with either `ROBLOX_GROUP_ID` or `ROBLOX_USER_ID` for the creator that owns the experience. The default workflow uses the Assets API for creation and metadata. Keep the key out of the repository. [Roblox Open Cloud Assets API](https://create.roblox.com/docs/cloud/guides/usage-assets)
+
+```sh
+# Source with embedded COLLISION_ nodes. Only the visual meshes go to Roblox.
+node tools/import-glb.js Forest/new_bridge /path/to/new_bridge.glb
+
+# Separate collision file. Export both from the same origin, units and orientation.
+node tools/import-glb.js Forest/footbridge /path/to/visual.glb --collision /path/to/decks.glb
+
+# Validate and write a visual-only GLB without credentials or a Roblox upload.
+node tools/import-glb.js Forest/rope_bridge GLBs/forest/rope_bridge.glb --prepare-only /tmp/rope_bridge_visual.glb
+
+# Package an existing Studio model export without uploading again.
+node tools/import-glb.js Forest/rope_bridge GLBs/forest/rope_bridge.glb --native /path/to/rope_bridge.rbxm
+```
+
+For a cloud retry, reuse the original inputs with `--operation ID` or `--asset-id ID` from the command output. Both avoid a duplicate upload. `--download` opts in to packaging an RBXM/RBXMX through Asset Delivery and requires its separate `legacy-asset:manage` scope. [Roblox Asset Delivery authentication](https://devforum.roblox.com/t/creator-action-required-new-asset-delivery-api-endpoints-for-community-tools/3574403)
+
+When the command reports **Registered**, sync Rojo and restart Play. The report shows `delivery: "roblox"` for an asset-ID reference. The server loads the model once per session under its catalog path, checks the experience owner and collision bounds, and strips non-visual instances before publishing it to the editor. The registered ID points at the current Roblox model version. Studio Output reports moderation, permission, or geometry failures if loading is rejected. Save the World Editor placement separately.
+
+Native exports remain supported. If you save an RBXM directly in the repository, rebuild the catalog with `node tools/build-editor-catalog.js`. If live sync cannot apply the native mesh references, open a fresh Rojo build.
+
 ## Why the imports disappeared
 
 Previously `ServerStorage/BattleWorksAssets` was only an empty Folder declaration in `default.project.json`. It had no filesystem `$path`. `$ignoreUnknownInstances=true` protected unknown Studio children during live synchronization; it did **not** export their data. `rojo build` reconstructs a place from project/files, not from a previously generated `.rbxl` or the open Studio session. Opening a fresh generated place therefore lost Studio-only imports. Additionally, the global `*.rbxm`/`*.rbxmx` ignore rules prevented source exports from being tracked.

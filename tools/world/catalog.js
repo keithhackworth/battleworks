@@ -35,6 +35,7 @@ async function discoverWorlds(directory, bindings = {}) {
       { Name: 'Scale', ClassName: 'NumberValue', Properties: { Value: placement.scale } },
       ];
       if(placement.stretch)fields.push(value('Stretch',JSON.stringify(placement.stretch)));
+      if(placement.resizeAxes)fields.push(value('ResizeAxes',JSON.stringify(placement.resizeAxes)));
       if (placement.interaction) {
         const v = placement.interaction;
         if(v.collider.fit)fields.push(value('ColliderFit',v.collider.fit));

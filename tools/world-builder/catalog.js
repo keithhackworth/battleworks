@@ -2,7 +2,7 @@
 const fs=require('node:fs/promises');
 const path=require('node:path');
 const {createHash}=require('node:crypto');
-const {entriesFor}=require('../world/asset-path');
+const {entriesFor,validResizeAxes,validCloudModel,validatePath}=require('../world/asset-path');
 const {nativeExports,findExport}=require('../native-assets');
 const builtins=[
  ['block','Block / obstacle','Rocks & obstacles',[8,5,8],'Block','Slate',[115,123,126],true,false],
@@ -45,15 +45,28 @@ async function catalogData(root) {
  const used=new Set();const paths=Object.fromEntries(exports.map(e=>[e.path,e.nativePath]));
  const imported=registered.map(e=>{
   const b=bindings[e.id],native=findExport(exports,e.model);
+  if(b.cloudModel!==undefined&&(!validCloudModel(b.cloudModel)||native||e.model.startsWith('Builtin/')))throw new Error(`Invalid or conflicting Roblox model reference for '${e.model}'`);
+  if(b.collisionSource!==undefined&&(typeof b.collisionSource!=='string'||!/\.glb$/i.test(b.collisionSource)||!/\.glb$/i.test(e.source)))throw new Error(`Invalid collisionSource for '${e.model}'`);
   if(native){used.add(native.nativePath);paths[e.model]=native.nativePath;}
-  return {id:`asset.${e.id}`,name:b.displayName||e.model.split('/').at(-1),category:b.category||e.model.split('/').slice(0,-1).join(' / ')||(/tree/i.test(e.id)?'Trees & vegetation':/fence/i.test(e.id)?'Walls & fences':'Decorations'),source:e.source,model:e.model,...(native&&native.path!==e.model?{palettePath:native.path}:{}),defaultScale:45,size:b.size||null,solid:b.solid??!!e.collider,destructible:b.destructible??/tree/i.test(e.id),hp:150,collider:e.collider?fitted(native?.path||e.model,e.collider):null,packaged:!!native};
+  return {id:`asset.${e.id}`,name:b.displayName||e.model.split('/').at(-1),category:b.category||e.model.split('/').slice(0,-1).join(' / ')||(/tree/i.test(e.id)?'Trees & vegetation':/fence/i.test(e.id)?'Walls & fences':'Decorations'),source:e.source,model:e.model,...(b.cloudModel?{cloudModel:b.cloudModel}:{}),...(b.collisionSource?{collisionSource:b.collisionSource}:{}),...(native&&native.path!==e.model?{palettePath:native.path}:{}),defaultScale:45,size:b.size||null,solid:b.solid??!!e.collider,destructible:b.destructible??/tree/i.test(e.id),hp:150,collider:e.collider?fitted(native?.path||e.model,e.collider):null,packaged:!!native};
  });
  for(const entry of exports)if(!known.has(entry.path)&&!used.has(entry.nativePath))imported.push({id:'asset.'+createHash('sha256').update(entry.path).digest('hex').slice(0,16),name:entry.path.split('/').at(-1),category:entry.path.split('/').slice(0,-1).join(' / ')||'Decorations',source:entry.path,model:entry.path,defaultScale:45,size:null,solid:false,destructible:false,hp:100,collider:fitted(entry.path,{widthFraction:1,depthFraction:1,heightFraction:1}),packaged:true});
  const collisionReport=await require('../bulk-collision').generateCollisions(root,imported);
+ let resizing={};
+ try{resizing=JSON.parse(await fs.readFile(path.join(root,'worlds/asset-resizing.json'),'utf8'));}
+ catch(error){if(error.code!=='ENOENT')throw error;}
+ for(const [asset,axes] of Object.entries(resizing)){
+  validatePath(asset);
+  if(!validResizeAxes(axes)||!imported.some(item=>item.model===asset||item.palettePath===asset))throw new Error(`Invalid or unknown resizable imported asset '${asset}'`);
+ }
+ for(const item of imported){
+  const axes=resizing[item.model]||resizing[item.palettePath]||(item.collider?.explicitCollision?[true,true,true]:undefined);
+  if(axes)item.resizeAxes=axes;
+ }
  return {items:[...builtin.map(i=>({...i,packaged:true})),...imported],index:{version:1,paths},exports,collisionReport};
 }
 async function catalog(root){return (await catalogData(root)).items;}
-function bindingsFor(items) {return Object.fromEntries(items.map(i=>[i.id,{source:i.source,model:i.model,stretchable:!!i.stretchable,...(i.collider?{collider:i.collider}:{})}]));}
+function bindingsFor(items) {return Object.fromEntries(items.map(i=>[i.id,{source:i.source,model:i.model,stretchable:!!i.stretchable,...(i.resizeAxes?{resizeAxes:i.resizeAxes}:{}),...(i.collider?{collider:i.collider}:{})}]));}
 async function generateBuiltins(root) {
  const folder={ClassName:'Folder',Children:builtinCatalog().map(i=>({Name:i.model.split('/').at(-1),ClassName:'Model',Children:[{Name:'Geometry',ClassName:'Part',Properties:{Size:i.size,Position:[0,i.size[1]/2,0],Shape:i.shape,Material:i.material,Color:i.color.map(v=>v/255),Anchored:true,CanCollide:false,CanQuery:false,CanTouch:false}}]}))};
  await fs.mkdir(path.join(root,'assets/builtin'),{recursive:true});

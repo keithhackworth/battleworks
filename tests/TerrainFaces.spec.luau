@@ -85,6 +85,34 @@ local function bodyAt(position)
  local state=Sim.new(position,"Boomer");local body=Contacts.body("tank",state,Components.get(state).Chassis);body.halfX=1;body.halfZ=1
  return body,state
 end
+do
+ -- Two adjacent deck slabs and a third slab beyond a real gap. The visible
+ -- bridge includes decorative ropes above and outside the support geometry.
+ local faces,bases={},{}
+ for _,range in {{-.45,-.23},{-.23,-.01},{.23,.45}} do
+  local x0,x1=range[1],range[2]
+  table.insert(faces,{{x0,0,-.35},{x0,0,.35},{x1,0,-.35}})
+  table.insert(faces,{{x1,0,-.35},{x0,0,.35},{x1,0,.35}})
+  table.insert(bases,-.03);table.insert(bases,-.03)
+ end
+ local model=nativeModel(CFrame.new(0,5,0),Vector3.new(100,10,30))
+ local objects=Objects.new()
+ local record=objects:add(model,{id="rope_bridge",rotation=Vector3.zero,interaction={
+  fit="faces",explicitCollision=true,faces=faces,bases=bases,sourceSize={100,10,30},
+  fractions=Vector3.new(1,1,1),solid=true,destructible=false,hp=100,
+ }})
+ check(#record.bodies==6 and objects:support(10,0,10)==nil and objects:support(-30,13,10)==nil,"collision slabs leave the physical gap and decorative rope footprint unsupported")
+ check(objects:support(-30,0,10)==5 and objects:support(30,0,10)==5,"separate decks both supply real ground support")
+ local env={size=Vector2.new(230,230),rocks={},logs={},trees={},zones={},worldObjects=objects}
+ local tank=Sim.new(Vector3.new(-34,5,0),"Boomer");tank.yaw=-math.pi/2
+ local cmd=Input.neutral();cmd.throttle=1
+ for _=1,72 do
+  Sim.step(tank,cmd,1/60,env.size,env,true)
+  Contacts.solve({Contacts.body("tank",tank,Components.get(tank).Chassis)},objects:obstacles(),1/60)
+  Sim.reconcileGround(tank,env)
+ end
+ check(tank.position.X> -23 and tank.position.X< -6 and math.abs(tank.position.Y-5)<1e-4,"a tank can drive over adjacent support slabs without snagging on the visible bridge")
+end
 local body,state=bodyAt(Vector3.new(8,0,8));Contacts.solve({body},{obstacle},1/60)
 check((state.position-Vector3.new(8,0,8)).Magnitude<1e-6,"empty triangle corner is not a rectangular obstacle")
 body,state=bodyAt(Vector3.new(-5,0,-5));Contacts.solve({body},{obstacle},1/60)

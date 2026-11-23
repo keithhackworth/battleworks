@@ -44,3 +44,18 @@ In Studio, restart Play after sync and verify:
 6. Assess startup/catalog replication and physics cost on the Windows laptop with representative numbers of Solid detailed models. Face profiles cost more than one bounding box; the generator does not auto-enable Solid on decorative placements.
 
 No game/place build is needed; only metadata is regenerated.
+
+## Authoring collision slabs in Blender
+
+1. Keep the visible boards and ropes as ordinary mesh objects. Add simple, closed deck slabs with upward-facing top faces. Name each **object** `COLLISION_Deck_01`, `COLLISION_Deck_02`, and so on. The prefix is case-insensitive and applies to the exported glTF node name. A parent may carry transforms, but name each collider mesh individually. Unmarked children remain visual.
+2. Export both visual and collision meshes together as the original GLB in the matching source folder. Keep the slabs inside the combined visual bounds. Align neighboring top faces where the tank should drive across them and leave physical gaps where it should lose support.
+3. Generate a visual-only copy for Studio. For example, from the repository root:
+
+   ```sh
+   node tools/glb-collision.js GLBs/forest/rope-bridge.glb /tmp/rope-bridge-visual.glb
+   ```
+
+   Choose a new output file each time. The preparer strips the collider mesh references and preserves the visual hierarchy and transforms. Import the generated copy into Studio, then export the native model under the matching asset name in `assets/roblox`. Keep the original mixed GLB as the catalog's source.
+4. Run `node tools/build-editor-catalog.js`, sync with Rojo, and restart Play. Enable **Solid** on the bridge placement. The collision report marks the profile with `explicitCollision: true`.
+
+For these assets, tank movement and ground support use the explicit slabs. Decorative ropes remain available to the existing projectile and scanner queries. Each slab uses its own underside faces, and the profile keeps separate surface triangles and walls. Invalid explicit profiles fail catalog generation. A native export that still contains a `COLLISION_` node is rejected so the proxy cannot appear as scenery. GLBs without named collision meshes continue through the regular profile and fallback paths.

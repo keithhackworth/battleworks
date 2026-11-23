@@ -307,6 +307,7 @@ local function findSpawn(tank)
   if ok then preferred,yaw=position,heading end
  end
  local function clear(p)
+  if worldSettings and WorldSettings.deepWater(worldSettings,p,Components.get(tank.kind).Chassis) then return false end
   if Playground.inCourse(environment.playground,p,8) then return false end
   local entry=environment.playground and environment.playground.characterSpawn
   if tank.public and entry and (p-entry).Magnitude<14 then return false end

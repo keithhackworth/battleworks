@@ -1,6 +1,22 @@
 do
  local H=require("WorldHeightfield")
  local view=controller.view
+ local scale=view.tankScaleViewport
+ local footprint=scale:FindFirstChild("Footprint")
+ check(footprint.Size.X==10 and footprint.Size.Z==10,"corner tank model matches the vehicle solver footprint")
+ check(scale.CurrentCamera and scale.Parent:FindFirstChild("Label").Text=="Tank Scale","corner tank has its own camera and label")
+ local function tankPixelsPerStud(distance)
+  controller.distance=distance
+  controller:step(0)
+  local camera=scale.CurrentCamera
+  local previewHeight=view.tankScaleCard.Size.Y.Offset-40
+  return previewHeight/(2*math.tan(math.rad(camera.FieldOfView)/2)*camera.CFrame.Position.Magnitude)
+ end
+ local near,far=tankPixelsPerStud(80),tankPixelsPerStud(800)
+ local expected=view.viewport.AbsoluteSize.Y/(2*math.tan(math.rad(controller.scene.camera.FieldOfView)/2)*800)
+ check(math.abs(far-expected)<1e-6 and math.abs(near/far-10)<1e-6,"corner tank matches the editor projection and shrinks tenfold at ten times the distance")
+ check(controller.traversability and view.traversalLegend.Visible and controller.scene.terrainOverlay,"the editor enables traversability by default")
+ view.traversability.Activated:Fire()
  view.newWorld.Activated:Fire()
  view.dimensions.width.Text="96";view.dimensions.width.FocusLost:Fire()
  view.dimensions.depth.Text="96";view.dimensions.depth.FocusLost:Fire()

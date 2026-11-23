@@ -1,6 +1,7 @@
 -- Editor UI only. Picking, transactions and world geometry live elsewhere.
 local Placement=require(game.ReplicatedStorage.Shared.ModelPlacement)
 local Paths=require(game.ReplicatedStorage.Shared.AssetPaths)
+local Document=require(game.ReplicatedStorage.Shared.WorldEditorDocument)
 local View={};View.__index=View
 local ink=Color3.fromRGB(235,241,230)
 local accent=Color3.fromRGB(174,135,255)
@@ -30,6 +31,12 @@ function View.new(context)
  local self=setmetatable({connections={},paletteConnections={},thumbnails={},fields={},callbacks={},buttons={}},View)
  local frame=make("Frame",context.parent,{Name="World Editor",Size=UDim2.fromScale(1,1),BackgroundColor3=Color3.fromRGB(17,28,33),BorderSizePixel=0,Visible=false});self.frame=frame
  local viewport=make("ViewportFrame",frame,{Name="EditorViewport",Size=UDim2.fromScale(1,1),BackgroundColor3=Color3.fromRGB(37,58,66),BorderSizePixel=0,Ambient=Color3.fromRGB(170,180,190),LightColor=Color3.fromRGB(255,239,210),LightDirection=Vector3.new(-1,-1,-1),Active=false});self.viewport=viewport
+ local scale=make("Frame",viewport,{Name="TankScale",AnchorPoint=Vector2.new(1,1),Position=UDim2.new(1,-10,1,-10),Size=UDim2.fromOffset(112,108),BackgroundColor3=panel,BackgroundTransparency=.12,BorderSizePixel=0});self.tankScaleCard=scale
+ make("UICorner",scale,{CornerRadius=UDim.new(0,6)})
+ self.tankScaleViewport=make("ViewportFrame",scale,{Name="TankPreview",Size=UDim2.new(1,0,1,-40),BackgroundTransparency=1,Ambient=Color3.fromRGB(170,180,190),LightDirection=Vector3.new(-1,-1,-1)})
+ local scaleLabel=text(scale,"Label","Tank Scale",22);scaleLabel.Position=UDim2.new(0,4,1,-40);scaleLabel.TextXAlignment=Enum.TextXAlignment.Center
+ self.tankScaleSize=text(scale,"FootprintSize","",16)
+ self.tankScaleSize.Position=UDim2.new(0,4,1,-21);self.tankScaleSize.TextXAlignment=Enum.TextXAlignment.Center;self.tankScaleSize.TextSize=11
  local toolbar=make("Frame",frame,{Name="Toolbar",Size=UDim2.new(1,0,0,54),BackgroundColor3=Color3.fromRGB(19,30,35),BorderSizePixel=0,Active=true});self.toolbar=toolbar
  self.back=button(toolbar,"MainMenu","← Main Menu",UDim2.fromOffset(120,38),UDim2.fromOffset(8,8));self.buttons={self.back}
  self.back.Activated:Connect(context.home)
@@ -56,17 +63,18 @@ function View.new(context)
  make("UIListLayout",self.properties,{Padding=UDim.new(0,6),SortOrder=Enum.SortOrder.LayoutOrder})
  local order=0
  local function row(p) order+=1;p.LayoutOrder=order;return p end
- row(text(self.properties,"WorldTitle","WORLD SETTINGS",24))
+ self.dimensionRows={row(text(self.properties,"WorldTitle","WORLD SIZE",24))}
  self.dimensions={}
  for _,axis in {"width","depth"} do
-  row(text(self.properties,axis.."Label",if axis=="width" then "Width (studs)" else "Depth (studs)",20))
+  table.insert(self.dimensionRows,row(text(self.properties,axis.."Label",if axis=="width" then "Width (studs)" else "Depth (studs)",20)))
   self.dimensions[axis]=row(make("TextBox",self.properties,{Name=axis,Size=UDim2.new(1,-8,0,28),Text="",ClearTextOnFocus=false,TextColor3=ink,BackgroundColor3=View.buttonColor,Font=Enum.Font.Code,TextSize=14}))
+  table.insert(self.dimensionRows,self.dimensions[axis])
  end
  row(text(self.properties,"CameraSensitivityLabel","Camera sensitivity",20))
  self.cameraSensitivity=row(make("TextBox",self.properties,{Name="CameraSensitivity",Size=UDim2.new(1,-8,0,28),Text="1",ClearTextOnFocus=false,TextColor3=ink,BackgroundColor3=View.buttonColor,Font=Enum.Font.Code,TextSize=14}))
  row(text(self.properties,"PropertiesTitle","OBJECT PROPERTIES",24))
  self.selected=row(text(self.properties,"SelectedObject","Select a placed object to inspect it.",46));self.selected.Size=UDim2.new(1,-8,0,0);self.selected.AutomaticSize=Enum.AutomaticSize.Y
- for _,spec in {{"x","Position X"},{"y","Height Y (lowest point)"},{"z","Position Z"},{"pitch","Tilt X / pitch (degrees)"},{"yaw","Yaw Y (degrees)"},{"roll","Tilt Z / roll (degrees)"},{"scale","Uniform scale"},{"sizeX","Local width (studs)"},{"sizeY","Local height (studs)"},{"sizeZ","Local depth (studs)"},{"hp","Durability / HP"}} do
+ for _,spec in {{"x","Position X"},{"y","Height Y (lowest point)"},{"z","Position Z"},{"pitch","Tilt X / pitch (degrees)"},{"yaw","Yaw Y (degrees)"},{"roll","Tilt Z / roll (degrees)"},{"scale","Uniform scale"},{"sizeX","Local width (studs)"},{"sizeY","Local height (studs)"},{"sizeZ","Local length (studs)"},{"hp","Durability / HP"}} do
   row(text(self.properties,spec[1].."Label",spec[2],20))
   self.fields[spec[1]]=row(make("TextBox",self.properties,{Name=spec[1],Size=UDim2.new(1,-8,0,28),Text="",PlaceholderText="—",ClearTextOnFocus=false,TextColor3=ink,BackgroundColor3=Color3.fromRGB(43,61,66),TextSize=14,Font=Enum.Font.Code}))
  end
@@ -149,12 +157,13 @@ function View.new(context)
   self.terrainTools[name]=button(self.left,"Terrain"..name,name.." Terrain",UDim2.new(1,-18,0,29),UDim2.fromOffset(8,28+(index-1)*34))
  end
  self.tools.Select=button(self.left,"Select","Select / Navigate")
- for index,name in {"Select","Move","Rotate","Scale","Snap"} do
+ self.tools.Resize=button(self.left,"Resize","Resize")
+ for index,name in {"Select","Move","Rotate","Scale","Resize","Snap"} do
   local control=self.tools[name];control.Parent=self.left
   control.Position=UDim2.fromOffset(8,28+(index-1)*34);control.Size=UDim2.new(1,-18,0,29)
  end
- self.delete.Parent=self.left;self.delete.Position=UDim2.fromOffset(8,198);self.delete.Size=UDim2.new(1,-18,0,29)
- for _,record in {{controls,233},{rotations,315},{magnets,385}} do
+ self.delete.Parent=self.left;self.delete.Position=UDim2.fromOffset(8,232);self.delete.Size=UDim2.new(1,-18,0,29)
+ for _,record in {{controls,267},{rotations,349},{magnets,419}} do
   record[1].Parent=self.left;record[1].Position=UDim2.fromOffset(0,record[2]);record[1].BackgroundColor3=panel
  end
  pane.BackgroundColor3=panel;pane.AnchorPoint=Vector2.zero
@@ -179,7 +188,7 @@ function View.new(context)
  end
  self.traversability=button(self.brushPanel,"TerrainTraversability","Terrain Traversability")
  self.traversability.LayoutOrder=12;self.traversability.Size=UDim2.new(1,-14,0,34)
- self.traversalLegend=text(self.brushPanel,"TraversalLegend","Uphill estimate\nGreen · Easy\nYellow · Requires treads\nRed · Unreliable climb",84)
+ self.traversalLegend=text(self.brushPanel,"TraversalLegend","No tint · Both drivetrains\nYellow · Requires treads\nRed · Too steep or too deep",84)
  self.traversalLegend.LayoutOrder=13;self.traversalLegend.Visible=false
  self.terrainDock=scrolling(frame,"TerrainToolsDock",UDim2.fromOffset(0,0),UDim2.fromOffset(0,0))
  self.terrainDock.AutomaticCanvasSize=Enum.AutomaticSize.X;self.terrainDock.ScrollingDirection=Enum.ScrollingDirection.X
@@ -227,6 +236,10 @@ end
 function View:terrainMode(enabled,operation)
  if enabled and not self.terrainActive then self.toolsOpen=true end
  self.terrainActive=enabled
+ for index,row in self.dimensionRows do
+  row.LayoutOrder=if enabled then index-#self.dimensionRows else index
+  row.Parent=if enabled then self.brushPanel else self.properties
+ end
  self.terrain.BackgroundColor3=if enabled then View.activeColor else View.buttonColor
  for name,control in self.terrainTools do
   control.Visible=enabled;control.BackgroundColor3=if operation==name then View.activeColor else View.buttonColor
@@ -295,7 +308,7 @@ function View:selection(entry,item)
  local values=if entry then {x=entry.position[1],y=entry.position[2],z=entry.position[3],pitch=entry.rotation[1],yaw=entry.rotation[2],roll=entry.rotation[3],scale=entry.scale,hp=entry.hp} else {}
  for axis,key in {"sizeX","sizeY","sizeZ"} do
   local field=self.fields[key]
-  field.TextEditable=entry~=nil and item.stretchable==true and not item.zone
+  field.TextEditable=entry~=nil and Document.canResize(item,axis)
   if entry then values[key]=entry.bounds[axis]*entry.scale*(entry.stretch and entry.stretch[axis] or 1) end
  end
  for key,field in self.fields do field.Text=if values[key] then string.format("%.5g",values[key]) else "" end

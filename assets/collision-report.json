@@ -18,6 +18,15 @@
       "walls": 20
     },
     {
+      "asset": "Forest/rope_bridge",
+      "packaged": true,
+      "source": "GLBs/forest/rope_bridge.glb",
+      "fit": "faces",
+      "faces": 16,
+      "walls": 0,
+      "explicitCollision": true
+    },
+    {
       "asset": "Forest/bridge",
       "packaged": true,
       "source": "GLBs/forest/bridge.glb",
@@ -492,8 +501,8 @@
     }
   ],
   "summary": {
-    "processed": 61,
-    "faces": 60,
+    "processed": 62,
+    "faces": 61,
     "sampled": 1,
     "unavailable": 1
   }

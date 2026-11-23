@@ -30,7 +30,7 @@ function View.new(gui,onMode,onModal)
 end
 function View:open(open)self.panel.Visible=open;self.onModal(open)end
 function View:select(mode)
- self.selected=mode;self.hint.Text=if mode=="Mouse Direct"then "Alt: UI"elseif mode=="Mouse Joystick"then "Shift+C: center"else "RMB: orbit";self.icon:SetAttribute("MouseAimMode",mode)
+ self.selected=mode;self.hint.Text=if mode=="Mouse Direct"then "Esc: free cursor"elseif mode=="Mouse Joystick"then "Shift+C: center"else "RMB: orbit";self.icon:SetAttribute("MouseAimMode",mode)
  for name,b in self.buttons do b.Text=(if name==mode then "● "else "○ ")..name end
 end
 function View:setVisible(visible)

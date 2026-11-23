@@ -65,9 +65,19 @@ local function limitTerrainRise(state,terrain)
  if distance<=1e-6 then return end
  local a=Heightfield.sample(terrain.terrain,terrain.width,terrain.depth,start.X,start.Z)
  local b=Heightfield.sample(terrain.terrain,terrain.width,terrain.depth,finish.X,finish.Z)
+ local waterBlocked=false
+ if terrain.terrain.water then
+  local _,water=Heightfield.surface(terrain.terrain,terrain.width,terrain.depth,finish.X,finish.Z)
+  local depth=if water then water-math.max(b,finish.Y) else 0
+  if Traversal.waterBlocked(depth,Components.get(state).Chassis) then
+   local _,previous=Heightfield.surface(terrain.terrain,terrain.width,terrain.depth,start.X,start.Z)
+   local previousDepth=if previous then previous-math.max(a,start.Y) else 0
+   waterBlocked=depth>=previousDepth-1e-6
+  end
+ end
  -- An airborne tank already above this ground may cross it. For a ground
  -- crossing, use a numerical tolerance only so slow motion cannot creep up a wall.
- if start.Y>b+Geometry.MaxStep or b-a<=math.min(Geometry.MaxStep,distance*Traversal.MaxGradient)+1e-6 then return end
+ if not waterBlocked and (start.Y>b+Geometry.MaxStep or b-a<=math.min(Geometry.MaxStep,distance*Traversal.MaxGradient)+1e-6) then return end
  state.position=Vector3.new(start.X,finish.Y,start.Z)
  state.motionForwardTravel=state.motionForwardStart
  local velocity=Motion.ensure(state)

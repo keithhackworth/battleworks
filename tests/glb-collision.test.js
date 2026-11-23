@@ -1,7 +1,7 @@
 'use strict';
 const test=require('node:test'),assert=require('node:assert/strict');
 const fs=require('node:fs/promises'),path=require('node:path'),os=require('node:os');
-const {extractFaces,loadFaces}=require('../tools/glb-collision');
+const {extractFaces,extractPairedFaces,loadFaces,visualGlb}=require('../tools/glb-collision');
 function fixture(change=()=>{}){
  // Interleaved positions, accessor and bufferView offsets, unsigned indices.
  const positions=[[0,1,0],[0,1,1],[1,1,0],[0,0,0]];
@@ -27,6 +27,67 @@ test('unsupported or invalid binary mesh inputs fail instead of generating misle
  for(const change of [j=>j.accessors[0].sparse={},j=>j.buffers[0].uri='external.bin',j=>j.meshes[0].primitives[0].mode=5,j=>j.meshes[0].primitives[0].extensions={KHR_draco_mesh_compression:{}},j=>j.accessors[0].count=100,j=>j.nodes[0].children=[0],(j,b)=>b.writeUInt16LE(100,76)])assert.throws(()=>extractFaces(fixture(change)),/GLB collision profile/);
  assert.throws(()=>extractFaces(Buffer.from('not a GLB')),/header/);
  const truncated=fixture().subarray(0,60);assert.throws(()=>extractFaces(truncated),/header/);
+});
+function bridgeFixture(change=()=>{}){
+ return fixture(json=>{
+  json.meshes.push(structuredClone(json.meshes[0]));
+  json.nodes=[
+   {name:'Bridge',translation:[15,2,-9],rotation:[0,1,0,0],children:[1,2,4]},
+   {name:'Boards and ropes',mesh:0,scale:[12,4,10]},
+   {name:'COLLISION_Deck_01',mesh:1,translation:[1,1,1],scale:[3,1,8],children:[3]},
+   {name:'Visual child',mesh:0,scale:[.5,.5,.5]},
+   {name:'Deck assembly',translation:[7,1,1],children:[5]},
+   {name:'collision_Deck_02',mesh:1,matrix:[3,0,0,0,0,1,0,0,0,0,8,0,1,0,0,1]},
+  ];
+  change(json);
+ });
+}
+test('explicit decks retain transformed positions, separate footprints and visual reference bounds',()=>{
+ const bytes=bridgeFixture(),profile=extractFaces(bytes);
+ assert.equal(profile.explicitCollision,true);
+ assert.deepEqual(profile.sourceSize,[12,4,10]);
+ assert.equal(profile.faces.length,2);
+ assert.deepEqual(profile.bases,[0,0]);
+ assert.equal(profile.walls.length,2);
+ const ranges=profile.faces.map(face=>[Math.min(...face.map(v=>v[0])),Math.max(...face.map(v=>v[0]))]);
+ assert.deepEqual(ranges,[[.166667,.416667],[-.416667,-.166667]]);
+ const visual=visualGlb(bytes);
+ const json=JSON.parse(visual.subarray(20,20+visual.readUInt32LE(12)).toString());
+ assert.equal(json.meshes.length,1);
+ assert.deepEqual(json.nodes[2].children,[3]);
+ assert.equal(json.nodes[2].mesh,undefined);
+ assert.equal(json.nodes[5].mesh,undefined);
+ assert.equal(json.nodes[3].mesh,0);
+ assert.equal(extractFaces(visual).faces.length,2,'only visual board/rope and nested visual child remain');
+ assert.equal(extractFaces(bytes).faces.length,2,'visual export leaves the authoring GLB intact');
+ const legacy=fixture();assert.equal(visualGlb(legacy),legacy);
+});
+test('paired collision uses the visual coordinate frame and independent deck transforms',()=>{
+ const visual=fixture(j=>{j.nodes[0].scale=[12,4,10];});
+ const collision=fixture(j=>{
+  j.nodes=[{children:[1,2],translation:[1,1,1]},{mesh:0,scale:[3,1,8]},
+   {mesh:0,scale:[3,1,8],translation:[7,0,0]}];
+ });
+ const profile=extractPairedFaces(visual,collision);
+ assert.equal(profile.explicitCollision,true);
+ assert.deepEqual(profile.sourceSize,[12,4,10]);
+ assert.deepEqual(profile.faces.map(face=>Math.min(...face.map(v=>v[0]))),[-.416667,.166667]);
+ assert.ok(profile.faces.every(face=>face.every(v=>v[1]===0)));
+ assert.throws(()=>extractPairedFaces(visual,fixture(j=>{j.nodes[0].translation=[200,0,0];})),/inside visual mesh bounds/);
+});
+test('invalid explicit decks fail visibly and cannot fall back to visual geometry',async t=>{
+ const root=await fs.mkdtemp(path.join(os.tmpdir(),'bw-explicit-collision-'));t.after(()=>fs.rm(root,{recursive:true,force:true}));
+ await fs.mkdir(path.join(root,'worlds'));
+ await fs.writeFile(path.join(root,'worlds/asset-collision-generation.json'),'{"enabled":true,"sourceFolders":{"Props":"worlds"}}');
+ const decks=path.join(root,'worlds/bridge.glb');
+ for(const [change,reason] of [
+  [j=>j.nodes[2].scale=[0,1,1],/singular transform/],
+  [j=>j.nodes[2].translation[0]=100,/inside visual mesh bounds/],
+  [j=>j.meshes[1].primitives[0].mode=5,/static uncompressed triangle/],
+ ]){
+  await fs.writeFile(decks,bridgeFixture(change));
+  await assert.rejects(require('../tools/bulk-collision').generateCollisions(root,[{model:'Props/bridge'}]),reason);
+ }
 });
 test('actual rocks-ramp retains distinct terraces and bounded triangular metadata',async()=>{
  const source=path.resolve(__dirname,'../GLBs/forest/rocks-ramp.glb');const before=await fs.readFile(source);const profile=await loadFaces(source);

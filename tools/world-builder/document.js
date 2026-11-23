@@ -59,7 +59,11 @@ function validate(input,items){
   }
   if(!type)fail(`${at}.type`,`unknown catalog type '${o.type}'`);
   vector(o.position,3,-2000,2000,`${at}.position`);vector(o.rotation,3,-360000,360000,`${at}.rotation`);number(o.scale,.001,1000,`${at}.scale`);
-  if(o.stretch!==undefined){vector(o.stretch,3,.001,1000,`${at}.stretch`);if(!type.stretchable||type.zone)fail(at,'Stretch requires a native block asset');}
+  if(o.stretch!==undefined){
+   vector(o.stretch,3,.001,1000,`${at}.stretch`);
+   if(type.zone||(!type.stretchable&&!type.resizeAxes))fail(at,'Resize requires a native block or an opted-in imported asset');
+   if(!type.stretchable&&o.stretch.some((n,axis)=>n!==1&&!type.resizeAxes[axis]))fail(at,'Resize is disabled on that local axis');
+  }
   if(type.zone&&(o.position[1]!==0||o.rotation[0]%360!==0||o.rotation[2]%360!==0))fail(at,'water/mud regions must stay level at ground height');
   if(Math.abs(o.position[0])>width/2||Math.abs(o.position[2])>depth/2)fail(at,'object center outside world bounds');
   bool(o.solid,`${at}.solid`);bool(o.destructible,`${at}.destructible`);number(o.hp,1,100000,`${at}.hp`);

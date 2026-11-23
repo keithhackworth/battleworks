@@ -1,17 +1,20 @@
 -- Visual/selection bounds only. Collision profiles and native surface queries
 -- remain separate; mesh vertices are not inferred from a bounding rectangle.
 local A={}
+function A.isCollisionNode(name)
+ return type(name)=="string" and string.lower(string.sub(name,1,10))=="collision_"
+end
 function A.visible(part)
  return part:IsA("BasePart") and (part.Transparency or 0)<1 and part.Name~="WorldObstacleHitbox" and not (part.GetAttribute and part:GetAttribute("BattleWorksIgnoreBounds"))
 end
 function A.parts(model)
  local parts={};for _,p in model:GetDescendants() do if A.visible(p) then table.insert(parts,p) end end;return parts
 end
-function A.checkFaceProfile(size,collider)
+function A.checkFaceProfile(size,collider,stretch)
  if collider.fit~="faces" then return end
  local source=collider.sourceSize;assert(type(source)=="table" and #source==3,"Missing GLB profile dimensions")
- local scale=size.X/source[1]
- for i,n in {size.X,size.Y,size.Z}do assert(type(source[i])=="number" and source[i]>0 and math.abs(n/source[i]/scale-1)<.01,"GLB collision profile dimensions do not match native model")end
+ local scale=size.X/source[1]/(stretch and stretch[1] or 1)
+ for i,n in {size.X,size.Y,size.Z}do assert(type(source[i])=="number" and source[i]>0 and math.abs(n/source[i]/(stretch and stretch[i] or 1)/scale-1)<.01,"GLB collision profile dimensions do not match native model")end
 end
 local function dot(a,b)return a.X*b.X+a.Y*b.Y+a.Z*b.Z end
 function A.measure(model)

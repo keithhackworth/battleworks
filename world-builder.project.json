@@ -5,6 +5,7 @@
     "WorldHeightfield": { "$path": "src/shared/WorldHeightfield.luau" },
     "WorldTerrainSurface": { "$path": "src/shared/WorldTerrainSurface.luau" },
     "TerrainTraversal": { "$path": "src/shared/TerrainTraversal.luau" },
-    "TerrainMaterials": { "$path": "src/shared/TerrainMaterials.luau" }
+    "TerrainMaterials": { "$path": "src/shared/TerrainMaterials.luau" },
+    "ComponentCatalog": { "$path": "src/shared/ComponentCatalog.luau" }
   }
 }

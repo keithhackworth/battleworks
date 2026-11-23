@@ -40,11 +40,24 @@ function Shell.new(playerGui,arena,session,gameplay,presenter,editorAssets,world
   screens.InnovationLab=require(script.Parent.ShellInnovationLab)
  end
  context.join=function() session:join() end
+ function self.playWorld(document,revision)
+  if session.mode~="Menu" then return false end
+  self.playtest={document=document,revision=revision}
+  return session:join()
+ end
+ context.playWorld=self.playWorld
  context.home=function()
+  self.playtest=nil
   self.manager:show(homeScreen)
   if session.mode~="Menu" then session:leave() end
  end
  self.home=context.home
+ function self.exitBattle()
+  if not self.playtest then context.home();return end
+  self.returningToEditor=self.playtest
+  self.playtest=nil
+  session:leave()
+ end
  self.manager=Manager.new(context,screens,function(name)
   gui.Enabled=name~="Battle"
   if name=="Battle" or name=="WorldEditor" then background:exit() else
@@ -59,6 +72,12 @@ function Shell.new(playerGui,arena,session,gameplay,presenter,editorAssets,world
  self.manager:show(homeScreen)
  gui.Parent=playerGui
  session.onState=function(mode,message)
+  if mode=="Menu" and self.returningToEditor then
+   local draft=self.returningToEditor
+   self.returningToEditor=nil
+   self.manager:show("WorldEditor",draft)
+   return
+  end
   if options.selectExperiment then
    self.manager:show(if mode=="Battle" then "Battle" else homeScreen)
    if mode~="Battle" then self.manager:get(homeScreen):setStatus(if mode=="Joining" then "Starting experiment…" else message) end
@@ -66,6 +85,10 @@ function Shell.new(playerGui,arena,session,gameplay,presenter,editorAssets,world
   end
   if mode=="Battle" then self.manager:show("Battle")
   elseif mode=="Joining" then self.manager:show("Lobby")
+  elseif self.playtest then
+   local draft=self.playtest;self.playtest=nil
+   self.manager:show("WorldEditor",draft)
+   if message then self.manager:get("WorldEditor").view:message(message) end
   elseif self.manager.current=="Battle" then self.manager:show("MainMenu") end
   self.manager:get("Lobby"):setStatus(mode=="Joining",message)
  end
@@ -78,7 +101,7 @@ function Shell.new(playerGui,arena,session,gameplay,presenter,editorAssets,world
   if self.manager.current=="Battle" then
    if context.royale then return Enum.ContextActionResult.Pass end
    if input.KeyCode==Enum.KeyCode.ButtonB then
-    if state==Enum.UserInputState.Begin then context.home() end
+    if state==Enum.UserInputState.Begin then self.exitBattle() end
     return Enum.ContextActionResult.Sink
    end
    return Enum.ContextActionResult.Pass

@@ -21,6 +21,9 @@ function Document.catalog(items)
  for _,item in items do byType[item.id]=item;byPath[item.model]=item end
  return {items=items,byType=byType,byPath=byPath}
 end
+function Document.canResize(item,axis)
+ return item~=nil and not item.zone and (item.stretchable==true or (item.resizeAxes~=nil and item.resizeAxes[axis]==true))
+end
 function Document.checkEntry(doc,catalog,o)
  local item=catalog.byPath[o.asset]
  assert(item and item.id==o.type and Paths.valid(o.asset),"Asset identity is missing or conflicting")
@@ -30,9 +33,12 @@ function Document.checkEntry(doc,catalog,o)
  assert(not (o.solid or o.destructible) or item.collider,"This asset has no registered collider")
  assert(finite(o.scale,.001,1000),"Uniform scale must be in [.001,1000]")
  if o.stretch then
-  assert(item.stretchable and not item.zone,"Stretch requires a single native block asset; use Scale for this asset")
+  assert(Document.canResize(item,1) or Document.canResize(item,2) or Document.canResize(item,3),"This asset does not support independent resizing")
   assert(type(o.stretch)=="table" and #o.stretch==3,"Stretch requires three axis factors")
-  for _,n in o.stretch do assert(finite(n,.001,1000),"Stretch factors must be in [.001,1000]") end
+  for i,n in o.stretch do
+   assert(type(i)=="number" and i%1==0 and i>=1 and i<=3 and finite(n,.001,1000),"Stretch factors must be in [.001,1000]")
+   assert(n==1 or Document.canResize(item,i),"Resize is disabled on that local axis")
+  end
  end
  assert(type(o.position)=="table" and #o.position==3,"Position requires X, Y and Z")
  assert(type(o.rotation)=="table" and #o.rotation==3,"Rotation requires pitch, yaw and roll")

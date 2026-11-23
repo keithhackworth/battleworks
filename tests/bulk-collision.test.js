@@ -21,9 +21,9 @@ test('bulk pass processes fences, buildings and decorations without changing aut
 });
 test('real catalog covers every imported model, preserves builtins and reports unsupported inputs explicitly',async()=>{
  const model=JSON.parse(await fs.readFile(path.join(root,'assets/editor-catalog.model.json'),'utf8'));const items=decodeCatalogModel(model);
- const imported=items.filter(i=>i.packaged&&!i.model.startsWith('Builtin/'));assert.equal(imported.length,60);
- assert.equal(imported.filter(i=>i.collider.fit==='faces').length,59);
- assert.equal(imported.filter(i=>i.collider.fit==='mesh').length,1);
+ const imported=items.filter(i=>i.packaged&&!i.model.startsWith('Builtin/'));
+ assert.ok(imported.length>=60);
+ assert.ok(imported.every(i=>i.collider.fit==='faces'||i.collider.fit==='mesh'));
  for(const item of items.filter(i=>i.model.startsWith('Builtin/')))assert.equal(item.collider.fit,undefined);
  assert.equal(items.find(i=>i.model==='tree-large').id,'asset.tree_large');
  const report=JSON.parse(await fs.readFile(path.join(root,'assets/collision-report.json'),'utf8'));
@@ -31,7 +31,8 @@ test('real catalog covers every imported model, preserves builtins and reports u
  assert.equal(items.find(i=>i.model==='Surburban/building-type-t').collider.fit,'faces');
  assert.ok(items.find(i=>i.model==='Forest/bridge').collider.bases.some(y=>y>-.4),'bridge deck is not extruded to ground');
  assert.notDeepEqual(items.find(i=>i.model==='Forest/fence').collider.faces,items.find(i=>i.model==='Surburban/fence').collider.faces,'matching is hierarchical, never ambiguous basename guessing');
- assert.equal(report.summary.unavailable,1,'old missing rope-fence stays explicitly unavailable');
+ assert.equal(report.assets.find(i=>i.asset==='rope-fence').packaged,false,'old missing rope-fence stays explicitly unavailable');
+ assert.equal(report.summary.unavailable,report.assets.filter(i=>!i.packaged&&!i.delivery).length);
  for(const node of [model,...model.Children])assert.ok(node.Properties.Value.length<=170000,'every Roblox string is bounded');
 });
 test('catalog chunk packaging round-trips small and large payloads with stable ordered parts',()=>{

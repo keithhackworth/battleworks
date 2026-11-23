@@ -102,5 +102,23 @@ do
  local _,kind=Environment.sample(env,0,0,1)
  assert(kind=="Water","flooded cells affect vehicle physics")
  Heightfield.validate(fresh,96,96)
+ settings.terrain=Heightfield.new(96,96)
+ local pond=settings.terrain
+ pond.water=table.create(pond.rows*pond.columns,0)
+ local x,z=Heightfield.cell(pond,96,96,1,0)
+ local index=z*pond.columns+x+1
+ pond.water[index]=Heightfield.WaterOffset+20
+ local _,_,_,_,bottom=Environment.sample(env,1,0,1)
+ assert(bottom==Materials.fromMaterial("Mud"),"flooded ground uses mud traction automatically")
+ local crossing=Input.neutral();crossing.throttle=1
+ for _,kind in {"Boomer","Rattler"} do
+  for _,depth in {20,21} do
+   pond.water[index]=Heightfield.WaterOffset+depth
+   local tank=Sim.new(Vector3.new(-.1,0,0),kind);tank.yaw=-math.pi/2
+   Motion.setVelocity(tank,Vector3.new(12,0,0))
+   Sim.step(tank,crossing,1/60,Vector2.new(96,96),env)
+   assert((tank.position.X>=0)==(depth==20),"both drivetrains stop only when water is deeper than half the hull")
+  end
+ end
 end
 print("Unified terrain slopes, traction, braking, tick-rate stability and geometry passed")

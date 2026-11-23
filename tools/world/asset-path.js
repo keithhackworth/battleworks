@@ -4,10 +4,16 @@ function validatePath(value){
  const segments=value.split('/');if(segments.some(s=>!s||s==='.'||s==='..'||s!==s.trim()))throw new Error(`Invalid asset path '${value}': empty, dot and parent segments are forbidden`);
  return value;
 }
+function validResizeAxes(axes){return Array.isArray(axes)&&axes.length===3&&axes.every(v=>typeof v==='boolean');}
+function validCloudModel(model){
+ const id=v=>typeof v==='string'&&/^[1-9]\d*$/.test(v)&&Number.isSafeInteger(Number(v));
+ return !!model&&id(model.assetId)&&id(model.creatorId)&&['User','Group'].includes(model.creatorType);
+}
 function entriesFor(bindings){const paths=new Set();return Object.entries(bindings).map(([id,b])=>{
  if(!b||typeof (b.path||b.model)!=='string'||(b.source!==undefined&&typeof b.source!=='string'))throw new Error(`Invalid Roblox asset binding '${id}'`);
  const asset=validatePath(b.path||b.model);if(paths.has(asset))throw new Error(`Duplicate logical asset path '${asset}'`);paths.add(asset);
- return {id,source:b.source||asset,model:asset,...(b.stretchable?{stretchable:true}:{}),...(b.collider?{collider:b.collider}:{})};
+ if(b.resizeAxes!==undefined&&!validResizeAxes(b.resizeAxes))throw new Error(`Invalid resizeAxes for '${asset}'`);
+ return {id,source:b.source||asset,model:asset,...(b.stretchable?{stretchable:true}:{}),...(b.resizeAxes?{resizeAxes:b.resizeAxes}:{}),...(b.collider?{collider:b.collider}:{})};
 });}
 function resolveAsset(resource,bindings){
  validatePath(resource);const entries=entriesFor(bindings);
@@ -20,4 +26,4 @@ function resolveAsset(resource,bindings){
  if(unique.length>1)throw new Error(`Ambiguous asset '${resource}'. Use a full path: ${unique.map(b=>b.model).sort().join(', ')}`);
  return unique[0]||null;
 }
-module.exports={validatePath,entriesFor,resolveAsset};
+module.exports={validatePath,validResizeAxes,validCloudModel,entriesFor,resolveAsset};

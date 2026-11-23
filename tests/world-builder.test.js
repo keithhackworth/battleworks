@@ -80,6 +80,23 @@ test('stretch retains independent dimensions through compile and migration',()=>
  assert.throws(()=>validate({...d,objects:[object({stretch:[1,1,2],type:'builtin.rock'})]},items),/native block/);
  assert.throws(()=>validate({...d,objects:[object({stretch:[100,1,1]})]},items),/footprint/);
 });
+test('opted-in bridge resize survives JSON, Studio placement and migration with disabled axes enforced',()=>{
+ const {studioPlacements,placementIssue}=require('../tools/world/studio-placement');
+ const {bindingsFor}=require('../tools/world-builder/catalog');
+ const bridge={...items.find(i=>i.id==='builtin.bridge'),id:'asset.bridge',model:'Forest/rope-bridge',stretchable:false,resizeAxes:[true,false,true]};
+ const catalog=[...items,bridge];
+ const d=fresh('resized_bridge');
+ d.objects=[object({type:bridge.id,asset:bridge.model,scale:1.5,stretch:[2,1,3],rotation:[0,90,0]})];
+ const {manifest}=compileDocument(JSON.parse(serialize(d)),catalog);
+ const [placement]=studioPlacements(manifest,bindingsFor(catalog));
+ assert.deepEqual(placement.resizeAxes,[true,false,true]);
+ assert.deepEqual(placement.stretch,[2,1,3]);
+ assert.equal(placement.scale,1.5);
+ assert.deepEqual(migrate(manifest,catalog,'bridge_copy').objects[0].stretch,[2,1,3]);
+ bridge.resizeAxes=[true,false,false];
+ assert.match(placementIssue(manifest,bindingsFor(catalog)),/Resize is disabled/);
+ assert.throws(()=>compileDocument(d,catalog),/Resize is disabled/);
+});
 test('numbered three-tank starting areas persist and reserve full ground clearance',()=>{
  const d=fresh();d.spawns=[];
  assert.equal(validate(d,items).spawns.length,0);

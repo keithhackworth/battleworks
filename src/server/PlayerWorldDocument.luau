@@ -42,12 +42,17 @@ function Adapter.validate(raw,items,assets)
   local _,size=Visual.measure(model)
   -- Never trust client-supplied dimensions for spawn/boundary validation.
   object.bounds={size.X,size.Y,size.Z}
-  if object.stretch then array(object.stretch,3);item.stretchable=Placement.stretchPart(model)~=nil and not item.zone end
+  if object.stretch then
+   array(object.stretch,3)
+   item.stretchable=Placement.stretchPart(model)~=nil and not item.zone
+   item.resizeAxes=Placement.resizeAxes(model,item.resizeAxes)
+  end
   if item.collider and item.collider.fit=="mesh" then item.collider.boxes=Fit.profile(model) end
   if item.collider then Visual.checkFaceProfile(size,item.collider)end
   Document.checkEntry(raw,catalog,object)
+  if object.stretch and item.resizeAxes then Placement.checkResizeSize(model,object.scale,object.stretch) end
   local spec={id=object.id,asset=item.model,source=item.source,template=item.model,
-   position=Vector3.new(table.unpack(object.position)),rotation=Vector3.new(table.unpack(object.rotation)),scale=object.scale,stretch=object.stretch}
+   position=Vector3.new(table.unpack(object.position)),rotation=Vector3.new(table.unpack(object.rotation)),scale=object.scale,stretch=object.stretch,resizeAxes=item.resizeAxes}
   if item.collider then
    local c=item.collider
    spec.interaction={solid=object.solid,destructible=object.destructible,hp=object.hp,fractions=Vector3.new(c.widthFraction,c.heightFraction,c.depthFraction),fit=c.fit,boxes=c.boxes,faces=c.faces,bases=c.bases,walls=c.walls,sourceSize=c.sourceSize}

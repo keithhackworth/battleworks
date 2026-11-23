@@ -29,12 +29,14 @@ async function validateAssets(options = {}) {
   const builtins=new Set(builtinCatalog().map(i=>i.model));
   const exports=inspected.filter(e=>!builtins.has(e.path));
   const files=new Map(exports.map(entry=>[entry.path,entry.file]));
+  const {validCloudModel}=require("./world/asset-path");
   const missing = [];
   for (const [id, binding] of Object.entries(bindings)) {
     if(!binding)throw new Error(`Invalid model binding '${id}'`);
     try{validatePath(binding.path||binding.model);}catch(e){throw new Error(`Invalid model binding '${id}': ${e.message}`);}
     const assetPath=binding.path||binding.model;
-    if (!findExport(exports,assetPath)) missing.push(`${id}: export the existing Studio Model '${assetPath}' individually or inside a native Folder bundle in ${path.relative(root,directory)}`);
+    if(binding.cloudModel!==undefined&&!validCloudModel(binding.cloudModel))throw new Error(`Invalid Roblox model reference for ${assetPath}`);
+    if (!binding.cloudModel&&!findExport(exports,assetPath)) missing.push(`${id}: export the existing Studio Model '${assetPath}' individually or inside a native Folder bundle in ${path.relative(root,directory)}`);
   }
   if (missing.length && !options.allowMissingAssets) throw new Error(`Persistent asset exports missing:\n${missing.join('\n')}\nKeep the existing Studio imports/place backup. Export and verify them before rebuilding. No output was replaced.`);
   const temporary = await fs.mkdtemp(path.join(os.tmpdir(), 'bw-assets-check-'));

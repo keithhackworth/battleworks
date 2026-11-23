@@ -86,6 +86,26 @@ main.buttons[1].Activated:Fire(); lobby.join.Activated:Fire(); appSession:receiv
 check(manager.current=="Battle" and gameplay.active and not app.gui.Enabled,"admitted battle hides shell and starts existing client")
 app.home()
 check(manager.current=="MainMenu" and not gameplay.active and app.gui.Enabled,"return exits gameplay and restores main menu")
+do
+ manager:show("WorldEditor")
+ local editor=manager:get("WorldEditor")
+ editor.state.document.name="Playtest draft"
+ check(app.playWorld() and app.playtest~=nil and manager.current=="Lobby","Save & Play marks the battle as an editor playtest")
+ local join=appSession.requestId
+ appSession:receive(join,true)
+ check(manager.current=="Battle" and gameplay.active,"playtest waits for normal battle admission")
+ app.exitBattle()
+ check(manager.current=="WorldEditor" and not gameplay.active and editor.state.document.name=="Playtest draft","Back to Editor exits gameplay and keeps the same draft")
+ check(not appSession:receive(join,true),"a stale battle acknowledgment cannot close the reopened editor")
+ local saved=require("WorldEditorDocument").editorFresh()
+ saved.id="destination";saved.name="Published test draft"
+ app.home()
+ check(app.playWorld(saved,7),"published arrival can retain the saved draft for return")
+ appSession:receive(appSession.requestId,true)
+ app.exitBattle()
+ check(editor.state.document.id=="destination" and editor.library.revisions.destination==7,"return from published testing opens the played world with its save revision")
+ app.home()
+end
 for _,name in {"Garage","Store","WorldEditor","Preferences","Manuals","BattleHistory"} do
  manager:show(name)
  local screen=manager:get(name)

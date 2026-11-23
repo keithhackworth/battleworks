@@ -142,5 +142,70 @@ check(block.Size.X==48 and block.Size.Y==2 and block.Size.Z==40,"uniform scale c
 block.Shape=Enum.PartType.Ball
 check(Placement.stretchPart(deck)==nil,"unsupported shapes cannot be stretched")
 check(not pcall(Placement.pose,deck,1,pose),"placement rejects stretch on unsupported native shapes")
+do
+ local model={Name="Rope bridge",frame=CFrame.new(),parts={}}
+ function model:IsA(kind)return kind=="Model"end
+ local function mesh(name,position,size,rotation)
+  local p={Name=name,CFrame=CFrame.new(position)*(rotation or CFrame.new()),Size=size,Parent=model,Transparency=0}
+  function p:IsA(kind)return kind=="BasePart" or kind=="MeshPart" end
+  function p:SetAttribute()end
+  table.insert(model.parts,p);return p
+ end
+ function model:GetDescendants()return self.parts end
+ function model:GetPivot()return self.frame end
+ function model:GetBoundingBox()return self.frame,Vector3.new(20,4,40) end
+ function model:ScaleTo(scale)assert(scale==1)end
+ function model:PivotTo(frame)
+  local old=self.frame
+  local function at(v)
+   local r,u,b=old.RightVector,old.UpVector,old.LookVector
+   return Vector3.new(v:Dot(r),v:Dot(u),-v:Dot(b))
+  end
+  for _,p in self.parts do
+   local cf=p.CFrame
+   p.CFrame=frame*CFrame.fromMatrix(at(cf.Position-old.Position),at(cf.RightVector),at(cf.UpVector),at(cf.LookVector*-1))
+  end
+  self.frame=frame
+ end
+ function model:SetAttribute()end
+ local boards=mesh("Boards",Vector3.new(0,-1,0),Vector3.new(16,2,40))
+ local rope=mesh("Ropes",Vector3.new(0,1,0),Vector3.new(20,2,40),CFrame.Angles(0,math.pi,0))
+ local axes=Placement.resizeAxes(model,{true,true,true})
+ check(axes[1] and axes[2] and axes[3],"a multipart bridge supports all aligned resize axes")
+ rope.CFrame=CFrame.new(0,1,0)*CFrame.Angles(0,math.pi/4,0)
+ axes=Placement.resizeAxes(model,{true,true,true})
+ check(not axes[1] and axes[2] and not axes[3],"angled children disable the axes that would introduce shear")
+ rope.CFrame=CFrame.new(0,1,0)*CFrame.Angles(0,math.pi,0)
+ local resize={id="bridge",scale=1,resizeAxes={true,true,true},stretch={1.5,2,2},position=Vector3.new(6,3,12),rotation=Vector3.new(0,90,0)}
+ for i=1,4 do Placement.pose(model,1,resize)end
+ local bounds,size=require("AssetGeometry").measure(model)
+ check((size-Vector3.new(30,8,80)).Magnitude<1e-5 and (boards.Size-Vector3.new(24,4,80)).Magnitude<1e-5,"multipart mesh sizes and bounds resize without drift")
+ check(math.abs(rope.CFrame.Position.Y-boards.CFrame.Position.Y-4)<1e-5 and math.abs(bounds.Position.Y-7)<1e-5,"child origins stretch along with meshes and preserve grounding")
+ local faces,bases={},{}
+ for _,range in {{-.5,-.25},{-.25,0},{.05,.25},{.25,.5}} do
+  local a,b=range[1],range[2]
+  table.insert(faces,{{-.4,0,a},{-.4,0,b},{.4,0,a}})
+  table.insert(faces,{{.4,0,a},{-.4,0,b},{.4,0,b}})
+  table.insert(bases,-.2);table.insert(bases,-.2)
+ end
+ resize.interaction={fit="faces",faces=faces,bases=bases,sourceSize={20,4,40},fractions=Vector3.new(1,1,1),solid=true,destructible=false,hp=100}
+ local objects=require("WorldObjects").new()
+ local bridge=objects:add(model,resize)
+ check(#bridge.bodies==8 and math.abs(objects:support(-20,12,20)-7)<1e-5,"four resized collision slabs supply support after the world rotation")
+ check(objects:support(8,12,20)==nil and objects:support(-20,26,20)==nil,"the resized deck gap and rope border stay clear")
+ resize.stretch=nil;Placement.pose(model,1,resize)
+ check((boards.Size-Vector3.new(16,2,40)).Magnitude<1e-5,"reset restores original multipart geometry")
+ local item={id="asset.bridge",model="Forest/Rope bridge",available=true,resizeAxes={true,true,true},
+  collider={fit="faces",faces=faces,bases=bases,sourceSize={20,4,40},widthFraction=1,heightFraction=1,depthFraction=1}}
+ local folder={Name="Forest",GetChildren=function()return {model}end}
+ local assets={GetChildren=function()return {folder}end}
+ local doc=require("WorldEditorDocument").editorFresh()
+ doc.objects={{id="bridge",type=item.id,asset=item.model,bounds={1,1,1},position={6,3,12},rotation={0,90,0},scale=1,stretch={1.5,2,2},solid=true,destructible=false,hp=100}}
+ local validate=require("PlayerWorldDocument").validate
+ local saved,specs=validate(doc,{item},assets)
+ check(math.abs(saved.objects[1].bounds[3]-40)<1e-5 and specs[1].stretch[3]==2 and specs[1].interaction.faces==faces,"server rederives native bounds and carries resized collision from its own catalog")
+ item.resizeAxes={true,false,true}
+ check(not pcall(validate,saved,{item},assets),"server rejects a saved or client-supplied stretch on a disabled axis")
+end
 CFrame.new=saveNew; CFrame.Angles=saveAngles; CFrame.lookAt=saveLookAt
 print(string.format("Studio native-model placement suite passed: %d assertions",count))

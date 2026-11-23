@@ -1,0 +1,16 @@
+The GLB importer now uses Roblox asset IDs by default, so the automated
+workflow no longer depends on the Asset Delivery permission that returned 403.
+
+For a new asset, run:
+
+node tools/import-glb.js Forest/my_asset /path/to/my_asset.glb
+
+It accepts embedded COLLISION_ meshes or a separate file via --collision. It
+uploads the visual model, verifies its creator, and rebuilds the catalog.
+After Rojo sync and a Play restart, the server loads the model by ID, strips
+scripts and other non-visual instances, and checks its bounds against the
+collision profile before making it available in the World Editor. Import guide
+(docs/ASSET_PERSISTENCE.md)
+
+
+

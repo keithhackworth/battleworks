@@ -3,6 +3,9 @@
 local T={GravityScale=.40,MaxSupportAngle=55}
 T.MinSupportNormal=math.cos(math.rad(T.MaxSupportAngle))
 T.MaxGradient=math.tan(math.rad(T.MaxSupportAngle))
+function T.waterBlocked(depth,chassis)
+ return depth>chassis.Hitbox.Y*.5+1e-6
+end
 local function blend(a,b,t) return a+(b-a)*t end
 function T.contact(pitch,roll,tracked,static,kinetic)
  if (pitch or 0)==0 and (roll or 0)==0 then return 0,0,static,kinetic,1 end

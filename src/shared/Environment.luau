@@ -86,7 +86,7 @@ function Environment.sample(data,x,z,maxHeight)
   local paint,water=Heightfield.surface(settings.terrain,settings.width,settings.depth,x,z)
   if paint then kind=paint;painted=Materials.fromMaterial(paint) end
   if water and water>height+.01 and (not maxHeight or maxHeight>=height) then
-   kind="Water";speed=.9;painted=Materials.fromMaterial(paint or settings.ground.material,true)
+   kind="Water";speed=.9;painted=Materials.fromMaterial("Mud")
   end
  end
 	for _,zone in data.zones do

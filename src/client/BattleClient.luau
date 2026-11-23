@@ -243,6 +243,9 @@ end)
 function self:setActive(enabled)
  if active==enabled then return end
  active=enabled
+ if enabled and options.worldPlaytest then
+  menuButton.Text=if options.worldPlaytest() then "Back to Editor" else "Main Menu"
+ end
  if royale then controller:setTankPromptsSuppressed(enabled and driving) end
  gui.Enabled=enabled and driving; ide.gui.Enabled=enabled and driving
  battlefieldCamera.gui.Enabled=enabled and driving

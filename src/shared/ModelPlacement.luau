@@ -3,6 +3,76 @@ local Paths=require(game.ReplicatedStorage.Shared.AssetPaths)
 local Visual=require(game.ReplicatedStorage.Shared.AssetGeometry)
 local Placement={}
 local nativeSizes=setmetatable({},{__mode="k"})
+local resizeBases=setmetatable({},{__mode="k"})
+local function dot(a,b)return a.X*b.X+a.Y*b.Y+a.Z*b.Z end
+local function localVector(pivot,v)
+ return Vector3.new(dot(pivot.RightVector,v),dot(pivot.UpVector,v),-dot(pivot.LookVector,v))
+end
+local function components(v)return {v.X,v.Y,v.Z}end
+local function stretched(v,f)return Vector3.new(v.X*f[1],v.Y*f[2],v.Z*f[3])end
+local function resizedSize(size,right,up,back,f,scale)
+ local result=Vector3.new(size.X*stretched(right,f).Magnitude,size.Y*stretched(up,f).Magnitude,size.Z*stretched(back,f).Magnitude)*scale
+ for _,n in components(result) do assert(n>=.001 and n<=2048,"Resized mesh part exceeds engine size limits") end
+ return result
+end
+function Placement.checkResizeSize(model,scale,factors)
+ local pivot=model:GetPivot()
+ for _,part in model:GetDescendants() do
+  if part:IsA("BasePart") then
+   local frame=part.CFrame
+   resizedSize(part.Size,localVector(pivot,frame.RightVector),localVector(pivot,frame.UpVector),localVector(pivot,frame.LookVector),factors,scale)
+  end
+ end
+end
+function Placement.resizeAxes(model,requested)
+ if not requested then return nil end
+ local allowed=table.clone(requested)
+ local pivot=model:GetPivot()
+ local count=0
+ for _,part in model:GetDescendants() do
+  if part:IsA("BasePart") then
+   if not part:IsA("MeshPart") and not (part:IsA("Part") and part.Shape==Enum.PartType.Block) then return nil end
+   count+=1
+   for _,axis in {part.CFrame.RightVector,part.CFrame.UpVector,part.CFrame.LookVector} do
+    for i,alignment in components(localVector(pivot,axis)) do
+     -- Stretching along this axis must keep every child basis orthogonal.
+     if math.abs(alignment)>1e-5 and math.abs(alignment)<1-1e-5 then allowed[i]=false end
+    end
+   end
+  elseif part:IsA("DataModelMesh") or part:IsA("JointInstance") or part:IsA("Constraint") or part:IsA("Bone") then
+   return nil
+  end
+ end
+ return if count>0 and (allowed[1] or allowed[2] or allowed[3]) then allowed else nil
+end
+local function resizeModel(model,spec)
+ local pivot=model:GetPivot()
+ local base=resizeBases[model]
+ local stretch=spec.stretch or {1,1,1}
+ if not base then
+  base={axes=Placement.resizeAxes(model,spec.resizeAxes),parts={}}
+  assert(base.axes,"This native model cannot be resized without shear")
+  for _,part in model:GetDescendants() do
+   if part:IsA("BasePart") then
+    local frame=part.CFrame
+    table.insert(base.parts,{part=part,size=part.Size,position=localVector(pivot,frame.Position-pivot.Position),
+     right=localVector(pivot,frame.RightVector),up=localVector(pivot,frame.UpVector),back=localVector(pivot,frame.LookVector*-1)})
+   end
+  end
+  resizeBases[model]=base
+ end
+ for i,n in stretch do assert(n==1 or base.axes[i],"Resize is disabled on that local axis") end
+ local updates={}
+ for i,part in base.parts do
+  local p=stretched(part.position,stretch)*spec.scale
+  local size=resizedSize(part.size,part.right,part.up,part.back,stretch,spec.scale)
+  updates[i]={size=size,frame=pivot*CFrame.fromMatrix(p,part.right,part.up,part.back)}
+ end
+ for i,part in base.parts do
+  part.part.Size=updates[i].size
+  part.part.CFrame=updates[i].frame
+ end
+end
 function Placement.stretchPart(model)
  local selected
  for _,p in model:GetDescendants() do
@@ -22,13 +92,20 @@ function Placement.stretchPart(model)
  return selected
 end
 function Placement.pose(model,templateScale,spec)
- local p=if spec.stretch or nativeSizes[model] then Placement.stretchPart(model) else nil
- if spec.stretch then assert(p,"Stretch requires a single aligned native block asset") end
- if p and not nativeSizes[model] then nativeSizes[model]=p.Size/model:GetScale()*templateScale end
- model:ScaleTo(templateScale*spec.scale)
- if p then
-  local s=spec.stretch or {1,1,1};local size=nativeSizes[model]*spec.scale
-  p.Size=Vector3.new(size.X*s[1],size.Y*s[2],size.Z*s[3])
+ if resizeBases[model] or (spec.resizeAxes and spec.stretch) then
+  -- Cache the model's pose at its current uniform scale, then reconstruct
+  -- each preview from that baseline so repeated edits cannot compound.
+  if not resizeBases[model] then model:ScaleTo(templateScale) end
+  resizeModel(model,spec)
+ else
+  local p=if spec.stretch or nativeSizes[model] then Placement.stretchPart(model) else nil
+  if spec.stretch then assert(p,"Stretch requires a single aligned native block asset") end
+  if p and not nativeSizes[model] then nativeSizes[model]=p.Size/model:GetScale()*templateScale end
+  model:ScaleTo(templateScale*spec.scale)
+  if p then
+   local s=spec.stretch or {1,1,1};local size=nativeSizes[model]*spec.scale
+   p.Size=Vector3.new(size.X*s[1],size.Y*s[2],size.Z*s[3])
+  end
  end
  local r=spec.rotation
  model:PivotTo(CFrame.Angles(math.rad(r.X),math.rad(r.Y),math.rad(r.Z)))
@@ -53,7 +130,12 @@ function Placement.place(assets,spec,arena,destination,builtins)
   return nil,"Import "..(spec.source or spec.asset or spec.template).." as Model ServerStorage/BattleWorksAssets/"..spec.template.." in Edit mode. "..tostring(pathError or "")
  end
  local hasParts=false
- for _,part in template:GetDescendants() do if part:IsA("BasePart") then hasParts=true; break end end
+ for _,part in template:GetDescendants() do
+  if Visual.isCollisionNode(part.Name) then
+   return nil,"Imported Model '"..spec.template.."' contains '"..part.Name.."'. Import the visual-only GLB."
+  end
+  if part:IsA("BasePart") then hasParts=true end
+ end
  if not hasParts then return nil,"Imported Model '"..spec.template.."' has no mesh/part geometry." end
  local clone
  local ok,reason=pcall(function()

@@ -16,5 +16,10 @@
       "depthFraction": 1,
       "heightFraction": 1
     }
+  },
+  "be604b0dba92806f": {
+    "source": "GLBs/forest/rope_bridge.glb",
+    "model": "Forest/rope_bridge",
+    "displayName": "Rope Bridge"
   }
 }

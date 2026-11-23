@@ -24,6 +24,11 @@ async function fixture(t,extension='rbxm',xml=XML){
  }else await fs.copyFile(input,bundle);
  return {root,bundle};
 }
+test('native asset packaging rejects an accidentally imported collision node',async t=>{
+ const xml='<roblox version="4">'+model('Bridge','B',model('Boards','V')+model('collision_Deck','C'))+'</roblox>';
+ const {root}=await fixture(t,'rbxmx',xml);
+ await assert.rejects(catalogData(root),/contains 'collision_Deck'.*visual-only GLB/);
+});
 for(const extension of ['rbxm','rbxmx'])test(`${extension} Folder bundles expose independent hierarchical Models without altering native bytes`,async t=>{
  const {root,bundle}=await fixture(t,extension);const before=hash(await fs.readFile(bundle));
  const exports=await nativeExports(path.join(root,'assets/roblox'));

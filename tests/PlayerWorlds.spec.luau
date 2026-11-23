@@ -101,6 +101,7 @@ local destination=Service.new(options(false,true));destination:register(alice);d
 check(not destination:canEnter(alice) and not destination:canEnter(bob),"reserved battle denies admission until saved world validates")
 result=destination:request(alice,"Bootstrap")
 check(result.ok and result.launch and installed==1 and destination:canEnter(alice) and not destination:canEnter(bob),"destination reloads owner save and admits only its owner")
+check(result.document.id=="forest" and result.revision==2,"destination returns the played draft and revision for Back to Editor")
 time+=1
 check(not destination:request(alice,"Bootstrap").launch and installed==1,"duplicate bootstrap never reloads active geometry")
 destination:remove(alice)

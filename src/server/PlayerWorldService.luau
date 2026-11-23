@@ -60,7 +60,7 @@ function Service:request(player,action,payload)
    assert(self.isPresent(player),"Player left the experience")
    self.install(player,document,specs,settings)
    self.pending[owner]=nil;self.ready[owner]=true
-   return {launch=true}
+   return {launch=true,document=document,revision=entry.revision}
   end
   assert(not self.inBattle(player),"Return to the menu before playing a saved world")
   assert(type(payload)=="table","Missing saved world")

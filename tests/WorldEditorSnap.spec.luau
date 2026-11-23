@@ -3,6 +3,72 @@ local State=require("WorldEditorState")
 local Math=require("WorldEditorMath")
 local count=0
 local function check(ok,message)assert(ok,message);count+=1 end
+do
+ local rock={id="stacked",position={0,0,0},rotation={0,0,0},bounds={12,12,20},scale=1}
+ local profile={fit="faces",faces={}}
+ for _,y in {-.4,-.1,.15,.45} do
+  table.insert(profile.faces,{{-.5,y,-.5},{-.5,y,.5},{.5,y,-.5}})
+  table.insert(profile.faces,{{.5,y,-.5},{-.5,y,.5},{.5,y,.5}})
+ end
+ local sameSide={}
+ for _,edge in Snap.sourceOptions(rock,profile) do if edge.side=="A" then table.insert(sameSide,edge) end end
+ check(#sameSide==4,"four ledges on one collision side each have a selectable marker")
+ local function project(p)return Vector2.new(p.X*10,p.Y*10),20 end
+ local point=(sameSide[2].a+sameSide[2].b)/2
+ local picked,markers=Snap.screenEdges(sameSide,project,project(point),32)
+ check(#markers==4 and picked.edge==sameSide[2] and picked.fraction==.5,"the lower dot selects its own ledge even when upper ledges are present")
+ local line=Snap.screenEdges(sameSide,project,project(point+Vector3.new(3,0,0)),32)
+ check(line.edge==sameSide[2] and (line.point-point).Magnitude>2.9,"the line selects a point away from the midpoint on the same ledge")
+ local pin=Snap.pin("A",{point={point.X,point.Y,point.Z}},0,picked.edge.index,picked.fraction)
+ local target={point={5,8,27}}
+ local fitted=Snap.fit(rock,"B",target,pin,"Scale",profile)
+ local fixed=Snap.contact(fitted,"A",0,profile,pin.edgeIndex,pin.edgeFraction)
+ local moving=Snap.contact(fitted,"B",0,profile)
+ check((fixed-point).Magnitude<1e-5 and (moving-Vector3.new(table.unpack(target.point))).Magnitude<1e-5,"a fitted piece retains the selected lower source ledge")
+end
+do
+ local deck={id="deck",position={0,0,0},rotation={0,0,0},bounds={20,10,20},scale=1,stretch={1,1,2}}
+ local profile={fit="faces",faces={
+  {{-.25,-.3,-.5},{-.25,-.3,.5},{.25,-.3,-.5}},
+  {{.25,-.3,-.5},{-.25,-.3,.5},{.25,-.3,.5}},
+ }}
+ local geometry=Snap.collisionGeometry(deck,profile)
+ check(#geometry.edges==4,"coplanar triangle seams do not become snap lines")
+ local handles=Snap.ends(deck,0,profile)
+ check(handles.A.Z==-20 and handles.B.Z==20 and handles.C.X==-5 and handles.D.X==5,"all four handles sit on the collision perimeter")
+ for _,p in handles do check(math.abs(p.Y-2)<1e-5,"source handles sit at deck height below the render bounds") end
+ for _,mode in {"Scale","Stretch"} do
+  local pin=Snap.pin("A",{point={0,5,0},normal={0,1,0}})
+  local fitted=Snap.fit(deck,"B",{point={60,5,0}},pin,mode,profile)
+  local ends=Snap.ends(fitted,0,profile)
+  check((ends.A-Vector3.new(0,5,0)).Magnitude<1e-5 and (ends.B-Vector3.new(60,5,0)).Magnitude<1e-5,"fitting keeps both collision edges exactly on their targets")
+ end
+ local down=Vector3.new(0,-1,0)
+ local hit=Snap.collisionHit(geometry,Vector3.new(4.5,30,5),down,100)
+ check(hit and math.abs(hit.point.Y-2)<1e-5,"snap ray hits the low collision deck below the visual top")
+ local target=Snap.collisionTarget(deck,geometry,hit.point,Snap.Radius,hit.normal)
+ check(target.kind=="edge" and target.point[1]==5,"snap picks the deck boundary inside the visible bounding box")
+ check(Snap.collisionHit(geometry,Vector3.new(8,30,0),down,100)==nil,"ray misses decorative geometry outside the deck")
+ local center=Snap.collisionTarget(deck,geometry,Vector3.new(0,2,0),Snap.Radius,Vector3.new(0,1,0))
+ check(center.kind=="face","the triangulated deck center is a face rather than a diagonal edge")
+ deck.rotation[2]=90
+ geometry=Snap.collisionGeometry(deck,profile)
+ hit=Snap.collisionHit(geometry,Vector3.new(19,30,0),down,100)
+ check(hit and math.abs(hit.point.Y-2)<1e-5,"snap profile follows asset rotation and independent length resize")
+ local rock={id="rock",position={0,0,0},rotation={12,35,0},bounds={12,8,17},scale=1}
+ local rocky={fit="faces",faces={{{-.4,-.2,-.4},{-.2,.05,.4},{.4,.3,-.25}}}}
+ local rockyGeometry=Snap.collisionGeometry(rock,rocky)
+ local rockyEnds=Snap.ends(rock,0,rocky)
+ for _,p in rockyEnds do
+  local onEdge=false
+  for _,edge in rockyGeometry.edges do if (Snap.closest(edge.a,edge.b,p)-p).Magnitude<1e-5 then onEdge=true end end
+  check(onEdge,"uneven non-bridge geometry places each handle on a real collision edge")
+ end
+ local pin=Snap.pin("A",{point={0,4,0},normal={0,1,0}})
+ local fitted=Snap.fit(rock,"B",{point={12,7,15}},pin,"Scale",rocky)
+ local ends=Snap.ends(fitted,0,rocky)
+ check((ends.A-Vector3.new(0,4,0)).Magnitude<1e-5 and (ends.B-Vector3.new(12,7,15)).Magnitude<1e-5,"irregular collision handles fit both contacts even when the source heights differ")
+end
 local function v(a)return Vector3.new(table.unpack(a))end
 local function near(a,b,message)check((a-b).Magnitude<1e-5,message)end
 local function object(bounds,rotation)return {id="board",asset="Builtin/Board",type="board",bounds=bounds,position={5,8,-12},rotation=rotation,scale=1,solid=true,destructible=true,hp=100}end

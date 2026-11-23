@@ -20,6 +20,10 @@ function Controller.new(gui, onRelease)
   self.onRelease(Command.neutral())
  end)
  UIS.InputBegan:Connect(function(input,processed)
+  if input.KeyCode==Enum.KeyCode.Escape then
+   self:exitDirectMouse()
+   return
+  end
   if processed or input.KeyCode~=Enum.KeyCode[MouseAimView.Shortcut] then return end
   if gui.Enabled and self.mouseView.icon.Visible and not self.suspended and not UIS:GetFocusedTextBox() then
    local panelOpen=self.mouseView.panel.Visible
@@ -49,7 +53,12 @@ function Controller.new(gui, onRelease)
 	UIS.WindowFocused:Connect(function() self.focused = true; self:refreshSuspension() end)
 	UIS.TextBoxFocused:Connect(function() self:refreshSuspension() end)
 	UIS.TextBoxFocusReleased:Connect(function() task.defer(function() self:refreshSuspension() end) end)
-	GuiService.MenuOpened:Connect(function() self.menuOpen = true; self:refreshSuspension() end)
+	GuiService.MenuOpened:Connect(function()
+		-- Roblox can handle Escape itself before it reaches the game.
+		self:exitDirectMouse()
+		self.menuOpen = true
+		self:refreshSuspension()
+	end)
 	GuiService.MenuClosed:Connect(function() self.menuOpen = false; self:refreshSuspension() end)
 	local player = Players.LocalPlayer
 	self.playerGui = player:WaitForChild("PlayerGui")
@@ -102,6 +111,12 @@ function Controller:setPreference(preference)
 end
 function Controller:setMouseMode(mode)
  self:release();self.providers.KeyboardMouse:setMode(mode);self.mouseView:select(mode)
+end
+function Controller:exitDirectMouse()
+ local keyboard=self.providers.KeyboardMouse
+ if keyboard.locked and keyboard.mouseMode=="Mouse Direct" then
+  self:setMouseMode("Mouse Points")
+ end
 end
 function Controller:release()
 	for _, provider in self.providers do provider:reset() end

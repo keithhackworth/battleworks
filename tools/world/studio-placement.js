@@ -24,6 +24,10 @@ function interactionFor(influences = {}, binding) {
   return { solid, destructible, hp, collider };
 }
 const MaxPlacements = 512;
+function baseScale(sizes,binding){
+ const fixed=binding.stretchable? -1 : binding.resizeAxes?.indexOf(false);
+ return sizes[fixed>=0?fixed:1];
+}
 function placementIssue(manifest, bindings) {
   if ((!manifest.objects.length && !manifest.builderSettings) || manifest.objects.length > MaxPlacements) return `Imported worlds require 1–${MaxPlacements} model placements.`;
   const ids = new Set();
@@ -48,8 +52,9 @@ function itemIssue(item, bindings) {
   const s = Math.hypot(m[0], m[1], m[2]);
   const sizes=[s,Math.hypot(m[4],m[5],m[6]),Math.hypot(m[8],m[9],m[10])];
   if(sizes.some(n=>n<=0))return 'Imported-model placement requires positive scale.';
-  if(!binding.stretchable && sizes.some(n=>Math.abs(n-s)>s*1e-6))return 'Imported-model placement requires positive uniform scale.';
-  for (const [a, b] of [[0, 4], [0, 8], [4, 8]]) if (Math.abs((m[a] * m[b] + m[a + 1] * m[b + 1] + m[a + 2] * m[b + 2]) / s ** 2) > 1e-6) return 'Imported-model placement does not support sheared transforms.';
+  const uniform=baseScale(sizes,binding);
+  if(!binding.stretchable && sizes.some((n,i)=>!binding.resizeAxes?.[i]&&Math.abs(n-uniform)>uniform*1e-6))return binding.resizeAxes?'Resize is disabled on that local axis.':'Imported-model placement requires positive uniform scale.';
+  for (const [a, b] of [[0, 4], [0, 8], [4, 8]]) if (Math.abs((m[a] * m[b] + m[a + 1] * m[b + 1] + m[a + 2] * m[b + 2]) / (sizes[a/4]*sizes[b/4])) > 1e-6) return 'Imported-model placement does not support sheared transforms.';
   const det = m[0] * (m[5] * m[10] - m[9] * m[6]) - m[4] * (m[1] * m[10] - m[9] * m[2]) + m[8] * (m[1] * m[6] - m[5] * m[2]);
   if (det <= 0) return 'Imported-model placement does not support reflected transforms.';
   try {
@@ -61,15 +66,15 @@ function studioPlacement(manifest, bindings) {
   if (manifest.objects.length !== 1 || placementIssue(manifest, bindings)) return null;
   const item = manifest.objects[0], binding = resolveAsset(item.asset, bindings), m = item.transform;
   const sizes=[0,4,8].map(i=>Math.hypot(m[i],m[i+1],m[i+2]));
-  const s=sizes[1];
-  const stretch=sizes.map(n=>n/s);
+  const s=baseScale(sizes,binding);
+  const stretch=sizes.map(n=>Math.abs(n/s-1)<=1e-6?1:n/s);
   const normalized=m.map((n,i)=>i<12 && i%4<3?n/sizes[Math.floor(i/4)]:n);
   const y = Math.asin(Math.max(-1, Math.min(1, normalized[8]))), cosine = Math.cos(y);
   const x = Math.abs(cosine) > 1e-6 ? Math.atan2(-normalized[9], normalized[10]) : Math.atan2(normalized[6], normalized[5]);
   const z = Math.abs(cosine) > 1e-6 ? Math.atan2(-normalized[4], normalized[0]) : 0;
   // Equivalent Euler triples can contain 180-degree roll for upright yaw >90.
   const interaction = interactionFor(item.influences, binding);
-  const upright=Math.abs(m[1]/s)<1e-6 && Math.abs(m[9]/s)<1e-6 && m[5]/s>1-1e-6;
+  const upright=Math.abs(normalized[1])<1e-6 && Math.abs(normalized[9])<1e-6 && normalized[5]>1-1e-6;
   const rotation = upright ? [0, Math.atan2(normalized[8], normalized[0]) * 180 / Math.PI, 0] : [x, y, z].map(n => n * 180 / Math.PI);
   return { ...binding, id: item.id, assetId: binding.id, position: m.slice(12, 15), rotation, scale: s, ...(stretch.some(n=>Math.abs(n-1)>1e-6)?{stretch}:{}), interaction };
 }
