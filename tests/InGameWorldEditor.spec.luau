@@ -12,6 +12,13 @@ dirs,items=Document.tree(catalog,"Trees/")
 check(#dirs==0 and #items==1 and items[1].model=="Trees/Oak","leaf asset identity remains fully qualified")
 _,items=Document.tree(catalog,"","oak")
 check(#items==2 and items[1].id~=items[2].id,"search keeps duplicate basenames independently discoverable")
+local water={id="builtin.water",name="Shallow water (slowdown)",model="Builtin/BW_water",hidden=true}
+local legacyCatalog=Document.catalog({water,a})
+dirs,items=Document.tree(legacyCatalog,"Builtin/")
+check(#items==0,"legacy shallow water is hidden from the asset folder")
+dirs,items=Document.tree(legacyCatalog,"","shallow water")
+check(#items==0 and not Document.isPlaceable(water),"legacy shallow water is hidden from search and recent placement")
+check(legacyCatalog.byPath[water.model]==water and legacyCatalog.byType[water.id]==water,"saved water placements still resolve")
 local s=State.new(Document.fresh());s.snap=false
 local one=s:add(a,{10.25,0,-30.75});local two=s:add(b,{-30.1,0,-15.6})
 check(one~=two and s:find(one).asset=="Trees/Oak" and s:find(two).asset=="Decorations/Oak","each placement creates an independent instance with full asset identity")

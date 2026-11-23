@@ -207,6 +207,7 @@ local function fillPalette()
  table.sort(sorted,function(a,b)return a.category..a.name<b.category..b.name end)
  local previous
  for _,item in sorted do
+  if item.hidden then continue end
   if not (item.category.." "..item.name):lower():find(search.Text:lower(),1,true) then continue end
   if previous~=item.category then label(palette,item.category,23);previous=item.category end
   local available=item.spawnKind~=nil or preview:template(item)~=nil

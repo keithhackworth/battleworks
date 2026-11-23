@@ -87,6 +87,9 @@
         "PublishedWorld": {
           "$path": "worlds/published-world.model.json"
         },
+        "HiddenEditorAssets": {
+          "$path": "assets/hidden-editor-assets.model.json"
+        },
         "EditorAssetCatalog": {
           "$path": "assets/editor-catalog.model.json"
         },

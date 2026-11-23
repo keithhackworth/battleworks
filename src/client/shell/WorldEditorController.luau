@@ -343,7 +343,7 @@ function Controller:browse()
   dirs,items,prefix={},{},"Recent"
   for _,path in self.recentAssets do
    local item=self.catalog.byPath[path]
-   if item then table.insert(items,item) end
+   if Document.isPlaceable(item) then table.insert(items,item) end
   end
  else
   dirs,items=Document.tree(self.catalog,self.prefix,query);prefix=self.prefix

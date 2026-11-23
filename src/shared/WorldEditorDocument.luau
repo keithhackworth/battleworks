@@ -71,10 +71,15 @@ function Document.export(doc,catalog)
  for _,o in doc.objects do assert(not ids[o.id],"Duplicate object ID");ids[o.id]=true;Document.checkEntry(doc,catalog,o) end
  return State.copy(doc)
 end
+-- Hidden entries still resolve for existing worlds.
+function Document.isPlaceable(item)
+ return item~=nil and item.hidden~=true
+end
 function Document.tree(catalog,prefix,query)
  prefix=prefix or "";query=(query or ""):lower()
  local folders,assets={},{}
  for _,item in catalog.items do
+  if not Document.isPlaceable(item) then continue end
   local palettePath=item.palettePath or item.model
   if query~="" then
    if (palettePath.." "..item.model.." "..item.name):lower():find(query,1,true) then table.insert(assets,item) end

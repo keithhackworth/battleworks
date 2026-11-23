@@ -1,4 +1,5 @@
 -- Private saved-world UI. All network waits are cancellable from this screen.
+local State=require(game.ReplicatedStorage.Shared.WorldEditorState)
 local Library={};Library.__index=Library
 local function make(class,parent,props)
  local node=Instance.new(class);for k,v in props do node[k]=v end;node.Parent=parent;return node
@@ -7,7 +8,7 @@ local function button(parent,text,x,y,width)
  return make("TextButton",parent,{Text=text,Position=UDim2.fromOffset(x,y),Size=UDim2.fromOffset(width,32),BackgroundColor3=Color3.fromRGB(43,61,66),TextColor3=Color3.fromRGB(235,241,230),TextSize=14,Font=Enum.Font.GothamMedium,Selectable=false,BorderSizePixel=0})
 end
 function Library.new(parent,request,onLoad,onPlay)
- local self=setmetatable({request=request,onLoad=onLoad,onPlay=onPlay,revisions={},epoch=0},Library)
+ local self=setmetatable({request=request,onLoad=onLoad,onPlay=onPlay,revisions={},saved={},epoch=0},Library)
  self.frame=make("Frame",parent,{Name="MyWorlds",Position=UDim2.fromScale(.1,.12),Size=UDim2.fromScale(.8,.76),BackgroundColor3=Color3.fromRGB(17,28,33),Visible=false,Active=true,ZIndex=20})
  local title=make("TextLabel",self.frame,{Text="MY WORLDS  /  private saves",Position=UDim2.fromOffset(20,12),Size=UDim2.new(1,-40,0,32),BackgroundTransparency=1,TextColor3=Color3.fromRGB(244,178,78),TextSize=20,Font=Enum.Font.GothamBold,TextXAlignment=Enum.TextXAlignment.Left})
  local function field(name,y)
@@ -36,6 +37,7 @@ function Library:call(action,payload)
 end
 function Library:run(fn)
  if self.busy or not self.frame.Visible then return end
+ self:cancelDelete()
  self.busy=true;local epoch=self.epoch
  self.status.Text="Working…"
  task.spawn(function()
@@ -52,25 +54,56 @@ function Library:fetch(epoch)
  local result=self:call("List")
  if not self:current(epoch) then return end
  for _,node in self.list:GetChildren() do if node:IsA("GuiObject") then node:Destroy() end end
+ local listed={}
  for index,world in result.worlds do
-  local row=button(self.list,"Open  •  "..world.name.."  ["..world.id.."]",0,0,200)
-  row.Size=UDim2.new(1,-8,0,36);row.LayoutOrder=index
-  row.Activated:Connect(function()
+  listed[world.id]=world.revision
+  local row=make("Frame",self.list,{Size=UDim2.new(1,-8,0,36),LayoutOrder=index,BackgroundTransparency=1})
+  local open=button(row,"Open  •  "..world.name.."  ["..world.id.."]",0,0,200)
+  open.Size=UDim2.new(1,-126,1,0);open.TextTruncate=Enum.TextTruncate.AtEnd
+  local delete=button(row,"Delete",0,0,118)
+  delete.Position=UDim2.new(1,-118,0,0);delete.Size=UDim2.new(0,118,1,0)
+  delete.BackgroundColor3=Color3.fromRGB(110,48,48)
+  open.Activated:Connect(function()
    self:run(function(token)
     local saved=self:call("Load",world.id)
     if not self:current(token) then return end
     self.revisions[world.id]=saved.revision
     self.document=self.onLoad(saved.document)
+    self.saved[world.id]=State.copy(saved.document)
     self.copyMode=false
     self.name.Text=saved.document.name;self.id.Text=saved.document.id
     self.status.Text="Opened revision "..saved.revision..". Return to editing, or Save & Play."
    end)
   end)
+  delete.Activated:Connect(function()
+   if self.busy or not self.frame.Visible then return end
+   if self.confirmDelete~=delete then
+    self:cancelDelete()
+    self.confirmDelete=delete
+    delete.Text="Confirm Delete"
+    self.status.Text="Delete the saved world “"..world.name.."”? Select Confirm Delete to continue."
+    return
+   end
+   self:run(function(token)
+    self:call("Delete",{id=world.id,revision=self.revisions[world.id] or world.revision})
+    self.revisions[world.id]=nil;self.saved[world.id]=nil
+    if not self:current(token) then return end
+    row:Destroy()
+    self.status.Text="Deleted the save for “"..world.name.."”. The current editor draft is still open."
+   end)
+  end)
+ end
+ for id,revision in self.revisions do
+  if listed[id]~=revision then self.revisions[id]=nil;self.saved[id]=nil end
  end
  self.status.Text=(if result.temporary then "STUDIO: saves last only until you stop Play. " elseif result.storage=="Http" then "Saved privately to the BattleWorks world service. " else "Saved privately to your Roblox account. ").."Open a save before updating it. Opening replaces your draft. Change World ID for a separate save."
  if result.teamTest then self.status.Text="TEAM TEST • Your Studio saves. Open a world, then Save & Play to load it for everyone in this test session."..(if #result.worlds==0 then " No saves found for this account; check that you saved in local Studio using the same account." else "") end
 end
+function Library:cancelDelete()
+ if self.confirmDelete then self.confirmDelete.Text="Delete";self.confirmDelete=nil end
+end
 function Library:open(document,mode)
+ self:cancelDelete()
  self.epoch+=1;self.busy=false;self.document=document
  self.name.Text=document.name;self.id.Text=if mode=="copy" then "" else document.id;self.frame.Visible=true
  self.copyMode=mode=="copy"
@@ -81,25 +114,33 @@ end
 function Library:saveWorld(play)
  self:run(function(epoch)
   -- Serialize a copy before yielding; edits made later cannot alter this save.
-  local copy=require(game.ReplicatedStorage.Shared.WorldEditorState).copy(self.document)
+  local copy=State.copy(self.document)
   if play then require(game.ReplicatedStorage.Shared.WorldSettings).ready(copy) end
   copy.id=self.id.Text;copy.name=self.name.Text
   if self.copyMode then assert(copy.id~="" and copy.id~=self.document.id,"Enter a different World ID to save a copy.") end
-  local saved=self:call("Save",{document=copy,revision=if self.copyMode then 0 else self.revisions[copy.id] or 0})
-  if not self:current(epoch) then return end
-  self.revisions[copy.id]=saved.revision
+  local revision=if self.copyMode then 0 else self.revisions[copy.id] or 0
+  local unchanged=revision>0 and State.equal(copy,self.saved[copy.id])
+  if unchanged then
+   self.status.Text="No changes • revision "..revision
+  else
+   local saved=self:call("Save",{document=copy,revision=revision})
+   if not self:current(epoch) then return end
+   revision=saved.revision
+   self.revisions[copy.id]=revision
+   self.saved[copy.id]=copy
+   self.status.Text=(if saved.temporary then "STUDIO SESSION ONLY • " elseif saved.storage=="Http" then "Saved to world service • " else "Saved to your account • ").."revision "..revision
+  end
   self.copyMode=false
   self.document.id=copy.id;self.document.name=copy.name
-  self.status.Text=(if saved.temporary then "STUDIO SESSION ONLY • " elseif saved.storage=="Http" then "Saved to world service • " else "Saved to your account • ").."revision "..saved.revision
   if play then
    self.status.Text..=" • launching your world…"
-   local result=self:call("Play",{id=copy.id,revision=saved.revision})
+   local result=self:call("Play",{id=copy.id,revision=revision})
    if not self:current(epoch) then return end
    if result.launch then self:hide();self.onPlay()
-   elseif result.teleporting then self.status.Text="Saved. Traveling to your private battlefield… If travel fails, your draft and save remain available here." end
+   elseif result.teleporting then self.status.Text="Traveling to your private battlefield… If travel fails, your draft and save remain available here." end
   end
  end)
 end
-function Library:hide() self.frame.Visible=false;self.epoch+=1;self.busy=false end
+function Library:hide() self:cancelDelete();self.frame.Visible=false;self.epoch+=1;self.busy=false end
 function Library:destroy() self:hide();self.frame:Destroy() end
 return Library

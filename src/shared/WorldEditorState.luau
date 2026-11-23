@@ -15,6 +15,7 @@ State.copy=copy
 function State.new(document)
  return setmetatable({document=copy(document),saved=copy(document),selection={},pins={},past={},future={},grid=1,snap=true,limit=100},State)
 end
+State.equal=equal
 function State:dirty() return not equal(self.document,self.saved) end
 function State:markSaved(document) self.document=copy(document or self.document); self.saved=copy(self.document) end
 function State:snapshot() return {document=copy(self.document),selection=copy(self.selection),pins=copy(self.pins)} end

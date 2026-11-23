@@ -55,6 +55,11 @@ response={StatusCode=200,Success=true,Body="malformed"};check(not pcall(store.li
 reply(200,{ok=true,document=doc,revision=9});check(not pcall(store.save,store,101,doc,2),"wrong acknowledged revision rejected")
 local another=State.copy(doc);another.id="someone_else"
 reply(200,{ok=true,document=another,revision=3});check(not pcall(store.load,store,101,"forest"),"mismatched response identity rejected")
+reply(200,{ok=true,deleted=true})
+check(store:delete(101,"forest",3).deleted,"delete requires a confirmed acknowledgment")
+check(calls[#calls].Method=="DELETE" and calls[#calls].Url==savedPath.."?revision=3","delete is scoped to owner, ID and revision")
+reply(409,{ok=false,message="World changed elsewhere"})
+check(not pcall(store.delete,store,101,"forest",2),"delete rejects stale revisions")
 local before=#calls
 check(not pcall(store.load,store,101,"../forest") and not pcall(store.list,store,0),"path traversal and invalid owner rejected before HTTP")
 check(#calls==before,"invalid identities never reach the service")

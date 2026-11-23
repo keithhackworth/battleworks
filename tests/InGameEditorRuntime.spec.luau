@@ -49,6 +49,7 @@ local missing=State.copy(a);missing.id="asset.absent";missing.model="Trees/Missi
 local published,lastExport,importedDocument
 local http={JSONDecode=function(_,raw)
  if raw=="source-index" then return {version=1,paths={["Trees/Oak"]="assets/Trees/Oak"}} end
+ if raw=="hidden_assets" then return {"Trees/Missing"} end
  if raw=="backup_json" then return State.copy(importedDocument) end
  if raw=="malformed_json" then error("Invalid JSON") end
  return State.copy(if raw=="catalog" then published else {a,missing})
@@ -59,10 +60,14 @@ end,GenerateGUID=function()return "11111111-1111-1111-1111-111111111111" end}
 local replicated=Instance.new("Folder")
 local indexService=game.GetService
 game.GetService=function(self,name)if name=="HttpService" then return http end;return indexService(self,name)end
-local library=require("EditorAssetCatalog").publish(storage,replicated,{Value="source"},http)
+local config=node("Folder","BattleWorksStudio",storage)
+local metadata=node("StringValue","EditorAssetCatalog",config);metadata.Value="source"
+local hidden=node("StringValue","HiddenEditorAssets",config);hidden.Value="hidden_assets"
+local library=require("EditorAssetCatalog").publish(storage,replicated,metadata,http)
 game.GetService=indexService
 check(library.Parent==replicated and library:GetAttribute("Ready"),"catalog published once as a replicated library")
 check(published[1].available and not published[2].available and published[1].size[2]==12,"only actual native templates are available; dimensions measured from source")
+check(published[2].hidden and not published[1].hidden,"server publishes configured visibility alongside existing catalog entries")
 check(oak.Parent==trees and trees.Parent==bundle,"bundle geometry stays in its original source hierarchy while templates are published")
 local template=library:FindFirstChild("Templates"):FindFirstChild("Trees"):FindFirstChild("Oak")
 check(template and not template:FindFirstChild("MustNotExecute") and not template:FindFirstChild("Trunk").CanCollide and not template:FindFirstChild("Trunk").CanQuery,"published templates strip executable content and all physical participation")
@@ -355,6 +360,7 @@ controller.library.request=function(action,payload)
   return {ok=true,temporary=true,document=State.copy(savedEntry.document),revision=savedEntry.revision}
  end
  if action=="Load" then return {ok=true,document=State.copy(savedEntry.document),revision=savedEntry.revision} end
+ if action=="Delete" then assert(payload.revision==savedEntry.revision);savedEntry=nil;return {ok=true,deleted=true} end
  if action=="Play" then return {ok=true,launch=true} end
  error("Unexpected world action")
 end
@@ -365,7 +371,7 @@ controller.library.save.Activated:Fire()
 check(savedEntry and savedEntry.document.objects[1].asset=="Trees/Oak" and controller.state.document.id=="my_oaks","save UI sends actual document with hierarchical paths and updates metadata only after success")
 controller.library.refresh.Activated:Fire()
 local row
-for _,node in controller.library.list:GetChildren()do if node:IsA("TextButton")then row=node end end
+for _,node in controller.library.list:GetChildren()do if node:IsA("Frame")then row=node:GetChildren()[1] end end
 controller.state.document.objects={};row.Activated:Fire()
 check(#controller.state.document.objects==countBefore and controller.library.document==controller.state.document,"open UI restores a saved world and replaces its history/state")
 local beforeBlocked=#calls
@@ -376,13 +382,27 @@ controller.state.document.spawns={}
 for i,p in {{-60,0,-60},{0,0,-60},{60,0,-60},{-60,0,60},{60,0,60}} do table.insert(controller.state.document.spawns,{id="start_"..i,slot=i,position=p,heading=0})end
 controller.library.play.Activated:Fire()
 check(joinCount==1 and not controller.library.frame.Visible and calls[#calls].action=="Play","Save & Play requests admission only after server launch acknowledgment")
+controller.library:open(controller.state.document)
+local playCalls=#calls
+controller.library.play.Activated:Fire()
+check(joinCount==2 and #calls==playCalls+1 and calls[#calls].action=="Play" and calls[#calls].payload.revision==savedEntry.revision,"unchanged Save & Play launches the existing revision without saving")
+controller.library:open(controller.state.document)
+local deleteButton
+for _,node in controller.library.list:GetChildren() do
+ if node:IsA("Frame") then for _,button in node:GetChildren() do if button.Text=="Delete" then deleteButton=button end end end
+end
+local deleteCalls=#calls
+deleteButton.Activated:Fire()
+check(#calls==deleteCalls and deleteButton.Text=="Confirm Delete","delete requires explicit confirmation")
+deleteButton.Activated:Fire()
+check(calls[#calls].action=="Delete" and not savedEntry and #controller.state.document.objects==countBefore,"delete removes the saved entry and preserves the editor draft")
 -- A late save acknowledgment after leaving cannot trigger Play or overwrite metadata.
 task.spawn=function(fn)table.insert(tasks,fn)end
 controller.library:open(controller.state.document);table.remove(tasks,1)()
 controller.library.id.Text="cancelled_world"
 controller.library.play.Activated:Fire();controller:exit();local beforeCalls=#calls
 table.remove(tasks,1)()
-check(joinCount==1 and #calls==beforeCalls+1 and calls[#calls].action=="Save" and controller.state.document.id=="my_oaks","leaving while a save waits never launches a battle or applies a stale UI result")
+check(joinCount==2 and #calls==beforeCalls+1 and calls[#calls].action=="Save" and controller.state.document.id=="my_oaks","leaving while a save waits never launches a battle or applies a stale UI result")
 task.spawn=savedSpawn;controller:enter()
 controller.library.request=function()return {ok=false,message="Storage unavailable"}end
 controller.library:open(controller.state.document)

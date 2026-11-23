@@ -65,7 +65,10 @@ async function catalogData(root) {
  }
  return {items:[...builtin.map(i=>({...i,packaged:true})),...imported],index:{version:1,paths},exports,collisionReport};
 }
-async function catalog(root){return (await catalogData(root)).items;}
+async function catalog(root){
+ const hidden=new Set(await require('./hidden-assets').readHiddenAssets(root));
+ return (await catalogData(root)).items.map(item=>hidden.has(item.model)?{...item,hidden:true}:item);
+}
 function bindingsFor(items) {return Object.fromEntries(items.map(i=>[i.id,{source:i.source,model:i.model,stretchable:!!i.stretchable,...(i.resizeAxes?{resizeAxes:i.resizeAxes}:{}),...(i.collider?{collider:i.collider}:{})}]));}
 async function generateBuiltins(root) {
  const folder={ClassName:'Folder',Children:builtinCatalog().map(i=>({Name:i.model.split('/').at(-1),ClassName:'Model',Children:[{Name:'Geometry',ClassName:'Part',Properties:{Size:i.size,Position:[0,i.size[1]/2,0],Shape:i.shape,Material:i.material,Color:i.color.map(v=>v/255),Anchored:true,CanCollide:false,CanQuery:false,CanTouch:false}}]}))};

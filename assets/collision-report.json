@@ -27,14 +27,6 @@
       "explicitCollision": true
     },
     {
-      "asset": "Forest/bridge",
-      "packaged": true,
-      "source": "GLBs/forest/bridge.glb",
-      "fit": "faces",
-      "faces": 132,
-      "walls": 120
-    },
-    {
       "asset": "Forest/building-platform",
       "packaged": true,
       "source": "GLBs/forest/building-platform.glb",
@@ -501,8 +493,8 @@
     }
   ],
   "summary": {
-    "processed": 62,
-    "faces": 61,
+    "processed": 61,
+    "faces": 60,
     "sampled": 1,
     "unavailable": 1
   }

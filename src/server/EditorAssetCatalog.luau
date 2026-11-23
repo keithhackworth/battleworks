@@ -60,12 +60,18 @@ function Catalog.loadCloudModel(source,item)
 end
 function Catalog.publish(storage,replicated,metadata,http)
  local entries=require(game.ReplicatedStorage.Shared.CatalogData).decode(metadata,http)
+ local hidden={}
+ local visibility=metadata.Parent and metadata.Parent:FindFirstChild("HiddenEditorAssets")
+ if visibility and visibility:IsA("StringValue") then
+  for _,assetPath in http:JSONDecode(visibility.Value) do hidden[assetPath]=true end
+ end
  local root=Instance.new("Folder"); root.Name="BattleWorksEditorAssets"
  local templates=Instance.new("Folder"); templates.Name="Templates"; templates.Parent=root
  local source=storage:FindFirstChild("BattleWorksAssets")
  for _,item in entries do
   local model=Paths.resolve(source,item.model)
   item.available=false
+  if hidden[item.model] then item.hidden=true end
   if not model and item.cloudModel then
    local ok,result=pcall(Catalog.loadCloudModel,source,item)
    if ok then model=result else

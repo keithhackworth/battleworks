@@ -31,7 +31,7 @@ function Service:validate(document)
 end
 function Service:request(player,action,payload)
  local owner=player.UserId
- local allowed={List=true,Load=true,Save=true,Play=true,Bootstrap=true}
+ local allowed={List=true,Load=true,Save=true,Delete=true,Play=true,Bootstrap=true}
  if type(action)~="string" or not allowed[action] then return {ok=false,message="Unknown world action"} end
  local state=self.requests[owner] or {last={}};self.requests[owner]=state
  if state.busy or os.clock()-(state.last[action] or -math.huge)<.8 then return {ok=false,message="Please wait a moment and try again."} end
@@ -49,6 +49,10 @@ function Service:request(player,action,payload)
    assert(type(payload)=="table","Missing world")
    local document=self:validate(payload.document)
    return self.store:save(owner,document,payload.revision)
+  end
+  if action=="Delete" then
+   assert(type(payload)=="table","Missing saved world")
+   return self.store:delete(owner,payload.id,payload.revision)
   end
   if action=="Bootstrap" then
    local launch=self.pending[owner]

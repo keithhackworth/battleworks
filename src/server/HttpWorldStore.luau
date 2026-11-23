@@ -91,6 +91,14 @@ function Store:save(owner,document,expected)
  self.pending[path]=nil
  return {document=result.document,revision=result.revision}
 end
+function Store:delete(owner,id,expected)
+ local path=ownerPath(owner).."/"..validId(id)
+ assert(type(expected)=="number" and expected%1==0 and expected>0 and expected<=1000000000,"Invalid delete revision")
+ local result=self:request("DELETE",path.."?revision="..string.format("%.0f",expected))
+ if result.deleted~=true then self:failure("response_contract","Delete","Response did not confirm deletion","World deletion is not confirmed") end
+ self.pending[path]=nil
+ return {deleted=true}
+end
 function Store:forget(owner)
  local prefix=ownerPath(owner).."/"
  for path in self.pending do if path:sub(1,#prefix)==prefix then self.pending[path]=nil end end

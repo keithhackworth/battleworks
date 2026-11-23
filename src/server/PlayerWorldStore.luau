@@ -36,5 +36,18 @@ function Store:save(owner,document,expected)
  if self.temporary then self.memory[owner]=update(self.memory[owner]) else self.dataStore:UpdateAsync("player:"..owner,update) end
  return entry
 end
+function Store:delete(owner,id,expected)
+ assert(validId(id) and type(expected)=="number" and expected%1==0 and expected>0,"Invalid saved world or revision")
+ local function update(profile)
+  local old=profile and profile.worlds[id]
+  assert(old,"Saved world not found")
+  assert(old.revision==expected,"World changed elsewhere. Refresh the saves before deleting.")
+  local worlds=table.clone(profile.worlds)
+  worlds[id]=nil
+  return {worlds=worlds}
+ end
+ if self.temporary then self.memory[owner]=update(self.memory[owner]) else self.dataStore:UpdateAsync("player:"..owner,update) end
+ return {deleted=true}
+end
 function Store:forget(owner) if self.temporary then self.memory[owner]=nil end end
 return Store

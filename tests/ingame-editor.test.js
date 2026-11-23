@@ -4,16 +4,18 @@ const assert=require('node:assert/strict');
 const fs=require('node:fs/promises');
 const path=require('node:path');
 const os=require('node:os');
-const {catalog}=require('../tools/world-builder/catalog');
+const {catalog,catalogData}=require('../tools/world-builder/catalog');
 const {buildEditorCatalog}=require('../tools/build-editor-catalog');
 const {fresh,compileDocument}=require('../tools/world-builder/document');
 const ROOT=path.resolve(__dirname,'..');
 test('packaged in-game catalog is generated from the existing asset catalog',async()=>{
  const metadata=JSON.parse(await fs.readFile(path.join(ROOT,'assets/editor-catalog.model.json'),'utf8'));
  assert.equal(metadata.ClassName,'StringValue');
- assert.deepEqual(require('../tools/catalog-chunks').decodeCatalogModel(metadata),await catalog(ROOT));
+ assert.deepEqual(require('../tools/catalog-chunks').decodeCatalogModel(metadata),(await catalogData(ROOT)).items);
+ assert.equal((await catalog(ROOT)).find(item=>item.model==="Builtin/BW_water").hidden,true);
  const project=JSON.parse(await fs.readFile(path.join(ROOT,'default.project.json'),'utf8'));
  assert.equal(project.tree.ServerStorage.BattleWorksStudio.EditorAssetCatalog.$path,'assets/editor-catalog.model.json');
+ assert.equal(project.tree.ServerStorage.BattleWorksStudio.HiddenEditorAssets.$path,'assets/hidden-editor-assets.model.json');
 });
 test('catalog packaging retains hierarchical identities and existing influence defaults',async t=>{
  const root=await fs.mkdtemp(path.join(os.tmpdir(),'bw-ingame-catalog-'));

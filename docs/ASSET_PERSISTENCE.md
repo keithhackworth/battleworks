@@ -26,6 +26,18 @@ When the command reports **Registered**, sync Rojo and restart Play. The report 
 
 Native exports remain supported. If you save an RBXM directly in the repository, rebuild the catalog with `node tools/build-editor-catalog.js`. If live sync cannot apply the native mesh references, open a fresh Rojo build.
 
+## Hide an asset from the object picker
+
+```sh
+node tools/delete-asset.js /Forest/Bridge
+node tools/delete-asset.js /Forest/Bridge --apply
+node tools/delete-asset.js "/Builtin/Shallow water" --apply
+```
+
+The command lists and counts repository worlds that reference the asset by world ID. It accepts built-in and imported assets, and allows case differences when the path is unambiguous. Use `--apply` to hide the asset. If any repository worlds use it, type `y` to confirm or press Enter to cancel.
+
+Hiding preserves all asset files, collision data, and saved placements. Hosted worlds are outside the count and their placements are preserved too. Sync Rojo and restart Play to refresh the in-game picker. To make an asset visible again, remove its canonical path from the JSON list in the `Value` field of `assets/hidden-editor-assets.model.json`.
+
 ## Why the imports disappeared
 
 Previously `ServerStorage/BattleWorksAssets` was only an empty Folder declaration in `default.project.json`. It had no filesystem `$path`. `$ignoreUnknownInstances=true` protected unknown Studio children during live synchronization; it did **not** export their data. `rojo build` reconstructs a place from project/files, not from a previously generated `.rbxl` or the open Studio session. Opening a fresh generated place therefore lost Studio-only imports. Additionally, the global `*.rbxm`/`*.rbxmx` ignore rules prevented source exports from being tracked.
