@@ -66,9 +66,19 @@ function F.solve(boxes,position,yaw,shape)
  end
  local contacts={};local weight,sx,sz,sy,sxx,szz,sxz,sxy,szy=0,0,0,0,0,0,0,0,0
  local material,bestArea=nil,0
+ local platforms,staticArea=nil,0
  for _,candidate in candidates do
   -- Distant lower decks cannot prop up a chassis above a cliff or upper level.
   if candidate.height>=highest-Geometry.MaxStep-.001 then
+   if candidate.height>=highest-.05 then
+    local support=candidate.box.platform
+    if support then
+     platforms=platforms or {}
+     platforms[support]=(platforms[support] or 0)+candidate.area
+    else
+     staticArea+=candidate.area
+    end
+   end
    local profile=candidate.box.material
    if profile and (candidate.area>bestArea or (candidate.area==bestArea and material and profile.surfaceType<material.surfaceType)) then
     material=profile;bestArea=candidate.area
@@ -94,6 +104,14 @@ function F.solve(boxes,position,yaw,shape)
  roll=math.clamp(roll,-maxGradient,maxGradient);pitch=math.clamp(pitch,-maxGradient,maxGradient)
  local height=-math.huge
  for _,p in contacts do height=math.max(height,p.y-roll*p.x-pitch*p.z)end
- return height,math.atan(pitch),math.atan(roll),material
+ local platform,area=nil,staticArea
+ if platforms then
+  for support,coverage in platforms do
+   if coverage>area or (coverage==area and platform and support.id<platform.id) then
+    platform,area=support,coverage
+   end
+  end
+ end
+ return height,math.atan(pitch),math.atan(roll),material,platform
 end
 return F

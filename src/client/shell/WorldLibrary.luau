@@ -107,7 +107,17 @@ function Library:open(document,mode)
  self.epoch+=1;self.busy=false;self.document=document
  self.name.Text=document.name;self.id.Text=if mode=="copy" then "" else document.id;self.frame.Visible=true
  self.copyMode=mode=="copy"
- if mode=="save" then self:saveWorld(false)
+ if mode=="playground" then
+  self:run(function(epoch)
+   local saved=self:call("Playground")
+   if not self:current(epoch) then return end
+   self.document=self.onLoad(saved.document)
+   self.revisions[saved.document.id]=saved.revision
+   self.saved[saved.document.id]=State.copy(saved.document)
+   self.name.Text=saved.document.name;self.id.Text=saved.document.id
+   self:hide()
+  end)
+ elseif mode=="save" then self:saveWorld(false)
  elseif self.copyMode then self.status.Text="Enter a new World ID and select Save."
  else self:run(function(epoch) self:fetch(epoch) end) end
 end

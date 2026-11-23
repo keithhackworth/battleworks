@@ -34,7 +34,7 @@ function Adapter.validate(raw,items,assets)
  local catalog=Document.catalog(items)
  local specs={}
  for _,object in raw.objects do
-  keys(object,{id=true,type=true,asset=true,position=true,rotation=true,scale=true,stretch=true,solid=true,destructible=true,hp=true,bounds=true})
+  keys(object,{id=true,type=true,asset=true,position=true,rotation=true,scale=true,stretch=true,solid=true,destructible=true,hp=true,bounds=true,motion=true,regenerates=true,regenerationDelay=true})
   array(object.position,3);array(object.rotation,3)
   local item=catalog.byPath[object.asset]
   assert(item and item.id==object.type and item.available,"Asset is not available in this experience")
@@ -52,10 +52,10 @@ function Adapter.validate(raw,items,assets)
   Document.checkEntry(raw,catalog,object)
   if object.stretch and item.resizeAxes then Placement.checkResizeSize(model,object.scale,object.stretch) end
   local spec={id=object.id,asset=item.model,source=item.source,template=item.model,
-   position=Vector3.new(table.unpack(object.position)),rotation=Vector3.new(table.unpack(object.rotation)),scale=object.scale,stretch=object.stretch,resizeAxes=item.resizeAxes}
+   position=Vector3.new(table.unpack(object.position)),rotation=Vector3.new(table.unpack(object.rotation)),scale=object.scale,stretch=object.stretch,resizeAxes=item.resizeAxes,motion=object.motion}
   if item.collider then
    local c=item.collider
-   spec.interaction={solid=object.solid,destructible=object.destructible,hp=object.hp,fractions=Vector3.new(c.widthFraction,c.heightFraction,c.depthFraction),fit=c.fit,boxes=c.boxes,faces=c.faces,bases=c.bases,walls=c.walls,sourceSize=c.sourceSize}
+   spec.interaction={solid=object.solid,destructible=object.destructible,hp=object.hp,regenerates=object.regenerates,regenerationDelay=object.regenerationDelay,fractions=Vector3.new(c.widthFraction,c.heightFraction,c.depthFraction),fit=c.fit,boxes=c.boxes,faces=c.faces,bases=c.bases,walls=c.walls,sourceSize=c.sourceSize}
   end
   table.insert(specs,spec)
   if item.zone then table.insert(settings.zones,{kind=item.zone,x=object.position[1],z=object.position[3],rx=size.X*object.scale/2,rz=size.Z*object.scale/2,speed=if item.zone=="Water" then .9 else .75}) end

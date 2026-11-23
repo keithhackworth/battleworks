@@ -50,3 +50,25 @@ check(slope.position.Y>5 and slope.position.Z< -55,"tank climbs the overlook slo
 local classic=Env.create(size)
 check(Env.sample(classic,0,30)==0 and not classic.playground,"Classic retains original ground and environment")
 print(string.format("Playground terrain/support passed: %d assertions",count))
+
+do
+ local Starter=require("PlaygroundWorld")
+ local Document=require("WorldEditorDocument")
+ local Settings=require("WorldSettings")
+ local State=require("WorldEditorState")
+ local first=Starter.new()
+ local catalog={}
+ local byId={}
+ for _,object in first.objects do
+  if not byId[object.type] then
+   byId[object.type]=true
+   table.insert(catalog,{id=object.type,model=object.asset,stretchable=true,collider={widthFraction=1,heightFraction=1,depthFraction=1}})
+  end
+ end
+ Settings.ready(first)
+ local exported=Document.export(first,Document.catalog(catalog))
+ check(exported.id=="playground" and #exported.objects>20 and exported.settings.terrain,"Playground starter uses the existing editable terrain, placements and starting zones")
+ check(State.equal(first,exported) and State.equal(first,Starter.new()),"starting conversion is deterministic and uses independent document copies")
+ exported.settings.terrain.heights[1]+=8
+ check(not State.equal(first,exported),"an edited Playground save is independent of the seed")
+end

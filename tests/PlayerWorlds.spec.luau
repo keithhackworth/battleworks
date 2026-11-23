@@ -155,4 +155,18 @@ check(hostPlay.ok and hostPlay.launch and installed==3,"host installs saved worl
 check(team:canEnter(alice) and team:canEnter(bob),"collaborators can join installed test world")
 check(team:request(bob,"Bootstrap").launch==false,"collaborator bootstrap never reloads or teleports the world")
 team:remove(alice);check(team:canEnter(bob),"host disconnect does not invalidate an installed shared test")
+do
+ local playgroundOptions=options(false,false)
+ playgroundOptions.playground=true
+ playgroundOptions.store=Store.new(nil,true,function()return "json"end)
+ local playground=Service.new(playgroundOptions)
+ check(not playground:request(alice,"PlaygroundEnter").ok,"saved Playground navigation reports a missing personal save")
+ local edited=State.copy(normalized);edited.id="playground";edited.name="Edited Playground"
+ check(playground:request(alice,"Save",{document=edited,revision=0}).ok,"Playground uses the same per-owner store as ordinary worlds")
+ local opened=playground:request(alice,"Playground")
+ check(opened.ok and opened.document.name=="Edited Playground" and opened.revision==1,"opening Playground reuses the saved revision instead of the starter")
+ playground.requests[alice.UserId].last.PlaygroundEnter=nil
+ local played=playground:request(alice,"PlaygroundEnter")
+ check(played.ok and played.teleporting and teleported.info.playground and teleported.info.revision==1,"Play Saved Playground uses the existing launch flow in Playground mode")
+end
 print(string.format("Player world validation, persistence and isolation passed: %d assertions",count))

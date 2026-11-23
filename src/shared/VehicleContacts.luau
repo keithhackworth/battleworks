@@ -92,7 +92,7 @@ local function feature(r,nx,nz,minimum)
  return points,best
 end
 local function manifold(a,b,dt,stats)
- local margin=(angularReach(a)+(if b.fixed then 0 else angularReach(b)))*(dt or 0)
+ local margin=(angularReach(a)+(if b.fixed and not b.kinematic then 0 else angularReach(b)))*(dt or 0)
  local nx,nz,depth,gap=separating(a,b,margin,stats); if not nx then return nil end
  local fa,da=feature(a,nx,nz,true); local fb,db
  if b.plane then
@@ -116,7 +116,7 @@ local function manifold(a,b,dt,stats)
  return out
 end
 local function velocity(r,x,z)
- if r.fixed then return 0,0 end
+ if r.fixed and not r.kinematic then return 0,0 end
  local s=r.state; local v=Motion.ensure(s); local w=s.angularVelocity.Y
  return v.X+w*(z-s.position.Z),v.Z-w*(x-s.position.X)
 end
@@ -220,7 +220,11 @@ local function candidates(a,list,statics,dt,sweep,stats)
   else
    local pos=b.state.position
    local radius=b.halfX+b.halfZ
-   inside=pos.X+radius>=minX and pos.X-radius<=maxX and pos.Z+radius>=minZ and pos.Z-radius<=maxZ
+   if b.kinematic then
+    inside=b.kinematicMaxX>=minX and b.kinematicMinX<=maxX and b.kinematicMaxZ>=minZ and b.kinematicMinZ<=maxZ
+   else
+    inside=pos.X+radius>=minX and pos.X-radius<=maxX and pos.Z+radius>=minZ and pos.Z-radius<=maxZ
+   end
   end
   if inside then table.insert(list.indices,i) end
  end
@@ -260,6 +264,10 @@ local function resolve(bodies,statics,lists,dt,stats)
  eachPair(bodies,statics,lists,dt or 0,dt~=nil,false,function(a,b)
   local found=manifold(a,b,dt,stats)
   if found then
+   if lists.kinematic then
+    if b.kinematic or b.kinematicAffected then a.kinematicAffected=true end
+    if not b.fixed and a.kinematicAffected then b.kinematicAffected=true end
+   end
    table.insert(contacts,found)
    if stats then stats.contacts+=#found end
   end
@@ -367,10 +375,10 @@ local function impactTime(a,b,dt,stats)
  end
  if not vertical(a,b) or separating(a,b,nil,stats) then return nil end
  local ax,az,bx,bz=axes(a); local cx,cz,dx,dz=axes(b)
- local av=Motion.ensure(a.state); local bv=if b.fixed then Vector3.zero else Motion.ensure(b.state)
+ local av=Motion.ensure(a.state); local bv=if b.fixed and not b.kinematic then Vector3.zero else Motion.ensure(b.state)
  local px,pz=a.state.position.X-b.state.position.X,a.state.position.Z-b.state.position.Z
  local vx,vz=(av.X-bv.X)*dt,(av.Z-bv.Z)*dt
- local expansion=(angularReach(a)+(if b.fixed then 0 else angularReach(b)))*dt
+ local expansion=(angularReach(a)+(if b.fixed and not b.kinematic then 0 else angularReach(b)))*dt
  local radius=a.halfX+a.halfZ+b.halfX+b.halfZ+expansion
  if (px>radius and px+vx>radius) or (px< -radius and px+vx< -radius) or (pz>radius and pz+vz>radius) or (pz< -radius and pz+vz< -radius) then return nil end
  if stats then stats.narrowTests+=1 end
@@ -470,13 +478,13 @@ function C.obstacles(environment,mapSize,radius)
  if environment then environment.motionObstacles={width=mapSize and mapSize.X,depth=mapSize and mapSize.Y,records=out} end
  return out
 end
-function C.solve(bodies,statics,dt,stats)
+function C.solve(bodies,statics,dt,stats,advanceKinematics,kinematicWorld)
  table.sort(bodies,function(a,b) return a.id<b.id end); table.sort(statics,function(a,b) return a.id<b.id end)
  if stats then
   stats.candidateChecks=0;stats.pairVisits=0;stats.narrowTests=0;stats.boxSatTests=0;stats.contacts=0
   stats.correctionPasses=0;stats.rebuilds=0;stats.correctionRebuilds=0
  end
- local substeps,lists=1,{}
+ local substeps,lists=1,{kinematic=advanceKinematics~=nil}
  for i,r in bodies do
   local s=r.state
   if r.trackContacts then
@@ -506,11 +514,19 @@ function C.solve(bodies,statics,dt,stats)
     if t and t<time then time=t;eventA,eventB=a.id,b.id end
    end,stats)
    local advance=remaining*time
-   for _,r in bodies do Motion.integrateHorizontal(r.state,advance) end
+   for _,r in bodies do Motion.integrateHorizontal(r.state,advance,r.carryVelocity,r.carryYaw) end
+   if advanceKinematics then
+    advanceKinematics(kinematicWorld,advance)
+    for _,r in bodies do
+     local lift=r.platformLift
+     if lift and lift~=0 then r.state.position+=Vector3.new(0,lift*advance,0) end
+    end
+   end
    resolve(bodies,statics,lists,nil,stats)
    remaining-=advance
    if time>=1 or remaining<1e-9 then break end
    if event==C.MaxEvents then
+    if advanceKinematics then return false end
     for _,r in bodies do
      local s=r.state
      s.motionContactLimited=(s.motionContactLimited or 0)+1
@@ -523,5 +539,15 @@ function C.solve(bodies,statics,dt,stats)
   end
  end
  for _,r in bodies do Motion.sync(r.state) end
+ if advanceKinematics then
+  local blocked=false
+  eachPair(bodies,statics,lists,0,false,false,function(a,b)
+   if a.kinematicAffected or b.kinematicAffected or b.kinematic then
+    local _,_,depth=separating(a,b,nil,stats)
+    if depth and depth>.025 then blocked=true end
+   end
+  end,stats)
+  return not blocked
+ end
 end
 return C

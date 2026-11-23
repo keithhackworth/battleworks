@@ -4,7 +4,8 @@ local Paths=require(script.Parent.AssetPaths)
 local Geometry=require(script.Parent.WorldObjectGeometry)
 local Snap=require(script.Parent.WorldEditorSnap)
 local Settings=require(script.Parent.WorldSettings)
-local Document={}
+local Motion=require(script.Parent.WorldMotion)
+local Document={DefaultRegenerationDelay=5,MaxRegenerationDelay=3600}
 function Document.fresh()
  return {schemaVersion=2,id="ingame_world",name="My BattleWorks World",description="",settings={width=230,depth=230,ground={material="Grass",color={100,112,86}},boundary=true},objects={},spawns={{id="boomer_spawn",tank="Boomer",position={-22,0,34.5},heading=90},{id="rattler_spawn",tank="Rattler",position={22,0,34.5},heading=270}},gameplay={}}
 end
@@ -29,6 +30,8 @@ function Document.checkEntry(doc,catalog,o)
  assert(item and item.id==o.type and Paths.valid(o.asset),"Asset identity is missing or conflicting")
  assert(type(o.id)=="string" and o.id:match("^[a-zA-Z][a-zA-Z0-9_-]*$") and #o.id<=64,"Invalid instance ID")
  assert(type(o.solid)=="boolean" and type(o.destructible)=="boolean","Collision and destructibility must be boolean")
+ assert(o.regenerates==nil or type(o.regenerates)=="boolean","Invalid regeneration setting")
+ assert(o.regenerationDelay==nil or finite(o.regenerationDelay,0,Document.MaxRegenerationDelay),"Regeneration delay must be 0–3600 seconds")
  assert(finite(o.hp,1,100000),"HP must be in [1,100000]")
  assert(not (o.solid or o.destructible) or item.collider,"This asset has no registered collider")
  assert(finite(o.scale,.001,1000),"Uniform scale must be in [.001,1000]")
@@ -47,6 +50,10 @@ function Document.checkEntry(doc,catalog,o)
  assert(type(o.bounds)=="table" and #o.bounds==3,"Native bounds are required")
  for _,n in o.bounds do assert(finite(n,.001,10000),"Invalid native bounds") end
  assert(not item.zone or (o.position[2]==0 and o.rotation[1]%360==0 and o.rotation[3]%360==0),"Water/mud regions must stay level at ground height")
+ if o.motion~=nil then
+  assert(not item.zone,"Terrain regions cannot move")
+  Motion.validate(o.motion,o.position,doc.settings.width,doc.settings.depth)
+ end
  local bounds=Snap.bounds(o)
  local box=Geometry.from(o.position,o.rotation,bounds,o.scale)
  local extents=Geometry.extents(box)

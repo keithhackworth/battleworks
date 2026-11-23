@@ -5,6 +5,25 @@ function Screen.new(context)
  for _,item in {{"Lobby","Play BattleWorks"},{"Garage","Garage"},{"Store","Store"}} do
   view:button(item[1],if context.royale and item[1]=="Lobby" then "The Playground" else item[2],function() if context.royale and item[1]=="Lobby" then context.join()else context.navigate(item[1])end end,item[1]=="Lobby")
  end
+ if context.royale and context.worldRequest then
+  local savedStatus
+  local pending=false
+  view:button("SavedPlayground","Play Saved Playground",function()
+   if pending then return end
+   pending=true;savedStatus.Text="Opening saved Playground…"
+   task.spawn(function()
+    local ok,result=pcall(context.worldRequest,"PlaygroundEnter")
+    pending=false
+    if ok and result and result.ok then
+     if result.launch then savedStatus.Text="";context.join()
+     else savedStatus.Text="Traveling to your saved Playground…" end
+    else
+     savedStatus.Text=if ok and result then result.message or "Saved Playground unavailable." else "Saved Playground unavailable."
+    end
+   end)
+  end)
+  savedStatus=view:paragraph("SavedPlaygroundStatus","")
+ end
  if context.labTravel then
   local status
   view:button("InnovationLab","Innovation Lab",function()

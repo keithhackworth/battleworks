@@ -59,16 +59,32 @@ local function suspension(state, dt)
 	state.bodyPitch = (math.sin(state.bounceClock or 0)*tuning.Pitch*(state.movement or 0))+(state.flightPitch or 0)
 	state.bodyRoll = (math.cos((state.bounceClock or 0)*tuning.RollFrequency)*tuning.Roll*(state.movement or 0))+(state.flightRoll or 0)
 end
-local function limitTerrainRise(state,terrain)
- if not terrain or not state.motionStepStart then return end
- local start,finish=state.motionStepStart,state.position
+function Simulation.terrainRiseBlocked(start,finish,terrain)
+ if not terrain or not start then return false end
  local distance=math.sqrt((finish.X-start.X)^2+(finish.Z-start.Z)^2)
  if distance<=1e-6 then return end
  local a=Heightfield.sample(terrain.terrain,terrain.width,terrain.depth,start.X,start.Z)
  local b=Heightfield.sample(terrain.terrain,terrain.width,terrain.depth,finish.X,finish.Z)
  -- An airborne tank already above this ground may cross it. For a ground
  -- crossing, use a numerical tolerance only so slow motion cannot creep up a wall.
- if start.Y>b+Geometry.MaxStep or b-a<=math.min(Geometry.MaxStep,distance*Traversal.MaxGradient)+1e-6 then return end
+ return start.Y<=b+Geometry.MaxStep and b-a>math.min(Geometry.MaxStep,distance*Traversal.MaxGradient)+1e-6
+end
+function Simulation.platformTerrainBlocked(state,body,environment)
+ local terrain=environment.terrainSettings
+ local finish=state.position
+ if body.carryVelocity then
+  -- A deck at bank height can cross a steep submerged bank face. Check
+  -- actual chassis clearance instead of applying the uphill drive limit.
+  local start=state.motionStepStart or finish
+  local middle=(start+finish)/2
+  return finish.Y<Environment.sample(environment,finish.X,finish.Z)-.025
+   or middle.Y<Environment.sample(environment,middle.X,middle.Z)-.025
+ end
+ return Simulation.terrainRiseBlocked(state.motionStepStart,finish,terrain)
+end
+local function limitTerrainRise(state,terrain)
+ local start,finish=state.motionStepStart,state.position
+ if not Simulation.terrainRiseBlocked(start,finish,terrain) then return end
  state.position=Vector3.new(start.X,finish.Y,start.Z)
  state.motionForwardTravel=state.motionForwardStart
  local velocity=Motion.ensure(state)
@@ -84,8 +100,8 @@ function Simulation.stepDeepWater(state,terrain,dt)
 end
 function Simulation.moveBody(state,command,dt,mapSize,environment,deferContacts)
  local c=Components.get(state)
- local ground,pitch,roll,_,_,material=0,0,0,nil,nil,nil
- if environment then ground,pitch,roll,_,_,material=Environment.pose(environment,state.position,state.yaw,c.Chassis) end
+ local ground,pitch,roll,_,_,material,platform=0,0,0,nil,nil,nil,nil
+ if environment then ground,pitch,roll,_,_,material,platform=Environment.pose(environment,state.position,state.yaw,c.Chassis) end
  local support=ground+(state.groundPlaneY or 0)
  Environment.applyForces(environment,state)
  local supported=state.position.Y<=support+0.001 and Motion.ensure(state).Y<=0 and (state.lift or 0)<=0.001
@@ -132,10 +148,11 @@ function Simulation.moveBody(state,command,dt,mapSize,environment,deferContacts)
  state.groundPitch=pitch; state.groundRoll=roll; state.surface=kind
  if deferContacts then state.motionDeferredDt=dt else Recoil.step(state,dt,ground) end
  Motion.sync(state)
+ return if supported then platform else nil
 end
-function Simulation.reconcileGround(state,environment)
+function Simulation.reconcileGround(state,environment,carried)
  local terrain=environment and environment.terrainSettings
- if state.motionDeferredDt then limitTerrainRise(state,terrain) end
+ if state.motionDeferredDt and not carried then limitTerrainRise(state,terrain) end
  local c=Components.get(state); local h,p,r,kind=0,0,0,"Grass"
  if environment then h,p,r,kind=Environment.pose(environment,state.position,state.yaw,c.Chassis) end
  if terrain then
@@ -168,13 +185,13 @@ function Simulation.step(state, command, dt, mapSize, environment, deferContacts
 	state.cooldown = math.max(0, state.cooldown - dt)
 	TurretRecoil.step(state,dt)
 	if state.health<=0 then state.firing=false end
-    Simulation.moveBody(state,command,dt,mapSize,environment,deferContacts)
+    local platform=Simulation.moveBody(state,command,dt,mapSize,environment,deferContacts)
     if not deferContacts then
      suspension(state,dt)
      state.bodyPitch+=state.groundPitch or 0; state.bodyRoll+=state.groundRoll or 0
     end
-    if state.health<=0 then return end
- Aim.step(state,command,dt)
+    if state.health>0 then Aim.step(state,command,dt) end
+    return platform
 end
 function Simulation.tryFire(state, command)
 	if state.health <= 0 or not command.fire or state.cooldown > 0 or (state.weaponPerformance or 1)<=0 then return nil end

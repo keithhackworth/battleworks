@@ -51,7 +51,7 @@ function validate(input,items){
  if(!Array.isArray(input.objects)||input.objects.length>MaxObjects)fail('objects',`expected array of up to ${MaxObjects} objects`);
  const catalog=new Map(items.map(i=>[i.id,i])),ids=new Set();
  const objects=input.objects.map((o,index)=>{
-  const at=`objects[${index}] (${o?.id||'?'})`;keys(o,['id','type','asset','position','rotation','scale','stretch','solid','destructible','hp','bounds'],at);
+  const at=`objects[${index}] (${o?.id||'?'})`;keys(o,['id','type','asset','position','rotation','scale','stretch','solid','destructible','hp','bounds','motion','regenerates','regenerationDelay'],at);
   id(o.id,`${at}.id`);if(ids.has(o.id))fail(at,'duplicate object ID');ids.add(o.id);
   let type=catalog.get(o.type);
   if(o.asset!==undefined){
@@ -70,9 +70,24 @@ function validate(input,items){
   }
   if(type.zone&&(o.position[1]!==0||o.rotation[0]%360!==0||o.rotation[2]%360!==0))fail(at,'water/mud regions must stay level at ground height');
   if(Math.abs(o.position[0])>width/2||Math.abs(o.position[2])>depth/2)fail(at,'object center outside world bounds');
+  if(own(o,"regenerates"))bool(o.regenerates,at+".regenerates");
+  if(own(o,"regenerationDelay"))number(o.regenerationDelay,0,3600,at+".regenerationDelay");
   bool(o.solid,`${at}.solid`);bool(o.destructible,`${at}.destructible`);number(o.hp,1,100000,`${at}.hp`);
   if((o.solid||o.destructible)&&!type.collider)fail(at,'asset has no collider; configure its registry entry before enabling gameplay collision');
   const bounds=o.bounds||type.size;if(!bounds)fail(`${at}.bounds`,'asset dimensions must be measured from its Studio template');vector(bounds,3,.001,10000,`${at}.bounds`);
+  if(own(o,'motion')){
+   if(type.zone)fail(at,'terrain regions cannot move');
+   const m=o.motion,location=at+'.motion';
+   keys(m,['points','speed','pause','face','enabled'],location);
+   number(m.speed,1,60,location+'.speed');number(m.pause,0,10,location+'.pause');
+   bool(m.face,location+'.face');bool(m.enabled,location+'.enabled');
+   if(!Array.isArray(m.points)||m.points.length<2||m.points.length>32)fail(location,'expected 2–32 waypoints');
+   for(const [i,point] of m.points.entries()){
+    vector(point,3,-4000,4000,location+'.points');
+    if(point.some((n,j)=>Math.abs(n+o.position[j])>[width/2,2000,depth/2][j]))fail(location,'waypoint crosses the world boundary');
+    if(i&&Math.hypot(...point.map((n,j)=>n-m.points[i-1][j]))<.05)fail(location,'consecutive waypoints must be distinct');
+   }
+  }
   const result={...structuredClone(o),type:type.id,asset:type.model,bounds:[...bounds]};const b=Geometry.box(result);
   if(b.top>2000||b.bottom< -2000)fail(at,'object height exceeds [-2000,2000]');
   const [ex,,ez]=b.extents;
@@ -100,22 +115,27 @@ function compileDocument(input,items){
  const definitions={},instances=[];
  document.objects.forEach(o=>{const i=byId.get(o.type);const ref='asset_'+createHash('sha256').update(i.model).digest('hex').slice(0,16);definitions[ref]={type:'model',asset:i.model};instances.push({id:o.id,ref,position:o.position,rotation:o.rotation,scale:o.stretch?o.stretch.map(n=>n*o.scale):o.scale,influences:{physical:{movable:false,destructible:o.destructible,hp:o.hp},movement:{collision:o.solid?'solid':'none',traversable:!o.solid}}});});
  const manifest=compileWorld({version:1,id:document.id,name:document.name,seed:0,definitions,instances},{},{assetBindings:bindingsFor(items)});
+ const authored=new Map(document.objects.map(o=>[o.id,o]));
+ for(const object of manifest.objects)for(const key of ["motion","regenerates","regenerationDelay"]){
+  const source=authored.get(object.id);
+  if(source&&own(source,key))object[key]=source[key];
+ }
  // Empty worlds are valid: ground and spawns are enough for a battle.
  manifest.builderSettings={...document.settings,spawns:document.spawns,zones:document.objects.filter(o=>byId.get(o.type).zone).map(o=>({kind:byId.get(o.type).zone,x:o.position[0],z:o.position[2],rx:o.bounds[0]*o.scale/2,rz:o.bounds[2]*o.scale/2,speed:byId.get(o.type).zone==='Water'?.9:.75}))};
  return {document,manifest};
 }
 function migrate(manifest,items,newId){
  const doc=fresh(newId,manifest.name+' (editable copy)');const bindings=bindingsFor(items);
- if (manifest.builderSettings?.terrain) {
+ if (manifest.builderSettings) {
   const {width,depth,ground,boundary,terrain,spawns}=manifest.builderSettings;
-  doc.settings=structuredClone({width,depth,ground,boundary,terrain});
+  doc.settings=structuredClone({width,depth,ground,boundary,...(terrain?{terrain}:{})});
   doc.spawns=structuredClone(spawns);
  }
  const placements=manifest.objects.length?studioPlacements(manifest,bindings):[];
  if(!placements)fail('migration','legacy world contains unmapped assets, unsupported influences or nonuniform transforms');
  const used=new Set();doc.objects=placements.map((p,index)=>{
   const item=items.find(i=>i.model===p.model);let name=p.id.replace(/[^a-zA-Z0-9_-]/g,'_');if(!/^[a-zA-Z]/.test(name))name='object_'+name;name=name.slice(0,55);if(used.has(name))name+='_'+index;used.add(name);
-  return {id:name,type:item.id,asset:item.model,position:p.position,rotation:p.rotation,scale:p.scale,...(p.stretch?{stretch:p.stretch}:{}),solid:p.interaction?.solid||false,destructible:p.interaction?.destructible||false,hp:p.interaction?.hp??100,...(item.size?{bounds:item.size}:{})};
+  return {id:name,type:item.id,asset:item.model,position:p.position,rotation:p.rotation,scale:p.scale,...(p.motion?{motion:p.motion}:{}),...(p.stretch?{stretch:p.stretch}:{}),solid:p.interaction?.solid||false,destructible:p.interaction?.destructible||false,hp:p.interaction?.hp??100,...(p.interaction?.regenerates!==undefined?{regenerates:p.interaction.regenerates}:{}),...(p.interaction?.regenerationDelay!==undefined?{regenerationDelay:p.interaction.regenerationDelay}:{}),...(item.size?{bounds:item.size}:{})};
  });
  // Bounds for imported assets are measured when the plugin resolves templates.
  return doc;

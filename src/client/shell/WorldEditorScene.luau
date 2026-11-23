@@ -19,6 +19,35 @@ local function part(parent,name,size,frame,color,transparency)
  local p=Instance.new("Part");p.Name=name;p.Anchored=true;p.CanCollide=false;p.CanTouch=false;p.CanQuery=false
  p.Size=size;p.CFrame=frame;p.Color=color;p.Transparency=transparency or 0;p.Parent=parent;return p
 end
+function Scene:drawMotion(points,closed,selected)
+ self.motionMarkers=self.motionMarkers or {}
+ self.motionLines=self.motionLines or {}
+ local color=if closed then Color3.fromRGB(122,234,161) else Color3.fromRGB(102,206,255)
+ for i,point in points do
+  local marker=self.motionMarkers[i]
+  if not marker then
+   marker=part(self.world,"MotionWaypoint",Vector3.one*1.5,CFrame.new(),color)
+   marker.Shape=Enum.PartType.Ball;marker.Material=Enum.Material.Neon
+   self.motionMarkers[i]=marker
+  end
+  marker.Position=point;marker.Transparency=0
+  marker.Color=if i==selected then Color3.fromRGB(255,182,77) else color
+  if i>1 then
+   local line=self.motionLines[i-1]
+   if not line then line=part(self.world,"MotionSegment",Vector3.one,CFrame.new(),color);line.Material=Enum.Material.Neon;self.motionLines[i-1]=line end
+   local previous=points[i-1];local length=(point-previous).Magnitude
+   line.Transparency=if length>.001 then 0 else 1
+   if length>.001 then
+    line.Size=Vector3.new(.24,.24,length)
+    line.CFrame=CFrame.lookAt((point+previous)/2,point)
+    line.Color=color
+   end
+  end
+ end
+ for i=#points+1,#self.motionMarkers do self.motionMarkers[i].Transparency=1 end
+ for i=math.max(1,#points),#self.motionLines do self.motionLines[i].Transparency=1 end
+end
+
 function Scene:edgeMarkers(kind,candidates,chosen,pin)
  self.edgeLabels=self.edgeLabels or {}
  local labels=self.edgeLabels[kind] or {}

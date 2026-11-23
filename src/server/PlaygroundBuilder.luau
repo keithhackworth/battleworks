@@ -9,7 +9,7 @@ function Builder.build(arena,data,floor)
   local p=Instance.new("Part");p.Name=name;p.Anchored=true;p.Size=size;p.CFrame=frame;p.Color=color;p.Material=material
   p.CanCollide=solid;p.CanQuery=solid;p.CanTouch=false;p.Parent=folder;return p
  end
- for _,r in data.regions do
+ for _,r in (if data.authored then {} else data.regions) do
   local angle=-math.atan(r.slope);local mid=(r.z0+r.z1)/2
   local bridge=r.name=="Bridge"
   local thickness=if bridge then 2 else 42
@@ -116,6 +116,7 @@ function Builder.build(arena,data,floor)
   end
  end
  -- Visible vertical banks, not collision barriers above the lip.
+ if data.authored then return folder end
  for _,x in {-23,23}do
   part("RavineWall",Vector3.new(2*scale,40,140*scale),CFrame.new(x*scale,-22,-5*scale),Color3.fromRGB(102,88,72),Enum.Material.Slate,true)
  end

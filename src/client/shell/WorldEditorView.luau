@@ -79,6 +79,27 @@ function View.new(context)
   self.fields[spec[1]]=row(make("TextBox",self.properties,{Name=spec[1],Size=UDim2.new(1,-8,0,28),Text="",PlaceholderText="—",ClearTextOnFocus=false,TextColor3=ink,BackgroundColor3=Color3.fromRGB(43,61,66),TextSize=14,Font=Enum.Font.Code}))
  end
  self.solid=row(button(self.properties,"Collision","Collision: —"));self.destructible=row(button(self.properties,"Destructible","Destructible: —"))
+ self.regenerates=row(button(self.properties,"Regenerates","☑ Regenerates"))
+ self.regenerationLabel=row(text(self.properties,"RegenerationLabel","Regeneration delay (seconds)",20))
+ self.regenerationDelay=row(make("TextBox",self.properties,{Name="RegenerationDelay",Size=UDim2.new(1,-8,0,28),Text="5",ClearTextOnFocus=false,TextColor3=ink,BackgroundColor3=View.buttonColor,Font=Enum.Font.Code,TextSize=14}))
+ self.motionDraw=row(button(self.properties,"MotionDraw","Draw Motion Path"))
+ self.motionPreview=row(button(self.properties,"MotionPreview","Preview Motion"))
+ self.motionRemove=row(button(self.properties,"MotionRemove","Remove Motion Path"))
+ self.motionPoint=row(button(self.properties,"MotionPoint","Remove Selected Waypoint"))
+ self.waypointFields={}
+ for axis,caption in {"Waypoint X","Waypoint elevation","Waypoint Z"} do
+  local label=row(text(self.properties,"WaypointLabel"..axis,caption.." (studs)",20))
+  local field=row(make("TextBox",self.properties,{Name="WaypointAxis"..axis,Size=UDim2.new(1,-8,0,28),Text="",ClearTextOnFocus=false,TextColor3=ink,BackgroundColor3=View.buttonColor,Font=Enum.Font.Code,TextSize=14}))
+  self.waypointFields[axis]={label=label,field=field}
+ end
+ self.motionFace=row(button(self.properties,"MotionFace","Maintain orientation"))
+ self.motionEnable=row(button(self.properties,"MotionEnable","Motion enabled"))
+ self.motionFields={}
+ for _,spec in {{"speed","Motion speed (studs/sec)"},{"pause","Endpoint pause (seconds)"}} do
+  local label=row(text(self.properties,spec[1].."Label",spec[2],20))
+  local field=row(make("TextBox",self.properties,{Name=spec[1],Size=UDim2.new(1,-8,0,28),Text="",ClearTextOnFocus=false,TextColor3=ink,BackgroundColor3=View.buttonColor,Font=Enum.Font.Code,TextSize=14}))
+  self.motionFields[spec[1]]={label=label,field=field}
+ end
  self.influences=row(text(self.properties,"Influences","Fixed objects • height / tilt • uniform scale",100))
  self.duplicate=row(button(self.properties,"Duplicate","Duplicate  •  Ctrl+D"))
  self.copyScale=row(button(self.properties,"CopyScale","Copy scale"))
@@ -131,9 +152,10 @@ function View.new(context)
  self.inspect=button(commands,"Inspector","Inspector")
  self.assets=button(commands,"Assets","Object Library")
  self.terrain=button(commands,"TerrainMode","Terrain")
- for index,control in {self.back,self.newWorld,self.openWorld,self.saveWorld,self.saveAs,self.undo,self.redo,self.terrain,self.toolShelf,self.inspect,self.assets,self.placeStart,self.worlds,self.export} do
+ self.openPlayground=button(frame,"OpenPlayground","Open Playground");self.openPlayground.Visible=context.royale==true
+ for index,control in {self.back,self.newWorld,self.openWorld,self.openPlayground,self.saveWorld,self.saveAs,self.undo,self.redo,self.terrain,self.toolShelf,self.inspect,self.assets,self.placeStart,self.worlds,self.export} do
   control.Parent=commands;control.LayoutOrder=index
-  control.Size=UDim2.fromOffset(({100,90,55,55,74,68,68,78,62,80,108,156,156,100})[index],31)
+  control.Size=UDim2.fromOffset(({100,90,55,130,55,74,68,68,78,62,80,108,156,156,100})[index],31)
  end
  self.worlds.Text="Save & Play Test";self.worlds.BackgroundColor3=View.activeColor
  self.export.BackgroundColor3=View.buttonColor
@@ -297,6 +319,13 @@ function View:paletteEntries(directories,items,prefix,page,assets,onFolder,onAss
  return page,pages
 end
 function View:selection(entry,item)
+ local destructible=entry~=nil and entry.destructible==true
+ local enabled=destructible and entry.regenerates~=false
+ self.regenerates.Visible=destructible
+ self.regenerates.Text=if enabled then "☑ Regenerates" else "☐ Regenerates"
+ self.regenerationDelay.Visible=destructible;self.regenerationLabel.Visible=destructible
+ self.regenerationDelay.TextEditable=enabled
+ if destructible then self.regenerationDelay.Text=tostring(entry.regenerationDelay or Document.DefaultRegenerationDelay) end
  if entry and entry.slot then
   self.selected.Text="PLAYER "..entry.slot.." STARTING AREA\nRoom for three tanks"
   for key,field in self.fields do

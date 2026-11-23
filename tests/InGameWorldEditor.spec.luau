@@ -166,3 +166,38 @@ history:change(function()table.remove(history.document.objects,1)end)
 history:undo();history:select("first");history:redo()
 check(not history.selection.first,"history clears selected IDs only when those objects no longer exist")
 print(string.format("In-game editor document/history/math passed: %d assertions",count))
+
+do
+ local Motion=require("WorldMotion")
+ local function make(points,pause,face)
+  return {points=points,speed=10,pause=pause or 0,face=face==true,enabled=true}
+ end
+ local path=Motion.compile(make({{0,0,0},{10,0,0},{10,0,-20}},1,true))
+ local p,yaw=Motion.sample(path,.5)
+ check(p.X==5 and math.abs(yaw+math.pi/2)<.001,"open path moves at world speed and faces travel")
+ p,yaw=Motion.sample(path,1.5)
+ check(p.X==10 and p.Z==-5 and yaw==0,"crosses an intermediate corner without a pause")
+ check(Motion.sample(path,3.5).Z==-20,"endpoint pause holds at the final waypoint")
+ p,yaw=Motion.sample(path,4.5)
+ check(p.Z==-15 and math.abs(yaw)==math.pi,"open path reverses and retraces segments")
+ check(Motion.sample(path,7.5).Magnitude==0,"open path pauses at its first endpoint")
+ local two=Motion.compile(make({{0,0,0},{10,0,0}}))
+ p,yaw=Motion.sample(two,1.25)
+ check(p.X==7.5 and yaw==nil,"two-point motion reverses and retains orientation")
+ local triangle=make({{0,0,0},{10,0,0},{10,0,10},{2,0,0}},5)
+ check(Motion.closed(triangle.points),"a near endpoint snaps a triangle closed")
+ local loop=Motion.compile(triangle)
+ check(#loop.segments==3 and loop.period<4,"closed triangle runs continuously without endpoint pauses")
+ check(Motion.sample(loop,loop.period+.5).X>4.99,"loop returns to the first segment")
+ local polygon=make({{0,0,0},{10,0,0},{10,0,10},{0,0,10},{0,0,0}})
+ check(#Motion.compile(polygon).segments==4,"arbitrary closed polygon preserves every segment")
+ local draft=State.new(Document.editorFresh());draft.snap=false
+ local id=draft:add(a,{0,0,0});draft:find(id).motion=triangle;draft:select(id)
+ draft:duplicate()
+ local exported=Document.export(draft.document,catalog)
+ check(#exported.objects==2 and State.equal(exported.objects[1].motion,exported.objects[2].motion),"duplicating preserves independent motion settings")
+ exported.objects[2].position[1]+=20
+ check(State.equal(exported.objects[1].motion,exported.objects[2].motion),"moves translate a path without rewriting offsets")
+ exported.objects[2].motion.points[2][1]=4000
+ check(not pcall(Document.export,exported,catalog) and exported.objects[1].motion.points[2][1]==10,"bad waypoints are rejected and duplicates own their path data")
+end

@@ -128,3 +128,32 @@ test('fitted imported collision cells preserve rotated spawn clearance without c
  assert.equal(Geometry.spawnHits([37,0,37],cell,1),false);
  assert.equal(Geometry.spawnHits([0,0,0],cell,1),true);
 });
+test('asset motion persists in authored, compiled and Studio world data',async()=>{
+ const d=fresh('motion_world');
+ const motion={points:[[0,0,0],[30,0,0],[30,0,10],[0,0,1]],speed:16,pause:.5,face:true,enabled:true};
+ d.objects=[{id:'moving',type:'builtin.crate',asset:'Builtin/BW_crate',position:[0,0,-15],rotation:[0,15,0],scale:1,solid:true,destructible:true,hp:100,motion}];
+ const {manifest,document}=compileDocument(d,items);
+ assert.deepEqual(document.objects[0].motion,motion);
+ assert.deepEqual(manifest.objects[0].motion,motion);
+ assert.deepEqual(migrate(manifest,items,'motion_copy').objects[0].motion,motion);
+ const root=await fs.mkdtemp(path.join(os.tmpdir(),'bw-motion-catalog-'));
+ try {
+  await fs.writeFile(path.join(root,'motion_world.json'),JSON.stringify(manifest));
+  const catalog=await require('../tools/world/catalog').discoverWorlds(root,require('../tools/world-builder/catalog').bindingsFor(items));
+  const placement=catalog.Children.find(entry=>entry.Name==='motion_world').Children.find(node=>node.Name==='Placement');
+  assert.deepEqual(JSON.parse(placement.Children.find(node=>node.Name==='Motion').Properties.Value),motion);
+ } finally {await fs.rm(root,{recursive:true,force:true});}
+ motion.points[0][2]=4000;
+ assert.throws(()=>validate(d,items),/crosses the world boundary/);
+});
+
+test('asset regeneration survives offline compilation and editing',()=>{
+ const world=fresh('regeneration_world');
+ world.objects=[{id:'crate',type:'builtin.crate',asset:'Builtin/BW_crate',position:[0,0,0],rotation:[0,0,0],scale:1,solid:true,destructible:true,hp:100,regenerates:false,regenerationDelay:12.5}];
+ const {manifest}=compileDocument(world,items);
+ const object=migrate(manifest,items,'regen_copy').objects[0];
+ assert.equal(object.regenerates,false);
+ assert.equal(object.regenerationDelay,12.5);
+ world.objects[0].regenerationDelay=-1;
+ assert.throws(()=>validate(world,items),/regenerationDelay/);
+});

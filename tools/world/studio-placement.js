@@ -74,8 +74,13 @@ function studioPlacement(manifest, bindings) {
   const z = Math.abs(cosine) > 1e-6 ? Math.atan2(-normalized[4], normalized[0]) : 0;
   // Equivalent Euler triples can contain 180-degree roll for upright yaw >90.
   const interaction = interactionFor(item.influences, binding);
+  if(interaction)for(const [key,valid] of [["regenerates",v=>typeof v==="boolean"],["regenerationDelay",v=>Number.isFinite(v)&&v>=0&&v<=3600]]){
+   if(!Object.hasOwn(item,key))continue;
+   if(!valid(item[key]))throw new Error(`Invalid ${key} for '${item.id}'.`);
+   interaction[key]=item[key];
+  }
   const upright=Math.abs(normalized[1])<1e-6 && Math.abs(normalized[9])<1e-6 && normalized[5]>1-1e-6;
   const rotation = upright ? [0, Math.atan2(normalized[8], normalized[0]) * 180 / Math.PI, 0] : [x, y, z].map(n => n * 180 / Math.PI);
-  return { ...binding, id: item.id, assetId: binding.id, position: m.slice(12, 15), rotation, scale: s, ...(stretch.some(n=>Math.abs(n-1)>1e-6)?{stretch}:{}), interaction };
+  return { ...binding, id: item.id, assetId: binding.id, position: m.slice(12, 15), rotation, scale: s, ...(item.motion?{motion:item.motion}:{}), ...(stretch.some(n=>Math.abs(n-1)>1e-6)?{stretch}:{}), interaction };
 }
 module.exports = { resolveAsset, studioPlacement, studioPlacements, placementIssue, interactionFor, MaxPlacements };

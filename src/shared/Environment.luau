@@ -75,7 +75,7 @@ function Environment.create(size,weather)
 end
 function Environment.sample(data,x,z,maxHeight)
 	local height,kind,speed=0,if data.weather=="IceWind" then "Ice" else "Grass",1
- if data.playground then return Playground.sample(data.playground,x,z),"Grass",1 end
+ if data.playground and not data.playground.authored then return Playground.sample(data.playground,x,z),"Grass",1 end
  if data.terrainSettings then
   local settings=data.terrainSettings
   height=Heightfield.sample(settings.terrain,settings.width,settings.depth,x,z)
@@ -122,11 +122,11 @@ function Environment.blocked(data,x,z,radius)
 end
 function Environment.pose(data,position,yaw,footprint)
  local shape=footprint or DefaultFootprint
- if data.playground then return Playground.pose(data.playground,position,yaw,shape)end
+ if data.playground and not data.playground.authored then return Playground.pose(data.playground,position,yaw,shape)end
  local structural=data.worldObjects and data.worldObjects.footprintSupport
- local structureHeight,structurePitch,structureRoll,structureMaterial
+ local structureHeight,structurePitch,structureRoll,structureMaterial,platform
  if structural then
-  structureHeight,structurePitch,structureRoll,structureMaterial=data.worldObjects:footprintSupport(position,yaw,shape)
+  structureHeight,structurePitch,structureRoll,structureMaterial,platform=data.worldObjects:footprintSupport(position,yaw,shape)
  end
  local length,width=shape.ContactLength,shape.ContactWidth
 	local x,z=position.X,position.Z
@@ -172,7 +172,7 @@ function Environment.pose(data,position,yaw,footprint)
  local terrainHeight=math.max(center,(front+rear+right+left)/4)
  local traction=data.terrainSettings and data.terrainSettings.terrain.traction
  if structureHeight and structureHeight>=terrainHeight then
-  return structureHeight,structurePitch,structureRoll,"Structure",1,structureMaterial and Materials.withTraction(structureMaterial,traction)
+  return structureHeight,structurePitch,structureRoll,"Structure",1,structureMaterial and Materials.withTraction(structureMaterial,traction),platform
  end
  local material=if reference then reference.material and Materials.withTraction(reference.material,traction)
   elseif data.terrainSettings then painted or Materials.withTraction(Materials.forGround(data.terrainSettings.ground.material,kind),data.terrainSettings.terrain.traction)

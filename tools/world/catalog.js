@@ -34,10 +34,13 @@ async function discoverWorlds(directory, bindings = {}) {
       { Name: 'Rotation', ClassName: 'Vector3Value', Properties: { Value: placement.rotation } },
       { Name: 'Scale', ClassName: 'NumberValue', Properties: { Value: placement.scale } },
       ];
+      if(placement.motion)fields.push(value('Motion',JSON.stringify(placement.motion)));
       if(placement.stretch)fields.push(value('Stretch',JSON.stringify(placement.stretch)));
       if(placement.resizeAxes)fields.push(value('ResizeAxes',JSON.stringify(placement.resizeAxes)));
       if (placement.interaction) {
         const v = placement.interaction;
+        if(v.regenerates!==undefined)fields.push({Name:"Regenerates",ClassName:"BoolValue",Properties:{Value:v.regenerates}});
+        if(v.regenerationDelay!==undefined)fields.push({Name:"RegenerationDelay",ClassName:"NumberValue",Properties:{Value:v.regenerationDelay}});
         if(v.collider.fit)fields.push(value('ColliderFit',v.collider.fit));
         if(v.collider.fit==='faces')fields.push(value('ColliderFaces',JSON.stringify({faces:v.collider.faces,bases:v.collider.bases,walls:v.collider.walls,sourceSize:v.collider.sourceSize})));
         fields.push({ Name: 'Solid', ClassName: 'BoolValue', Properties: { Value: v.solid } },

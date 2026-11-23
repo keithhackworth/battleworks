@@ -80,6 +80,27 @@ local traversable,tr=setup({solid=false})
 check(#traversable:obstacles()==0 and tr.proxy.CanQuery,"traversable destructible item can receive shots without blocking movement")
 for _,bad in {0,-1,0/0,math.huge} do check(registry:impact({Instance=r.proxy},bad,{})==nil,"invalid damage rejected") end
 check(registry:impact({Instance={}},10,{})==nil,"unknown/cosmetic parts cannot receive object damage")
+do
+ local objects,record,asset=setup()
+ asset.Parent={}
+ objects:impact({Instance=record.proxy},150,{})
+ objects:stepRegeneration(4.9)
+ check(record.destroyed and not record.proxy.CanQuery,"default regeneration waits five seconds")
+ objects:stepRegeneration(.1,function()return true end)
+ check(record.destroyed,"an occupied collider delays regeneration")
+ objects:stepRegeneration(0,function()return false end)
+ check(record.health==150 and record.proxy.CanQuery and not record.destroyed,"regeneration restores health and the original collider")
+ local disabled,ruin,model=setup({regenerates=false,regenerationDelay=1})
+ model.Parent={}
+ disabled:impact({Instance=ruin.proxy},150,{})
+ disabled:stepRegeneration(60)
+ check(ruin.destroyed,"disabled assets stay destroyed")
+ local custom,prop,native=setup({regenerationDelay=.5})
+ native.Parent={}
+ custom:impact({Instance=prop.proxy},150,{})
+ custom:stepRegeneration(.5)
+ check(not prop.destroyed,"custom regeneration delay is applied")
+end
 -- BW uses exactly the same blocked authoritative state as manual controls.
 do
  local p,err=Parser.parse('forward(20, best_effort=false)'); assert(p,err and err.message)
@@ -113,5 +134,197 @@ check(r.proxy.CanCollide and m.mesh.CanCollide~=true,"Royale native character su
 registry:impact({Instance=r.proxy},r.health,{})
 check(not r.proxy.CanCollide and not r.proxy.CanQuery,"destruction removes native character support and authoritative tank queries together")
 registry:reset();check(r.proxy.CanCollide,"reset restores native character support without extra colliders")
+do
+ local objects=Objects.new()
+ local moving=model();moving.Parent={}
+ local pivot=CFrame.new()
+ function moving:GetPivot() return pivot end
+ function moving:PivotTo(nextPivot)
+  for _,proxy in objects.records.moving.proxies do
+   proxy.CFrame=CFrame.new(nextPivot.Position-pivot.Position)*proxy.CFrame
+  end
+  pivot=nextPivot
+ end
+ local spec={id="moving",position=Vector3.zero,rotation=Vector3.zero,
+  motion={points={{0,0,0},{20,0,0}},speed=10,pause=0,face=false,enabled=true},
+  interaction={solid=true,destructible=true,hp=20,fractions=Vector3.new(.2,.5,.2)}}
+ local record=objects:add(moving,spec)
+ objects:stepMotion(1)
+ local body=objects:obstacles()[1]
+ check(pivot.Position.X==10 and body.state.position.X==10 and record.proxy.CFrame.Position.X==10,"motion moves the visual and the existing tank/projectile collision in the same step")
+ check(objects:support(0,0,100)==nil and objects:support(10,0,100)==10,"support samples follow the moved asset")
+ check(objects:impact({Instance=record.proxy},5,{})==record and record.health==15,"moving collision proxy still routes actual impact damage")
+ objects:impact({Instance=record.proxy},20,{})
+ objects:stepMotion(.5)
+ check(pivot.Position.X==10 and #objects:obstacles()==0,"destroyed motion does not leave live or drifting collision")
+ objects:reset()
+ check(pivot.Position.X==0 and #objects.moving==1 and objects:obstacles()[1]==body,"reset restores the starting pose and reuses collision state")
+ moving.Parent=nil
+ objects:stepMotion(1)
+ check(pivot.Position.X==0 and #objects.moving==0 and not objects.records.moving,"removed model releases its motion and collision state")
+end
+do
+ local Env=require(Shared.Environment)
+ local Motion=require(Shared.VehicleMotion)
+ local dt=1/60
+ local size=Vector2.new(230,230)
+ local function world()
+  local objects=Objects.new()
+  local env=Env.create(size)
+  env.rocks={};env.logs={};env.trees={};env.zones={};env.worldObjects=objects
+  return objects,env
+ end
+ local function asset(objects,id,base,size,points,speed,pause,collider,face)
+  local native=model()
+  native.Parent={}
+  native.mesh.Parent=native
+  function native.mesh:SetAttribute() end
+  local pivot=CFrame.new(base)
+  function native:GetBoundingBox() return CFrame.new(base+Vector3.new(0,size.Y/2,0)),size end
+  function native:GetPivot() return pivot end
+  function native:PivotTo(value) pivot=value end
+  local interaction=collider or {solid=true,destructible=false,hp=100,fractions=Vector3.new(1,1,1)}
+  local path=if points then {points=points,speed=speed,pause=pause or 0,enabled=true,face=face==true} else nil
+  local record=objects:add(native,{id=id,position=base,rotation=Vector3.zero,interaction=interaction,motion=path})
+  objects:stepMotion(0)
+  return native,record
+ end
+ local function simulate(objects,env,states,frames,commands,obstacle)
+  local rejected=0
+  for _=1,frames do
+   local bodies={}
+   for i,state in states do
+    local platform=Sim.step(state,commands and commands[i] or Input.neutral(),dt,size,env,true)
+    local body=Contacts.body("tank"..i,state,Components.get(state).Chassis)
+    body.platform=platform
+    table.insert(bodies,body)
+   end
+   local obstacles=objects:obstacles()
+   if obstacle then table.insert(obstacles,obstacle) end
+   local ok=objects:solveContacts(bodies,obstacles,dt,function(state,body) return Sim.platformTerrainBlocked(state,body,env) end,function(body)
+    local state=body.state
+    local height,_,_,_,_,_,platform=Env.pose(env,state.position,state.yaw,Components.get(state).Chassis)
+    return if math.abs(state.position.Y-height)<.05 then platform else nil
+   end)
+   if not ok then rejected+=1 end
+   for _,body in bodies do Sim.reconcileGround(body.state,env,body.carryVelocity~=nil) end
+  end
+  return rejected
+ end
+ local ferry,water=world()
+ local deck=asset(ferry,"ferry",Vector3.zero,Vector3.new(30,1,28),{{0,0,0},{20,0,0}},10,.5)
+ local boomer=Sim.new(Vector3.new(-6,1,0),"Boomer")
+ local rattler=Sim.new(Vector3.new(6,1,0),"Rattler")
+ boomer.yaw=-math.pi/2
+ check(simulate(ferry,water,{boomer,rattler},60)==0,"ferry advances while two tanks share its deck")
+ check(math.abs(boomer.position.X-4)<.025 and math.abs(rattler.position.X-16)<.025,"both wheeled and tracked tanks move with the deck")
+ check(math.abs(boomer.motionForwardTravel)<.025,"passive platform motion does not complete BW driving distance")
+ boomer.yaw=0
+ local driving=Input.neutral();driving.throttle=1
+ simulate(ferry,water,{boomer,rattler},30,{driving,Input.neutral()})
+ check(boomer.position.Z<-.3 and math.abs(rattler.position.X-21)<.025,"normal acceleration remains available while being carried")
+ simulate(ferry,water,{rattler},60)
+ check(math.abs(deck:GetPivot().Position.X-20)<.025 and math.abs(rattler.position.X-26)<.025,"endpoint pause preserves deck support")
+ simulate(ferry,water,{rattler},30)
+ check(rattler.position.X<22 and math.abs(rattler.position.X-deck:GetPivot().Position.X-6)<.025,"reversal carries in the new direction without an extra impulse")
+
+ local river,crossing=world()
+ local Heightfield=require(Shared.WorldHeightfield)
+ local field=Heightfield.new(size.X,size.Y)
+ crossing.terrainSettings={width=size.X,depth=size.Y,ground={material="Grass"},terrain=field}
+ for z=0,field.rows do for x=0,field.columns do
+  if math.abs((x/field.columns-.5)*size.X)<16 then field.heights[Heightfield.index(field,x,z)]=-12*Heightfield.Unit end
+ end end
+ Heightfield.fillWater(field,size.X,size.Y,Vector3.new(0,-12,0),8)
+ local riverFerry=asset(river,"river_ferry",Vector3.new(-27,-1,0),Vector3.new(22,1,24),{{0,0,0},{54,0,0}},15,1)
+ local riverRider=Sim.new(Vector3.new(-27,0,0),"Boomer")
+ local bankRejects=simulate(river,crossing,{riverRider},217)
+ check(bankRejects==0 and riverRider.position.X>26.9 and riverFerry:GetPivot().Position.X>26.9,"ferry crosses steep submerged banks while its deck stays above terrain")
+
+ local dock,harbor=world()
+ local boardingDeck=asset(dock,"boarding",Vector3.zero,Vector3.new(28,1,24),{{0,0,0},{20,0,0}},3,1)
+ local boarding=Sim.new(Vector3.new(-20,0,0),"Boomer")
+ boarding.yaw=-math.pi/2
+ local boarded=false
+ for _=1,100 do
+  simulate(dock,harbor,{boarding},1,{driving})
+  if boarding.grounded and math.abs(boarding.position.Y-1)<.025 then boarded=true;break end
+ end
+ check(boarded and boardingDeck:GetPivot().Position.X>0,"a tank can drive up onto a deck already following its path")
+
+ local raft,bank=world()
+ local edge=asset(raft,"edge",Vector3.zero,Vector3.new(22,8,18),{{0,0,0},{40,0,0}},8)
+ local rider=Sim.new(Vector3.new(0,8,-7),"Boomer")
+ Motion.setVelocity(rider,Vector3.new(0,0,-20))
+ local inherited=false
+ local falling=false
+ for _=1,24 do
+  simulate(raft,bank,{rider},1,{driving})
+  if rider.position.Z<-9 and Motion.ensure(rider).X>6 then inherited=true end
+  if rider.position.Y<7.95 then falling=true end
+ end
+ check(inherited and falling,"departing the deck keeps its horizontal momentum and begins gravity")
+
+ local lift,shaft=world()
+ local elevator=asset(lift,"lift",Vector3.zero,Vector3.new(20,1,20),{{0,0,0},{0,10,0}},5,.25)
+ local passenger=Sim.new(Vector3.new(0,1,0),"Rattler")
+ simulate(lift,shaft,{passenger},60)
+ check(math.abs(passenger.position.Y-6)<.025 and passenger.grounded,"vertical elevator lifts a grounded passenger")
+ simulate(lift,shaft,{passenger},140)
+ check(math.abs(passenger.position.Y-elevator:GetPivot().Position.Y-1)<.025 and passenger.grounded,"elevator carries through the endpoint and downward run")
+
+ local blockedLift,blockedShaft=world()
+ local stoppedLift=asset(blockedLift,"stopped_lift",Vector3.zero,Vector3.new(20,1,20),{{0,0,0},{0,10,0}},8)
+ asset(blockedLift,"ceiling",Vector3.new(0,9,0),Vector3.new(25,1,25))
+ local trapped=Sim.new(Vector3.new(0,1,0),"Boomer")
+ local ceilingBlocks=simulate(blockedLift,blockedShaft,{trapped},100)
+ check(ceilingBlocks>0 and trapped.position.Y<=4.03 and stoppedLift:GetPivot().Position.Y<=3.03,"elevator stops before carrying a tank through a ceiling")
+
+ local turntable,corner=world()
+ local rotating=asset(turntable,"turning",Vector3.zero,Vector3.new(30,1,30),{{0,0,0},{0,0,-4},{4,0,-4}},5,0,nil,true)
+ local turning=Sim.new(Vector3.new(6,1,0),"Boomer")
+ simulate(turntable,corner,{turning},100)
+ local center=rotating:GetPivot().Position
+ check(math.abs((turning.position-center).Magnitude-math.sqrt(37))<.1 and turning.position.Z>center.Z+1,"facing changes rotate riders around the platform without throwing them off")
+
+ local sweep,ground=world()
+ local wall=asset(sweep,"wall",Vector3.new(-8,0,0),Vector3.new(.5,8,30),{{0,0,0},{35,0,0}},60)
+ local tank=Sim.new(Vector3.new(0,0,0),"Boomer")
+ simulate(sweep,ground,{tank},10)
+ check(tank.position.X>6 and tank.position.X>wall:GetPivot().Position.X+4,"thin fast wall sweeps a stationary tank without tunneling")
+ local opposing=Input.neutral();opposing.throttle=1;tank.yaw=math.pi/2
+ simulate(sweep,ground,{tank},5,{opposing})
+ check(tank.position.X>=wall:GetPivot().Position.X+4,"a tank driving into the moving wall cannot pass through")
+
+ local lane,field=world()
+ local pusher=asset(lane,"pusher",Vector3.new(-8,0,0),Vector3.new(.5,8,30),{{0,0,0},{40,0,0}},20)
+ local first=Sim.new(Vector3.zero,"Boomer")
+ local second=Sim.new(Vector3.new(12,0,0),"Rattler")
+ local stop=Contacts.box("stationary",Vector3.new(23,0,0),.5,20,0,10)
+ local rejected=simulate(lane,field,{first,second},85,nil,stop)
+ check(first.position.X>0 and first.position.X<second.position.X and second.position.X>12 and second.position.X<=18.55,string.format("pushing a tank chain transmits contacts and respects stationary cover: %.3f %.3f wall %.3f rejected %d",first.position.X,second.position.X,pusher:GetPivot().Position.X,rejected))
+ check(rejected>0 and pusher:GetPivot().Position.X<first.position.X-3.9,"an unresolved squeeze blocks the motion path")
+
+ local bridge,ravine=world()
+ asset(bridge,"bridge",Vector3.zero,Vector3.new(12,8,28))
+ asset(bridge,"sweeper",Vector3.new(-11,8,0),Vector3.new(.5,7,20),{{0,0,0},{24,0,0}},12)
+ local victim=Sim.new(Vector3.new(0,8,0),"Rattler")
+ simulate(bridge,ravine,{victim},80)
+ check(victim.position.X>6 and victim.position.Y<7.5,"a side impact pushes a tank beyond the ledge and gravity takes over")
+
+ local imported,arena=world()
+ local faces={{{-.5,.5,-.5},{-.5,.5,.5},{.5,.5,-.5}},{{.5,.5,-.5},{-.5,.5,.5},{.5,.5,.5}}}
+ local _,record=asset(imported,"explicit_deck",Vector3.zero,Vector3.new(24,2,24),{{0,0,0},{30,0,0}},9,0,
+  {fit="faces",faces=faces,sourceSize={24,2,24},solid=true,destructible=false,hp=100,fractions=Vector3.new(1,1,1)})
+ local glbRider=Sim.new(Vector3.new(0,2,0),"Boomer")
+ simulate(imported,arena,{glbRider},60)
+ check(record.bodies[1].polygon and math.abs(glbRider.position.X-9)<.025,"imported collision triangles provide moving support")
+ local customWall,customGround=world()
+ local _,custom=asset(customWall,"explicit_wall",Vector3.new(-10,0,0),Vector3.new(3,8,24),{{0,0,0},{24,0,0}},20,0,
+  {fit="faces",faces=faces,sourceSize={3,8,24},solid=true,destructible=false,hp=100,fractions=Vector3.new(1,1,1)})
+ local customVictim=Sim.new(Vector3.zero,"Rattler")
+ simulate(customWall,customGround,{customVictim},40)
+ check(custom.bodies[1].polygon and customVictim.position.X>5,"custom GLB face prisms push through swept polygon contact")
+end
 CFrame.new=saveNew; CFrame.Angles=saveAngles; CFrame.lookAt=saveLookAt
 print(string.format("Imported world object suite passed: %d assertions",checks))

@@ -710,6 +710,37 @@ do
  controller:frameWorld()
  check(controller.focus==Vector3.zero,"frame world restores the scene-centered camera")
 end
+do
+ local view=controller.view
+ local selected=controller:selected()
+ check(view.regenerates.Visible and view.regenerationDelay.Text=="5" and view.regenerationDelay.TextEditable,"destructible assets show regeneration enabled with a five-second default")
+ view.regenerationDelay.Text="12.5";view.regenerationDelay.FocusLost:Fire()
+ view.regenerates.Activated:Fire()
+ check(selected.regenerates==false and selected.regenerationDelay==12.5 and not view.regenerationDelay.TextEditable,"checkbox preserves a custom delay when disabled")
+ view.regenerates.Activated:Fire()
+ check(selected.regenerates and view.regenerationDelay.Text=="12.5","re-enabling restores the custom delay")
+ view.motionDraw.Activated:Fire()
+ check(controller.motionDraft~=nil,"motion action opens an editable path draft")
+ local pointer=Vector2.new(-1000,-1000)
+ for _,point in {Vector3.new(62,0,0),Vector3.new(82,0,0),Vector3.new(82,0,20),Vector3.new(63,0,0)} do
+  controller:motionInput({},point,pointer)
+ end
+ check(#controller.scene.motionMarkers==4 and #controller.scene.motionLines==3,"waypoints and connected path render in the scene")
+ controller.motionPoint=2;controller:drawMotion()
+ view.waypointFields[2].field.Text="12";view.waypointFields[2].field.FocusLost:Fire()
+ check(controller.motionDraft.points[2][2]==12-selected.position[2],"the waypoint inspector supports vertical motion without moving the other points")
+ view.waypointFields[2].field.Text="0";view.waypointFields[2].field.FocusLost:Fire()
+ view.motionDraw.Activated:Fire()
+ check(selected.motion and State.equal(selected.motion.points[1],selected.motion.points[4]),"finishing a closed path snaps its endpoint to the start")
+ view.motionPreview.Activated:Fire()
+ check(controller.motionPreview~=nil,"preview animates the selected native model")
+ view.motionPreview.Activated:Fire()
+ check(controller.motionPreview==nil and selected.motion.enabled,"stopping preview leaves authored motion enabled")
+ view.motionRemove.Activated:Fire()
+ check(selected.motion==nil,"removing a path clears the saved placement configuration")
+ controller:history(false)
+ check(controller:selected().motion~=nil,"removing a path is undoable")
+end
 controller:destroy()
 check(cameraBindings.BattleWorksEditorCamera==nil,"destroy removes camera binding")
 Instance.new=baseFactory;game.GetService=oldService

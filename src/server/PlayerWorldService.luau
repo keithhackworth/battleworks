@@ -31,7 +31,7 @@ function Service:validate(document)
 end
 function Service:request(player,action,payload)
  local owner=player.UserId
- local allowed={List=true,Load=true,Save=true,Delete=true,Play=true,Bootstrap=true}
+ local allowed={List=true,Load=true,Save=true,Delete=true,Playground=true,PlaygroundEnter=true,Play=true,Bootstrap=true}
  if type(action)~="string" or not allowed[action] then return {ok=false,message="Unknown world action"} end
  local state=self.requests[owner] or {last={}};self.requests[owner]=state
  if state.busy or os.clock()-(state.last[action] or -math.huge)<.8 then return {ok=false,message="Please wait a moment and try again."} end
@@ -40,6 +40,19 @@ function Service:request(player,action,payload)
   assert(self.isPresent(player),"Player left the experience")
   assert(not self.testHost or owner==self.testHost or action=="Bootstrap","Only the Team Test host can access saved worlds in this session. Wait for the host to load the world, then choose Play BattleWorks.")
   if action=="List" then return {worlds=self.store:list(owner)} end
+  if action=="Playground" then
+   assert(self.playground,"Playground editing is unavailable in this mode")
+   local launch=self.activePlayground
+   local preferred=if launch and launch.owner==owner then launch.id else "playground"
+   local entries=self.store:list(owner)
+   for _,entry in entries do
+    if entry.id==preferred then
+     local saved=self.store:load(owner,entry.id)
+     return {document=self:validate(saved.document),revision=saved.revision}
+    end
+   end
+   return {document=self:validate(require(game.ReplicatedStorage.Shared.PlaygroundWorld).new()),revision=0}
+  end
   if action=="Load" then
    local entry=self.store:load(owner,payload)
    local document=self:validate(entry.document)
@@ -48,11 +61,16 @@ function Service:request(player,action,payload)
   if action=="Save" then
    assert(type(payload)=="table","Missing world")
    local document=self:validate(payload.document)
-   return self.store:save(owner,document,payload.revision)
+   local result=self.store:save(owner,document,payload.revision)
+   local active=self.activePlayground
+   if active and active.owner==owner and active.id==document.id and active.revision~=result.revision then self.activePlayground=nil end
+   return result
   end
   if action=="Delete" then
    assert(type(payload)=="table","Missing saved world")
-   return self.store:delete(owner,payload.id,payload.revision)
+   local result=self.store:delete(owner,payload.id,payload.revision)
+   if self.activePlayground and self.activePlayground.owner==owner and self.activePlayground.id==payload.id then self.activePlayground=nil end
+   return result
   end
   if action=="Bootstrap" then
    local launch=self.pending[owner]
@@ -67,18 +85,30 @@ function Service:request(player,action,payload)
    return {launch=true,document=document,revision=entry.revision}
   end
   assert(not self.inBattle(player),"Return to the menu before playing a saved world")
-  assert(type(payload)=="table","Missing saved world")
-  local entry=self.store:load(owner,payload.id)
-  assert(entry.revision==payload.revision,"Open the latest saved revision before playing")
+  local entry
+  if action=="PlaygroundEnter" then
+   assert(self.playground,"Saved Playground is unavailable in this mode")
+   local active=self.activePlayground
+   if active and active.owner==owner then return {launch=true} end
+   for _,saved in self.store:list(owner) do
+    if saved.id=="playground" then entry=self.store:load(owner,saved.id);break end
+   end
+   assert(entry,"No saved Playground yet. Open Playground in World Editor and save it first.")
+  else
+   assert(type(payload)=="table","Missing saved world")
+   entry=self.store:load(owner,payload.id)
+   assert(entry.revision==payload.revision,"Open the latest saved revision before playing")
+  end
   local document,specs,settings=self:validate(entry.document)
   require(game.ReplicatedStorage.Shared.WorldSettings).ready(settings)
   assert(self.isPresent(player),"Player left the experience")
   if self.studio then
    self.install(player,document,specs,settings)
    if self.testHost then self.testReady=true end
+   if self.playground then self.activePlayground={owner=owner,id=document.id,revision=entry.revision} end
    return {launch=true}
   end
-  self.teleport(player,{battleWorksWorld=true,owner=owner,id=document.id,revision=entry.revision})
+  self.teleport(player,{battleWorksWorld=true,owner=owner,id=document.id,revision=entry.revision,playground=self.playground==true})
   return {teleporting=true}
  end)
  state.busy=false

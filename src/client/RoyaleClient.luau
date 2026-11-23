@@ -9,7 +9,8 @@ function Client.start(inLab)
  local remote=network:WaitForChild("RoyaleControl")
  local sprintRemote=network:WaitForChild("RoyaleSprint")
  local labRemote=network:FindFirstChild("InnovationLabTravel")
- if not inLab then require(script.Parent.PlaygroundPresentation).start(workspace:WaitForChild("Arena")) end
+ local arena=workspace:WaitForChild("Arena")
+ if not inLab then require(script.Parent.PlaygroundPresentation).start(arena) end
  local reading,shell,gameplay,experiment
  local session=require(script.Parent.shell.GameplaySession).new(function(action,requestId)
   local joining=action=="Enter"
@@ -51,7 +52,7 @@ local function worldRequest(action,payload)
  end
  local function ensureShell()
   if not shell then
-   shell=require(script.Parent.shell.ApplicationShell).new(playerGui,workspace:WaitForChild("Arena"),session,gameplay,nil,function()return game.ReplicatedStorage:FindFirstChild("BattleWorksEditorAssets")end,worldRequest,{
+   shell=require(script.Parent.shell.ApplicationShell).new(playerGui,arena,session,gameplay,nil,function()return game.ReplicatedStorage:FindFirstChild("BattleWorksEditorAssets")end,worldRequest,{
     royale=true,garageRequest=garageRequest,
     labTravel=if labRemote then function(action)labRemote:FireServer(action)end else nil,
     selectExperiment=if inLab then function(id)experiment=id;session:join()end else nil,
@@ -117,6 +118,9 @@ local function worldRequest(action,payload)
   scoreboard.Visible=#lines>0
  end
  local notice=Instance.new("TextLabel");notice.Name="RoyaleNotice";notice.Position=UDim2.fromOffset(144,60);notice.Size=UDim2.new(1,-164,0,60);notice.BackgroundColor3=Color3.fromRGB(32,47,52);notice.TextColor3=Color3.fromRGB(255,224,163);notice.Font=Enum.Font.GothamMedium;notice.TextSize=16;notice.TextWrapped=true;notice.Visible=false;notice.Parent=navigation
+ if not inLab and arena:GetAttribute("PlaygroundLoadFailed") then
+  notice.Text="The saved Playground could not be loaded. The default arena is open.";notice.Visible=true
+ end
  local function home()
   local ok,result=pcall(ensureShell)
   if not ok then

@@ -6,10 +6,14 @@ local Visual=require(game.ReplicatedStorage.Shared.AssetGeometry)
 local Fit=require(script.Parent.MeshCollisionFit)
 local Footprint=require(game.ReplicatedStorage.Shared.FootprintSupport)
 local Materials=require(game.ReplicatedStorage.Shared.TerrainMaterials)
+local Motion=require(game.ReplicatedStorage.Shared.WorldMotion)
+local VehicleMotion=require(game.ReplicatedStorage.Shared.VehicleMotion)
 local Objects={}; Objects.__index=Objects
+local Document=require(game.ReplicatedStorage.Shared.WorldEditorDocument)
+local MaxKinematicCorrection=1.25
 local function finite(n) return type(n)=="number" and n==n and math.abs(n)<math.huge end
 function Objects.new()
- return setmetatable({records={},byPart={},seen=setmetatable({},{__mode="k"}),effects={}},Objects)
+ return setmetatable({records={},regenerating={},moving={},activeMotion={},savedMotion=setmetatable({},{__mode="k"}),byPart={},seen=setmetatable({},{__mode="k"}),effects={}},Objects)
 end
 function Objects:sync(record)
  local live=not record.destroyed
@@ -26,8 +30,13 @@ function Objects:sync(record)
 end
 function Objects:add(model,spec)
  local v=spec.interaction
- if not v then return nil end
+ if not v then
+  self:addMotion(model,spec)
+  return nil
+ end
  assert(type(v.solid)=="boolean" and type(v.destructible)=="boolean" and finite(v.hp) and v.hp>=0,"Invalid world-object flags/health")
+ assert(v.regenerates==nil or type(v.regenerates)=="boolean","Invalid regeneration setting")
+ assert(v.regenerationDelay==nil or (finite(v.regenerationDelay) and v.regenerationDelay>=0 and v.regenerationDelay<=Document.MaxRegenerationDelay),"Invalid regeneration delay")
  assert(typeof(v.fractions)=="Vector3","Missing trunk collider fractions")
  for _,n in {v.fractions.X,v.fractions.Y,v.fractions.Z} do assert(finite(n) and n>0 and n<=1,"Invalid trunk collider fraction") end
  assert(not self.records[spec.id],"Duplicate world-object ID")
@@ -73,15 +82,260 @@ function Objects:add(model,spec)
  end
  local material=Materials.fromMaterial((model.PrimaryPart or Visual.parts(model)[1]).Material)
  for _,geometry in geometries do geometry.material=material end
- local record={id=spec.id,model=model,proxy=proxies[1],proxies=proxies,body=bodies[1],bodies=bodies,geometry=geometries[1],geometries=geometries,visuals=visuals,solid=v.solid,destructible=v.destructible,maxHealth=v.hp,health=v.hp,destroyed=v.destructible and v.hp<=0}
+ local record={id=spec.id,model=model,proxy=proxies[1],proxies=proxies,body=bodies[1],bodies=bodies,geometry=geometries[1],geometries=geometries,visuals=visuals,solid=v.solid,destructible=v.destructible,regenerates=v.regenerates~=false,regenerationDelay=v.regenerationDelay or Document.DefaultRegenerationDelay,maxHealth=v.hp,health=v.hp,destroyed=v.destructible and v.hp<=0}
  for _,proxy in proxies do self.byPart[proxy]=record end
  self.records[record.id]=record
+ self:addMotion(model,spec,record)
  self:sync(record); return record
+end
+function Objects:addMotion(model,spec,record)
+ if not spec.motion or not spec.motion.enabled then return end
+ local entry={id=spec.id,model=model,record=record,path=Motion.compile(spec.motion),origin=spec.position,yaw=math.rad(spec.rotation.Y),pivot=model:GetPivot(),geometries={},bodies={},clock=0,radius=1}
+ if record then
+  record.motion=entry
+  for i,geometry in record.geometries do
+   local rest=table.clone(geometry)
+   if geometry.vertices then rest.vertices=table.clone(geometry.vertices);rest.points=table.clone(geometry.points) end
+   entry.geometries[i]=rest
+   geometry.platform=entry
+   entry.radius=math.max(entry.radius,(geometry.position-entry.origin).Magnitude+geometry.extents.Magnitude)
+  end
+  for i,body in record.bodies do
+   local rest={position=body.state.position,yaw=body.state.yaw}
+   if body.polygon then
+    rest.polygon={}
+    for j,p in body.polygon do rest.polygon[j]=Vector3.new(p.x,0,p.z) end
+   end
+   entry.bodies[i]=rest
+  end
+ end
+ table.insert(self.moving,entry)
+end
+-- Keep the same collision cells and faces. During the contact solve only their
+-- numeric poses change. Replicate the accepted native pose once per fixed step.
+local function pose(entry,offset,angle)
+ local record=entry.record
+ local rotation=CFrame.Angles(0,angle,0)
+ local frame=CFrame.new(entry.origin+offset)*rotation*CFrame.new(entry.origin*-1)
+ entry.frame=frame
+ if not record then return end
+ for i,geometry in record.geometries do
+  local rest=entry.geometries[i]
+  geometry.position=frame:PointToWorldSpace(rest.position)
+  geometry.up=rotation:PointToWorldSpace(rest.up)
+  if rest.vertices then
+   for j,p in rest.vertices do geometry.vertices[j]=frame:PointToWorldSpace(p) end
+   local hx,hy,hz=0,0,0
+   for j,p in rest.points do
+    local point=frame:PointToWorldSpace(p);geometry.points[j]=point
+    local d=point-geometry.position
+    hx,hy,hz=math.max(hx,math.abs(d.X)),math.max(hy,math.abs(d.Y)),math.max(hz,math.abs(d.Z))
+   end
+   geometry.extents=Vector3.new(hx,hy,hz)
+  else
+   geometry.right=rotation:PointToWorldSpace(rest.right);geometry.back=rotation:PointToWorldSpace(rest.back)
+   geometry.extents=Geometry.extents(geometry)
+  end
+ end
+ for i,body in record.bodies do
+  local rest=entry.bodies[i]
+  body.state.position=frame:PointToWorldSpace(rest.position)
+  if rest.polygon then
+   local hx,hz=0,0
+   for j,p in rest.polygon do
+    local v=rotation:PointToWorldSpace(p)
+    body.polygon[j].x,body.polygon[j].z=v.X,v.Z
+    hx,hz=math.max(hx,math.abs(v.X)),math.max(hz,math.abs(v.Z))
+   end
+   body.halfX,body.halfZ=hx,hz
+  else
+   local planar=Geometry.planar(body.surface,rest.yaw+angle)
+   body.halfX,body.halfZ,body.state.yaw=planar.hx,planar.hz,planar.yaw
+  end
+ end
+end
+local function deltaAt(entry,point)
+ local delta=entry.change
+ if entry.turn==0 then return delta end
+ local p=point-entry.origin-entry.offset
+ local c,s=math.cos(entry.turn),math.sin(entry.turn)
+ return delta+Vector3.new((c-1)*p.X+s*p.Z,0,-s*p.X+(c-1)*p.Z)
+end
+local function setKinematic(entry,dt)
+ for _,body in entry.record.bodies do
+  local p=body.state.position
+  local delta=deltaAt(entry,p)
+  local radius=2*(body.halfX+body.halfZ)+.5
+  body.kinematic=true
+  body.kinematicMinX=p.X+math.min(0,delta.X)-radius
+  body.kinematicMaxX=p.X+math.max(0,delta.X)+radius
+  body.kinematicMinZ=p.Z+math.min(0,delta.Z)-radius
+  body.kinematicMaxZ=p.Z+math.max(0,delta.Z)+radius
+  body.state.linearVelocity=delta/dt
+  body.state.angularVelocity=Vector3.new(0,entry.turn/dt,0)
+ end
+end
+function Objects:prepareMotion(dt)
+ table.clear(self.activeMotion)
+ self.motionElapsed=0
+ self.motionDt=dt
+ local solid=false
+ for i=#self.moving,1,-1 do
+  local entry=self.moving[i]
+  local record=entry.record
+  if not entry.model.Parent then
+   if record then
+    for _,proxy in record.proxies do self.byPart[proxy]=nil end
+    self.records[record.id]=nil
+   end
+   table.remove(self.moving,i)
+   continue
+  end
+  if record and record.destroyed then continue end
+  if entry.offset==nil or dt==0 then
+   local offset,yaw=Motion.sample(entry.path,entry.clock)
+   entry.offset,entry.angle=offset,if yaw then yaw-entry.yaw else 0
+   pose(entry,entry.offset,entry.angle)
+   entry.model:PivotTo(entry.frame*entry.pivot)
+   if dt==0 then continue end
+  end
+  local offset,yaw=Motion.sample(entry.path,entry.clock+dt)
+  local angle=if yaw then yaw-entry.yaw else entry.angle
+  local turn=(angle-entry.angle+math.pi)%(2*math.pi)-math.pi
+  -- Limit corner turns by the radius of the actual collision profile.
+  local limit=math.min(.08,dt*math.min(4.8,15/entry.radius))
+  entry.turn=math.clamp(turn,-limit,limit)
+  entry.change=offset-entry.offset
+  entry.previousClock=entry.clock
+  entry.clock=(entry.clock+dt)%entry.path.period
+  if entry.change.Magnitude<1e-6 and math.abs(entry.turn)<1e-6 then
+   entry.change=nil
+   continue
+  end
+  table.insert(self.activeMotion,entry)
+  if record and record.solid then
+   solid=true
+   setKinematic(entry,dt)
+  end
+ end
+ return solid
+end
+function Objects:advanceMotion(dt)
+ self.motionElapsed+=dt
+ local fraction=math.min(1,self.motionElapsed/self.motionDt)
+ for _,entry in self.activeMotion do
+  if entry.record and entry.record.solid then
+   pose(entry,entry.offset+entry.change*fraction,entry.angle+entry.turn*fraction)
+  end
+ end
+end
+function Objects:finishMotion(accepted)
+ for _,entry in self.activeMotion do
+  local solid=entry.record and entry.record.solid
+  if accepted or not solid then
+   entry.offset+=entry.change
+   entry.angle=(entry.angle+entry.turn+math.pi)%(2*math.pi)-math.pi
+   if not solid then pose(entry,entry.offset,entry.angle) end
+   entry.model:PivotTo(entry.frame*entry.pivot)
+  else
+   entry.clock=entry.previousClock
+   pose(entry,entry.offset,entry.angle)
+  end
+  if solid then
+   for _,body in entry.record.bodies do
+    body.kinematic=nil
+    body.state.linearVelocity=Vector3.zero
+    body.state.angularVelocity=Vector3.zero
+   end
+  end
+  entry.change=nil
+ end
+ table.clear(self.activeMotion)
+end
+-- Install a start pose before spawn validation. Offline callers also use this
+-- to advance scenes with no tanks.
+function Objects:stepMotion(dt)
+ self:prepareMotion(dt)
+ if #self.activeMotion>0 then
+  self:advanceMotion(dt)
+  self:finishMotion(true)
+ end
+end
+local savedFields={"position","yaw","linearVelocity","angularVelocity","motionForwardTravel","motionYawTravel",
+ "motionCorrection","motionDebugContact","motionDebugLimitedBy","motionDebugLostTime"}
+local function advanceWorld(self,dt)
+ self:advanceMotion(dt)
+end
+function Objects:solveContacts(bodies,obstacles,dt,terrainBlocked,supportAfter)
+ local solid=self:prepareMotion(dt)
+ if not solid then
+  Contacts.solve(bodies,obstacles,dt)
+  if #self.activeMotion>0 then self:advanceMotion(dt);self:finishMotion(true) end
+  return true
+ end
+ for _,body in bodies do
+  local state=body.state
+  local saved=self.savedMotion[state]
+  if not saved then saved={};self.savedMotion[state]=saved end
+  for _,field in savedFields do saved[field]=state[field] end
+  local platform=body.platform
+  if platform and platform.change then
+   local velocity=deltaAt(platform,state.motionStepStart or state.position)/dt
+   body.carryVelocity=velocity
+   body.carryYaw=platform.turn/dt
+   body.platformLift=velocity.Y
+   body.kinematicAffected=true
+   VehicleMotion.setVelocity(state,VehicleMotion.ensure(state)+Vector3.new(velocity.X,0,velocity.Z))
+   VehicleMotion.setYawVelocity(state,state.angularVelocity.Y+body.carryYaw)
+  end
+ end
+ local accepted=Contacts.solve(bodies,obstacles,dt,nil,advanceWorld,self)
+ if accepted then
+  for _,body in bodies do
+   local state=body.state
+   if body.kinematicAffected then
+    local saved=self.savedMotion[state]
+    local split=(state.motionCorrection or Vector3.zero)-(saved.motionCorrection or Vector3.zero)
+    if split.Magnitude>MaxKinematicCorrection or (terrainBlocked and terrainBlocked(state,body)) then accepted=false;break end
+   end
+  end
+ end
+ -- Penetration correction is positional, so a contradictory squeeze may
+ -- converge poorly. Reject the kinematic tick before replicating anything.
+ self:finishMotion(accepted)
+ if not accepted then
+  for _,body in bodies do
+   local state=body.state
+   local saved=self.savedMotion[state]
+   for _,field in savedFields do state[field]=saved[field] end
+   body.platformLift=nil;body.carryVelocity=nil;body.carryYaw=nil
+   VehicleMotion.sync(state)
+  end
+  Contacts.solve(bodies,obstacles,dt)
+  return false
+ end
+ for _,body in bodies do
+  local carry=body.carryVelocity
+  if carry then
+   local state=body.state
+   local v=VehicleMotion.ensure(state)
+   if supportAfter(body)==body.platform then
+    VehicleMotion.setVelocity(state,v-Vector3.new(carry.X,0,carry.Z))
+    VehicleMotion.setYawVelocity(state,state.angularVelocity.Y-body.carryYaw)
+   else
+    VehicleMotion.setVelocity(state,v+Vector3.new(0,carry.Y,0))
+   end
+  end
+ end
+ return true
+end
+local function liveSolid(record)
+ return record.solid and not record.destroyed and record.proxy.Parent and (not record.motion or record.model.Parent)
 end
 function Objects:footprintSupport(position,yaw,shape)
  local boxes={}
  for _,record in self.records do
-  if record.solid and not record.destroyed and record.proxy.Parent then
+  if liveSolid(record) then
    for _,box in record.geometries do table.insert(boxes,box)end
   end
  end
@@ -90,7 +344,7 @@ end
 function Objects:support(x,z,maxHeight)
  local height,surface
  for _,record in self.records do
-  if record.solid and not record.destroyed and record.proxy.Parent then
+  if liveSolid(record) then
    for _,geometry in record.geometries do
     local y=Geometry.support(geometry,x,z,maxHeight)
     if y and (not height or y>height) then height=y;surface=geometry end
@@ -101,7 +355,7 @@ function Objects:support(x,z,maxHeight)
 end
 function Objects:obstacles()
  local out={}
- for _,record in self.records do if record.solid and not record.destroyed and record.proxy.Parent then for _,body in record.bodies do table.insert(out,body) end end end
+ for _,record in self.records do if liveSolid(record) then for _,body in record.bodies do table.insert(out,body) end end end
  return out
 end
 -- Intersect the descending heading with live upper faces, just above contact.
@@ -111,7 +365,7 @@ function Objects:projectileGround(origin,direction,range,radius,baseline)
  local ground,nearest=nil,math.huge
  if direction.Y>=-1e-7 then return nil end
  for _,record in self.records do
-  if record.solid and not record.destroyed and record.proxy.Parent then
+  if liveSolid(record) then
    for _,box in record.geometries do
    local plane=Geometry.planeHeight(box,origin.X,origin.Z)
    if plane then
@@ -137,16 +391,36 @@ function Objects:impact(hit,damage,projectile)
  if projectile then self.seen[projectile]=true end
  local before=record.health
  record.health=math.max(0,before-damage); record.destroyed=record.health<=0
+ if record.destroyed and record.regenerates then self.regenerating[record]=record.regenerationDelay end
  -- Turn off queries/blocking before the next projectile in the same server tick.
  self:sync(record)
  return record,before,record.health,record.destroyed
 end
+function Objects:stepRegeneration(dt,blocked)
+ for record,remaining in self.regenerating do
+  if not record.model.Parent then
+   self.regenerating[record]=nil
+  else
+   remaining=math.max(0,remaining-dt)
+   if remaining<=1e-6 and (not record.solid or not blocked or not blocked(record)) then
+    self.regenerating[record]=nil
+    record.health=record.maxHealth;record.destroyed=false
+    self:sync(record)
+   else
+    self.regenerating[record]=remaining
+   end
+  end
+ end
+end
 function Objects:trackEffect(part) table.insert(self.effects,part) end
 function Objects:reset()
+ table.clear(self.regenerating)
+ for _,entry in self.moving do entry.clock=0 end
  for _,part in self.effects do part:Destroy() end; table.clear(self.effects)
  for _,record in self.records do
   record.health=record.maxHealth; record.destroyed=record.destructible and record.health<=0; self:sync(record)
  end
+ self:stepMotion(0)
  -- Keep weak projectile receipts: a completed projectile must not damage twice
  -- across reset. Entries vanish when the server releases the projectile record.
 end

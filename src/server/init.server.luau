@@ -12,6 +12,7 @@ local ArenaLayout = require(Shared.ArenaLayout)
 local Environment = require(Shared.Environment)
 local Playground=require(Shared.PlaygroundTerrain)
 local WorldSettings = require(Shared.WorldSettings)
+local Heightfield = require(Shared.WorldHeightfield)
 local EnvironmentBuilder = require(script.EnvironmentBuilder)
 local mapSize = Vector2.new(Config.ArenaLimit*2, Config.ArenaLimit*2)
 local weather=workspace:GetAttribute("ArenaWeather") or "Normal"
@@ -19,6 +20,7 @@ local environment
 local singleModelWorld=false
 local worldObjects
 local worldSettings
+local editablePlayground=false
 local Command = require(Shared.InputCommand)
 local BWController = require(script.BWController)
 local ScannerConfig=require(Shared.ScannerConfig)
@@ -44,6 +46,7 @@ local studioConfiguration=if storage then storage:FindFirstChild("BattleWorksStu
 local RoyaleConfig=require(Shared.BattleRoyaleConfig)
 local gameMode=RoyaleConfig.mode(studioConfiguration,workspace:GetAttribute("BattleWorksGameMode"))
 local labOwner
+local playgroundLaunch
 if not studio and game.PrivateServerId and game.PrivateServerId~="" and game.PrivateServerOwnerId==0 then
  local arriving=Players:GetPlayers()[1] or Players.PlayerAdded:Wait()
  local join=arriving:GetJoinData()
@@ -53,7 +56,7 @@ if not studio and game.PrivateServerId and game.PrivateServerId~="" and game.Pri
   gameMode="InnovationLab";labOwner=arriving.UserId
  elseif join.SourcePlaceId==game.PlaceId and type(data)=="table" and data.battleWorksWorld==true
   and data.owner==arriving.UserId and type(data.id)=="string" and type(data.revision)=="number" then
-  gameMode="Classic"
+  if data.playground==true then gameMode="BattleRoyale";playgroundLaunch=data else gameMode="Classic" end
  end
 end
 local isLab=gameMode=="InnovationLab"
@@ -113,14 +116,60 @@ if editorMetadata then
  local ok,reason=pcall(function() require(script.EditorAssetCatalog).publish(storage,ReplicatedStorage,editorMetadata,game:GetService("HttpService")) end)
  if ok then startup("editor asset library ready") else warn("BattleWorks editor library unavailable: "..tostring(reason)) end
 end
+local function stageWorld(specs,settings)
+ local candidate=require(script.WorldObjects).new()
+ local staging=Instance.new("Folder")
+ local ok,reason=pcall(function()
+  local models,err=require(Shared.ModelPlacement).placeMany(storage:FindFirstChild("BattleWorksAssets"),specs,staging,function(model,spec) candidate:add(model,spec) end)
+  assert(models,err)
+  candidate:stepMotion(0)
+  WorldSettings.checkSpawns(settings,candidate:obstacles())
+ end)
+ if not ok then staging:Destroy();error(reason,0) end
+ return candidate,staging
+end
+local function mountScenery(staging)
+ local old=arena:FindFirstChild("WorldScenery");if old then old:Destroy() end
+ staging:FindFirstChild("WorldScenery").Parent=arena;staging:Destroy()
+end
 local publishedWorld=if studioConfiguration then studioConfiguration:FindFirstChild("PublishedWorld") else nil
 local productionWorld=if not RunService:IsStudio() and publishedWorld and publishedWorld:IsA("StringValue") and publishedWorld.Value~="" then publishedWorld.Value else nil
-if not isLab and (studio or productionWorld) then
+if not isLab and not playgroundLaunch and (studio or productionWorld) then
  local selection=require(script.StudioWorldSelector).start(RunService,storage,arena,nil,productionWorld)
  singleModelWorld=selection.active.profile=="single-model"
  worldObjects=selection.objects
  worldSettings=selection.active.settings
+ editablePlayground=isRoyale and selection.active.id=="playground"
  if worldSettings then mapSize=Vector2.new(worldSettings.width,worldSettings.depth) end
+end
+local starterPlayground=isRoyale and not isLab and not singleModelWorld and not worldSettings and editorMetadata
+if playgroundLaunch or starterPlayground then
+ local ok,reason=pcall(function()
+  local http=game:GetService("HttpService")
+  local raw
+  if playgroundLaunch then
+   local context=require(script.WorldTestContext).resolve(RunService,game,studioConfiguration)
+   local store=require(script.PlayerWorldStorage).create(http,studioConfiguration,context.studio,context)
+   local saved=store:load(playgroundLaunch.owner,playgroundLaunch.id)
+   assert(saved.revision==playgroundLaunch.revision,"Saved world changed before launch")
+   raw=saved.document
+  else
+   raw=require(Shared.PlaygroundWorld).new()
+  end
+  local library=assert(ReplicatedStorage:FindFirstChild("BattleWorksEditorAssets"),"Editor asset library unavailable")
+  local items=require(Shared.CatalogData).decode(library:FindFirstChild("Catalog"),http)
+  local document,specs,settings=require(script.PlayerWorldDocument).validate(raw,items,storage:FindFirstChild("BattleWorksAssets"))
+  WorldSettings.ready(settings)
+  local candidate,staging=stageWorld(specs,settings)
+  mountScenery(staging)
+  worldObjects=candidate;worldSettings=settings;singleModelWorld=true;editablePlayground=true
+  mapSize=Vector2.new(settings.width,settings.depth)
+  arena:SetAttribute("WorldId",document.id);arena:SetAttribute("WorldName",document.name)
+ end)
+ if not ok then
+  warn("BattleWorks could not load the requested Playground world: "..tostring(reason))
+  if playgroundLaunch then arena:SetAttribute("PlaygroundLoadFailed",true) end
+ end
 end
 -- The imported-asset world uses ground/boundaries and registered model placements.
 -- Normal arena creation, including weather and terrain, is unchanged.
@@ -134,8 +183,16 @@ local function createEnvironment(size)
   data.zones=table.clone(worldSettings.zones);data.startPositions=worldSettings.spawns
   if worldSettings.terrain then data.terrainSettings=worldSettings end
  end
- if isRoyale and not isLab and not worldSettings then
+ if isRoyale and not isLab and (not worldSettings or (editablePlayground and worldSettings.terrain and size==Playground.DefaultSize)) then
   Playground.configure(data,size)
+  if worldSettings then
+   -- Keep the test course, practice ranges and blue zones. The saved
+   -- document owns terrain, bridge, structures and trees.
+   data.playground.authored=true
+   data.playground.staticBoxes={}
+   data.trees={}
+   data.zones=table.clone(worldSettings.zones)
+  end
  end
  data.worldObjects=worldObjects
  return data
@@ -154,7 +211,8 @@ local function part(name, size, position, color, deferParent)
 	if not deferParent then p.Parent = arena end
 	return p
 end
-if course then
+local function buildCourseTargets()
+ if not course then return end
  for i,spec in course.layout.rangeTargets do
   local target=part("CourseTarget",Vector3.new(1.5,5.5,if i==1 then 7 else 6),course:targetPosition(i,0),Color3.fromRGB(51,66,75))
   target.CanCollide=false;target:SetAttribute("ScannerType","object")
@@ -171,6 +229,7 @@ if course then
   course.targets[target]=i
  end
 end
+buildCourseTargets()
 -- Build the ground with the arena rather than relying on an optional place
 -- Baseplate or Terrain. Its top is exactly the simulation's ground plane Y=0.
 local floor = part("Floor", Vector3.new(240, 1, 240), Vector3.new(0, -0.5, 0), Color3.fromRGB(100, 112, 86))
@@ -215,7 +274,7 @@ elseif worldSettings or environment.playground then
 end
 local scannerScene=require(script.ScannerScene).new(arena,workspace,floor,tanks,targets)
 local function buildTargets(size)
- if isLab or singleModelWorld then return end
+ if isLab or (singleModelWorld and not environment.playground) then return end
 	local locations=environment.playground and environment.playground.targets
  local count = if locations then #locations else math.clamp(math.floor((size.X-10)/9),1,5)
 	for i = 1, count do
@@ -308,6 +367,10 @@ local function findSpawn(tank)
  end
  local function clear(p)
   if worldSettings and WorldSettings.deepWater(worldSettings,p,Components.get(tank.kind).Chassis) then return false end
+  if environment.terrainSettings then
+   local _,dx,dz=Heightfield.sample(worldSettings.terrain,worldSettings.width,worldSettings.depth,p.X,p.Z,true)
+   if dx*dx+dz*dz>.49 then return false end
+  end
   if Playground.inCourse(environment.playground,p,8) then return false end
   local entry=environment.playground and environment.playground.characterSpawn
   if tank.public and entry and (p-entry).Magnitude<14 then return false end
@@ -316,14 +379,14 @@ local function findSpawn(tank)
     if other~=tank and not other.state.waitingForSpawn and (p-other.state.position).Magnitude<14 then return false end
    end
   end
-  if environment.playground and not Playground.safe(environment.playground,p,7)then return false end
+  if environment.playground and not environment.playground.authored and not Playground.safe(environment.playground,p,7)then return false end
   if math.abs(p.X)>mapSize.X/2-7 or math.abs(p.Z)>mapSize.Y/2-7 then return false end
   for _,body in bodies do if not body.plane and WorldSettings.blocked(p,body,7) then return false end end
   return true
  end
  local function supported(p)
   if tank.characterUserId~=nil or environment.terrainSettings then
-   local height=Environment.sample(environment,p.X,p.Z,p.Y+1.5)
+   local height=Environment.sample(environment,p.X,p.Z,if environment.terrainSettings then nil else p.Y+1.5)
    return Vector3.new(p.X,height,p.Z)
   end
   return p
@@ -331,7 +394,7 @@ local function findSpawn(tank)
  if tank.preferred then preferred=tank.preferred end
  preferred=supported(preferred)
  if environment.playground then
-  if tank.public and environment.playground.provingGround then
+  if tank.public and environment.playground.provingGround and not environment.playground.authored then
    -- Bounded random candidates use the same land/support/obstacle checks.
    for _=1,160 do
     local x=(math.random()-.5)*(mapSize.X-28);local z=(math.random()-.5)*(mapSize.Y-28)
@@ -341,7 +404,7 @@ local function findSpawn(tank)
    end
   end
   if clear(preferred)then return preferred,yaw end
-  for _,entry in environment.playground.entries do if clear(entry)then return entry,yaw end end
+  for _,entry in environment.playground.entries do local p=supported(entry);if clear(p)then return p,yaw end end
  end
  if clear(preferred) then return preferred,yaw end
  if isRoyale then
@@ -875,25 +938,38 @@ end
 -- Player worlds are installed only into an empty battlefield. Published launches
 -- use a fresh reserved server; Studio uses this same path without teleporting.
 local function installPlayerWorld(player,document,specs,settings)
- assert(not isRoyale,"Loading saved worlds into the arena requires Classic game mode. Your saved world is unchanged.")
- assert(sessions[player.UserId] and not next(battles),"The battlefield is busy. Leave combat on every Studio client before testing a world.")
- local candidate=require(script.WorldObjects).new()
- local staging=Instance.new("Folder")
- local ok,reason=pcall(function()
-  local models,err=require(Shared.ModelPlacement).placeMany(storage:FindFirstChild("BattleWorksAssets"),specs,staging,function(model,spec) candidate:add(model,spec) end)
-  assert(models,err);WorldSettings.checkSpawns(settings,candidate:obstacles())
- end)
- if not ok then staging:Destroy();error(reason) end
- -- Everything below is synchronous, after native assets and spawns validate.
- local scenery=staging:FindFirstChild("WorldScenery")
- local old=arena:FindFirstChild("WorldScenery");if old then old:Destroy() end
- scenery.Parent=arena;staging:Destroy()
+ assert(not isLab,"Saved worlds cannot replace an Innovation Lab experiment.")
+ assert(sessions[player.UserId] and not next(battles),"The battlefield is busy. Return every Studio client to the menu before testing a world.")
+ local candidate,staging=stageWorld(specs,settings)
+ mountScenery(staging)
+ if isRoyale then
+  local legacy=arena:FindFirstChild("PlaygroundTerrain");if legacy then legacy:Destroy() end
+  if course then
+   for target in course.targets do target:Destroy() end
+   course=nil
+  end
+  local spawn=royale.options.nativeSpawn
+  if spawn then
+   for _,member in royale.members do member.player.RespawnLocation=nil end
+   spawn:Destroy();royale.options.nativeSpawn=nil
+  end
+  candidate.characterCollision=true
+  for _,record in candidate.records do candidate:sync(record) end
+  for _,shell in shells do shell.model:Destroy() end;table.clear(shells)
+ end
  for p in targets do p:Destroy() end;table.clear(targets)
  local stick=arena:FindFirstChild("CenterStick");if stick then stick:Destroy() end
- worldObjects=candidate;worldSettings=settings;singleModelWorld=true;weather="Normal"
+ worldObjects=candidate;worldSettings=settings;singleModelWorld=true;weather="Normal";editablePlayground=isRoyale
  mapSize=Vector2.new(settings.width,settings.depth)
  environment=createEnvironment(mapSize);EnvironmentBuilder.build(arena,environment,floor)
+ if isRoyale and environment.playground then
+  require(script.PlaygroundBuilder).build(arena,environment.playground,floor)
+  course=if environment.playground.course then require(script.ProvingGrounds).new(environment.playground.course) else nil
+  buildCourseTargets()
+  buildTargets(mapSize)
+ end
  scannerScene:invalidate()
+ floor.CanCollide=isRoyale and not settings.terrain
  floor.Size=Vector3.new(mapSize.X+10,1,mapSize.Y+10)
  floor.Material=Enum.Material[settings.ground.material];floor.Color=Color3.fromRGB(table.unpack(settings.ground.color))
  walls[1].Size=Vector3.new(mapSize.X+10,6,4);walls[1].Position=Vector3.new(0,3,-mapSize.Y/2-3)
@@ -901,9 +977,10 @@ local function installPlayerWorld(player,document,specs,settings)
  walls[3].Size=Vector3.new(4,6,mapSize.Y+10);walls[3].Position=Vector3.new(-mapSize.X/2-3,3,0)
  walls[4].Size=walls[3].Size;walls[4].Position=Vector3.new(mapSize.X/2+3,3,0)
  arena:SetAttribute("Weather",weather);arena:SetAttribute("WorldId",document.id)
- arena:SetAttribute("WorldName","Player world")
+ arena:SetAttribute("WorldName",document.name)
  arena:SetAttribute("MapWidth",mapSize.X);arena:SetAttribute("MapDepth",mapSize.Y)
  arena:SetAttribute("MapRevision",arena:GetAttribute("MapRevision")+1)
+ if isRoyale then royale:resetPool(#royale.slots,"public:") end
 end
 if editorMetadata then
  local worldRemote=Instance.new("RemoteFunction");worldRemote.Name="PlayerWorlds";worldRemote.Parent=network
@@ -915,7 +992,7 @@ if editorMetadata then
   local studio=context.studio
   local teleport=if not studio then game:GetService("TeleportService") else nil
   playerWorlds=require(script.PlayerWorldService).new({
-   studio=studio,reserved=context.reserved,testHost=context.testHost,
+   studio=studio,reserved=context.reserved,testHost=context.testHost,playground=isRoyale and not isLab,activePlayground=if editablePlayground then playgroundLaunch else nil,
    placeId=game.PlaceId,http=http,items=require(Shared.CatalogData).decode(library:FindFirstChild("Catalog"),http),assets=storage:FindFirstChild("BattleWorksAssets"),
    store=require(script.PlayerWorldStorage).create(http,studioConfiguration,studio,context),
    isPresent=function(player) return sessions[player.UserId]~=nil end,
@@ -968,10 +1045,18 @@ if isRoyale then
   nativeSpawn=nativeSpawn,
   beforeJoin=if lab then function(member,id)return lab:start(royale,member,id)end else nil,
   onMenu=if lab then function(player)lab:clear(royale,player)end else nil,
-  hazard=function(position)return environment.playground and Playground.hazard(environment.playground,position)end,
+  hazard=function(position)
+   local data=environment.playground
+   if not data then return nil end
+   if not data.authored then return Playground.hazard(data,position) end
+   if position.Y< -20 and Playground.inCourse(data,position) then return "Ravine" end
+  end,
   autoBlocked=autoBlocked,
   safeExit=function(tank)
-   if not environment.playground then return true end
+   if not environment.playground or environment.playground.authored then
+    local p=tank.state.position
+    return not worldSettings or not WorldSettings.deepWater(worldSettings,p,Components.get(tank.kind).Chassis)
+   end
    local p=tank.state.position
    local v=require(Shared.VehicleMotion).ensure(tank.state)
    local landing=p+Vector3.new(v.X,0,v.Z)*.7
@@ -1003,8 +1088,9 @@ if isRoyale then
   end)end
  end
  royaleControl.OnServerEvent:Connect(function(player,...)royale:request(player,...)end)
- if course and courseAction then
+ if courseAction then
   courseAction.OnServerEvent:Connect(function(player,action,id,epoch)
+   if not course then return end
    local tank=royale:controlled(player,id,epoch)
    if not tank or not tank.course or tank.state.controlMode~="Manual" or (action~="Restart" and action~="Return") then return end
    if simulationTime<(tank.courseActionAt or 0) then return end
@@ -1066,6 +1152,25 @@ arena:SetAttribute("BuildRevision",RoyaleConfig.Revision);arena:SetAttribute("St
 arena:SetAttribute("StartupPublicTanks",publicCount);arena:SetAttribute("StartupAutoTanks",autoCount)
 print(string.format("[BattleWorks ready] revision=%s mode=%s layout=%s world=%s size=%dx%d publicTanks=%d autoTanks=%d",RoyaleConfig.Revision,gameMode,layout,tostring(arena:GetAttribute("WorldId")or"default"),mapSize.X,mapSize.Y,publicCount,autoCount))
 startup("arena and battle services ready")
+local function platformTerrainBlocked(state,body)
+ return Simulation.platformTerrainBlocked(state,body,environment)
+end
+local function platformUnder(body)
+ local state=body.state
+ local height,_,_,_,_,_,platform=Environment.pose(environment,state.position,state.yaw,Components.get(state).Chassis)
+ return if math.abs(state.position.Y-height-(state.groundPlaneY or 0))<.05 then platform else nil
+end
+local function regenerationBlocked(record)
+ for _,tank in tanks do
+  local state=tank.state
+  if state.health<=0 or state.waitingForSpawn or state.publicRetired then continue end
+  local radius=Components.get(state).Chassis.Radius
+  for _,body in record.bodies do
+   if WorldSettings.blocked(state.position,body,radius) then return true end
+  end
+ end
+ return false
+end
 local accumulator, snapshotClock = 0, 0
 RunService.Heartbeat:Connect(function(dt)
 	profileBegin("BattleWorks.ServerHeartbeat")
@@ -1079,6 +1184,7 @@ RunService.Heartbeat:Connect(function(dt)
         local paused=diagnostics~=nil and not diagnostics.enabled
         local bwTime=0
         if diagnostics then diagnostics.scan=0 end
+  if worldObjects then worldObjects:stepRegeneration(Config.Step,regenerationBlocked) end
   if royale then royale:step(paused)end
 		for p, target in targets do PracticeTargets.update(p, target, now, tanks) end
 		for id, tank in tanks do
@@ -1139,8 +1245,9 @@ RunService.Heartbeat:Connect(function(dt)
 			local command=tank.tickCommand
 			tank.state.groundPlaneY=floor.Position.Y+floor.Size.Y/2
             if not tank.state.waitingForSpawn and not tank.state.publicRetired then
-                Simulation.step(tank.state, command, Config.Step, mapSize, environment,true)
+                local platform=Simulation.step(tank.state, command, Config.Step, mapSize, environment,true)
                 local body=VehicleContacts.body(id,tank.state,Components.get(tank.state).Chassis)
+                body.platform=platform
                 if studio and (tank.occupant or not tank.public) then
                  body.trackContacts=true
                  tank.state.motionDebugThrottle=command.throttle
@@ -1151,12 +1258,16 @@ RunService.Heartbeat:Connect(function(dt)
         end
         local solverStarted=if diagnostics then os.clock() else 0
         profileBegin("BattleWorks.VehicleContacts")
-        VehicleContacts.solve(contactBodies,contactObstacles,Config.Step)
+        if worldObjects and #worldObjects.moving>0 then
+         worldObjects:solveContacts(contactBodies,contactObstacles,Config.Step,platformTerrainBlocked,platformUnder)
+        else
+         VehicleContacts.solve(contactBodies,contactObstacles,Config.Step)
+        end
         profileEnd()
         local solverTime=if diagnostics then os.clock()-solverStarted else 0
         for _,record in contactBodies do
             local tank=tanks[record.id]
-            Simulation.reconcileGround(tank.state,environment)
+            Simulation.reconcileGround(tank.state,environment,record.carryVelocity~=nil)
             if Simulation.stepDeepWater(tank.state,environment.terrainSettings,Config.Step) then
                 local battle=if tank.public then royale.battle else battles[tank.owner]
                 if battle and Battle.environmentDamage(battle,tank) then
@@ -1180,7 +1291,7 @@ RunService.Heartbeat:Connect(function(dt)
      if not tank.course and state.controlMode=="Manual" and state.configurationZone=="course:start" then course:begin(tank,simulationTime) end
      if tank.course then
       if not Playground.inCourse(environment.playground,state.position,2) and tank.course.phase~="Complete"
-       and Playground.safe(environment.playground,state.position,1,true) then
+       and (environment.playground.authored or Playground.safe(environment.playground,state.position,1,true)) then
        tank.course=nil;state.course=nil
       else
        course:advance(tank,simulationTime);course:publish(tank,simulationTime)

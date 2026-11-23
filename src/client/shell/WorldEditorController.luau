@@ -5,6 +5,7 @@ local Math=require(Shared.WorldEditorMath)
 local Snap=require(Shared.WorldEditorSnap)
 local Visual=require(Shared.AssetGeometry)
 local Placement=require(Shared.ModelPlacement)
+local Motion=require(Shared.WorldMotion)
 local Heightfield=require(Shared.WorldHeightfield)
 local Materials=require(Shared.TerrainMaterials)
 local View=require(script.Parent.WorldEditorView)
@@ -91,6 +92,10 @@ function Controller.new(context)
   end,"New world. Undo restores the previous draft.") then self:frameWorld() end
  end)
  action(view.openWorld.Activated,function() self:cancel();self.library:open(self.state.document) end)
+ action(view.openPlayground.Activated,function()
+  self:cancel()
+  self.library:open(self.state.document,"playground")
+ end)
  action(view.saveWorld.Activated,function() self:cancel();self.library:open(self.state.document,"save") end)
  action(view.saveAs.Activated,function() self:cancel();self.library:open(self.state.document,"copy") end)
  for axis,field in view.dimensions do action(field.FocusLost,function()
@@ -180,7 +185,58 @@ function Controller.new(context)
   end,"Updated "..key)
   if changed and key=="scale" then self.assetScales[entry.asset]=entry.scale end
  end) end
+ action(view.motionDraw.Activated,function() self:toggleMotionDraw() end)
+ action(view.motionPreview.Activated,function() self:toggleMotionPreview() end)
+ action(view.motionRemove.Activated,function()
+  local entry=self:selected()
+  if entry and entry.motion then
+   self:cancel()
+   self:perform(function() entry.motion=nil end,"Removed motion path.")
+  end
+ end)
+ action(view.motionPoint.Activated,function()
+  if not self.motionDraft or not self.motionPoint then return end
+  table.remove(self.motionDraft.points,self.motionPoint);self.motionPoint=nil
+  self:drawMotion()
+ end)
+ for axis,row in view.waypointFields do
+  action(row.field.FocusLost,function()
+   local entry=self:motionEntry()
+   local motion,index=self.motionDraft,self.motionPoint
+   local coordinate=tonumber(row.field.Text)
+   if entry and motion and index and coordinate and coordinate>=-2000 and coordinate<=2000 then
+    local points=motion.points
+    local closed=Motion.closed(points)
+    local offset=coordinate-entry.position[axis]
+    points[index][axis]=offset
+    if closed and (index==1 or index==#points) then points[1][axis]=offset;points[#points][axis]=offset end
+   end
+   self:drawMotion()
+  end)
+ end
+ for _,key in {"face","enabled"} do
+  local button=if key=="face" then view.motionFace else view.motionEnable
+  action(button.Activated,function() self:updateMotionProperty(key) end)
+ end
+ for key,row in view.motionFields do
+  action(row.field.FocusLost,function() self:updateMotionProperty(key,tonumber(row.field.Text)) end)
+ end
  action(view.solid.Activated,function() local o=self:selected();if o and not o.slot then self:perform(function() o.solid=not o.solid end,"Collision updated.") end end)
+ action(view.regenerates.Activated,function()
+  local entry=self:selected()
+  if entry and entry.destructible then
+   self:perform(function() entry.regenerates=entry.regenerates==false end,"Regeneration updated.")
+  end
+ end)
+ action(view.regenerationDelay.FocusLost,function()
+  local entry=self:selected()
+  if not entry or not entry.destructible or entry.regenerates==false then return end
+  local delay=tonumber(view.regenerationDelay.Text)
+  if not delay or not (delay>=0 and delay<=Document.MaxRegenerationDelay) then
+   self:refresh();self.view:message("Enter a regeneration delay from 0 to 3600 seconds.");return
+  end
+  self:perform(function() entry.regenerationDelay=delay end,"Regeneration delay updated.")
+ end)
  action(view.destructible.Activated,function() local o=self:selected();if o and not o.slot then self:perform(function() o.destructible=not o.destructible end,"Destructibility updated.") end end)
  action(view.export.Activated,function()
   self:cancel();view.name.Text=self.state.document.name;view.worldId.Text=self.state.document.id
@@ -256,6 +312,128 @@ function Controller:refreshTraction()
   if UIS:GetFocusedTextBox()~=self.view.traction then self.view.traction.Text=tostring(percent) end
  end
 end
+function Controller:motionEntry()
+ local entry=self:selected()
+ local item=entry and self.catalog.byPath[entry.asset]
+ return if item and not item.zone then entry else nil
+end
+function Controller:drawMotion()
+ local entry=self:motionEntry()
+ local m=self.motionDraft or (entry and entry.motion)
+ local view=self.view
+ view.motionDraw.Visible=entry~=nil
+ view.motionDraw.Text=if self.motionDraft then "Finish Motion Path" elseif m then "Edit Motion Path" else "Draw Motion Path"
+ view.motionPreview.Visible=m~=nil and not self.motionDraft
+ view.motionPreview.Text=if self.motionPreview then "Stop Preview" else "Preview Motion"
+ view.motionRemove.Visible=entry~=nil and entry.motion~=nil and not self.motionDraft
+ local point=self.motionDraft and self.motionPoint and self.motionDraft.points[self.motionPoint]
+ view.motionPoint.Visible=point~=nil
+ for axis,row in view.waypointFields do
+  row.field.Visible=point~=nil;row.label.Visible=point~=nil
+  if point and UIS:GetFocusedTextBox()~=row.field then row.field.Text=tostring(entry.position[axis]+point[axis]) end
+ end
+ view.motionFace.Visible=m~=nil;view.motionEnable.Visible=m~=nil
+ if m then
+  view.motionFace.Text=if m.face then "Face direction of travel" else "Maintain orientation"
+  view.motionEnable.Text=if m.enabled then "Motion enabled" else "Motion disabled"
+ end
+ for key,row in view.motionFields do
+  row.label.Visible=m~=nil;row.field.Visible=m~=nil
+  if m and UIS:GetFocusedTextBox()~=row.field then row.field.Text=tostring(m[key]) end
+ end
+ if not self.scene then return end
+ local points={}
+ local closed=m and Motion.closed(m.points)
+ if entry and m then
+  local origin=Vector3.new(table.unpack(entry.position))+Vector3.new(0,.75,0)
+  for i,p in m.points do points[i]=origin+Vector3.new(table.unpack(p)) end
+  if closed then points[#points]=points[1] end
+ end
+ self.scene:drawMotion(points,closed,self.motionPoint)
+end
+function Controller:toggleMotionDraw()
+ local entry=self:motionEntry()
+ if not entry then return end
+ if self.motionDraft then
+  local motion=self.motionDraft
+  if Motion.closed(motion.points) then motion.points[#motion.points]=State.copy(motion.points[1]) end
+  local settings=self.state.document.settings
+  local ok,reason=pcall(Motion.validate,motion,entry.position,settings.width,settings.depth)
+  if not ok then self.view:message(tostring(reason));return end
+  self.motionDraft=nil;self.motionPoint=nil
+  self:perform(function() entry.motion=motion end,"Motion path saved to the draft.")
+  return
+ end
+ self:cancel()
+ self.motionDraft=if entry.motion then State.copy(entry.motion) else {points={},speed=12,pause=0,face=false,enabled=true}
+ self:drawMotion()
+ self.view:message("Click or tap to add waypoints. Drag a marker to move it. Close a loop within 5 studs of the first point. Escape cancels.")
+end
+function Controller:updateMotionProperty(key,value)
+ local entry=self:motionEntry()
+ local m=self.motionDraft or (entry and entry.motion)
+ if not m then return end
+ if key=="face" or key=="enabled" then value=not m[key]
+ elseif not value or value~=value or value<(if key=="speed" then 1 else 0) or value>(if key=="speed" then 60 else 10) then self:drawMotion();return end
+ if self.motionDraft then m[key]=value;self:drawMotion()
+ else self:stopMotionPreview();self:perform(function() m[key]=value end,"Motion settings updated.") end
+end
+function Controller:motionOffset(entry,point)
+ local x,z=self.state:snapValue(point.X),self.state:snapValue(point.Z)
+ local settings=self.state.document.settings
+ local y=if settings.terrain then Heightfield.sample(settings.terrain,settings.width,settings.depth,x,z) else point.Y
+ return {x-entry.position[1],y-entry.position[2],z-entry.position[3]}
+end
+function Controller:motionInput(input,point,mouse)
+ local m=self.motionDraft
+ local entry=self:motionEntry()
+ if not m or not entry then return end
+ local origin=Vector3.new(table.unpack(entry.position))
+ local scene=self.scene
+ local pixel=mouse-self.view.viewport.AbsolutePosition
+ local closest,distance=nil,13
+ for i,p in m.points do
+  local projected=Math.project(scene.camera.CFrame,self.view.viewport.AbsoluteSize,origin+Vector3.new(table.unpack(p))+Vector3.new(0,.75,0),scene.camera.FieldOfView)
+  if projected and (projected-pixel).Magnitude<distance then closest=i;distance=(projected-pixel).Magnitude end
+ end
+ if closest then
+  self.motionPoint=closest
+  local closed=Motion.closed(m.points)
+  self.motionDrag={input=input,index=closest,pixel=mouse,closed=closed,canClose=closest==1 and #m.points>=3 and #m.points<Motion.MaxPoints and not closed}
+ elseif point and #m.points<Motion.MaxPoints then
+  local i=#m.points+1
+  m.points[i]=self:motionOffset(entry,point)
+  self.motionPoint=i
+ end
+ self:drawMotion()
+end
+function Controller:moveMotionPoint(mouse)
+ local drag,m,entry=self.motionDrag,self.motionDraft,self:motionEntry()
+ if not drag or not m or not entry or (mouse-drag.pixel).Magnitude<3 then return end
+ drag.moved=true
+ local point=self:pointer(mouse,true)
+ if not point then return end
+ local values=self:motionOffset(entry,point)
+ m.points[drag.index]=values
+ if drag.closed and (drag.index==1 or drag.index==#m.points) then
+  m.points[1]=State.copy(values);m.points[#m.points]=State.copy(values)
+ end
+ self:drawMotion()
+end
+function Controller:toggleMotionPreview()
+ if self.motionPreview then self:stopMotionPreview();self:drawMotion();return end
+ local entry=self:motionEntry()
+ local record=entry and entry.motion and self.scene.models[entry.id]
+ if not record then return end
+ self.motionPreview={entry=entry,model=record.model,pivot=record.model:GetPivot(),path=Motion.compile(entry.motion),time=0}
+ self:drawMotion()
+end
+function Controller:stopMotionPreview()
+ local preview=self.motionPreview
+ if not preview then return end
+ self.motionPreview=nil
+ if preview.model.Parent then preview.model:PivotTo(preview.pivot) end
+end
 function Controller:refresh()
  self:refreshTraction()
  for axis,field in self.view.dimensions do
@@ -269,6 +447,7 @@ function Controller:refresh()
  local selected=self:selected();self.view:selection(selected,selected and self.catalog.byPath[selected.asset])
  if self.scene then self.scene:selection(selected and selected.id,self.distance) end
  self:updateSnap()
+ self:drawMotion()
  self.view.undo.Text="Undo ("..#self.state.past..")";self.view.redo.Text="Redo ("..#self.state.future..")"
 end
 local function copyPose(entry,pose)
@@ -397,13 +576,13 @@ function Controller:mousePosition()
  local origin=game:GetService("GuiService"):GetInsetArea(Enum.ScreenInsets.None).Min
  return Math.guiPoint(UIS:GetMouseLocation(),origin)
 end
-function Controller:pointer()
- local mouse=self:mousePosition()
+function Controller:pointer(mouse,motion)
+ mouse=mouse or self:mousePosition()
  if not self.scene then return nil,nil,nil,mouse end
  local origin,direction=Math.ray(self.scene.camera.CFrame,self.view.viewport.AbsoluteSize,mouse-self.view.viewport.AbsolutePosition,self.scene.camera.FieldOfView)
  local settings=self.state.document.settings
- local point=if self.mode=="Terrain" and settings.terrain then Heightfield.pick(settings.terrain,settings.width,settings.depth,origin,direction) else Math.ground(origin,direction)
- if self.mode=="Terrain" and point and (math.abs(point.X)>settings.width/2 or math.abs(point.Z)>settings.depth/2) then point=nil end
+ local point=if (self.mode=="Terrain" or motion) and settings.terrain then Heightfield.pick(settings.terrain,settings.width,settings.depth,origin,direction) else Math.ground(origin,direction)
+ if (self.mode=="Terrain" or motion) and point and (math.abs(point.X)>settings.width/2 or math.abs(point.Z)>settings.depth/2) then point=nil end
  return point,origin,direction,mouse
 end
 function Controller:paintTerrain(point,dt)
@@ -465,6 +644,8 @@ function Controller:place(point)
  end
 end
 function Controller:cancel()
+ self.motionDraft=nil;self.motionPoint=nil;self.motionDrag=nil;self:stopMotionPreview()
+ if self.scene then self:drawMotion() end
  self:finishTerrain(true)
  if self.gesture then self.state:restore(self.gesture.before);self.gesture=nil;if self.scene then self.scene:sync(self.state.document,self.catalog) end end
  self.placing=nil;self.placingStart=nil;self.paletteDrag=nil;self:stopCamera()
@@ -559,10 +740,23 @@ function Controller:begin(input,processed)
   if not processed then self:beginCamera(input) end
   return
  end
- local point,origin,direction,mouse=self:pointer()
+ local touch=input.UserInputType==Enum.UserInputType.Touch
+ local mousePoint=if touch then Math.guiPoint(Vector2.new(input.Position.X,input.Position.Y),game:GetService("GuiService"):GetInsetArea(Enum.ScreenInsets.None).Min) else nil
+ local point,origin,direction,mouse=self:pointer(mousePoint,self.motionDraft~=nil)
  if not origin or not direction or not self.view:isScene(mouse) then return end
- if processed then return end
- if processed or input.UserInputType~=Enum.UserInputType.MouseButton1 then return end
+ if processed and not touch then return end
+ if input.UserInputType~=Enum.UserInputType.MouseButton1 and not touch then return end
+ if self.motionDraft then if not self.motionDrag then self:motionInput(input,point,mouse) end;return end
+ self:stopMotionPreview()
+ if touch then
+  if self.placing or self.placingStart then self:place(point)
+  elseif self.mode~="Terrain" then
+   local pixel=mouse-self.view.viewport.AbsolutePosition
+   local id=self.scene:pick(origin,direction,pixel,self.view.viewport.AbsoluteSize)
+   if id then self.state:select(id);self:refresh() end
+  end
+  return
+ end
  if self.mode=="Terrain" then
   if point and not self.terrainStroke then
    local settings=self.state.document.settings
@@ -628,6 +822,14 @@ function Controller:key(input,processed)
 end
 function Controller:step(dt)
  local scene=self.scene;if not scene then return end
+ local preview=self.motionPreview
+ if preview then
+  preview.time+=dt
+  local offset,yaw=Motion.sample(preview.path,preview.time)
+  local origin=Vector3.new(table.unpack(preview.entry.position))
+  local angle=if yaw then yaw-math.rad(preview.entry.rotation[2]) else 0
+  preview.model:PivotTo(CFrame.new(origin+offset)*CFrame.Angles(0,angle,0)*CFrame.new(-origin)*preview.pivot)
+ end
  local mouse=self:mousePosition()
  local pixel=mouse-self.view.viewport.AbsolutePosition
  local overScene=self.view:isScene(mouse)
@@ -772,6 +974,7 @@ function Controller:enter(playtest)
   local draft=Document.numberStarts(State.copy(playtest.document))
   self.state=State.new(draft);self.state.snap=false
   self.library.revisions[draft.id]=playtest.revision
+  self.library.saved[draft.id]=State.copy(playtest.document)
  end
  self.active=true;self.paused=false;self.windowUnfocused=false;self.frame.Visible=true;self.view.overlay.Visible=false
  game:GetService("GuiService").SelectedObject=nil
@@ -788,6 +991,15 @@ function Controller:enter(playtest)
   if input.UserInputType==Enum.UserInputType.Keyboard then self:key(input,processed) elseif self.scene then self:begin(input,processed) end
  end)
  connect(UIS.InputEnded,function(input)
+  if self.motionDrag and (self.motionDrag.input==input or input.UserInputType==Enum.UserInputType.MouseButton1) then
+   local drag=self.motionDrag;self.motionDrag=nil
+   if drag.canClose and not drag.moved and self.motionDraft then
+    local points=self.motionDraft.points
+    table.insert(points,State.copy(points[1]));self.motionPoint=#points
+    self:drawMotion()
+   end
+   return
+  end
   self.keys[input.KeyCode]=nil
   if self.cameraDrag and self.cameraDrag.button==input.UserInputType then self:stopCamera() end
   if input.UserInputType==Enum.UserInputType.MouseButton1 then
@@ -802,6 +1014,10 @@ function Controller:enter(playtest)
   end
  end)
  connect(UIS.InputChanged,function(input)
+  if self.motionDrag and (input==self.motionDrag.input or input.UserInputType==Enum.UserInputType.MouseMovement) then
+   local pointer=if input.UserInputType==Enum.UserInputType.Touch then Math.guiPoint(Vector2.new(input.Position.X,input.Position.Y),game:GetService("GuiService"):GetInsetArea(Enum.ScreenInsets.None).Min) else self:mousePosition()
+   self:moveMotionPoint(pointer)
+  end
   if self.cameraDrag and input.UserInputType==Enum.UserInputType.MouseMovement then
    self.cameraDelta+=Vector2.new(input.Delta.X,input.Delta.Y)
   end

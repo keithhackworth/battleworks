@@ -3,6 +3,7 @@
 local Placement=require(script.Parent.StudioAssetPlacement)
 local WorldObjects=require(script.Parent.WorldObjects)
 local WorldSettings=require(game.ReplicatedStorage.Shared.WorldSettings)
+local Motion=require(game.ReplicatedStorage.Shared.WorldMotion)
 local Selector={}
 local DEFAULT={id="default",name="Default Test Arena",status="ready",reason="Built-in BattleWorks arena."}
 local function child(parent,name) return if parent then parent:FindFirstChild(name) else nil end
@@ -23,8 +24,8 @@ local function placement(source)
  local faces=text(source,"ColliderFaces")
  if faces then profile=game:GetService("HttpService"):JSONDecode(faces)end
  return {id=text(source,"InstanceId"),asset=text(source,"AssetId"),source=text(source,"Source"),template=text(source,"Template"),
-  position=typed(source,"Position","Vector3Value"),rotation=typed(source,"Rotation","Vector3Value"),scale=typed(source,"Scale","NumberValue"),stretch=optionalJSON("Stretch"),resizeAxes=optionalJSON("ResizeAxes"),
-  interaction=if child(source,"Solid") then {solid=typed(source,"Solid","BoolValue"),destructible=typed(source,"Destructible","BoolValue"),hp=typed(source,"Health","NumberValue"),fractions=typed(source,"ColliderFractions","Vector3Value"),fit=text(source,"ColliderFit"),faces=profile and profile.faces,bases=profile and profile.bases,walls=profile and profile.walls,sourceSize=profile and profile.sourceSize} else nil}
+  position=typed(source,"Position","Vector3Value"),rotation=typed(source,"Rotation","Vector3Value"),scale=typed(source,"Scale","NumberValue"),motion=optionalJSON("Motion"),stretch=optionalJSON("Stretch"),resizeAxes=optionalJSON("ResizeAxes"),
+  interaction=if child(source,"Solid") then {solid=typed(source,"Solid","BoolValue"),destructible=typed(source,"Destructible","BoolValue"),hp=typed(source,"Health","NumberValue"),regenerates=typed(source,"Regenerates","BoolValue"),regenerationDelay=typed(source,"RegenerationDelay","NumberValue"),fractions=typed(source,"ColliderFractions","Vector3Value"),fit=text(source,"ColliderFit"),faces=profile and profile.faces,bases=profile and profile.bases,walls=profile and profile.walls,sourceSize=profile and profile.sourceSize} else nil}
 end
 function Selector.catalog(configuration)
  local records={table.clone(DEFAULT)}
@@ -51,7 +52,7 @@ function Selector.catalog(configuration)
    table.insert(records,{id=id,name=if type(name)=="string" and name~="" then name else id,
     status=if text(entry,"Status")=="asset-dependent" and not settingsError and (source or #specs>0 or settings) then "asset-dependent" else "preview-only",
     settings=settings,reason=settingsError or text(entry,"Reason") or "No supported imported-model placement is registered.",manifest=text(entry,"ManifestPath") or "",
-    placement=if source then placement(source) else nil,placements=if #specs>0 or settings then specs else nil})
+    placement=if source then placement(source) else nil,placements=if #specs>0 or (settings and not source) then specs else nil})
   end
  end
  table.sort(records,function(a,b) if a.id=="default" then return true elseif b.id=="default" then return false else return a.id<b.id end end)
@@ -97,9 +98,18 @@ function Selector.start(runService,storage,arena,log,productionId)
     if template then p.interaction.boxes=require(script.Parent.MeshCollisionFit).profile(template) end
    end
   end
+  local placed=0
   local models,reason=Placement.placeMany(child(storage,"BattleWorksAssets"),specs,arena,function(model,p)
-   if p.interaction then candidate:add(model,p) end
-   if settings then WorldSettings.checkSpawns(settings,candidate:obstacles()) end
+   if p.motion then
+    assert(settings,"Motion paths require authored world settings")
+    Motion.validate(p.motion,{p.position.X,p.position.Y,p.position.Z},settings.width,settings.depth)
+   end
+   if p.interaction or p.motion then candidate:add(model,p) end
+   placed+=1
+   if placed==#specs then
+    candidate:stepMotion(0)
+    if settings then WorldSettings.checkSpawns(settings,candidate:obstacles()) end
+   end
   end,child(storage,"BattleWorksBuiltinAssets"))
   if models then objects=candidate end
   return models,reason

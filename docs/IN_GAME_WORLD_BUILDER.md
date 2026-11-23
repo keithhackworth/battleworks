@@ -8,6 +8,91 @@ The editor starts with a 230 × 230 world and a flat base floor. It uses the
 existing catalog, authoring-v2 JSON document, native model placement math, and
 compiler/export pipeline. It never edits the running arena.
 
+## Edit and play a saved Playground
+
+In Playground mode, leave combat and open **Main Menu → World Editor → Open Playground**.
+The initial arena and the first editor draft use the same starter document, derived
+from the original Playground layout. It uses the editable
+heightfield for the banks and river, and regular asset placements for the bridge,
+barracks and forest. Later opens prefer the saved `playground` revision. Save As
+creates a separate world. Terrain, materials, water, and asset tools work as usual.
+
+Use **Save & Play Test** to launch the current draft, or save it and use **Main Menu →
+Play Saved Playground**. Any playable world opened in the Playground editor can
+launch with the usual public tank pool, BW personalities, claim controls, combat and
+scoreboard. Live launches use a private reserved battlefield. In Studio, return all
+test clients to the menu before installing another draft. The regular **The Playground**
+button joins the arena already running in that server. The old layout is a fallback
+if the starter assets are unavailable.
+
+The saved 462 × 369 Playground retains the test course, configuration pads, material
+lanes and practice targets as gameplay infrastructure. Creating a differently sized
+world gives you an authored arena with the tank pool and combat. The starter river
+and slopes are sampled onto the editor grid. Verify the exact ravine and bridge
+clearance in Studio after changing the terrain.
+
+## Draw an asset motion path
+
+1. Select a placed object and choose **Draw Motion Path** in **Properties**.
+2. Click or tap the ground to place at least two waypoints. Drag a marker to adjust it.
+   Select a marker to enter exact world coordinates or use **Remove Selected Waypoint**.
+   To make an elevator, give two waypoints the same X and Z and different elevations.
+3. For a loop, put the last waypoint within 5 studs of the first after placing at least
+   three distinct waypoints. You can also tap the first marker to close the loop.
+   Green lines indicate a loop. Blue lines indicate an out-and-back route.
+4. Select **Finish Motion Path**. Set speed (1–60 studs/sec), endpoint pause (0–10 seconds),
+   and whether the asset faces its horizontal direction of travel. Loops use no
+   endpoint pause. You can enable or disable the path without removing it.
+5. **Preview Motion** animates the asset in the editor. **Stop Preview** restores its
+   editor pose. Save, reopen, and play to see the same route in the server simulation.
+
+Paths use world-axis offsets measured in studs from the asset's placement origin.
+Moving or copying the placement moves or copies the whole path. Rotating and resizing
+affect the model without changing the route's orientation or size. Solid moving
+assets use their real box or fitted collision profile. A supported tank rides the
+deck and can drive normally. Tanks inherit the platform's motion when leaving.
+Side impacts use the normal tank contact solver. A step that would leave a tank
+trapped is retried with solid moving assets held at their last accepted poses.
+**Face direction of travel** turns gradually at corners. Destructible assets use
+the usual projectile impact path. Legacy water and mud region objects are stationary.
+
+Hosted motion-path saves require the GroupBoard World API build that accepts the optional
+`motion` field.
+
+### Studio test courses
+
+**River ferry**
+
+1. Sculpt a channel roughly 30 studs across, with flat banks at elevation 0.
+   For example, run the channel along Z and put the banks at X = −16 and +16.
+   Fill the channel with the terrain Water tool.
+2. Place a **Bridge / ramp deck**, set its local width to 20, height to 1,
+   and length to 24 studs. Set its base elevation to −1 so the top is level
+   with the banks. Keep **Collision** set to **Solid**.
+3. Draw two waypoints across the channel. Use their coordinate fields to set
+   elevation −1 at both ends. For the example channel use X = −26 and +26,
+   with Z = 0. At each endpoint the deck should meet or slightly overlap the bank. Set speed to 8 studs/sec and endpoint pause to 4
+   seconds. Maintain the original orientation.
+4. Save and play. Board at a paused endpoint with Boomer and Rattler, drive and
+   steer on deck, and drive off at the opposite bank. Leave a tank aboard
+   through a pause and reversal. For a multiplayer check, ride with two tanks.
+
+**Bridge sweeper**
+
+1. Make a ravine with a level deck about 14 studs wide across it. Leave one
+   side of the bridge open at the test point.
+2. Place a solid **Wall**, resize it to 1 stud thick across the bridge, about 8
+   studs high, and 10 studs long along the bridge. With the bridge along Z at
+   X = 0, use waypoints X = −14 and +14 at the same Z. Give it an open, two-point
+   path perpendicular to the bridge, with both waypoint elevations at deck
+   height. Run it from about 14 studs left of the centerline to about 14 studs
+   right. Set speed to 10 studs/sec, pause to 3 seconds, and maintain orientation.
+3. Save and play. Park a tank near the center of the bridge in the wall's path.
+   Confirm that the wall moves the tank sideways and that the tank drops when
+   the bridge no longer supports it. Repeat while driving against the wall.
+   Add a stationary blocker for a second pass and verify that a trapped tank
+   causes the sweeper to stop until it has clearance.
+
 ## Mouse and keyboard workflow
 
 1. Browse the **Object Library** in the bottom dock. Click directory tiles to

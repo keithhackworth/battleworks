@@ -63,14 +63,20 @@ function M.advanceYaw(body,dt)
  M.ensure(body); local delta=body.angularVelocity.Y*dt
  body.yaw=(body.yaw or 0)+delta; body.motionYawTravel=(body.motionYawTravel or 0)+delta; M.sync(body)
 end
-function M.integrateHorizontal(body,dt)
+function M.integrateHorizontal(body,dt,referenceVelocity,referenceYaw)
  local v=M.ensure(body); local previous=body.position; local angle=body.angularVelocity.Y*dt
  local middle=(body.yaw or 0)+angle/2
  M.advanceYaw(body,dt)
  body.position=body.position+Vector3.new(v.X*dt,0,v.Z*dt)
  local delta=body.position-previous
+ local dx,dz=delta.X,delta.Z
+ -- BW distance commands measure travel relative to the supporting deck.
+ if referenceVelocity then
+  dx-=referenceVelocity.X*dt;dz-=referenceVelocity.Z*dt
+  body.motionYawTravel-=referenceYaw*dt
+ end
  local sinc=if math.abs(angle)<1e-6 then 1-angle*angle/24 else math.sin(angle/2)/(angle/2)
- body.motionForwardTravel=(body.motionForwardTravel or 0)+(delta.X*(-math.sin(middle))+delta.Z*(-math.cos(middle)))*sinc
+ body.motionForwardTravel=(body.motionForwardTravel or 0)+(dx*(-math.sin(middle))+dz*(-math.cos(middle)))*sinc
  M.sync(body)
 end
 return M
