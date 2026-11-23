@@ -52,4 +52,32 @@ end
 function M.forGround(material,zone)
  return if zone=="Mud" then M.fromMaterial("Mud") else M.fromMaterial(material,zone=="Water")
 end
+M.TunableTraction=table.freeze({Grass=true,Mud=true,Snow=true,Ice=true})
+M.TreadTractionPoints=10
+function M.defaultTraction(kind)
+ return M.fromMaterial(kind).staticFriction/M.Definitions.Pavement.static*100
+end
+local overridesCache=setmetatable({},{__mode="k"})
+local defaultTractionCache={}
+function M.withTraction(profile,overrides)
+ if not M.TunableTraction[profile.surfaceType] then return profile end
+ local percent=overrides and overrides[profile.surfaceType]
+ local default=M.defaultTraction(profile.surfaceType)
+ percent=percent or default
+ local cache=if overrides then overridesCache[overrides] else defaultTractionCache
+ if not cache then cache={};overridesCache[overrides]=cache end
+ local cached=cache[profile]
+ if cached and cached.percent==percent then return cached.profile end
+ local tuned=table.clone(profile)
+ tuned.authoredTraction=percent/100
+ local tracked=math.min(100,percent+M.TreadTractionPoints)
+ tuned.trackedTraction=tracked/100
+ tuned.staticFriction=profile.staticFriction*percent/default
+ tuned.kineticFriction=profile.kineticFriction*percent/default
+ tuned.trackedStaticFriction=profile.staticFriction*tracked/default
+ tuned.trackedKineticFriction=profile.kineticFriction*tracked/default
+ table.freeze(tuned)
+ cache[profile]={percent=percent,profile=tuned}
+ return tuned
+end
 return M

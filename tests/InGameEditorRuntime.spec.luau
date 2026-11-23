@@ -595,6 +595,50 @@ controller:step(.016);controller:finishGesture(false)
 check(math.abs(controller:selected().position[1]-moveX-3)<1e-5 and not controller.state.pins[first.id],"whole-piece move commits normally after fitting")
 controller:history(false)
 check(controller.state.pins[first.id].second~=nil,"undo movement restores fitted pose and contacts")
+do
+ local button={UserInputType=Enum.UserInputType.MouseButton1}
+ for _,handle in {"Rotate1","Scale","ResizeZ"} do
+  local mode=if handle=="Rotate1" then "Rotate" elseif handle=="Scale" then "Scale" else "Resize"
+  controller:setMode(mode)
+  controller.scene.pick=function()return nil,handle end
+  controller.pointer=function()return Vector3.zero,Vector3.new(3,60,0),Vector3.new(0,-1,-.1).Unit,Vector2.zero end
+  controller:begin(button,false)
+  check(controller.gesture and not controller.state.pins[first.id],"starting "..mode.." releases both contacts")
+  controller:finishGesture(true)
+  check(controller.state.pins[first.id].second~=nil,"cancel restores contacts after "..mode)
+ end
+ local oldYaw=controller:selected().rotation[2]
+ controller.view.fields.yaw.Text=tostring(oldYaw+10)
+ controller.view.fields.yaw.FocusLost:Fire()
+ check(not controller.state.pins[first.id] and controller:selected().rotation[2]==oldYaw+10,"inspector rotation detaches the piece")
+ controller:history(false)
+ controller.state.pins[second.id]={endpoint="A",point={0,0,0},targetId=first.id}
+ controller.view.releasePin.Activated:Fire()
+ check(not controller.state.pins[first.id] and not controller.state.pins[second.id],"clearing contacts also removes a neighboring piece's reference to the selected object")
+ controller:history(false)
+ controller.state.pins[second.id]=nil
+end
+do
+ controller:setMode("Resize")
+ controller.scene.pick=function()return nil,"ResizeZ" end
+ controller.pointer=function()return Vector3.zero,Vector3.new(3,60,0),Vector3.new(0,-1,-.1).Unit,Vector2.zero end
+ controller:begin({UserInputType=Enum.UserInputType.MouseButton1},false)
+ check(controller.gesture and controller.gesture.kind=="ResizeZ","resize starts before the pointer leaves")
+ local oldScene,oldButton=controller.view.isScene,UIS.IsMouseButtonPressed
+ controller.view.isScene=function()return false end
+ UIS.IsMouseButtonPressed=function()return true end
+ controller.pointer=function()error("outside pointer should not be projected into the world")end
+ local distance,focus=controller.distance,controller.focus
+ controller:step(1/60)
+ controller:zoom(100)
+ controller:key({KeyCode=Enum.KeyCode.F},false)
+ check(controller.gesture and controller.distance==distance and controller.focus==focus,"outside resize holds the last preview and blocks camera zoom and focus")
+ UIS.IsMouseButtonPressed=function()return false end
+ controller:step(1/60)
+ check(not controller.gesture and controller.distance==distance,"mouse release outside ends the resize without moving the camera")
+ controller.view.isScene=oldScene;UIS.IsMouseButtonPressed=oldButton
+ controller.pointer=oldPointer
+end
 controller:setMode("Snap");controller:beginSnap("C",controller:selected())
 check(controller.gesture.pin.endpoint=="D","side handle chooses its own opposite side as pivot")
 controller:finishGesture(true)

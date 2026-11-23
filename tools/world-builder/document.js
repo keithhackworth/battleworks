@@ -27,7 +27,11 @@ function validate(input,items){
  for(const [k,n] of [['width',width],['depth',depth]]){number(n,25,2000,`settings.${k}`);if(n%1)fail(`settings.${k}`,'expected integer studs');}
  if (input.settings.terrain !== undefined) {
   const terrain=input.settings.terrain;
-  keys(terrain,['version','columns','rows','heights','paint','water'],'settings.terrain');
+  keys(terrain,['version','columns','rows','heights','paint','water','traction'],'settings.terrain');
+  if(terrain.traction!==undefined){
+   keys(terrain.traction,['Grass','Mud','Snow','Ice'],'settings.terrain.traction');
+   for(const percent of Object.values(terrain.traction))if(!Number.isFinite(percent)||percent<0||percent>100)fail('settings.terrain.traction','traction must be between 0 and 100 percent');
+  }
   const grid=n=>Math.max(4,Math.min(36,Math.ceil(n/6)));
   if (terrain.version!==1 || terrain.columns!==grid(width) || terrain.rows!==grid(depth)) fail('settings.terrain','grid does not match map dimensions');
   const count=(terrain.columns+1)*(terrain.rows+1);

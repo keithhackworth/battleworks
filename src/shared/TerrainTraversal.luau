@@ -7,11 +7,23 @@ function T.waterBlocked(depth,chassis)
  return depth>chassis.Hitbox.Y*.5+1e-6
 end
 local function blend(a,b,t) return a+(b-a)*t end
-function T.contact(pitch,roll,tracked,static,kinetic)
- if (pitch or 0)==0 and (roll or 0)==0 then return 0,0,static,kinetic,1 end
+local function tractionLimits(static,kinetic,traction)
+ if traction==nil then return static,kinetic end
+ -- Legacy friction values saturate the arcade solver on level terrain.
+ -- Explicit settings use pavement acceleration budgets of 0.8g / 0.6g.
+ return math.min(static,.8*traction),math.min(kinetic,.6*traction)
+end
+function T.contact(pitch,roll,tracked,static,kinetic,authoredTraction)
+ if (pitch or 0)==0 and (roll or 0)==0 then
+  static,kinetic=tractionLimits(static,kinetic,authoredTraction)
+  return 0,0,static,kinetic,1
+ end
  local forward,right=math.tan(pitch or 0),math.tan(roll or 0)
  local gradeSquared=forward*forward+right*right
- if gradeSquared<1e-8 then return 0,0,static,kinetic,1 end
+ if gradeSquared<1e-8 then
+  static,kinetic=tractionLimits(static,kinetic,authoredTraction)
+  return 0,0,static,kinetic,1
+ end
  local grade=math.sqrt(gradeSquared)
  local degrees=math.deg(math.atan(grade))
  local normalSquared=1/(1+gradeSquared)
@@ -26,6 +38,7 @@ function T.contact(pitch,roll,tracked,static,kinetic)
  local kineticMaterial=math.min(1.15,kinetic/8)
  local staticLimit=blend(static,projection*(movingGrip+.15)*staticMaterial,fade)
  local kineticLimit=math.min(staticLimit,blend(kinetic,projection*movingGrip*kineticMaterial,fade))
+ staticLimit,kineticLimit=tractionLimits(staticLimit,kineticLimit,authoredTraction)
  -- The reserve describes uphill movement after paying gravity. A zero
  -- reserve still allows descent and lets the existing traction solver slip.
  local uphill=math.clamp((kineticLimit/projection-grade)/.36,0,1)
@@ -34,8 +47,8 @@ end
 function T.classify(pitch,roll,profile)
  local gradeSquared=math.tan(pitch)^2+math.tan(roll)^2
  if gradeSquared>T.MaxGradient^2 then return "Impossible" end
- local _,_,_,_,wheels=T.contact(pitch,roll,false,profile.staticFriction,profile.kineticFriction)
- local _,_,_,_,tracks=T.contact(pitch,roll,true,profile.trackedStaticFriction or profile.staticFriction,profile.trackedKineticFriction or profile.kineticFriction)
+ local _,_,_,_,wheels=T.contact(pitch,roll,false,profile.staticFriction,profile.kineticFriction,profile.authoredTraction)
+ local _,_,_,_,tracks=T.contact(pitch,roll,true,profile.trackedStaticFriction or profile.staticFriction,profile.trackedKineticFriction or profile.kineticFriction,profile.trackedTraction or profile.authoredTraction)
  if wheels>=.35 and tracks>=.35 then return "Easy" end
  if tracks>=.35 then return "Treads" end
  return "Impossible"

@@ -179,6 +179,11 @@ check(repeatedDust==8,"landing effects happen once per landing")
 for _,item in garbage do check(item.lifetime<=0.8,"weapon effects have bounded cleanup time"); item.part:Destroy() end
 state.health=25; boomer:update(state,1/60)
 check(boomer.healthLabel.Text:find("25/100",1,true)~=nil and boomer.healthBar.Size.X.Scale==0.25,"numeric HP and proportional health bar follow snapshot")
+state.deepWaterRemaining=1.5;boomer:update(state,1/60)
+check(boomer.deepWaterPanel.Visible and boomer.deepWaterPanel.Parent==boomer.healthLabel.Parent and boomer.deepWaterBar.Size.X.Scale==.5,"the countdown shares the tank's nameplate and scales with remaining time")
+check(boomer.deepWaterPanel.Size.Y.Offset<boomer.healthBar.Parent.Position.Y.Offset and boomer.deepWaterPanel.Size.Y.Offset<=boomer.healthLabel.Position.Y.Offset,"the countdown sits above both the tank name and HP bar")
+state.deepWaterRemaining=nil;boomer:update(state,1/60)
+check(not boomer.deepWaterPanel.Visible and boomer.healthLabel.Position.Y.Offset==0,"leaving deep water restores the compact nameplate")
 state.health=0; boomer:update(state,1/60)
 local deathPuffs=0
 for _,p in created do if p.Name=="TankDestruction" then deathPuffs+=1 end end
@@ -344,6 +349,54 @@ do
  state.health=0; renderer:update(state,1/60)
  check(lens.Material==Enum.Material.SmoothPlastic and lens.Color[1]==117,"death clears glow and greys out sensor with wreck")
  renderer:destroy(); check(lens.destroyed,"reset/disconnect removes all scanner decorations")
+end
+
+do
+ local Trails=require("TankTrails")
+ local widths={}
+ for _,kind in {"Boomer","Rattler"} do
+  local tank=Renderer.new("snow_"..kind,kind)
+  local sample=require("TankSimulation").new(Vector3.zero,kind);sample.surface="Snow"
+  tank:resetPose(sample)
+  Trails.update(tank,sample,.2)
+  check(#tank.trail.marks==0,"parking in snow leaves no continuous marks")
+  tank.position=Vector3.new(0,0,-4)
+  Trails.update(tank,sample,.25)
+  local mark=tank.trail.marks[1]
+  check(mark and mark.left.Transparency<1 and mark.right.Transparency<1,"moving in snow leaves two visible track marks")
+  widths[kind]=mark.left.Size.X
+  check(not mark.left.CanQuery and not mark.left.CanCollide and not mark.left.CanTouch,"snow marks are cosmetic")
+  sample.surface="Grass";tank.position=Vector3.new(0,0,-8)
+  Trails.update(tank,sample,2.6)
+  check(#tank.trail.marks==1 and mark.left.Transparency>.44 and mark.left.Transparency<1,"leaving snow preserves the fading mark and adds none on grass")
+  Trails.update(tank,sample,.41)
+  check(mark.left.Transparency==1 and mark.right.Transparency==1,"snow marks disappear after three seconds")
+  sample.surface="Snow";tank.position=Vector3.new(0,0,-12)
+  Trails.update(tank,sample,.25)
+  tank.position=Vector3.new(0,0,-100)
+  Trails.update(tank,sample,.25)
+  check(#tank.trail.marks==1,"teleports and surface changes do not connect separate trails")
+  for i=1,40 do
+   tank.position=Vector3.new(0,0,-100-i*4)
+   Trails.update(tank,sample,.25)
+  end
+  check(#tank.trail.marks==16,"a tank reuses a bounded pool of marks")
+  tank:destroy()
+  check(tank.trail.folder.destroyed,"renderer teardown cleans up all trail instances")
+ end
+ check(widths.Boomer>widths.Rattler,"tracked tanks leave wider marks than wheeled tanks")
+ local pivot=Renderer.new("snow_pivot","Boomer")
+ local state=require("TankSimulation").new(Vector3.zero,"Boomer");state.surface="Snow"
+ pivot:resetPose(state);Trails.update(pivot,state,0)
+ for i=1,12 do
+  pivot.yaw=(i*math.pi/6+math.pi)%(2*math.pi)-math.pi
+  Trails.update(pivot,state,.25)
+ end
+ check(#pivot.trail.marks==12,"pivoting emits tread marks across a full rotation including the heading wrap")
+ for _,mark in pivot.trail.marks do
+  check(mark.left.CFrame.Position.Magnitude>3 and mark.right.CFrame.Position.Magnitude>3,"pivot marks stay under the tread lanes around the stationary center")
+ end
+ pivot:destroy()
 end
 
 Instance.new=saveInstance; game.GetService=saveService

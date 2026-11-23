@@ -1,6 +1,7 @@
 -- Optional authoring-v2 terrain. Integer samples are eighth-studs; the surface
 -- between samples is the same two triangles in the renderer and simulation.
 local H={MaxHeight=96,Unit=8,Chunk=6}
+local Materials=require(script.Parent.TerrainMaterials)
 H.Paint={"Grass","Mud","Ice","Snow","Pavement"}
 H.WaterOffset=1024
 local function dimensions(width,depth)
@@ -13,7 +14,13 @@ end
 function H.validate(field,width,depth)
  local columns,rows=dimensions(width,depth)
  assert(type(field)=="table" and field.version==1 and field.columns==columns and field.rows==rows,"Terrain grid does not match the map dimensions")
- for k in field do assert(k=="version" or k=="columns" or k=="rows" or k=="heights" or k=="paint" or k=="water","Unknown terrain property") end
+ for k in field do assert(k=="version" or k=="columns" or k=="rows" or k=="heights" or k=="paint" or k=="water" or k=="traction","Unknown terrain property") end
+ if field.traction~=nil then
+  assert(type(field.traction)=="table","Invalid terrain traction settings")
+  for kind,value in field.traction do
+   assert(Materials.TunableTraction[kind] and type(value)=="number" and value>=0 and value<=100,"Invalid terrain traction percentage")
+  end
+ end
  local n=(columns+1)*(rows+1)
  assert(type(field.heights)=="table" and #field.heights==n,"Incorrect terrain sample count")
  local count=0
@@ -140,6 +147,7 @@ end
 -- positions and use nearest cells for discrete materials and water levels.
 function H.resize(field,width,depth,newWidth,newDepth)
  local resized=H.new(newWidth,newDepth)
+ resized.traction=field.traction and table.clone(field.traction)
  if resized.columns==field.columns and resized.rows==field.rows then
   resized.heights=table.clone(field.heights)
   resized.paint=field.paint and table.clone(field.paint)

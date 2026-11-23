@@ -180,16 +180,20 @@ function View.new(context)
  make("UIPadding",self.brushPanel,{PaddingLeft=UDim.new(0,10),PaddingTop=UDim.new(0,8)})
  make("UIListLayout",self.brushPanel,{Padding=UDim.new(0,6),SortOrder=Enum.SortOrder.LayoutOrder})
  self.brushFields={}
+ self.tractionLabel=text(self.brushPanel,"TractionLabel","Traction (% of pavement)",24)
+ self.tractionLabel.LayoutOrder=2;self.tractionLabel.Visible=false
+ self.traction=make("TextBox",self.brushPanel,{Name="TractionPercent",LayoutOrder=3,Size=UDim2.new(1,-14,0,28),
+  Text="",ClearTextOnFocus=false,TextColor3=ink,BackgroundColor3=View.buttonColor,Font=Enum.Font.Code,TextSize=14,Visible=false})
  text(self.brushPanel,"BrushTitle","TERRAIN BRUSH",27).LayoutOrder=1
  for i,spec in {{"radius","Radius (studs)",26},{"strength","Strength",24},{"falloff","Falloff (0–1)",.65},{"elevation","Flatten elevation (studs)",0},{"depth","Water / ravine depth (studs)",4}} do
-  text(self.brushPanel,spec[1].."Label",spec[2],22).LayoutOrder=i*2
-  self.brushFields[spec[1]]=make("TextBox",self.brushPanel,{Name=spec[1],LayoutOrder=i*2+1,Size=UDim2.new(1,-14,0,28),
+  text(self.brushPanel,spec[1].."Label",spec[2],22).LayoutOrder=i*2+2
+  self.brushFields[spec[1]]=make("TextBox",self.brushPanel,{Name=spec[1],LayoutOrder=i*2+3,Size=UDim2.new(1,-14,0,28),
    Text=tostring(spec[3]),ClearTextOnFocus=false,TextColor3=ink,BackgroundColor3=View.buttonColor,Font=Enum.Font.Code,TextSize=14})
  end
  self.traversability=button(self.brushPanel,"TerrainTraversability","Terrain Traversability")
- self.traversability.LayoutOrder=12;self.traversability.Size=UDim2.new(1,-14,0,34)
+ self.traversability.LayoutOrder=14;self.traversability.Size=UDim2.new(1,-14,0,34)
  self.traversalLegend=text(self.brushPanel,"TraversalLegend","No tint · Both drivetrains\nYellow · Requires treads\nRed · Too steep or too deep",84)
- self.traversalLegend.LayoutOrder=13;self.traversalLegend.Visible=false
+ self.traversalLegend.LayoutOrder=15;self.traversalLegend.Visible=false
  self.terrainDock=scrolling(frame,"TerrainToolsDock",UDim2.fromOffset(0,0),UDim2.fromOffset(0,0))
  self.terrainDock.AutomaticCanvasSize=Enum.AutomaticSize.X;self.terrainDock.ScrollingDirection=Enum.ScrollingDirection.X
  make("UIListLayout",self.terrainDock,{FillDirection=Enum.FillDirection.Horizontal,SortOrder=Enum.SortOrder.LayoutOrder,Padding=UDim.new(0,6)})

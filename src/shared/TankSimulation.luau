@@ -7,6 +7,7 @@ local Surface = require(script.Parent.SurfacePhysics)
 local Materials = require(script.Parent.TerrainMaterials)
 local Heightfield = require(script.Parent.WorldHeightfield)
 local Traversal = require(script.Parent.TerrainTraversal)
+local WorldSettings = require(script.Parent.WorldSettings)
 local Geometry = require(script.Parent.WorldObjectGeometry)
 local Contacts = require(script.Parent.VehicleContacts)
 local Config = require(script.Parent.TankConfig)
@@ -65,23 +66,21 @@ local function limitTerrainRise(state,terrain)
  if distance<=1e-6 then return end
  local a=Heightfield.sample(terrain.terrain,terrain.width,terrain.depth,start.X,start.Z)
  local b=Heightfield.sample(terrain.terrain,terrain.width,terrain.depth,finish.X,finish.Z)
- local waterBlocked=false
- if terrain.terrain.water then
-  local _,water=Heightfield.surface(terrain.terrain,terrain.width,terrain.depth,finish.X,finish.Z)
-  local depth=if water then water-math.max(b,finish.Y) else 0
-  if Traversal.waterBlocked(depth,Components.get(state).Chassis) then
-   local _,previous=Heightfield.surface(terrain.terrain,terrain.width,terrain.depth,start.X,start.Z)
-   local previousDepth=if previous then previous-math.max(a,start.Y) else 0
-   waterBlocked=depth>=previousDepth-1e-6
-  end
- end
  -- An airborne tank already above this ground may cross it. For a ground
  -- crossing, use a numerical tolerance only so slow motion cannot creep up a wall.
- if not waterBlocked and (start.Y>b+Geometry.MaxStep or b-a<=math.min(Geometry.MaxStep,distance*Traversal.MaxGradient)+1e-6) then return end
+ if start.Y>b+Geometry.MaxStep or b-a<=math.min(Geometry.MaxStep,distance*Traversal.MaxGradient)+1e-6 then return end
  state.position=Vector3.new(start.X,finish.Y,start.Z)
  state.motionForwardTravel=state.motionForwardStart
  local velocity=Motion.ensure(state)
  Motion.setVelocity(state,Vector3.new(0,velocity.Y,0))
+end
+function Simulation.stepDeepWater(state,terrain,dt)
+ if state.health<=0 or not terrain or not WorldSettings.deepWater(terrain,state.position,Components.get(state).Chassis) then
+  state.deepWaterRemaining=nil
+  return false
+ end
+ state.deepWaterRemaining=if state.deepWaterRemaining then math.max(0,state.deepWaterRemaining-dt) else Config.DeepWaterSeconds
+ return state.deepWaterRemaining<=1e-6
 end
 function Simulation.moveBody(state,command,dt,mapSize,environment,deferContacts)
  local c=Components.get(state)
@@ -103,7 +102,8 @@ function Simulation.moveBody(state,command,dt,mapSize,environment,deferContacts)
   local _,_,scale,_,profile=Environment.sample(environment,state.position.X,state.position.Z,state.position.Y+1.5)
   speedScale=scale;painted=profile
  end
- local base=painted or (if environment and environment.weather~="IceWind" and math.abs(pitch)+math.abs(roll)>.0001 then material else nil)
+ local base=painted or (if material and material.authoredTraction~=nil then material
+  elseif environment and environment.weather~="IceWind" and math.abs(pitch)+math.abs(roll)>.0001 then material else nil)
  local static,kinetic,resistance,passiveGrip,terrainScale=Surface.contact(if base then nil else environment and environment.physicsSurfaces,state.position,state.yaw,c.Chassis,c.Mobility.Kind,base)
  if environment and environment.materialTerrain then
   -- Apply the approved tracked base factor ONCE, after footprint blending.
@@ -111,7 +111,8 @@ function Simulation.moveBody(state,command,dt,mapSize,environment,deferContacts)
  end
  speedScale*=terrainScale;state.terrainSpeedScale=speedScale
  if not airborne then
-  state.terrainSpeedScale=Drive.ground(state,command,dt,speedScale,static,kinetic,resistance,passiveGrip,pitch,roll)
+  local traction=base and (if c.Mobility.Kind=="Tracked" then base.trackedTraction or base.authoredTraction else base.authoredTraction)
+  state.terrainSpeedScale=Drive.ground(state,command,dt,speedScale,static,kinetic,resistance,passiveGrip,pitch,roll,traction)
  end
  -- No traction, steering, coasting or ground damping is applied in the air.
  state.motionStepStart=state.position; state.motionYawStart=state.yaw

@@ -21,6 +21,23 @@ do
  view.dimensions.width.Text="96";view.dimensions.width.FocusLost:Fire()
  view.dimensions.depth.Text="96";view.dimensions.depth.FocusLost:Fire()
  view.terrain.Activated:Fire()
+ local defaults={Grass=75,Mud=20,Snow=31.25,Ice=.25}
+ for kind,percent in defaults do
+  view.surfaceTools[kind].Activated:Fire()
+  check(view.traction.Visible and math.abs(tonumber(view.traction.Text)-percent)<1e-8,"paint brush shows the default traction for "..kind)
+ end
+ view.surfaceTools.Ice.Activated:Fire()
+ view.traction.Text="15";view.traction.FocusLost:Fire()
+ check(controller.state.document.settings.terrain.traction.Ice==15,"editing traction updates the world document")
+ local tractionSave=require("WorldEditorDocument").export(controller.state.document,controller.catalog)
+ controller:history(false)
+ check(tonumber(view.traction.Text)==.25,"undo restores the default in the inspector")
+ controller:history(true)
+ check(tonumber(view.traction.Text)==15,"redo restores the override in the inspector")
+ controller:replaceDocument(tractionSave)
+ check(tonumber(view.traction.Text)==15,"opening the saved terrain restores traction settings")
+ view.traction.Text="";view.traction.FocusLost:Fire()
+ check(not controller.state.document.settings.terrain.traction,"clearing the last override restores material defaults")
  view.brushFields.radius.Text="16";view.brushFields.radius.FocusLost:Fire()
  check(view.terrainTools.Raise.Visible and view.brushPanel.Visible and not view.tools.Move.Visible,"Terrain mode replaces object tools with the brush controls")
  local savedPointer=controller.pointer

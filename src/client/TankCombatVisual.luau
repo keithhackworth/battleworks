@@ -2,8 +2,37 @@
 local Debris=game:GetService("Debris")
 local Tween=game:GetService("TweenService")
 local DamageConfig=require(game.ReplicatedStorage.Shared.DamageEffectsConfig)
+local TankConfig=require(game.ReplicatedStorage.Shared.TankConfig)
 local Smoke=require(script.Parent.SmokeVisual)
 local Visual={}
+local waterRows=36
+local function updateDeepWater(renderer,remaining)
+ local panel=renderer.deepWaterPanel
+ if remaining and not panel then
+  panel=Instance.new("Frame");panel.Name="DeepWaterCountdown"
+  panel.Size=UDim2.new(1,0,0,waterRows);panel.BackgroundTransparency=1
+  panel.Visible=false;panel.Parent=renderer.combatBillboard
+  local label=Instance.new("TextLabel");label.Name="Warning";label.Size=UDim2.new(1,0,0,21)
+  label.BackgroundColor3=Color3.fromRGB(23,32,42);label.BackgroundTransparency=.2
+  label.Text="Deep Water - get out quick!";label.TextColor3=Color3.fromRGB(255,234,168)
+  label.TextSize=13;label.Font=Enum.Font.GothamBold;label.Parent=panel
+  local track=Instance.new("Frame");track.Position=UDim2.fromOffset(0,23);track.Size=UDim2.new(1,0,0,8)
+  track.BorderSizePixel=0;track.BackgroundColor3=Color3.fromRGB(33,48,63);track.Parent=panel
+  local bar=Instance.new("Frame");bar.BorderSizePixel=0;bar.BackgroundColor3=Color3.fromRGB(91,203,245);bar.Parent=track
+  renderer.deepWaterPanel=panel;renderer.deepWaterBar=bar
+ end
+ if panel then
+  local visible=remaining~=nil
+  if panel.Visible~=visible then
+   panel.Visible=visible
+   local y=if visible then waterRows else 0
+   renderer.combatBillboard.Size=UDim2.fromOffset(if visible then 200 else 190,44+y)
+   renderer.healthLabel.Position=UDim2.fromOffset(0,y)
+   renderer.healthBar.Parent.Position=UDim2.fromOffset(0,y+28)
+  end
+  if remaining then renderer.deepWaterBar.Size=UDim2.fromScale(math.clamp(remaining/TankConfig.DeepWaterSeconds,0,1),1) end
+ end
+end
 function Visual.attach(renderer)
 	local gui=Instance.new("BillboardGui"); gui.Name="TankHealth"
 	gui.Size=UDim2.fromOffset(190,44); gui.StudsOffset=Vector3.new(0,10,0)
@@ -14,7 +43,7 @@ function Visual.attach(renderer)
 	local track=Instance.new("Frame"); track.Position=UDim2.fromOffset(0,28); track.Size=UDim2.new(1,0,0,12)
 	track.BorderSizePixel=0; track.BackgroundTransparency=0.65; track.BackgroundColor3=Color3.fromRGB(55,35,35); track.Parent=gui
 	local bar=Instance.new("Frame"); bar.Size=UDim2.fromScale(1,1); bar.BackgroundTransparency=0.25; bar.BorderSizePixel=0; bar.Parent=track
-	renderer.healthLabel=label; renderer.healthBar=bar
+	renderer.combatBillboard=gui;renderer.healthLabel=label; renderer.healthBar=bar
 end
 local function isPart(p) return p:IsA("BasePart") or p:IsA("Part") end
 local function explosion(renderer,state,part)
@@ -123,6 +152,7 @@ end
 function Visual.update(renderer,state,part,anchors,dt)
 	local maximum=state.maxHealth or 100
 	local hp=math.clamp(state.health,0,maximum)
+	updateDeepWater(renderer,if hp>0 then state.deepWaterRemaining else nil)
 	renderer.healthLabel.Text=string.format("%s  %d/%d%s",renderer.tankType,hp,maximum,if hp==0 then " • KO" else "")
 	renderer.healthBar.Size=UDim2.fromScale(hp/maximum,1)
 	renderer.healthBar.BackgroundColor3=if hp/maximum>0.3 then Color3.fromRGB(99,218,77) else Color3.fromRGB(244,69,37)

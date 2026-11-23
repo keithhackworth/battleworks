@@ -6,6 +6,7 @@ local Snap=require(Shared.WorldEditorSnap)
 local Visual=require(Shared.AssetGeometry)
 local Placement=require(Shared.ModelPlacement)
 local Heightfield=require(Shared.WorldHeightfield)
+local Materials=require(Shared.TerrainMaterials)
 local View=require(script.Parent.WorldEditorView)
 local Scene=require(script.Parent.WorldEditorScene)
 local UIS=game:GetService("UserInputService")
@@ -52,6 +53,25 @@ function Controller.new(context)
    else view:message("Drag to paint "..operation..". Radius sets the width.") end
   end)
  end
+ action(view.traction.FocusLost,function()
+  local kind=self.brush.operation
+  if not Materials.TunableTraction[kind] then return end
+  local raw=view.traction.Text
+  local default=Materials.defaultTraction(kind)
+  local percent=if raw:match("^%s*$") then default else tonumber(raw)
+  if not percent or percent~=percent or percent<0 or percent>100 then
+   self:refreshTraction();view:message("Enter traction from 0 to 100% of pavement, or clear it to restore the default.");return
+  end
+  self:perform(function()
+   local settings=self.state.document.settings
+   if not settings.terrain and percent==default then return end
+   local field=if settings.terrain then table.clone(settings.terrain) else Heightfield.new(settings.width,settings.depth)
+   local values=table.clone(field.traction or {})
+   values[kind]=if percent==default then nil else percent
+   field.traction=if next(values) then values else nil
+   settings.terrain=field
+  end,string.format("%s traction set to %.4g%% of pavement.",kind,percent))
+ end)
  local bounds={radius={2,160},strength={.5,96},falloff={0,1},elevation={-Heightfield.MaxHeight,Heightfield.MaxHeight},depth={.25,32}}
  for key,field in view.brushFields do
   action(field.FocusLost,function()
@@ -138,7 +158,7 @@ function Controller.new(context)
  action(view.pinB.Activated,function()self:pinHere("B")end)
  action(view.releasePin.Activated,function()
   local entry=self:selected();if not entry then return end
-  self:perform(function()self.state.pins[entry.id]=nil end,"Released endpoint pins.")
+  self:perform(function()self:clearContacts(entry.id) end,"Released endpoint pins.")
  end)
  for key,field in view.fields do action(field.FocusLost,function()
   local entry=self:selected();if not entry then return end
@@ -150,8 +170,7 @@ function Controller.new(context)
     if key=="yaw" then entry.heading=n else entry.position[if key=="x" then 1 else 3]=n end
     return
    end
-   if key=="x" or key=="y" or key=="z" then self.state.pins[entry.id]=nil
-   elseif self.state.pins[entry.id] and key~="hp" then self.state.pins[entry.id].second=nil end
+   if key~="hp" then self:clearContacts(entry.id) end
    local axis=({sizeX=1,sizeY=2,sizeZ=3})[key]
    if axis then
     entry.stretch=entry.stretch or {1,1,1}
@@ -225,7 +244,20 @@ end
 function Controller:selected()
  for id in self.state.selection do return self.state:find(id) end
 end
+function Controller:refreshTraction()
+ local kind=self.brush.operation
+ local visible=self.mode=="Terrain" and Materials.TunableTraction[kind]==true
+ self.view.traction.Visible=visible;self.view.tractionLabel.Visible=visible
+ if visible then
+  local default=Materials.defaultTraction(kind)
+  local field=self.state.document.settings.terrain
+  local percent=field and field.traction and field.traction[kind] or default
+  self.view.tractionLabel.Text=string.format("Traction (%% of pavement) · default %.4g%%",default)
+  if UIS:GetFocusedTextBox()~=self.view.traction then self.view.traction.Text=tostring(percent) end
+ end
+end
 function Controller:refresh()
+ self:refreshTraction()
  for axis,field in self.view.dimensions do
   if UIS:GetFocusedTextBox()~=field then field.Text=tostring(self.state.document.settings[axis]) end
  end
@@ -276,6 +308,16 @@ function Controller:reconcilePins(before)
   else Snap.anchor(entry,pin,self:snapProfile(entry)) end
  end
 end
+function Controller:clearContacts(id)
+ self.state.pins[id]=nil
+ for other,pin in self.state.pins do
+  if pin.targetId==id then
+   self.state.pins[other]=if pin.second and pin.second.targetId~=id then pin.second else nil
+  elseif pin.second and pin.second.targetId==id then
+   pin.second=nil
+  end
+ end
+end
 function Controller:snapProfile(entry)
  local item=self.catalog.byPath[entry.asset]
  return item and item.collider
@@ -324,6 +366,7 @@ function Controller:setMode(mode)
  self:cancel();self.mode=mode
  self.edgeSnap=mode=="Snap"
  self.view:terrainMode(mode=="Terrain",self.brush.operation)
+ self:refreshTraction()
  if self.scene then
   self.scene:setMode(mode,self.rotationAxis or "Yaw")
   local selected=self:selected();self.scene:selection(selected and selected.id,self.distance)
@@ -344,6 +387,7 @@ function Controller:focusSelected()
  self.distance=if size then math.clamp(size.Magnitude*1.8,20,1600) else 48
 end
 function Controller:zoom(delta)
+ if self.gesture or self.terrainStroke or self.paused or self.windowUnfocused then return end
  local point=self:pointer()
  local nextDistance=math.clamp(self.distance*math.exp(-delta*.12*self.cameraSensitivity),20,2200)
  if point then self.focus+=(point-self.focus)*(1-nextDistance/self.distance) end
@@ -494,7 +538,7 @@ function Controller:beginCamera(input)
  if not self.active or not self.scene or self.terrainStroke or self.paused or UIS:GetFocusedTextBox() or self.view:isModal() or not self.view:isScene(self:mousePosition()) then return false end
  local button=input.UserInputType
  if button~=Enum.UserInputType.MouseButton2 and button~=Enum.UserInputType.MouseButton3 then return false end
- if self.gesture then self:finishGesture(true) end
+ if self.gesture then return false end
  self.cameraDrag={button=button,behavior=UIS.MouseBehavior,icon=UIS.MouseIconEnabled}
  self.cameraDelta=Vector2.zero
  UIS.MouseBehavior=Enum.MouseBehavior.LockCurrentPosition;UIS.MouseIconEnabled=false
@@ -552,19 +596,21 @@ function Controller:begin(input,processed)
  if entry and handle and handle:match("^Snap[ABCD]$") then self:beginSnap(handle:sub(-1),entry,choice,pixel);return end
  if entry and (handle or (id and self.mode=="Move")) then
   local kind=handle or "Move"
-  local pin=self.state.pins[entry.id]
   local before=self.state:snapshot()
-  if kind:sub(1,4)=="Move" then pin=nil end
-  if pin then pin=State.copy(pin);pin.second=nil end
-  local pivot=if Math.resizeAxis(kind) then self.scene.anchors[kind].CFrame.Position elseif pin then Vector3.new(table.unpack(pin.point)) elseif kind:sub(1,6)=="Rotate" then Visual.measure(self.scene.models[entry.id].model).Position else nil
+  local pivot=if Math.resizeAxis(kind) then self.scene.anchors[kind].CFrame.Position elseif kind:sub(1,6)=="Rotate" then Visual.measure(self.scene.models[entry.id].model).Position else nil
   local start=Math.dragPoint(kind,entry,origin,direction,self.scene.camera.CFrame,pivot)
   if not start then self.view:message("Orbit the camera slightly to face this rotation ring, then drag again.");return end
-  self.state.pins[entry.id]=State.copy(pin)
-  self.gesture={before=before,base=State.copy(entry),id=entry.id,start=start,kind=kind,pivot=pivot,pin=State.copy(pin)}
+  self:clearContacts(entry.id)
+  self.gesture={before=before,base=State.copy(entry),id=entry.id,start=start,kind=kind,pivot=pivot}
+  if Math.resizeAxis(kind) then
+   self.gesture.viewportSize=self.view.viewport.AbsoluteSize
+   self.gesture.viewportPosition=self.view.viewport.AbsolutePosition
+  end
  elseif not id and not handle then self.state.selection={};self:refresh() end
 end
 function Controller:key(input,processed)
  if self.paused or processed or UIS:GetFocusedTextBox() or self.view:isModal() then return end
+ if self.gesture and input.KeyCode~=Enum.KeyCode.Escape then return end
  self.keys[input.KeyCode]=true
  local control=UIS:IsKeyDown(Enum.KeyCode.LeftControl) or UIS:IsKeyDown(Enum.KeyCode.RightControl) or UIS:IsKeyDown(Enum.KeyCode.LeftMeta) or UIS:IsKeyDown(Enum.KeyCode.RightMeta)
  local shift=UIS:IsKeyDown(Enum.KeyCode.LeftShift) or UIS:IsKeyDown(Enum.KeyCode.RightShift)
@@ -584,7 +630,22 @@ function Controller:step(dt)
  local scene=self.scene;if not scene then return end
  local mouse=self:mousePosition()
  local pixel=mouse-self.view.viewport.AbsolutePosition
- scene.sourcePixel=if self.view:isScene(mouse) then pixel else nil
+ local overScene=self.view:isScene(mouse)
+ scene.sourcePixel=if overScene then pixel else nil
+ local gesture=self.gesture
+ if gesture and Math.resizeAxis(gesture.kind) then
+  if gesture.viewportSize~=self.view.viewport.AbsoluteSize or gesture.viewportPosition~=self.view.viewport.AbsolutePosition then
+   self:finishGesture(true)
+   return
+  end
+  if not overScene then gesture.leftViewport=true end
+  if gesture.leftViewport and not UIS:IsMouseButtonPressed(Enum.UserInputType.MouseButton1) then
+   -- Studio can swallow the mouse-up when the cursor leaves its window.
+   self:finishGesture(false)
+   return
+  end
+  if not overScene then return end
+ end
  if self.cameraDrag then
   UIS.MouseBehavior=Enum.MouseBehavior.LockCurrentPosition
   local delta=self.cameraDelta*self.cameraSensitivity;self.cameraDelta=Vector2.zero
@@ -670,28 +731,15 @@ function Controller:step(dt)
    if drag then
     local transform=Math.transform(g.base,g.kind,g.start,drag,self.state.snap,self.state.grid,g.pivot)
     if Math.resizeAxis(g.kind) or (g.kind=="Scale" and transform.stretch) then
-     transform.asset=entry.asset
-     local valid,err=pcall(self.checkResizeSize,self,transform)
+     local candidate=table.clone(entry)
+     copyPose(candidate,transform)
+     local valid,err=pcall(function()
+      self:checkResizeSize(candidate)
+      Document.checkEntry(self.state.document,self.catalog,candidate)
+     end)
      if not valid then self.view:message(tostring(err));return end
     end
     copyPose(entry,transform)
-    local profile=self:snapProfile(entry)
-    if g.pin then Snap.anchor(entry,g.pin,profile) end
-    if self.edgeSnap and self.view:isScene(mouse) then
-     local free=if g.pin then Snap.opposite(g.pin.endpoint) else nil
-     local near=Snap.nearby(self.state.document,entry,free,g.pin and g.pin.side,function(other,point)
-      return scene:nearbySnap(other,point)
-     end,profile)
-     if near then
-      local ok,pose=pcall(function()
-       if g.pin then return Snap.fit(entry,near.endpoint,near.target,g.pin,nil,profile) end
-       return Snap.anchor(State.copy(entry),Snap.pin(near.endpoint,near.target,near.side),profile)
-      end)
-      if ok then copyPose(entry,pose) end
-      local valid=pcall(Document.checkEntry,self.state.document,self.catalog,entry)
-      self.snapPreview={endpoint=near.endpoint,target=near.target,valid=ok and valid,side=near.side}
-     end
-    end
    end
   end
   scene:sync(self.state.document,self.catalog,true)
@@ -725,7 +773,7 @@ function Controller:enter(playtest)
   self.state=State.new(draft);self.state.snap=false
   self.library.revisions[draft.id]=playtest.revision
  end
- self.active=true;self.paused=false;self.frame.Visible=true;self.view.overlay.Visible=false
+ self.active=true;self.paused=false;self.windowUnfocused=false;self.frame.Visible=true;self.view.overlay.Visible=false
  game:GetService("GuiService").SelectedObject=nil
  if self:loadCatalog() then
   self.scene=Scene.new(self.view.viewport,self.context.editorAssets,self.state.document)
@@ -743,10 +791,10 @@ function Controller:enter(playtest)
   self.keys[input.KeyCode]=nil
   if self.cameraDrag and self.cameraDrag.button==input.UserInputType then self:stopCamera() end
   if input.UserInputType==Enum.UserInputType.MouseButton1 then
-   local point,_,_,mouse=self:pointer()
    if self.cameraDrag then self.paletteDrag=nil;return end
    if self.paused then self:cancel();return end
    if self.paletteDrag then
+    local point,_,_,mouse=self:pointer()
     local start=self.paletteDrag;self.paletteDrag=nil
     if point and (mouse-start).Magnitude>6 and self.view:isScene(mouse) then self:place(point) end
    elseif self.terrainStroke then self:finishTerrain(false)
@@ -757,9 +805,10 @@ function Controller:enter(playtest)
   if self.cameraDrag and input.UserInputType==Enum.UserInputType.MouseMovement then
    self.cameraDelta+=Vector2.new(input.Delta.X,input.Delta.Y)
   end
-  if input.UserInputType==Enum.UserInputType.MouseWheel and not self.paused and not self.gesture and not self.terrainStroke and not UIS:GetFocusedTextBox() and not self.view:isModal() and self.view:isScene(self:mousePosition()) then self:zoom(input.Position.Z) end
+  if input.UserInputType==Enum.UserInputType.MouseWheel and not UIS:GetFocusedTextBox() and not self.view:isModal() and self.view:isScene(self:mousePosition()) then self:zoom(input.Position.Z) end
  end)
- connect(UIS.WindowFocusReleased,function() self:cancel();self.keys={};self:refresh() end)
+ connect(UIS.WindowFocusReleased,function() self.windowUnfocused=true;self:cancel();self.keys={};self:refresh() end)
+ connect(UIS.WindowFocused,function() self.windowUnfocused=false end)
  connect(UIS.TextBoxFocused,function() self:stopCamera();self.keys={} end)
  local gui=game:GetService("GuiService")
  connect(gui.MenuOpened,function() self.paused=true;self:cancel();self.keys={} end)

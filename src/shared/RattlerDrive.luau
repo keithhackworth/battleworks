@@ -5,7 +5,7 @@ local Motion=require(script.Parent.VehicleMotion)
 local Surface=require(script.Parent.SurfacePhysics)
 local Traversal=require(script.Parent.TerrainTraversal)
 local Drive={}
-function Drive.ground(state,command,dt,surfaceScale,static,kinetic,resistance,passiveGrip,pitch,roll)
+function Drive.ground(state,command,dt,surfaceScale,static,kinetic,resistance,passiveGrip,pitch,roll,authoredTraction)
  local c=Components.get(state); local p,m=c.Drivetrain,c.Mobility
  local v=Motion.ensure(state); local omega=state.angularVelocity.Y
  local fx,fz=-math.sin(state.yaw),-math.cos(state.yaw)
@@ -13,7 +13,7 @@ function Drive.ground(state,command,dt,surfaceScale,static,kinetic,resistance,pa
  local forward=v.X*fx+v.Z*fz
  local normalAcceleration=math.max(0,c.Recoil.Gravity-(state.motionExternalY or 0)/state.motionMass)
  local downhill,sidehill,climb
- downhill,sidehill,static,kinetic,climb=Traversal.contact(pitch,roll,m.Kind=="Tracked",static or Surface.Profiles.Normal.staticFriction,kinetic or Surface.Profiles.Normal.kineticFriction)
+ downhill,sidehill,static,kinetic,climb=Traversal.contact(pitch,roll,m.Kind=="Tracked",static or Surface.Profiles.Normal.staticFriction,kinetic or Surface.Profiles.Normal.kineticFriction,authoredTraction)
  if downhill~=0 or sidehill~=0 then
   local delta=normalAcceleration*dt
   v=Vector3.new(v.X+(downhill*fx+sidehill*rx)*delta,v.Y,v.Z+(downhill*fz+sidehill*rz)*delta)
@@ -33,6 +33,9 @@ function Drive.ground(state,command,dt,surfaceScale,static,kinetic,resistance,pa
  else
   if c.Capabilities.Steer and (c.Capabilities.Pivot or math.abs(desired)>1e-6) then wantedOmega=command.steer*m.TurnSpeed*(state.drivePerformance or 1) end
  end
+ -- Cornering speed follows the square root of grip. Use the same limit for
+ -- a tracked pivot, where lateral slip alone cannot reduce steady yaw.
+ if authoredTraction~=nil then wantedOmega*=math.sqrt(authoredTraction) end
  if state.health<=0 then desired=forward*math.exp(-c.Recoil.GroundFriction*dt); wantedOmega=0 end
  local dw=math.clamp(wantedOmega-omega,-m.YawAcceleration*dt,m.YawAcceleration*dt)
  local nextYaw=state.yaw+(omega+dw)*dt

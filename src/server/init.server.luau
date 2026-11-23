@@ -1157,6 +1157,13 @@ RunService.Heartbeat:Connect(function(dt)
         for _,record in contactBodies do
             local tank=tanks[record.id]
             Simulation.reconcileGround(tank.state,environment)
+            if Simulation.stepDeepWater(tank.state,environment.terrainSettings,Config.Step) then
+                local battle=if tank.public then royale.battle else battles[tank.owner]
+                if battle and Battle.environmentDamage(battle,tank) then
+                    if tank.public then royale:destroyed(tank)
+                    elseif multiplayer then tank.respawnAt=simulationTime+3 end
+                end
+            end
             MovementTelemetry.update(tank.state,tank.state.motionStepStart,Config.Step)
             tank.hitbox.CFrame=CFrame.new(tank.state.position+Vector3.new(0,Components.get(tank.state).Chassis.HitboxHeight,0))*CFrame.Angles(0,tank.state.yaw,0)
             tank.hitbox.CanQuery=tank.state.health>0

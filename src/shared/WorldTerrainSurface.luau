@@ -26,7 +26,7 @@ function Surface:chunk(cx,cz)
  local color=Color3.fromRGB(table.unpack(settings.ground.color))
  local material=Enum.Material[settings.ground.material]
  local cellMaterial,cellColor,waterLevel
- local profile=if self.overlay then Materials.fromMaterial(settings.ground.material) else nil
+ local profile=if self.overlay then Materials.withTraction(Materials.fromMaterial(settings.ground.material),field.traction) else nil
  local function draw(shape,size,frame,tint)
   if self.overlay and not tint then return end
   used+=1
@@ -58,7 +58,7 @@ function Surface:chunk(cx,cz)
    local center=(a+b+c)/3
    local localProfile=profile
    for _,zone in settings.traversalZones or {} do
-    if ((center.X-zone.x)/zone.rx)^2+((center.Z-zone.z)/zone.rz)^2<=1 then localProfile=zone.profile end
+    if ((center.X-zone.x)/zone.rx)^2+((center.Z-zone.z)/zone.rz)^2<=1 then localProfile=Materials.withTraction(zone.profile,field.traction) end
    end
    local depth=if waterLevel then waterLevel-math.min(a.Y,b.Y,c.Y)+.13 else 0
    tint=if Traversal.waterBlocked(depth,chassis) then colors.Impossible
@@ -103,7 +103,7 @@ function Surface:chunk(cx,cz)
    if wet then paint="Mud" end
    cellMaterial=paint and Enum.Material[Materials.Materials[paint]]
    cellColor=paint and Color3.fromRGB(table.unpack(Materials.Colors[paint]))
-   profile=if self.overlay then Materials.fromMaterial(paint or settings.ground.material) else nil
+   profile=if self.overlay then Materials.withTraction(Materials.fromMaterial(paint or settings.ground.material),field.traction) else nil
    if a.Y==b.Y and a.Y==c.Y and a.Y==d.Y then flat(a,d)
    else triangle(a,b,c);triangle(d,c,b) end
    if self.overlay and waterLevel and Traversal.waterBlocked(waterLevel-math.min(a.Y,b.Y,c.Y,d.Y)+.13,chassis) then

@@ -51,7 +51,7 @@ env.terrainSettings={terrain=field,width=96,depth=96,ground={material="Grass"}}
 local position=Vector3.zero
 local shape={ContactWidth=5,ContactLength=6}
 local h,p,r,_,_,material=Environment.pose(env,position,0,shape)
-local board=Geometry.from({0,0,0},{math.deg(math.atan(.625)),0,0},{20,.1,40},1);board.material=grass
+local board=Geometry.from({0,0,0},{math.deg(math.atan(.625)),0,0},{20,.1,40},1);board.material=Materials.withTraction(grass)
 local bh,bp,br,bm=Footprint.solve({board},Vector3.new(0,Geometry.planeHeight(board,0,0),0),0,shape)
 assert(bh and math.abs(p-bp)<.02 and math.abs(r-br)<.02 and material==bm,"equivalent sculpted and constructed grass surfaces provide equivalent contact inputs")
 local steep=Geometry.from({0,0,0},{50,0,0},{20,.1,40},1)
@@ -89,7 +89,7 @@ do
  for code,name in Heightfield.Paint do
   assert(next(Heightfield.paint(fresh,96,96,point,8,code)),"changing paint touches terrain chunks")
   local _,kind,_,_,profile=Environment.sample(env,0,0,1)
-  assert(kind==name and profile==Materials.fromMaterial(name),"paint changes real contact material: "..name)
+  assert(kind==name and profile==Materials.withTraction(Materials.fromMaterial(name)),"paint changes real contact material: "..name)
  end
  for z=0,fresh.rows do for x=0,fresh.columns do
   fresh.heights[Heightfield.index(fresh,x,z)]=math.max(0,math.abs(x-8)+math.abs(z-8)-1)*16
@@ -109,7 +109,23 @@ do
  local index=z*pond.columns+x+1
  pond.water[index]=Heightfield.WaterOffset+20
  local _,_,_,_,bottom=Environment.sample(env,1,0,1)
- assert(bottom==Materials.fromMaterial("Mud"),"flooded ground uses mud traction automatically")
+ assert(bottom==Materials.withTraction(Materials.fromMaterial("Mud")),"flooded ground uses mud traction automatically")
+ assert(bottom.authoredTraction==.20 and bottom.trackedTraction==.30,"default mud grants exactly ten percentage points to treads")
+ local _,_,wheelLimit=Traverse.contact(0,0,false,bottom.staticFriction,bottom.kineticFriction,bottom.authoredTraction)
+ local _,_,trackLimit=Traverse.contact(0,0,true,bottom.trackedStaticFriction,bottom.trackedKineticFriction,bottom.trackedTraction)
+ assert(math.abs(trackLimit/wheelLimit-1.5)<1e-8,"flat mud has 30:20 tracked-to-wheeled grip in the contact solver")
+ pond.traction={Mud=50,Grass=25,Ice=8}
+ local _,_,_,_,wet=Environment.sample(env,1,0,1)
+ assert(wet.staticFriction==8 and wet.trackedTraction==.60 and wet.wheelSpeed==bottom.wheelSpeed,"custom mud keeps the ten-point bonus without altering its speed modifier")
+ local nearMax=Materials.withTraction(Materials.fromMaterial("Snow"),{Snow=95})
+ assert(nearMax.authoredTraction==.95 and nearMax.trackedTraction==1,"the tread bonus caps at pavement grip")
+ local _,_,_,_,dry=Environment.sample(env,-12,0,1)
+ assert(dry.staticFriction==4,"grass traction applies to unpainted grass as well")
+ Heightfield.paint(pond,96,96,Vector3.new(-12,0,0),2,table.find(Heightfield.Paint,"Ice"))
+ local _,_,_,_,_,ice=Environment.pose(env,Vector3.new(-12,0,0),0)
+ assert(math.abs(ice.staticFriction-1.28)<1e-8,"wheel and slope simulation receive authored ice grip")
+ local resized=Heightfield.resize(pond,96,96,120,96)
+ assert(resized.traction.Ice==8,"map resize preserves material traction")
  local crossing=Input.neutral();crossing.throttle=1
  for _,kind in {"Boomer","Rattler"} do
   for _,depth in {20,21} do
@@ -117,8 +133,47 @@ do
    local tank=Sim.new(Vector3.new(-.1,0,0),kind);tank.yaw=-math.pi/2
    Motion.setVelocity(tank,Vector3.new(12,0,0))
    Sim.step(tank,crossing,1/60,Vector2.new(96,96),env)
-   assert((tank.position.X>=0)==(depth==20),"both drivetrains stop only when water is deeper than half the hull")
+   assert(tank.position.X>=0 and tank.speed>0,"both drivetrains can move into deep water")
+   assert(not Sim.stepDeepWater(tank,settings,1/60),"entry does not destroy the tank")
+   if depth==20 then
+    assert(tank.deepWaterRemaining==nil,"half-hull depth still counts as shallow")
+   else
+    assert(tank.deepWaterRemaining==3,"deep water starts a full three-second countdown")
+    for _=1,179 do assert(not Sim.stepDeepWater(tank,settings,1/60),"tank survives while the countdown has time remaining") end
+    tank.position=Vector3.new(-1,0,0)
+    assert(not Sim.stepDeepWater(tank,settings,1/60) and tank.deepWaterRemaining==nil,"getting out before the deadline clears the timer")
+    tank.position=Vector3.new(1,0,0)
+    assert(not Sim.stepDeepWater(tank,settings,1/60) and tank.deepWaterRemaining==3,"re-entry starts a fresh countdown")
+    assert(Sim.stepDeepWater(tank,settings,3),"continuous deep-water exposure expires at three seconds")
+   end
   end
  end
+end
+do
+ local size=Vector2.new(96,96)
+ local field=Heightfield.new(96,96)
+ field.paint=table.create(field.columns*field.rows,table.find(Heightfield.Paint,"Snow"))
+ local env={size=size,zones={},rocks={},logs={},trees={},terrainSettings={width=96,depth=96,terrain=field,ground={material="Grass"}}}
+ local function turnOnSnow(kind,percent,speed)
+  field.traction=if percent then {Snow=percent} else nil
+  local tank=Sim.new(Vector3.zero,kind)
+  Motion.setVelocity(tank,Vector3.new(0,0,-speed))
+  local command=Input.neutral();command.throttle=if speed>0 then 1 else 0;command.steer=1
+  local slipping=false
+  for _=1,45 do
+   Sim.step(tank,command,1/60,size,env)
+   slipping=slipping or tank.motionSlipping
+  end
+  return tank,slipping
+ end
+ for _,kind in {"Boomer","Rattler"} do
+  local standard=turnOnSnow(kind,nil,18)
+  local slick,slipping=turnOnSnow(kind,5,18)
+  assert(slipping and math.abs(slick.yaw)<math.abs(standard.yaw)*.6,"5% authored snow grip reduces steering and causes real slip for "..kind)
+  assert(slick.motionBrakeAcceleration<standard.motionBrakeAcceleration*.5,"5% authored snow grip reduces braking authority for "..kind)
+ end
+ local standard=turnOnSnow("Boomer",nil,0)
+ local slick=turnOnSnow("Boomer",5,0)
+ assert(math.abs(slick.yaw)>.02 and math.abs(slick.yaw)<math.abs(standard.yaw)*.7,"tracked tanks can still pivot on slick snow with reduced grip")
 end
 print("Unified terrain slopes, traction, braking, tick-rate stability and geometry passed")

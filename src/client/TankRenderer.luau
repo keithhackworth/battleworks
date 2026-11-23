@@ -2,6 +2,7 @@
 local Debris = game:GetService("Debris")
 local TweenService = game:GetService("TweenService")
 local TerrainEffects = require(script.Parent.TerrainEffects)
+local TankTrails = require(script.Parent.TankTrails)
 local RattlerVisual = require(script.Parent.RattlerVisual)
 local BarrelAnimation = require(script.Parent.BarrelAnimation)
 local ScannerVisual = require(script.Parent.ScannerVisual)
@@ -173,6 +174,7 @@ function Renderer:fire(rock,windup)
 	self.shotWindup = windup
 end
 function Renderer:resetPose(state)
+	TankTrails.reset(self)
 	self.position = state.position; self.yaw = state.yaw
 	self.turretYaw, self.turretPitch = Simulation.turretAngles(state)
 	self.recoil = 0; self.shotAge = nil
@@ -298,6 +300,7 @@ function Renderer:update(state, dt)
 	DamageVisual.poseMarks(self)
 	ScannerVisual.update(self,state,dt)
 	TerrainEffects.update(self,state,dt)
+	TankTrails.update(self,state,dt)
 end
 function Renderer:destroy() self.model:Destroy() end
 -- Exaggerated cosmetic burst readable from the normal battlefield camera; no Explosion/force or damage is involved.

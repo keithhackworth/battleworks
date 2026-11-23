@@ -84,9 +84,9 @@ function Environment.sample(data,x,z,maxHeight)
  if data.terrainSettings then
   local settings=data.terrainSettings
   local paint,water=Heightfield.surface(settings.terrain,settings.width,settings.depth,x,z)
-  if paint then kind=paint;painted=Materials.fromMaterial(paint) end
+  if paint then kind=paint;painted=Materials.withTraction(Materials.fromMaterial(paint),settings.terrain.traction) end
   if water and water>height+.01 and (not maxHeight or maxHeight>=height) then
-   kind="Water";speed=.9;painted=Materials.fromMaterial("Mud")
+   kind="Water";speed=.9;painted=Materials.withTraction(Materials.fromMaterial("Mud"),settings.terrain.traction)
   end
  end
 	for _,zone in data.zones do
@@ -105,6 +105,12 @@ function Environment.sample(data,x,z,maxHeight)
  if data.worldObjects and maxHeight then
   local h,surface=data.worldObjects:support(x,z,maxHeight)
   if h and h>=height then height=h;kind="Structure";speed=1;supportingSurface=surface;painted=nil end
+ end
+ local settings=data.terrainSettings
+ local traction=settings and settings.terrain.traction
+ if not painted and settings and kind~="Structure" and kind~="Rock" and kind~="Log" then
+  local profile=Materials.forGround(settings.ground.material,kind)
+  if Materials.TunableTraction[profile.surfaceType] then painted=Materials.withTraction(profile,traction) end
  end
 	return height,kind,speed,supportingSurface,painted
 end
@@ -131,11 +137,11 @@ function Environment.pose(data,position,yaw,footprint)
  local maxHeight=if structural then nil else position.Y+WorldGeometry.MaxStep
  local points={{x,z},{x-s*length/2,z-c*length/2},{x+s*length/2,z+c*length/2},{x+c*width/2,z-s*width/2},{x-c*width/2,z+s*width/2}}
  local heights,surfaces={},{}
- local kind,speed
+ local kind,speed,painted
  for i,point in points do
-  local h,k,v,surface=Environment.sample(data,point[1],point[2],maxHeight)
+  local h,k,v,surface,profile=Environment.sample(data,point[1],point[2],maxHeight)
   heights[i]=h;surfaces[i]=surface
-  if i==1 then kind=k;speed=v end
+  if i==1 then kind=k;speed=v;painted=profile end
  end
  -- The step limit selects a reachable surface, not a maximum height for
  -- every point along that same slope. Feet ahead on an incline can naturally
@@ -164,9 +170,12 @@ function Environment.pose(data,position,yaw,footprint)
  end
  local center,front,rear,right,left=table.unpack(heights)
  local terrainHeight=math.max(center,(front+rear+right+left)/4)
- if structureHeight and structureHeight>=terrainHeight then return structureHeight,structurePitch,structureRoll,"Structure",1,structureMaterial end
- local material=if reference then reference.material
-  elseif data.terrainSettings then Materials.forGround(data.terrainSettings.ground.material,kind)
+ local traction=data.terrainSettings and data.terrainSettings.terrain.traction
+ if structureHeight and structureHeight>=terrainHeight then
+  return structureHeight,structurePitch,structureRoll,"Structure",1,structureMaterial and Materials.withTraction(structureMaterial,traction)
+ end
+ local material=if reference then reference.material and Materials.withTraction(reference.material,traction)
+  elseif data.terrainSettings then painted or Materials.withTraction(Materials.forGround(data.terrainSettings.ground.material,kind),data.terrainSettings.terrain.traction)
   elseif kind=="Rock" or kind=="Log" then Materials.fromMaterial("Rock") else nil
 	return terrainHeight, math.atan2(front-rear,length),
 		math.atan2(right-left,width),kind,speed,material

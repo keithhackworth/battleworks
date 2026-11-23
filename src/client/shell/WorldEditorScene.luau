@@ -148,8 +148,9 @@ function Scene:sync(document,catalog,preview)
    record.x=entry.position[1];record.y=entry.position[2];record.z=entry.position[3];record.pitch=entry.rotation[1];record.yaw=entry.rotation[2];record.roll=entry.rotation[3];record.objectScale=entry.scale
    record.traversalDirty=true
   end
-  if self.traversability and entry.solid and (record.traversalDirty or not record.traversalChecked) then
-   self:markStructure(record)
+  local traction=settings.terrain and settings.terrain.traction
+  if self.traversability and entry.solid and (record.traversalDirty or not record.traversalChecked or record.traversalTraction~=traction) then
+   self:markStructure(record,traction)
   elseif (not self.traversability or not entry.solid) and record.traversalChecked then
    if record.traversalMarker then record.traversalMarker:Destroy();record.traversalMarker=nil end
    record.traversalChecked=false
@@ -175,12 +176,14 @@ function Scene:sync(document,catalog,preview)
  end end
  for id,record in self.spawnModels do if not starts[id] then record.model:Destroy();self.spawnModels[id]=nil end end
 end
-function Scene:markStructure(record)
+function Scene:markStructure(record,traction)
  record.traversalDirty=false;record.traversalChecked=true
+ record.traversalTraction=traction
  local native=Placement.stretchPart(record.model)
  if not native then return end
  local slope=math.acos(math.clamp(native.CFrame.UpVector.Y,0,1))
- local color=TerrainSurface.TraversalColors[Traversal.classify(slope,0,Materials.fromMaterial(native.Material))]
+ local profile=Materials.withTraction(Materials.fromMaterial(native.Material),traction)
+ local color=TerrainSurface.TraversalColors[Traversal.classify(slope,0,profile)]
  if not color then
   if record.traversalMarker then record.traversalMarker:Destroy();record.traversalMarker=nil end
   return
@@ -253,8 +256,13 @@ function Scene:updateTankScale(view,offset,distance)
  -- grow to fit close-ups without making the tank itself larger or smaller.
  local radius=10
  local projected=math.ceil(size.Y*radius/(math.max(1,distance-radius)*halfTangent))
- local height=math.clamp(projected,math.max(32,math.ceil(size.Y/45)),math.max(32,size.Y-60))
- local cardSize=UDim2.fromOffset(math.max(112,math.min(projected,size.X-20)),height+40)
+ local minHeight=math.max(32,math.ceil(size.Y/45))
+ local height=math.clamp(projected,minHeight,math.max(minHeight,math.floor(size.Y*.35)-40))
+ local availableWidth=math.max(1,size.X-20)
+ local minWidth=math.min(112,availableWidth)
+ local maxWidth=math.min(availableWidth,math.max(minWidth,math.floor(size.X*.3)))
+ local width=math.clamp(projected,minWidth,maxWidth)
+ local cardSize=UDim2.fromOffset(width,height+40)
  if view.tankScaleCard.Size~=cardSize then view.tankScaleCard.Size=cardSize end
  local fieldOfView=math.deg(2*math.atan(halfTangent*height/size.Y))
  if camera.FieldOfView~=fieldOfView then camera.FieldOfView=fieldOfView end
@@ -363,7 +371,7 @@ function Scene:selection(id,distance)
   end
  end
  local box,bounds=Visual.measure(record.model)
- local center=if pin and (self.mode=="Rotate" or self.mode=="Scale") then Vector3.new(table.unpack(pin.point)) else box.Position
+ local center=box.Position
  local reach=math.max(bounds.X,bounds.Y,bounds.Z)/2+size*2
  for code,p in self.anchors do
   p.Size=Vector3.new(size,size,size)
