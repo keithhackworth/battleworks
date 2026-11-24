@@ -89,8 +89,12 @@ function Objects:add(model,spec)
  self:sync(record); return record
 end
 function Objects:addMotion(model,spec,record)
- if not spec.motion or not spec.motion.enabled then return end
- local entry={id=spec.id,model=model,record=record,path=Motion.compile(spec.motion),origin=spec.position,yaw=math.rad(spec.rotation.Y),pivot=model:GetPivot(),geometries={},bodies={},clock=0,radius=1}
+ local path=spec.motion and spec.motion.enabled and Motion.compile(spec.motion)
+ local r=spec.rotation
+ local spin=spec.spin and Motion.compileSpin(spec.spin,CFrame.Angles(math.rad(r.X),math.rad(r.Y),math.rad(r.Z)))
+ if not path and not spin then return end
+ local entry={id=spec.id,model=model,record=record,path=path,spin=spin,spinClock=0,spinAngle=0,origin=spec.position,yaw=math.rad(spec.rotation.Y),pivot=model:GetPivot(),geometries={},bodies={},clock=0,radius=1}
+ if spin then local bounds=Visual.measure(model);entry.spinCenter=bounds.Position end
  if record then
   record.motion=entry
   for i,geometry in record.geometries do
@@ -103,8 +107,8 @@ function Objects:addMotion(model,spec,record)
   for i,body in record.bodies do
    local rest={position=body.state.position,yaw=body.state.yaw}
    if body.polygon then
-    rest.polygon={}
-    for j,p in body.polygon do rest.polygon[j]=Vector3.new(p.x,0,p.z) end
+    rest.points={}
+    for j,p in body.polygon do rest.points[j]=Vector3.new(p.x,0,p.z) end
    end
    entry.bodies[i]=rest
   end
@@ -113,11 +117,11 @@ function Objects:addMotion(model,spec,record)
 end
 -- Keep the same collision cells and faces. During the contact solve only their
 -- numeric poses change. Replicate the accepted native pose once per fixed step.
-local function pose(entry,offset,angle)
+local function pose(entry,offset,angle,spinAngle)
  local record=entry.record
- local rotation=CFrame.Angles(0,angle,0)
- local frame=CFrame.new(entry.origin+offset)*rotation*CFrame.new(entry.origin*-1)
- entry.frame=frame
+ local rotation=Motion.orientation(angle,entry.spin,spinAngle)
+ local frame=Motion.frame(entry.origin,offset,angle,entry.spin,spinAngle,entry.spinCenter)
+ entry.frame=frame;entry.orientation=rotation
  if not record then return end
  for i,geometry in record.geometries do
   local rest=entry.geometries[i]
@@ -140,22 +144,35 @@ local function pose(entry,offset,angle)
  for i,body in record.bodies do
   local rest=entry.bodies[i]
   body.state.position=frame:PointToWorldSpace(rest.position)
-  if rest.polygon then
+  if entry.spin and (math.abs(entry.spin.axis.X)>1e-6 or math.abs(entry.spin.axis.Z)>1e-6) then
+   -- The tank solver is planar. A conservative projection contains the
+   -- tilted collider while support and projectile queries use its real pose.
+   local g=body.surface
+   body.state.position=g.position;body.state.yaw=0;body.polygon=nil
+   body.halfX,body.halfZ=g.extents.X,g.extents.Z
+   body.bottom,body.top=-g.extents.Y,g.extents.Y
+  elseif rest.points then
    local hx,hz=0,0
-   for j,p in rest.polygon do
+   for j,p in rest.points do
     local v=rotation:PointToWorldSpace(p)
     body.polygon[j].x,body.polygon[j].z=v.X,v.Z
     hx,hz=math.max(hx,math.abs(v.X)),math.max(hz,math.abs(v.Z))
    end
    body.halfX,body.halfZ=hx,hz
   else
-   local planar=Geometry.planar(body.surface,rest.yaw+angle)
+   local planar=Geometry.planar(body.surface,rest.yaw+angle+(if entry.spin then entry.spin.axis.Y*spinAngle else 0))
    body.halfX,body.halfZ,body.state.yaw=planar.hx,planar.hz,planar.yaw
   end
  end
 end
 local function deltaAt(entry,point)
  local delta=entry.change
+ if entry.spin then
+  local d=point-entry.frame.Position
+  local r=entry.orientation
+  local localPoint=Vector3.new(d:Dot(r.RightVector),d:Dot(r.UpVector),-d:Dot(r.LookVector))
+  return entry.endFrame:PointToWorldSpace(localPoint)-point
+ end
  if entry.turn==0 then return delta end
  local p=point-entry.origin-entry.offset
  local c,s=math.cos(entry.turn),math.sin(entry.turn)
@@ -172,7 +189,7 @@ local function setKinematic(entry,dt)
   body.kinematicMinZ=p.Z+math.min(0,delta.Z)-radius
   body.kinematicMaxZ=p.Z+math.max(0,delta.Z)+radius
   body.state.linearVelocity=delta/dt
-  body.state.angularVelocity=Vector3.new(0,entry.turn/dt,0)
+  body.state.angularVelocity=Vector3.new(0,(entry.turn+(if entry.spin then entry.spin.axis.Y*entry.spinTurn else 0))/dt,0)
  end
 end
 function Objects:prepareMotion(dt)
@@ -193,13 +210,15 @@ function Objects:prepareMotion(dt)
   end
   if record and record.destroyed then continue end
   if entry.offset==nil or dt==0 then
-   local offset,yaw=Motion.sample(entry.path,entry.clock)
+   local offset,yaw=Vector3.zero,nil
+   if entry.path then offset,yaw=Motion.sample(entry.path,entry.clock) end
    entry.offset,entry.angle=offset,if yaw then yaw-entry.yaw else 0
-   pose(entry,entry.offset,entry.angle)
+   pose(entry,entry.offset,entry.angle,entry.spinAngle)
    entry.model:PivotTo(entry.frame*entry.pivot)
    if dt==0 then continue end
   end
-  local offset,yaw=Motion.sample(entry.path,entry.clock+dt)
+  local offset,yaw=Vector3.zero,nil
+  if entry.path then offset,yaw=Motion.sample(entry.path,entry.clock+dt) end
   local angle=if yaw then yaw-entry.yaw else entry.angle
   local turn=(angle-entry.angle+math.pi)%(2*math.pi)-math.pi
   -- Limit corner turns by the radius of the actual collision profile.
@@ -207,8 +226,22 @@ function Objects:prepareMotion(dt)
   entry.turn=math.clamp(turn,-limit,limit)
   entry.change=offset-entry.offset
   entry.previousClock=entry.clock
-  entry.clock=(entry.clock+dt)%entry.path.period
-  if entry.change.Magnitude<1e-6 and math.abs(entry.turn)<1e-6 then
+  if entry.path then entry.clock=(entry.clock+dt)%entry.path.period end
+  entry.spinTurn=0;entry.previousSpinClock=entry.spinClock
+  if entry.spin then
+   local spin=entry.spin
+   -- Consume at most one phase at a time, preserving the full turn before pausing.
+   local advance=dt
+   if entry.spinClock<spin.duration then
+    local rate=2*math.pi/spin.duration
+    if record and record.solid then advance=math.min(advance,limit/rate) end
+    advance=math.min(advance,spin.duration-entry.spinClock)
+    entry.spinTurn=advance*rate
+   end
+   entry.spinClock=(entry.spinClock+advance)%spin.period
+   entry.endFrame=Motion.frame(entry.origin,offset,entry.angle+entry.turn,spin,entry.spinAngle+entry.spinTurn,entry.spinCenter)
+  end
+  if entry.change.Magnitude<1e-6 and math.abs(entry.turn)+entry.spinTurn<1e-6 then
    entry.change=nil
    continue
   end
@@ -225,7 +258,7 @@ function Objects:advanceMotion(dt)
  local fraction=math.min(1,self.motionElapsed/self.motionDt)
  for _,entry in self.activeMotion do
   if entry.record and entry.record.solid then
-   pose(entry,entry.offset+entry.change*fraction,entry.angle+entry.turn*fraction)
+   pose(entry,entry.offset+entry.change*fraction,entry.angle+entry.turn*fraction,entry.spinAngle+entry.spinTurn*fraction)
   end
  end
 end
@@ -235,11 +268,12 @@ function Objects:finishMotion(accepted)
   if accepted or not solid then
    entry.offset+=entry.change
    entry.angle=(entry.angle+entry.turn+math.pi)%(2*math.pi)-math.pi
-   if not solid then pose(entry,entry.offset,entry.angle) end
+   entry.spinAngle=(entry.spinAngle+entry.spinTurn)%(2*math.pi)
+   if not solid then pose(entry,entry.offset,entry.angle,entry.spinAngle) end
    entry.model:PivotTo(entry.frame*entry.pivot)
   else
-   entry.clock=entry.previousClock
-   pose(entry,entry.offset,entry.angle)
+   entry.clock=entry.previousClock;entry.spinClock=entry.previousSpinClock
+   pose(entry,entry.offset,entry.angle,entry.spinAngle)
   end
   if solid then
    for _,body in entry.record.bodies do
@@ -282,7 +316,7 @@ function Objects:solveContacts(bodies,obstacles,dt,terrainBlocked,supportAfter)
   if platform and platform.change then
    local velocity=deltaAt(platform,state.motionStepStart or state.position)/dt
    body.carryVelocity=velocity
-   body.carryYaw=platform.turn/dt
+   body.carryYaw=(platform.turn+(if platform.spin then platform.spin.axis.Y*platform.spinTurn else 0))/dt
    body.platformLift=velocity.Y
    body.kinematicAffected=true
    VehicleMotion.setVelocity(state,VehicleMotion.ensure(state)+Vector3.new(velocity.X,0,velocity.Z))
@@ -415,7 +449,7 @@ end
 function Objects:trackEffect(part) table.insert(self.effects,part) end
 function Objects:reset()
  table.clear(self.regenerating)
- for _,entry in self.moving do entry.clock=0 end
+ for _,entry in self.moving do entry.clock=0;entry.spinClock=0;entry.spinAngle=0 end
  for _,part in self.effects do part:Destroy() end; table.clear(self.effects)
  for _,record in self.records do
   record.health=record.maxHealth; record.destroyed=record.destructible and record.health<=0; self:sync(record)

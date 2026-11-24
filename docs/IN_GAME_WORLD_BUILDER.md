@@ -93,6 +93,22 @@ Hosted motion-path saves require the GroupBoard World API build that accepts the
    Add a stationary blocker for a second pass and verify that a trapped tank
    causes the sweeper to stop until it has clearance.
 
+## Rotate an asset
+
+Select a placed asset and choose **Add continuous rotation**. Enter X, Y, and Z
+axis weights between −1 and 1. For example, X = 1, Y = 0, and Z = 1 gives a
+diagonal axis. Set the speed in degrees per second and the pause in seconds.
+The asset completes a full turn, pauses at its starting orientation, then starts
+the next turn. A zero pause repeats continuously. **Preview Motion** works with
+rotation alone or with a waypoint path.
+
+New rotations default to **Axis space: Local**. The axle follows the asset's
+orientation. Switch to **World** for an axle fixed to the map. Existing rotations
+keep their world axis. Both modes rotate through the asset's center. Solid assets keep their
+visible geometry and collision in sync. Tilted solid assets use conservative
+collision bounds for tank side contacts, and large solids can rotate more slowly
+than the requested speed to limit collision travel per tick.
+
 ## Cut a straight tunnel
 
 1. Sculpt a ridge with ground-level approaches on both sides. For an 18-stud

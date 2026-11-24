@@ -82,6 +82,14 @@ function View.new(context)
  self.regenerates=row(button(self.properties,"Regenerates","☑ Regenerates"))
  self.regenerationLabel=row(text(self.properties,"RegenerationLabel","Regeneration delay (seconds)",20))
  self.regenerationDelay=row(make("TextBox",self.properties,{Name="RegenerationDelay",Size=UDim2.new(1,-8,0,28),Text="5",ClearTextOnFocus=false,TextColor3=ink,BackgroundColor3=View.buttonColor,Font=Enum.Font.Code,TextSize=14}))
+ self.spinToggle=row(button(self.properties,"AssetSpin","Add continuous rotation"))
+ self.spinSpace=row(button(self.properties,"SpinSpace","Axis space: Local"))
+ self.spinFields={}
+ for _,spec in {{"x","Rotation axis X (−1 to 1)"},{"y","Rotation axis Y (−1 to 1)"},{"z","Rotation axis Z (−1 to 1)"},{"speed","Rotation speed (degrees/sec)"},{"pause","Pause after each turn (seconds)"}} do
+  local label=row(text(self.properties,"Spin"..spec[1].."Label",spec[2],20))
+  local field=row(make("TextBox",self.properties,{Name="Spin"..spec[1],Size=UDim2.new(1,-8,0,28),Text="",ClearTextOnFocus=false,TextColor3=ink,BackgroundColor3=View.buttonColor,Font=Enum.Font.Code,TextSize=14}))
+  self.spinFields[spec[1]]={label=label,field=field}
+ end
  self.motionDraw=row(button(self.properties,"MotionDraw","Draw Motion Path"))
  self.motionPreview=row(button(self.properties,"MotionPreview","Preview Motion"))
  self.motionRemove=row(button(self.properties,"MotionRemove","Remove Motion Path"))

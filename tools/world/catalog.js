@@ -34,6 +34,7 @@ async function discoverWorlds(directory, bindings = {}) {
       { Name: 'Rotation', ClassName: 'Vector3Value', Properties: { Value: placement.rotation } },
       { Name: 'Scale', ClassName: 'NumberValue', Properties: { Value: placement.scale } },
       ];
+      if(placement.spin)fields.push(value('Spin',JSON.stringify(placement.spin)));
       if(placement.motion)fields.push(value('Motion',JSON.stringify(placement.motion)));
       if(placement.stretch)fields.push(value('Stretch',JSON.stringify(placement.stretch)));
       if(placement.resizeAxes)fields.push(value('ResizeAxes',JSON.stringify(placement.resizeAxes)));

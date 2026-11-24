@@ -326,5 +326,38 @@ do
  simulate(customWall,customGround,{customVictim},40)
  check(custom.bodies[1].polygon and customVictim.position.X>5,"custom GLB face prisms push through swept polygon contact")
 end
+do
+ local registry=Objects.new()
+ local native=model();native.Parent={}
+ local pivot=CFrame.new()
+ function native:GetPivot() return pivot end
+ function native:PivotTo(value) pivot=value end
+ registry:add(native,{id="spinning",position=Vector3.zero,rotation=Vector3.zero,spin={axis={1,0,1},speed=180,pause=2}})
+ registry:stepMotion(1)
+ check(pivot.UpVector.Y<-.99,"an asset can rotate around a combined axis without a motion path")
+ check(math.abs(pivot:PointToWorldSpace(Vector3.new(0,10,0)).Y-10)<.001,"rotation preserves the asset center")
+ registry:stepMotion(1)
+ check(pivot.UpVector.Y>.99,"the asset returns to its initial orientation after one full turn")
+ registry:stepMotion(1)
+ check(pivot.UpVector.Y>.99,"the asset holds during the configured pause")
+ registry:stepMotion(1)
+ registry:stepMotion(.5)
+ check(math.abs(pivot.UpVector.Y)<.01,"the asset resumes rotation after the pause")
+end
+do
+ local Motion=require(Shared.WorldMotion)
+ local axle=Vector3.new(1,0,0)
+ local authored=CFrame.Angles(0,math.pi/3,0)
+ local localSpin=Motion.compileSpin({axis={1,0,0},speed=30,pause=0,space="local"},authored)
+ local worldSpin=Motion.compileSpin({axis={1,0,0},speed=30,pause=0},authored)
+ local turned=axle
+ turned=authored:PointToWorldSpace(turned)
+ local courseYaw=.4
+ local expected=CFrame.Angles(0,courseYaw,0):PointToWorldSpace(turned)
+ check((Motion.orientation(courseYaw,localSpin,.8):PointToWorldSpace(turned)-expected).Magnitude<1e-5,
+  "local spin preserves the axle after authored rotation and path yaw")
+ check((Motion.orientation(0,worldSpin,.8):PointToWorldSpace(axle)-axle).Magnitude<1e-5,
+  "legacy spins retain world-axis rotation")
+end
 CFrame.new=saveNew; CFrame.Angles=saveAngles; CFrame.lookAt=saveLookAt
 print(string.format("Imported world object suite passed: %d assertions",checks))

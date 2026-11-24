@@ -68,7 +68,7 @@ function validate(input,items){
  if(!Array.isArray(input.objects)||input.objects.length>MaxObjects)fail('objects',`expected array of up to ${MaxObjects} objects`);
  const catalog=new Map(items.map(i=>[i.id,i])),ids=new Set();
  const objects=input.objects.map((o,index)=>{
-  const at=`objects[${index}] (${o?.id||'?'})`;keys(o,['id','type','asset','position','rotation','scale','stretch','solid','destructible','hp','bounds','motion','regenerates','regenerationDelay'],at);
+  const at=`objects[${index}] (${o?.id||'?'})`;keys(o,['id','type','asset','position','rotation','scale','stretch','solid','destructible','hp','bounds','motion','spin','regenerates','regenerationDelay'],at);
   id(o.id,`${at}.id`);if(ids.has(o.id))fail(at,'duplicate object ID');ids.add(o.id);
   let type=catalog.get(o.type);
   if(o.asset!==undefined){
@@ -92,6 +92,15 @@ function validate(input,items){
   bool(o.solid,`${at}.solid`);bool(o.destructible,`${at}.destructible`);number(o.hp,1,100000,`${at}.hp`);
   if((o.solid||o.destructible)&&!type.collider)fail(at,'asset has no collider; configure its registry entry before enabling gameplay collision');
   const bounds=o.bounds||type.size;if(!bounds)fail(`${at}.bounds`,'asset dimensions must be measured from its Studio template');vector(bounds,3,.001,10000,`${at}.bounds`);
+  if(own(o,'spin')){
+   if(type.zone)fail(at,'terrain regions cannot rotate');
+   const atSpin=at+'.spin';
+   keys(o.spin,['axis','speed','pause','space'],atSpin);
+   if(own(o.spin,'space')&&!['local','world'].includes(o.spin.space))fail(atSpin+'.space','expected local or world');
+   vector(o.spin.axis,3,-1,1,atSpin+'.axis');
+   number(o.spin.speed,1,360,atSpin+'.speed');
+   number(o.spin.pause,0,3600,atSpin+'.pause');
+  }
   if(own(o,'motion')){
    if(type.zone)fail(at,'terrain regions cannot move');
    const m=o.motion,location=at+'.motion';
@@ -133,7 +142,7 @@ function compileDocument(input,items){
  document.objects.forEach(o=>{const i=byId.get(o.type);const ref='asset_'+createHash('sha256').update(i.model).digest('hex').slice(0,16);definitions[ref]={type:'model',asset:i.model};instances.push({id:o.id,ref,position:o.position,rotation:o.rotation,scale:o.stretch?o.stretch.map(n=>n*o.scale):o.scale,influences:{physical:{movable:false,destructible:o.destructible,hp:o.hp},movement:{collision:o.solid?'solid':'none',traversable:!o.solid}}});});
  const manifest=compileWorld({version:1,id:document.id,name:document.name,seed:0,definitions,instances},{},{assetBindings:bindingsFor(items)});
  const authored=new Map(document.objects.map(o=>[o.id,o]));
- for(const object of manifest.objects)for(const key of ["motion","regenerates","regenerationDelay"]){
+ for(const object of manifest.objects)for(const key of ["motion","spin","regenerates","regenerationDelay"]){
   const source=authored.get(object.id);
   if(source&&own(source,key))object[key]=source[key];
  }
@@ -152,7 +161,7 @@ function migrate(manifest,items,newId){
  if(!placements)fail('migration','legacy world contains unmapped assets, unsupported influences or nonuniform transforms');
  const used=new Set();doc.objects=placements.map((p,index)=>{
   const item=items.find(i=>i.model===p.model);let name=p.id.replace(/[^a-zA-Z0-9_-]/g,'_');if(!/^[a-zA-Z]/.test(name))name='object_'+name;name=name.slice(0,55);if(used.has(name))name+='_'+index;used.add(name);
-  return {id:name,type:item.id,asset:item.model,position:p.position,rotation:p.rotation,scale:p.scale,...(p.motion?{motion:p.motion}:{}),...(p.stretch?{stretch:p.stretch}:{}),solid:p.interaction?.solid||false,destructible:p.interaction?.destructible||false,hp:p.interaction?.hp??100,...(p.interaction?.regenerates!==undefined?{regenerates:p.interaction.regenerates}:{}),...(p.interaction?.regenerationDelay!==undefined?{regenerationDelay:p.interaction.regenerationDelay}:{}),...(item.size?{bounds:item.size}:{})};
+  return {id:name,type:item.id,asset:item.model,position:p.position,rotation:p.rotation,scale:p.scale,...(p.motion?{motion:p.motion}:{}),...(p.spin?{spin:p.spin}:{}),...(p.stretch?{stretch:p.stretch}:{}),solid:p.interaction?.solid||false,destructible:p.interaction?.destructible||false,hp:p.interaction?.hp??100,...(p.interaction?.regenerates!==undefined?{regenerates:p.interaction.regenerates}:{}),...(p.interaction?.regenerationDelay!==undefined?{regenerationDelay:p.interaction.regenerationDelay}:{}),...(item.size?{bounds:item.size}:{})};
  });
  // Bounds for imported assets are measured when the plugin resolves templates.
  return doc;

@@ -167,3 +167,13 @@ test('tunnels retain portal elevations, diameter and traction through compilatio
  world.settings.tunnels[0].b[1]=52;
  assert.throws(()=>validate(world,items),/grade/);
 });
+
+test('asset spin keeps its axes, speed and full-turn pause through compilation',()=>{
+ const world=fresh('spin_world');
+ const spin={axis:[1,0,-1],speed:90,pause:3,space:"local"};
+ world.objects=[{id:'wheel',type:'builtin.crate',asset:'Builtin/BW_crate',position:[0,0,0],rotation:[0,0,0],scale:1,solid:true,destructible:false,hp:100,spin}];
+ const {manifest}=compileDocument(world,items);
+ assert.deepEqual(migrate(manifest,items,'spin_copy').objects[0].spin,spin);
+ world.objects[0].spin.speed=0;
+ assert.throws(()=>validate(world,items),/spin.speed/);
+});

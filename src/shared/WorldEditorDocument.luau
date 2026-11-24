@@ -50,6 +50,7 @@ function Document.checkEntry(doc,catalog,o)
  assert(type(o.bounds)=="table" and #o.bounds==3,"Native bounds are required")
  for _,n in o.bounds do assert(finite(n,.001,10000),"Invalid native bounds") end
  assert(not item.zone or (o.position[2]==0 and o.rotation[1]%360==0 and o.rotation[3]%360==0),"Water/mud regions must stay level at ground height")
+ if o.spin~=nil then assert(not item.zone,"Terrain regions cannot rotate");Motion.validateSpin(o.spin) end
  if o.motion~=nil then
   assert(not item.zone,"Terrain regions cannot move")
   Motion.validate(o.motion,o.position,doc.settings.width,doc.settings.depth)

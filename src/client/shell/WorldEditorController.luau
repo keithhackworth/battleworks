@@ -225,6 +225,27 @@ function Controller.new(context)
   if changed and key=="scale" then self.assetScales[entry.asset]=entry.scale end
  end) end
  action(view.motionDraw.Activated,function() self:toggleMotionDraw() end)
+ action(view.spinToggle.Activated,function()
+  local entry=self:motionEntry()
+  if entry then self:perform(function()
+   if entry.spin then entry.spin=nil else entry.spin={axis={0,1,0},speed=30,pause=0,space="local"} end
+  end,"Rotation updated.") end
+ end)
+ action(view.spinSpace.Activated,function()
+  local entry=self:motionEntry()
+  if entry and entry.spin then self:perform(function()
+   entry.spin.space=if entry.spin.space=="local" then "world" else "local"
+  end,"Rotation axis space updated.") end
+ end)
+ for key,row in view.spinFields do action(row.field.FocusLost,function()
+  local entry=self:motionEntry()
+  local value=tonumber(row.field.Text)
+  if not entry or not entry.spin or not value then self:refresh();return end
+  self:perform(function()
+   local axis=({x=1,y=2,z=3})[key]
+   if axis then entry.spin.axis[axis]=value else entry.spin[key]=value end
+  end,"Rotation updated.")
+ end) end
  action(view.motionPreview.Activated,function() self:toggleMotionPreview() end)
  action(view.motionRemove.Activated,function()
   local entry=self:selected()
@@ -362,7 +383,17 @@ function Controller:drawMotion()
  local view=self.view
  view.motionDraw.Visible=entry~=nil
  view.motionDraw.Text=if self.motionDraft then "Finish Motion Path" elseif m then "Edit Motion Path" else "Draw Motion Path"
- view.motionPreview.Visible=m~=nil and not self.motionDraft
+ local spin=entry and entry.spin
+ view.spinToggle.Visible=entry~=nil and not self.motionDraft
+ view.spinToggle.Text=if spin then "Remove rotation" else "Add continuous rotation"
+ view.spinSpace.Visible=spin~=nil and not self.motionDraft
+ view.spinSpace.Text=if spin and spin.space=="local" then "Axis space: Local" else "Axis space: World"
+ for key,row in view.spinFields do
+  row.label.Visible=spin~=nil and not self.motionDraft;row.field.Visible=row.label.Visible
+  local axis=({x=1,y=2,z=3})[key]
+  if spin and UIS:GetFocusedTextBox()~=row.field then row.field.Text=tostring(if axis then spin.axis[axis] else spin[key]) end
+ end
+ view.motionPreview.Visible=(m~=nil or spin~=nil) and not self.motionDraft
  view.motionPreview.Text=if self.motionPreview then "Stop Preview" else "Preview Motion"
  view.motionRemove.Visible=entry~=nil and entry.motion~=nil and not self.motionDraft
  local point=self.motionDraft and self.motionPoint and self.motionDraft.points[self.motionPoint]
@@ -462,9 +493,11 @@ end
 function Controller:toggleMotionPreview()
  if self.motionPreview then self:stopMotionPreview();self:drawMotion();return end
  local entry=self:motionEntry()
- local record=entry and entry.motion and self.scene.models[entry.id]
+ local record=entry and (entry.motion or entry.spin) and self.scene.models[entry.id]
  if not record then return end
- self.motionPreview={entry=entry,model=record.model,pivot=record.model:GetPivot(),path=Motion.compile(entry.motion),time=0}
+ local r=entry.rotation
+ local orientation=CFrame.Angles(math.rad(r[1]),math.rad(r[2]),math.rad(r[3]))
+ self.motionPreview={entry=entry,model=record.model,pivot=record.model:GetPivot(),path=entry.motion and Motion.compile(entry.motion),spin=entry.spin and Motion.compileSpin(entry.spin,orientation),center=Visual.measure(record.model).Position,time=0}
  self:drawMotion()
 end
 function Controller:stopMotionPreview()
@@ -918,10 +951,11 @@ function Controller:step(dt)
  local preview=self.motionPreview
  if preview then
   preview.time+=dt
-  local offset,yaw=Motion.sample(preview.path,preview.time)
+  local offset,yaw=Vector3.zero,nil
+  if preview.path then offset,yaw=Motion.sample(preview.path,preview.time) end
   local origin=Vector3.new(table.unpack(preview.entry.position))
   local angle=if yaw then yaw-math.rad(preview.entry.rotation[2]) else 0
-  preview.model:PivotTo(CFrame.new(origin+offset)*CFrame.Angles(0,angle,0)*CFrame.new(-origin)*preview.pivot)
+  preview.model:PivotTo(Motion.frame(origin,offset,angle,preview.spin,if preview.spin then Motion.spinAngle(preview.spin,preview.time) else 0,preview.center)*preview.pivot)
  end
  local mouse=self:mousePosition()
  local pixel=mouse-self.view.viewport.AbsolutePosition

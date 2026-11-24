@@ -24,7 +24,7 @@ local function placement(source)
  local faces=text(source,"ColliderFaces")
  if faces then profile=game:GetService("HttpService"):JSONDecode(faces)end
  return {id=text(source,"InstanceId"),asset=text(source,"AssetId"),source=text(source,"Source"),template=text(source,"Template"),
-  position=typed(source,"Position","Vector3Value"),rotation=typed(source,"Rotation","Vector3Value"),scale=typed(source,"Scale","NumberValue"),motion=optionalJSON("Motion"),stretch=optionalJSON("Stretch"),resizeAxes=optionalJSON("ResizeAxes"),
+  position=typed(source,"Position","Vector3Value"),rotation=typed(source,"Rotation","Vector3Value"),scale=typed(source,"Scale","NumberValue"),motion=optionalJSON("Motion"),spin=optionalJSON("Spin"),stretch=optionalJSON("Stretch"),resizeAxes=optionalJSON("ResizeAxes"),
   interaction=if child(source,"Solid") then {solid=typed(source,"Solid","BoolValue"),destructible=typed(source,"Destructible","BoolValue"),hp=typed(source,"Health","NumberValue"),regenerates=typed(source,"Regenerates","BoolValue"),regenerationDelay=typed(source,"RegenerationDelay","NumberValue"),fractions=typed(source,"ColliderFractions","Vector3Value"),fit=text(source,"ColliderFit"),faces=profile and profile.faces,bases=profile and profile.bases,walls=profile and profile.walls,sourceSize=profile and profile.sourceSize} else nil}
 end
 function Selector.catalog(configuration)
@@ -104,7 +104,8 @@ function Selector.start(runService,storage,arena,log,productionId)
     assert(settings,"Motion paths require authored world settings")
     Motion.validate(p.motion,{p.position.X,p.position.Y,p.position.Z},settings.width,settings.depth)
    end
-   if p.interaction or p.motion then candidate:add(model,p) end
+   if p.spin then Motion.validateSpin(p.spin) end
+   if p.interaction or p.motion or p.spin then candidate:add(model,p) end
    placed+=1
    if placed==#specs then
     candidate:stepMotion(0)

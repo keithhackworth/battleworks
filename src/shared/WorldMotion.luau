@@ -47,4 +47,37 @@ function Motion.sample(path,elapsed)
  local last=path.segments[#path.segments]
  return last.a+last.change,if path.face then last.yaw else nil
 end
+function Motion.validateSpin(spin)
+ assert(type(spin)=="table","Invalid asset rotation")
+ for key in spin do assert(key=="axis" or key=="speed" or key=="pause" or key=="space","Unknown rotation property") end
+ assert(spin.space==nil or spin.space=="local" or spin.space=="world","Rotation axis space must be local or world")
+ assert(type(spin.axis)=="table" and #spin.axis==3,"Rotation requires X, Y and Z axes")
+ for k,n in spin.axis do assert(finite(k,1,3) and k%1==0 and finite(n,-1,1),"Rotation axes must be within −1 to 1") end
+ assert(finite(spin.speed,1,360) and finite(spin.pause,0,3600),"Rotation speed must be 1–360 degrees/sec and pause 0–3600 seconds")
+end
+function Motion.compileSpin(spin,authoredRotation)
+ local axis=vector(spin.axis)
+ if axis.Magnitude==0 then return nil end
+ local follows=spin.space=="local"
+ if follows and authoredRotation then axis=authoredRotation:PointToWorldSpace(axis) end
+ local duration=360/spin.speed
+ return {axis=axis.Unit,follows=follows,duration=duration,period=duration+spin.pause}
+end
+function Motion.spinAngle(spin,clock)
+ return math.min(1,(clock%spin.period)/spin.duration)*2*math.pi
+end
+function Motion.orientation(yaw,spin,angle)
+ local turn=CFrame.Angles(0,yaw,0)
+ if not spin or angle==0 then return turn end
+ local axis=if spin.follows then turn:PointToWorldSpace(spin.axis) else spin.axis
+ local c,s=math.cos(angle),math.sin(angle)
+ local function rotate(v) return v*c+axis:Cross(v)*s+axis*(axis:Dot(v)*(1-c)) end
+ return CFrame.fromMatrix(Vector3.zero,rotate(Vector3.new(1,0,0)),rotate(Vector3.new(0,1,0)),rotate(Vector3.new(0,0,1)))*turn
+end
+function Motion.frame(origin,offset,yaw,spin,angle,center)
+ local yawFrame=CFrame.new(origin+offset)*CFrame.Angles(0,yaw,0)*CFrame.new(origin*-1)
+ if not spin then return yawFrame end
+ local pivot=yawFrame:PointToWorldSpace(center)
+ return CFrame.new(pivot)*Motion.orientation(0,spin,angle)*CFrame.new(pivot*-1)*yawFrame
+end
 return Motion
