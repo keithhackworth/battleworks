@@ -134,3 +134,6 @@ Its repository-backed selected/published settings persist across builds. The
 older instructions above to edit SelectedWorld manually are only a legacy
 fallback; the editor provides Select/Test buttons. First-time native export and
 asset permission/render verification are still Studio steps.
+
+For automatic collision during GLB registration, use `--auto-collision`.
+See [generator and batch import instructions](IMPORTED_ASSET_GEOMETRY.md#automatic-glb-collision-generation).

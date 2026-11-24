@@ -87,6 +87,15 @@ function Environment.tunnelFloor(data,x,z,y)
  local tunnels=Environment.tunnels(data)
  if tunnels then return Tunnel.floor(tunnels,x,z,y) end
 end
+function Environment.terrainHeight(data,point)
+ local x,z=point.X,point.Z
+ local floor=Environment.tunnelFloor(data,x,z,point.Y+.08)
+ if floor then return floor end
+ if data.playground and not data.playground.authored then return Playground.sample(data.playground,x,z) end
+ local settings=data.terrainSettings
+ if settings then return Heightfield.sample(settings.terrain,settings.width,settings.depth,x,z) end
+ return 0
+end
 function Environment.sample(data,x,z,maxHeight)
  if maxHeight then
   local floor,tunnel=Environment.tunnelFloor(data,x,z,maxHeight)

@@ -7,7 +7,7 @@ options=options or {}
 local royale=options.royale==true
 local controlEpoch,controlRevision=nil,-1
 local driving=not royale
-local active=false
+local active=nil
 local savedCamera
 local self={}
 local Components=require(game.ReplicatedStorage.Shared.VehicleComponents)
@@ -122,6 +122,7 @@ local function updateConfiguration(own)
  if zoneLease and not available then closeConfiguration() end
 end
 local function updateInput(own)
+ if not active then return end
  updateConfiguration(own)
  controller:setExternalControl(zoneLease~=nil or not own or own.bwRunning==true or own.controlMode=="Auto" or own.health<=0)
 end
@@ -244,6 +245,7 @@ end)
 function self:setActive(enabled)
  if active==enabled then return end
  active=enabled
+ player:WaitForChild("PlayerGui"):SetAttribute("BattleWorksGameplayActive",enabled)
  if enabled and options.worldPlaytest then
   menuButton.Text=if options.worldPlaytest() then "Back to Editor" else "Main Menu"
  end
@@ -265,7 +267,11 @@ function self:setActive(enabled)
   updateConfiguration(nil)
   controller:setExternalControl(true); controller:release(); controller:takeOrbitDelta(false); ide:close()
   local focused=game:GetService("UserInputService"):GetFocusedTextBox()
-  if focused then focused:ReleaseFocus() end
+  if focused then
+   local chat=game:GetService("TextChatService")
+   local bar=chat and chat:FindFirstChildOfClass("ChatInputBarConfiguration")
+   if not bar or bar.TextBox~=focused then focused:ReleaseFocus() end
+  end
   if battlefieldCamera.testPanel then
    battlefieldCamera.testPanel.drag=nil
    if battlefieldCamera.testPanel.frame then battlefieldCamera.testPanel.frame.Visible=false end
@@ -293,8 +299,8 @@ local function restoreCharacterCamera()
  local humanoid=player.Character and player.Character:FindFirstChildOfClass("Humanoid")
  if camera then camera.CameraType=Enum.CameraType.Custom;if humanoid then camera.CameraSubject=humanoid end end
 end
-function self:setControl(reading)
- if not royale or type(reading)~="table" or type(reading.revision)~="number" or reading.revision~=reading.revision or reading.revision%1~=0 or reading.revision<1 or reading.revision<=controlRevision then return false end
+function self:setControl(reading,reapply)
+ if not royale or type(reading)~="table" or type(reading.revision)~="number" or reading.revision~=reading.revision or reading.revision%1~=0 or reading.revision<1 or reading.revision<controlRevision or (reading.revision==controlRevision and not reapply) then return false end
  if reading.mode~="Tank" and reading.mode~="OnFoot" then return false end
  if reading.mode=="Tank" and (type(reading.selected)~="string" or type(reading.epoch)~="number" or reading.epoch~=reading.epoch or reading.epoch%1~=0 or reading.epoch<1)then return false end
  controlRevision=reading.revision
@@ -306,7 +312,7 @@ function self:setControl(reading)
  if selectedId~=previousId then battlefieldCamera:resetOrbit() end
  controlEpoch=if selectedId then reading.epoch else nil;driving=selectedId~=nil
  controller:setTankPromptsSuppressed(driving)
- controller:setCharacterControl(not driving)
+ if active then controller:setCharacterControl(not driving) end
  if driving then
   local camera=workspace.CurrentCamera
   if camera then savedCamera={camera=camera,CameraType=camera.CameraType,CameraSubject=camera.CameraSubject,CFrame=camera.CFrame,Focus=camera.Focus,FieldOfView=camera.FieldOfView,FieldOfViewMode=camera.FieldOfViewMode}end

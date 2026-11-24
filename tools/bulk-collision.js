@@ -9,7 +9,7 @@ async function generateCollisions(root,items){
   if(item.model.startsWith('Builtin/'))continue;
   const logical=item.palettePath||item.model,segments=logical.split('/');
   let source;
-  if(item.collisionSource)source=item.source;
+  if(item.collisionSource||/\.with-collision\.glb$/i.test(item.source))source=item.source;
   else if(config.sourceFolders?.[segments[0]])source=path.join(config.sourceFolders[segments[0]],...segments.slice(1))+'.glb';
   else if(/\.glb$/i.test(item.source))source=item.source;
   let profile,reason;

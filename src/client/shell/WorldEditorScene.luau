@@ -11,6 +11,8 @@ local Traversal=require(Shared.TerrainTraversal)
 local Materials=require(Shared.TerrainMaterials)
 local Components=require(Shared.VehicleComponents)
 local Document=require(Shared.WorldEditorDocument)
+local Audio=require(Shared.WorldSound)
+local Attachment=require(Shared.AssetAttachment)
 local Scene={};Scene.__index=Scene
 local snapLabelSize=24
 local snapLabelOffset=Vector2.new(-12,-26)
@@ -103,7 +105,7 @@ function Scene.new(viewport,assets,document)
  local root=Instance.new("Folder");root.Name="Objects";root.Parent=world
  local gizmos=Instance.new("Folder");gizmos.Name="Anchors";gizmos.Parent=world
  local snapGizmos=Instance.new("Folder");snapGizmos.Name="SnapHandles";snapGizmos.Parent=world
- local self=setmetatable({world=world,camera=camera,root=root,gizmos=gizmos,snapGizmos=snapGizmos,models={},assets=assets,document=document,mode="Move",wire={},snapEnds={},snapLabels={},viewport=viewport},Scene)
+ local self=setmetatable({world=world,camera=camera,root=root,gizmos=gizmos,snapGizmos=snapGizmos,models={},assets=assets,document=document,mode="Move",wire={},snapEnds={},snapLabels={},soundMarkers={},viewport=viewport},Scene)
  for _,endpoint in {"A","B","C","D"} do
   local p=part(snapGizmos,"Snap"..endpoint,Vector3.new(2,2,2),CFrame.new(),if endpoint=="A" then Color3.fromRGB(80,215,255) else Color3.fromRGB(255,183,92),1)
   p.Shape=Enum.PartType.Ball;p.Material=Enum.Material.Neon;p:SetAttribute("EditorHandle","Snap"..endpoint);self.snapEnds[endpoint]=p
@@ -155,10 +157,15 @@ function Scene:sync(document,catalog,preview)
  local color=Color3.fromRGB(table.unpack(settings.ground.color))
  if self.floor.Color~=color then self.floor.Color=color end
  local retained={}
+ local previewParent
+ if type(preview)=="table" then
+  for _,entry in document.objects do if entry.id==preview.id then previewParent=entry;break end end
+ end
  for _,entry in document.objects do
   retained[entry.id]=true
   local record=self.models[entry.id]
   if record and record.entry.asset~=entry.asset then
+   if record.badge then record.badge:Destroy();self.soundMarkers[entry.id]=nil end
    if record.traversalMarker then record.traversalMarker:Destroy() end
    record.model:Destroy()
    record=nil
@@ -168,6 +175,19 @@ function Scene:sync(document,catalog,preview)
    assert(model,err);record={model=model,scale=self:template(item):GetScale()};self.models[entry.id]=record
   end
   record.entry=entry;record.item=catalog.byPath[entry.asset]
+  if entry.asset==Audio.Asset then
+   if not record.badge then
+    local badge=Instance.new("TextLabel");badge.Name="SoundMarker"
+    badge.AnchorPoint=Vector2.new(.5,.5);badge.Size=UDim2.fromOffset(130,24)
+    badge.TextSize=13;badge.ZIndex=3;badge.BackgroundTransparency=.2
+    badge.BackgroundColor3=Color3.fromRGB(23,62,79);badge.TextColor3=Color3.fromRGB(205,241,255)
+    badge.Parent=self.viewport;record.badge=badge;self.soundMarkers[entry.id]=record
+   end
+   record.badge.Text=if entry.attachment then "🔊  ↳ "..entry.attachment.parent else "🔊  Sound"
+  end
+  if previewParent and entry.attachment and entry.attachment.parent==previewParent.id then
+   entry=table.clone(entry);Attachment.apply(previewParent,entry)
+  end
   local stretchKey=if entry.stretch then table.concat(entry.stretch,",") else ""
   if record.stretchKey~=stretchKey or record.x~=entry.position[1] or record.y~=entry.position[2] or record.z~=entry.position[3] or record.pitch~=entry.rotation[1] or record.yaw~=entry.rotation[2] or record.roll~=entry.rotation[3] or record.objectScale~=entry.scale then
    Placement.pose(record.model,record.scale,{position=Vector3.new(table.unpack(entry.position)),rotation=Vector3.new(table.unpack(entry.rotation)),scale=entry.scale,stretch=entry.stretch,resizeAxes=record.item.resizeAxes})
@@ -178,7 +198,7 @@ function Scene:sync(document,catalog,preview)
    record.traversalDirty=true
   end
   local traction=settings.terrain and settings.terrain.traction
-  if self.traversability and entry.solid and (record.traversalDirty or not record.traversalChecked or record.traversalTraction~=traction) then
+  if self.traversability and entry.solid and (record.traversalDirty or not record.traversalChecked or record.traversalTraction~=traction or record.assetTraction~=entry.traction) then
    self:markStructure(record,traction)
   elseif (not self.traversability or not entry.solid) and record.traversalChecked then
    if record.traversalMarker then record.traversalMarker:Destroy();record.traversalMarker=nil end
@@ -187,6 +207,7 @@ function Scene:sync(document,catalog,preview)
  end
  for id,record in self.models do if not retained[id] then
   if record.traversalMarker then record.traversalMarker:Destroy() end
+  if record.badge then record.badge:Destroy();self.soundMarkers[id]=nil end
   record.model:Destroy();self.models[id]=nil
  end end
  local starts={}
@@ -208,10 +229,12 @@ end
 function Scene:markStructure(record,traction)
  record.traversalDirty=false;record.traversalChecked=true
  record.traversalTraction=traction
+ record.assetTraction=record.entry.traction
  local native=Placement.stretchPart(record.model)
  if not native then return end
  local slope=math.acos(math.clamp(native.CFrame.UpVector.Y,0,1))
- local profile=Materials.withTraction(Materials.fromMaterial(native.Material),traction)
+ local material=Materials.fromMaterial(native.Material)
+ local profile=if record.assetTraction~=nil then Materials.withAssetTraction(material,record.assetTraction) else Materials.withTraction(material,traction)
  local color=TerrainSurface.TraversalColors[Traversal.classify(slope,0,profile)]
  if not color then
   if record.traversalMarker then record.traversalMarker:Destroy();record.traversalMarker=nil end
@@ -268,6 +291,21 @@ function Scene.buildTankScale(viewport)
  piece("Turret",Vector3.new(size.X*.45,size.Y*.36,size.Z*.39),0,size.Y*.82,0,hull)
  piece("Barrel",Vector3.new(.65,.65,size.Z*.48),0,size.Y*.82,-size.Z*.40,hull)
  return chassis.CollisionWidth,chassis.CollisionLength
+end
+function Scene:updateSoundMarkers()
+ local viewport,camera=self.viewport,self.camera
+ local size=viewport.AbsoluteSize
+ for _,record in self.soundMarkers do
+  local badge=record.badge
+  if badge then
+   local part=record.model:FindFirstChild("Geometry")
+   local center=(part and part.Position) or record.model:GetPivot().Position
+   local pixel=Math.project(camera.CFrame,size,center,camera.FieldOfView)
+   local visible=pixel~=nil and pixel.X>=0 and pixel.X<=size.X and pixel.Y>=0 and pixel.Y<=size.Y
+   badge.Visible=visible
+   if visible then badge.Position=UDim2.fromOffset(pixel.X,pixel.Y) end
+  end
+ end
 end
 function Scene:updateTankScale(view,offset,distance)
  local size=self.viewport.AbsoluteSize
@@ -585,6 +623,7 @@ function Scene:pick(origin,direction,pixel,viewportSize)
  while p and p~=self.world do local id=p:GetAttribute("EditorObjectId");if id then return id end;p=p.Parent end
 end
 function Scene:destroy()
+ for _,record in self.models do if record.badge then record.badge:Destroy() end end
  if self.tankScale then self.tankScale:Destroy() end
  if self.terrain then self.terrain:destroy() end
  if self.terrainOverlay then self.terrainOverlay:destroy() end

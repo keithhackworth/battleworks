@@ -2,6 +2,10 @@
 local oldIndex=mt.__index
 mt.__index=function(f,key)
  if key=="VectorToWorldSpace" then return function(self,v)return rotate(self.m,v)end end
+ if key=="ToObjectSpace" then return function(self,other)
+  return CFrame.fromMatrix(self:PointToObjectSpace(other.Position),self:VectorToObjectSpace(other.RightVector),
+   self:VectorToObjectSpace(other.UpVector),self:VectorToObjectSpace(other.LookVector)*-1)
+ end end
  if key=="VectorToObjectSpace" or key=="PointToObjectSpace" then return function(self,v)
   if key=="PointToObjectSpace" then v=v-self.p end
   local m=self.m
@@ -10,6 +14,7 @@ mt.__index=function(f,key)
  return oldIndex(f,key)
 end
 local State=require("WorldEditorState")
+local Document=require("WorldEditorDocument")
 local baseFactory=Instance.new
 local runtimeInstances={}
 local function isGui(class) return class=="Frame" or class=="TextButton" or class=="TextLabel" or class=="TextBox" or class=="ScrollingFrame" or class=="ViewportFrame" end
@@ -32,6 +37,14 @@ Instance.new=function(class)
  end
  function p:CaptureFocus()UIS.focusedTextBox=self end
  function p:ReleaseFocus()if UIS.focusedTextBox==self then UIS.focusedTextBox=nil end end
+ function p:IsDescendantOf(ancestor)
+  local parent=self.Parent
+  while parent do
+   if parent==ancestor then return true end
+   parent=parent.Parent
+  end
+  return false
+ end
  setmetatable(p,{__newindex=function(self,key,value)rawset(self,key,value);if key=="Parent" and value then table.insert(value.children,self)end end})
  table.insert(runtimeInstances,p);return p
 end
@@ -105,14 +118,43 @@ UIS.GetMouseLocation=function()return mouse end;UIS.IsKeyDown=function()return f
 UIS.IsMouseButtonPressed=function()return true end
 local worldBefore=#workspace:GetChildren();local cameraBefore=workspace.CurrentCamera
 local menu=0
-local controller=require("WorldEditorController").new({parent=Instance.new("Frame"),editorAssets=library,session={mode="Menu"},home=function()menu+=1 end})
+local gameplayActive=true
+local controller=require("WorldEditorController").new({parent=Instance.new("Frame"),editorAssets=library,session={mode="Menu"},
+ gameplay={setActive=function(_,enabled)gameplayActive=enabled end},home=function()menu+=1 end})
 controller:enter();controller.view.isScene=function()return true end
 check(controller.scene.world.Parent==controller.view.viewport and workspace.CurrentCamera==cameraBefore,"editor uses an isolated WorldModel and camera")
 check(not controller.state.snap,"grid is optional and off by default")
 local item=controller.catalog.byPath["Trees/Oak"]
+do
+ local explicit=table.clone(item)
+ explicit.solid=false
+ explicit.collider=table.clone(item.collider)
+ explicit.collider.explicitCollision=true
+ check(Document.canSetAssetTraction(explicit) and not Document.canSetAssetTraction({id="builtin.decoration",collider={}}),"explicit collision assets qualify for traction and the decorative sphere is excluded")
+ local point=Vector3.new(10.25,0,-30.75)
+ controller:choose(explicit)
+ check(controller:candidate(point).solid,"explicit collision overrides a stale non-solid catalog default in the preview")
+ local draft=State.new(State.copy(controller.state.document))
+ local id=draft:add(explicit,{point.X,0,point.Z})
+ check(draft:find(id).solid,"placing an explicit collision asset makes it solid")
+ explicit.collider.explicitCollision=nil
+ check(not controller:candidate(point).solid,"ordinary non-solid assets keep their configured default")
+end
 controller:choose(item);controller:place(Vector3.new(10.25,0,-30.75))
 controller:choose(item);controller:place(Vector3.new(25.5,0,-30.25))
 local first,second=controller.state.document.objects[1],controller.state.document.objects[2]
+do
+ local original=item.collider.explicitCollision
+ item.collider.explicitCollision=true
+ controller:refresh()
+ check(controller.view.assetTraction.Visible,"selected collision asset exposes the traction field")
+ controller.view.assetTraction.Text="0";controller.view.assetTraction.FocusLost:Fire()
+ check(second.traction==0,"traction field accepts zero")
+ controller.view.assetTraction.Text="";controller.view.assetTraction.FocusLost:Fire()
+ check(second.traction==nil,"clearing traction restores the material default")
+ item.collider.explicitCollision=original
+ controller:refresh()
+end
 check(first.id~=second.id and first.asset=="Trees/Oak" and first.position[1]==10.25,"palette placement creates independent unique instances with free coordinates")
 check(controller.scene.models[first.id].model~=controller.scene.models[second.id].model,"repeated asset placement clones independent native models")
 local body=controller.scene.models[first.id].model:FindFirstChild("Trunk")
@@ -417,10 +459,17 @@ check(cameraAction and cameraAction.priority==3000,"editor installs a scoped cam
 local savedPointer=controller.pointer
 controller.pointer=function()return nil,Vector3.new(0,2,0),Vector3.new(0,.1,-1).Unit,mouse end
 local rightClick={UserInputType=Enum.UserInputType.MouseButton2,KeyCode=Enum.KeyCode.Unknown}
+check(not gameplayActive,"entering the editor explicitly suspends gameplay")
+UIS.MouseBehavior=Enum.MouseBehavior.LockCenter;UIS.MouseIconEnabled=false
+controller:step(0)
+check(UIS.MouseBehavior==Enum.MouseBehavior.Default and UIS.MouseIconEnabled,"an idle editor clears stale turret capture")
 controller:begin(rightClick,true)
 check(not controller.cameraDrag,"processed global right click alone cannot claim unrelated UI input")
 controller.view.viewport.InputBegan:Fire(rightClick)
 check(controller.cameraDrag and UIS.MouseBehavior==Enum.MouseBehavior.LockCurrentPosition and not UIS.MouseIconEnabled,"viewport-owned right click captures camera without requiring terrain ray hit")
+UIS.InputBegan:Fire({UserInputType=Enum.UserInputType.Keyboard,KeyCode=Enum.KeyCode.Escape},true)
+check(not controller.cameraDrag and UIS.MouseBehavior==Enum.MouseBehavior.Default and UIS.MouseIconEnabled,"processed Escape still releases capture")
+controller.view.viewport.InputBegan:Fire(rightClick)
 local yawBefore=controller.yaw;local absoluteMouse=mouse
 local historyBefore=#controller.state.past;local objectsBefore=#controller.state.document.objects
 UIS.InputChanged:Fire({UserInputType=Enum.UserInputType.MouseMovement,Delta=Vector3.new(80,-600,0)})
@@ -490,7 +539,7 @@ check(controller:selected() and controller:selected().id==first.id,"eye-level ob
 controller.scene.pick=originalPick
 UIS.MouseBehavior=Enum.MouseBehavior.LockCenter;UIS.MouseIconEnabled=false
 controller:beginCamera(rightClick);controller:stopCamera()
-check(UIS.MouseBehavior==Enum.MouseBehavior.LockCenter and not UIS.MouseIconEnabled,"camera release restores a pre-existing non-default mouse mode/icon")
+check(UIS.MouseBehavior==Enum.MouseBehavior.Default and UIS.MouseIconEnabled,"editor camera release never restores a stale gameplay mouse lock")
 UIS.MouseBehavior=Enum.MouseBehavior.Default;UIS.MouseIconEnabled=true
 controller.pointer=savedPointer;controller:beginCamera(rightClick);controller:exit()
 check(not cameraBindings.BattleWorksEditorCamera and not controller.cameraDrag and UIS.MouseBehavior==Enum.MouseBehavior.Default,"editor exit unbinds camera action and restores mouse state")
@@ -735,6 +784,10 @@ do
  view.spinSpace.Activated:Fire()
  check(selected.spin.space=="world","axis selector can restore world-space spin")
  view.spinSpace.Activated:Fire()
+ view.spinMode.Activated:Fire()
+ check(selected.spin.swing==90 and view.spinFields.swing.field.Visible,"selecting Swing opens the angle field with a ninety-degree default")
+ view.spinFields.swing.field.Text="55";view.spinFields.swing.field.FocusLost:Fire()
+ check(selected.spin.swing==55,"swing angle is saved on the placement")
  view.motionPreview.Activated:Fire();check(controller.motionPreview and controller.motionPreview.spin,"rotation-only assets can be previewed")
  view.motionPreview.Activated:Fire()
  view.motionDraw.Activated:Fire()
@@ -758,6 +811,55 @@ do
  check(selected.motion==nil,"removing a path clears the saved placement configuration")
  controller:history(false)
  check(controller:selected().motion~=nil,"removing a path is undoable")
+end
+do
+ local loads=0
+ local playground=State.copy(controller.state.document)
+ controller.state.selection={}
+ playground.id="playground";playground.name="Saved Playground"
+ controller.library.request=function(action)
+  check(action=="Playground","direct Playground editing uses the existing world loader")
+  loads+=1;return {ok=true,document=State.copy(playground),revision=7}
+ end
+ controller:exit()
+ controller:enter({openPlayground=true})
+ check(loads==1 and controller.state.document.id=="playground" and not controller.library.frame.Visible,
+  "Edit Playground loads the saved world into the viewport")
+ controller.state.document.name="Unsaved Playground edit"
+ controller:exit()
+ controller:enter({openPlayground=true})
+ check(loads==1 and controller.state.document.name=="Unsaved Playground edit","reopening Edit Playground keeps the in-session draft")
+end
+do
+ local audio=require("WorldSound")
+ local builtin=node("Folder","Builtin",library:FindFirstChild("Templates"))
+ local template=node("Model","BW_sound_block",builtin)
+ local part=node("Part","Geometry",template)
+ part.Shape=Enum.PartType.Block;part.Transparency=.6;part.Size=Vector3.new(8,4,8);part.CFrame=CFrame.new()
+ local meta={id="builtin.sound_block",name="Sound Block",model=audio.Asset,size={8,4,8},solid=false,stretchable=true,available=true}
+ table.insert(controller.catalog.items,meta)
+ controller.catalog.byType[meta.id]=meta;controller.catalog.byPath[meta.model]=meta
+ controller:setMode("Move")
+ local parent=controller.state.document.objects[1]
+ controller:choose(meta);controller:place(Vector3.new(10,0,32))
+ local block=controller:selected()
+ local view=controller.view
+ check(block and block.sound and not block.solid and controller.scene.models[block.id].badge,"sound placement defaults to an editor-only marked volume")
+ view.solid.Activated:Fire()
+ check(not block.solid,"the Sound Block inspector never enables physical collision")
+ check(Document.canResize(meta,1) and Document.canResize(meta,2) and Document.canResize(meta,3),"sound triggers expose all three native resize dimensions")
+ view.soundButtons.activation.Activated:Fire()
+ for _=1,3 do view.soundButtons.filter.Activated:Fire() end
+ view.soundButtons.origin.Activated:Fire()
+ check(block.sound.activation=="Entry" and block.sound.filter=="Specific" and block.sound.origin=="Trigger","the inspector stores trigger activation, filters and source")
+ view.soundButtons.targets.Activated:Fire()
+ check(view.sfxPicker.Visible and view.sfxTitle.Text=="Trigger Assets","specific filters open a placed-ID picker")
+ view.sfxClose.Activated:Fire()
+ controller:lockAttachment(block,parent)
+ check(block.attachment and block.attachment.parent==parent.id and view.soundButtons.attach.Text:find(parent.id,1,true),"locking stores the parent ID and displays it in the inspector")
+ local pose=State.copy(block.position)
+ view.soundButtons.attach.Activated:Fire()
+ check(not block.attachment and State.equal(block.position,pose),"detach preserves the world pose")
 end
 controller:destroy()
 check(cameraBindings.BattleWorksEditorCamera==nil,"destroy removes camera binding")

@@ -11,6 +11,7 @@ const {validatePath} = require('./world/asset-path');
 const {extractFaces, extractPairedFaces, visualGlb} = require('./glb-collision');
 const {nativeExports, findExport} = require('./native-assets');
 const {buildEditorCatalog} = require('./build-editor-catalog');
+const {generateCollision,glbFiles,reportText,autoOptions} = require('./generate-collision');
 
 const cloud = 'https://apis.roblox.com';
 const maxBytes = 20 * 1024 * 1024;
@@ -60,7 +61,7 @@ async function downloadModel(fetch, key, assetId) {
 
 async function cloudAssetId(bytes, options, log, env, fetcher, wait) {
  const key = env.ROBLOX_API_KEY;
- if (!key) throw new Error('Set ROBLOX_API_KEY or use --native with a visual-only Studio export');
+ if (!key) throw new Error('Set ROBLOX_API_KEY for Open Cloud uploads');
  let operation = options.operation;
  let assetId = options['asset-id'];
  if (assetId && !id(assetId)) throw new Error('Invalid Roblox asset ID');
@@ -69,8 +70,8 @@ async function cloudAssetId(bytes, options, log, env, fetcher, wait) {
   if (Boolean(group) === Boolean(user) || !id(group || user)) throw new Error('Set exactly one of ROBLOX_GROUP_ID or ROBLOX_USER_ID');
   const creator = group ? {groupId: group} : {userId: user};
   const form = new FormData();
-  form.append('request', JSON.stringify({assetType: 'Model', displayName: options.name, description: 'BattleWorks visual model', creationContext: {creator}}));
-  form.append('fileContent', new Blob([bytes], {type: 'model/gltf-binary'}), 'model.glb');
+  form.append('request', JSON.stringify({assetType: options.assetType || 'Model', displayName: options.name, description: options.description || 'BattleWorks visual model', creationContext: {creator}}));
+  form.append('fileContent', new Blob([bytes], {type: options.mime || 'model/gltf-binary'}), options.fileName || 'model.glb');
   const response = await request(fetcher, `${cloud}/assets/v1/assets`, {method: 'POST', headers: {'x-api-key': key}, body: form});
   operation = (await response.json()).path;
  }
@@ -81,7 +82,7 @@ async function cloudAssetId(bytes, options, log, env, fetcher, wait) {
   for (let attempt = 0; attempt < 60; attempt++) {
    const res = await request(fetcher, `${cloud}/assets/v1/operations/${operation}`, {headers: {'x-api-key': key}});
    const status = await res.json();
-   if (status.error) throw new Error(`Roblox rejected the upload: ${status.error.message || status.error.code || 'unknown error'}`);
+   if (status.error) throw new Error(`Roblox rejected the upload: ${String(status.error.message || status.error.code || 'unknown error').replaceAll(key, '[redacted]').slice(0,300)}`);
    if (status.done) {
     assetId = status.response?.assetId;
     if (!id(assetId)) throw new Error('Roblox completed the operation without an asset ID');
@@ -131,13 +132,16 @@ async function importGlb(root, asset, sourceFile, options, log = console.log, re
  if (!/^(?:[a-z0-9_-]+\/)*[a-z0-9_-]+$/i.test(asset) || asset.startsWith('Builtin/')) {
   throw new Error('Use a native asset path such as Forest/rope_bridge');
  }
- const visualSource = await readGLB(sourceFile);
+ const original = await readGLB(sourceFile);
+ if(options['auto-collision']&&options.collision)throw new Error('Choose --auto-collision or a separate --collision GLB');
+ const automatic=options['auto-collision']&&generateCollision(original,options);
+ const visualSource = automatic ? automatic.bytes : original;
  const collisionSource = options.collision && await readGLB(options.collision);
- const visual = visualGlb(visualSource);
+ const visual = visualGlb(original);
  if (collisionSource && visual !== visualSource) throw new Error('Choose either named collision meshes or a separate collision GLB');
  let profile;
  try {
-  profile = collisionSource ? extractPairedFaces(visualSource, collisionSource) : extractFaces(visualSource, {preserveClearance: true});
+  profile = automatic ? automatic.profile : collisionSource ? extractPairedFaces(visualSource, collisionSource) : extractFaces(visualSource, {preserveClearance: true});
   if (JSON.stringify(profile).length > 170000) throw new Error('Collision profile exceeds the catalog size limit');
  } catch (error) {
   if (collisionSource || visual !== visualSource || profile?.explicitCollision) throw error;
@@ -163,7 +167,7 @@ async function importGlb(root, asset, sourceFile, options, log = console.log, re
   const [category, ...name] = asset.split('/');
   const folder = config.sourceFolders?.[category];
   const stem = folder && name.length ? path.posix.join(folder, ...name) : path.posix.join('GLBs/imported', asset);
-  const source = stem + '.glb';
+  const source = stem + (automatic ? '.with-collision.glb' : '.glb');
   const collision = collisionSource && stem + '.collision.glb';
   async function addFile(relative, data, stage = false) {
    const target = path.resolve(root, relative);
@@ -175,6 +179,7 @@ async function importGlb(root, asset, sourceFile, options, log = console.log, re
    }
   }
   await addFile(source, visualSource);
+  if(automatic)log(reportText(sourceFile,automatic.report,source));
   if (collision) await addFile(collision, collisionSource);
 
   originalRegistry = await fs.readFile(registry, 'utf8');
@@ -225,16 +230,44 @@ async function importGlb(root, asset, sourceFile, options, log = console.log, re
  }
 }
 
+async function importDirectory(root,input,options,log=console.log,importOne=importGlb){
+ if(!options['auto-collision'])throw new Error('Directory imports require --auto-collision');
+ if(['native','prepare-only','asset-id','operation','collision','name'].some(key=>options[key]))throw new Error('Single-asset options cannot be used with a directory');
+ const files=await glbFiles(input,options.recursive);
+ if(!files.length)throw new Error('No GLB files found');
+ const segment=name=>name.replace(/[^a-z0-9_-]+/gi,'_');
+ const prefix=options['asset-prefix']||segment(path.basename(path.resolve(input)));
+ validatePath(prefix);
+ const paths=new Set();
+ const batch=files.map(file=>{
+  const suffix=path.relative(input,file).replace(/\.glb$/i,'').split(path.sep).map(segment).join('/');
+  const asset=prefix+'/'+suffix;
+  if(paths.has(asset.toLowerCase()))throw new Error('Duplicate batch asset path: '+asset);
+  paths.add(asset.toLowerCase());return {asset,file};
+ });
+ const results=[],errors=[];
+ for(const {asset,file} of batch){
+  try{results.push(await importOne(root,asset,file,options,log));}
+  catch(error){errors.push(`${asset}: ${error.message}`);}
+ }
+ if(errors.length)throw new Error(errors.join('\n'));
+ return results;
+}
 if (require.main === module) (async () => {
  const {positionals, values} = parseArgs({allowPositionals: true, options: {
   collision: {type: 'string'}, native: {type: 'string'}, name: {type: 'string'},
   'prepare-only': {type: 'string'}, 'asset-id': {type: 'string'}, operation: {type: 'string'},
-  download: {type: 'boolean'},
+  download: {type: 'boolean'},'auto-collision':{type:'boolean'},recursive:{type:'boolean'},'asset-prefix':{type:'string'},...autoOptions,
  }});
- if (positionals.length !== 2) throw new Error('Usage: node tools/import-glb.js ASSET_PATH SOURCE.glb [--collision COLLISION.glb] [--native MODEL.rbxm | --prepare-only VISUAL.glb | --asset-id ID | --operation ID] [--download]');
+ const root=path.resolve(__dirname,'..');
+ if(positionals.length===1){
+  if(!(await fs.stat(positionals[0])).isDirectory())throw new Error('Single-file imports require ASSET_PATH SOURCE.glb');
+  return importDirectory(root,positionals[0],values);
+ }
+ if (positionals.length !== 2) throw new Error('Usage: node tools/import-glb.js ASSET_PATH SOURCE.glb [--auto-collision | --collision COLLISION.glb] [--native MODEL.rbxm | --prepare-only VISUAL.glb | --asset-id ID | --operation ID] [--download]');
  if (['native','prepare-only','asset-id','operation'].filter(key => values[key]).length > 1) throw new Error('Choose one import or resume option');
  if (values.download && (values.native || values['prepare-only'])) throw new Error('--download requires a Roblox cloud import');
- await importGlb(path.resolve(__dirname, '..'), ...positionals, values);
+ await importGlb(root, ...positionals, values);
 })().catch(error => {console.error(error.message);process.exitCode = 1;});
 
-module.exports = {importGlb, cloudModel, cloudReference};
+module.exports = {importGlb, importDirectory, cloudModel, cloudReference, cloudAssetId, request};

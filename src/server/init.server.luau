@@ -1155,6 +1155,10 @@ startup("arena and battle services ready")
 local function platformTerrainBlocked(state,body)
  return Simulation.platformTerrainBlocked(state,body,environment)
 end
+local function soundGroundHeight(point)
+ if math.abs(point.X)>mapSize.X/2 or math.abs(point.Z)>mapSize.Y/2 then return nil end
+ return Environment.terrainHeight(environment,point)
+end
 local function platformUnder(body)
  local state=body.state
  local height,_,_,_,_,_,platform=Environment.pose(environment,state.position,state.yaw,Components.get(state).Chassis)
@@ -1248,6 +1252,7 @@ RunService.Heartbeat:Connect(function(dt)
                 local platform=Simulation.step(tank.state, command, Config.Step, mapSize, environment,true)
                 local body=VehicleContacts.body(id,tank.state,Components.get(tank.state).Chassis)
                 body.platform=platform
+                if worldObjects and worldObjects.sounds then body.soundSource=tank.hitbox end
                 if studio and (tank.occupant or not tank.public) then
                  body.trackContacts=true
                  tank.state.motionDebugThrottle=command.throttle
@@ -1280,6 +1285,7 @@ RunService.Heartbeat:Connect(function(dt)
             tank.hitbox.CanQuery=tank.state.health>0
             if environment.playground and environment.playground.configurationZones then syncConfigurationZone(tank) end
         end
+        if worldObjects and worldObjects.sounds then worldObjects.sounds:step(contactBodies,Config.Step,worldObjects.moving,soundGroundHeight) end
         profileEnd()
         local projectileStarted=if diagnostics then os.clock() else 0
         profileBegin("BattleWorks.Projectiles")

@@ -35,6 +35,9 @@ async function discoverWorlds(directory, bindings = {}) {
       { Name: 'Scale', ClassName: 'NumberValue', Properties: { Value: placement.scale } },
       ];
       if(placement.spin)fields.push(value('Spin',JSON.stringify(placement.spin)));
+      if(placement.sound)fields.push(value('SoundBlock',JSON.stringify(placement.sound)));
+      if(placement.attachment)fields.push(value('Attachment',JSON.stringify(placement.attachment)));
+      if(placement.traction!==undefined)fields.push({Name:'Traction',ClassName:'NumberValue',Properties:{Value:placement.traction}});
       if(placement.motion)fields.push(value('Motion',JSON.stringify(placement.motion)));
       if(placement.stretch)fields.push(value('Stretch',JSON.stringify(placement.stretch)));
       if(placement.resizeAxes)fields.push(value('ResizeAxes',JSON.stringify(placement.resizeAxes)));

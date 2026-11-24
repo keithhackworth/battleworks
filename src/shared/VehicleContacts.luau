@@ -119,7 +119,19 @@ local function manifold(a,b,dt,stats)
  if low>high then local middle=(low+high)/2; low=middle; high=middle end
  local plane=(da+db)/2; local out={}
  local function add(t)
-  table.insert(out,{a=a,b=b,nx=nx,nz=nz,x=nx*plane+tx*t,z=nz*plane+tz*t,normalImpulse=0,tangentImpulse=0,depth=depth,allowedSpeed=if gap>0 and dt and dt>0 then gap/dt else 0})
+  local x,z=nx*plane+tx*t,nz*plane+tz*t
+  local clearance=if gap>0 and dt and dt>0 then gap/dt else 0
+  local shove=0
+  if b.kinematic and gap<=C.Skin then
+   local v,p=b.state,b.state.position
+   local omega=v.angularVelocity.Y
+   local closing=dot(v.linearVelocity.X+omega*(z-p.Z),v.linearVelocity.Z-omega*(x-p.X),nx,nz)
+   -- A moving constraint may separate the tank from a squeeze with a bounded,
+   -- weight-dependent target speed. This bias is a target, not a new impulse
+   -- for every iteration.
+   shove=(b.kinematicStrength or 0)*math.min(18,math.max(0,closing)*.25+depth*12)
+  end
+  table.insert(out,{a=a,b=b,nx=nx,nz=nz,x=x,z=z,normalImpulse=0,tangentImpulse=0,depth=depth,allowedSpeed=clearance-shove})
  end
  add(low); if high-low>0.001 then add(high) end
  return out
@@ -499,6 +511,18 @@ function C.obstacles(environment,mapSize,radius)
  if environment then environment.motionObstacles={width=mapSize and mapSize.X,depth=mapSize and mapSize.Y,records=out} end
  return out
 end
+function C.limitKinematicVelocity(body)
+ local s=body.state
+ local v=Motion.ensure(s)
+ local yaw=s.angularVelocity.Y
+ local energy=v:Dot(v)+yaw*yaw*s.yawInertia/s.motionMass
+ local cap=body.kinematicLimit
+ if energy>cap then
+  local scale=math.sqrt(cap/energy)
+  Motion.setVelocity(s,v*scale)
+  Motion.setYawVelocity(s,yaw*scale)
+ end
+end
 function C.solve(bodies,statics,dt,stats,advanceKinematics,kinematicWorld)
  table.sort(bodies,function(a,b) return a.id<b.id end); table.sort(statics,function(a,b) return a.id<b.id end)
  if stats then
@@ -535,7 +559,10 @@ function C.solve(bodies,statics,dt,stats,advanceKinematics,kinematicWorld)
     if t and t<time then time=t;eventA,eventB=a.id,b.id end
    end,stats)
    local advance=remaining*time
-   for _,r in bodies do Motion.integrateHorizontal(r.state,advance,r.carryVelocity,r.carryYaw) end
+   for _,r in bodies do
+    if r.kinematicAffected and r.kinematicLimit then C.limitKinematicVelocity(r) end
+    Motion.integrateHorizontal(r.state,advance,r.carryVelocity,r.carryYaw)
+   end
    if advanceKinematics then
     advanceKinematics(kinematicWorld,advance)
     for _,r in bodies do

@@ -10,10 +10,17 @@ local Motion=require(game.ReplicatedStorage.Shared.WorldMotion)
 local VehicleMotion=require(game.ReplicatedStorage.Shared.VehicleMotion)
 local Objects={}; Objects.__index=Objects
 local Document=require(game.ReplicatedStorage.Shared.WorldEditorDocument)
+local SoundBlocks=require(script.Parent.WorldSoundBlocks)
 local MaxKinematicCorrection=1.25
+-- A scripted mover can translate at up to 60 studs/sec, with bounded
+-- rotational travel. Limit solver amplification above the safety envelope.
+local KinematicReleaseSpeed=90
+local function motionEnergyPerMass(state,linear,angular)
+ return linear:Dot(linear)+angular.Y^2*state.yawInertia/state.motionMass
+end
 local function finite(n) return type(n)=="number" and n==n and math.abs(n)<math.huge end
 function Objects.new()
- return setmetatable({records={},regenerating={},moving={},activeMotion={},savedMotion=setmetatable({},{__mode="k"}),byPart={},seen=setmetatable({},{__mode="k"}),effects={}},Objects)
+ return setmetatable({records={},placements={},regenerating={},moving={},activeMotion={},savedMotion=setmetatable({},{__mode="k"}),byPart={},seen=setmetatable({},{__mode="k"}),effects={}},Objects)
 end
 function Objects:sync(record)
  local live=not record.destroyed
@@ -29,9 +36,24 @@ function Objects:sync(record)
  record.model:SetAttribute("Solid",record.solid and live)
 end
 function Objects:add(model,spec)
+ if spec.sound or spec.attachment or spec.motion or spec.spin then
+  self.placements[spec.id]={model=model,rest=model:GetPivot()}
+ else
+  -- Static placements can still be attachment parents.
+  self.placements[spec.id]={model=model}
+ end
+ if model.Destroying then model.Destroying:Connect(function()
+  self.placements[spec.id]=nil
+  if self.sounds then self.sounds.subjects[spec.id]=nil end
+ end) end
  local v=spec.interaction
+ assert(not spec.sound or not v,"Sound Blocks cannot participate in world collision")
  if not v then
   self:addMotion(model,spec)
+  if spec.sound then
+   self.sounds=self.sounds or SoundBlocks.new(self.placements)
+   self.sounds:add(model,spec)
+  end
   return nil
  end
  assert(type(v.solid)=="boolean" and type(v.destructible)=="boolean" and finite(v.hp) and v.hp>=0,"Invalid world-object flags/health")
@@ -80,11 +102,11 @@ function Objects:add(model,spec)
   table.insert(proxies,proxy);table.insert(bodies,body);table.insert(geometries,geometry)
  end
  end
- local material=Materials.fromMaterial((model.PrimaryPart or Visual.parts(model)[1]).Material)
+ local material=Materials.withAssetTraction(Materials.fromMaterial((model.PrimaryPart or Visual.parts(model)[1]).Material),spec.traction)
  for _,geometry in geometries do geometry.material=material end
  local record={id=spec.id,model=model,proxy=proxies[1],proxies=proxies,body=bodies[1],bodies=bodies,geometry=geometries[1],geometries=geometries,visuals=visuals,solid=v.solid,destructible=v.destructible,regenerates=v.regenerates~=false,regenerationDelay=v.regenerationDelay or Document.DefaultRegenerationDelay,maxHealth=v.hp,health=v.hp,destroyed=v.destructible and v.hp<=0}
  for _,proxy in proxies do self.byPart[proxy]=record end
- self.records[record.id]=record
+ self.records[record.id]=record;self.placements[record.id].record=record
  self:addMotion(model,spec,record)
  self:sync(record); return record
 end
@@ -93,17 +115,21 @@ function Objects:addMotion(model,spec,record)
  local r=spec.rotation
  local spin=spec.spin and Motion.compileSpin(spec.spin,CFrame.Angles(math.rad(r.X),math.rad(r.Y),math.rad(r.Z)))
  if not path and not spin then return end
- local entry={id=spec.id,model=model,record=record,path=path,spin=spin,spinClock=0,spinAngle=0,origin=spec.position,yaw=math.rad(spec.rotation.Y),pivot=model:GetPivot(),geometries={},bodies={},clock=0,radius=1}
+ local entry={id=spec.id,model=model,record=record,attached=spec.attachment~=nil,path=path,spin=spin,spinClock=0,spinAngle=0,origin=spec.position,yaw=math.rad(spec.rotation.Y),pivot=model:GetPivot(),geometries={},bodies={},clock=0,radius=1}
  if spin then local bounds=Visual.measure(model);entry.spinCenter=bounds.Position end
  if record then
+  local volume=0
   record.motion=entry
   for i,geometry in record.geometries do
    local rest=table.clone(geometry)
    if geometry.vertices then rest.vertices=table.clone(geometry.vertices);rest.points=table.clone(geometry.points) end
    entry.geometries[i]=rest
    geometry.platform=entry
+   local size=geometry.size or geometry.extents*2
+   volume+=size.X*size.Y*size.Z
    entry.radius=math.max(entry.radius,(geometry.position-entry.origin).Magnitude+geometry.extents.Magnitude)
   end
+  entry.pushStrength=math.clamp((volume/500)^(1/3),.2,1)
   for i,body in record.bodies do
    local rest={position=body.state.position,yaw=body.state.yaw}
    if body.polygon then
@@ -113,6 +139,7 @@ function Objects:addMotion(model,spec,record)
    entry.bodies[i]=rest
   end
  end
+ self.placements[spec.id].motion=entry
  table.insert(self.moving,entry)
 end
 -- Keep the same collision cells and faces. During the contact solve only their
@@ -184,6 +211,7 @@ local function setKinematic(entry,dt)
   local delta=deltaAt(entry,p)
   local radius=2*(body.halfX+body.halfZ)+.5
   body.kinematic=true
+  body.kinematicStrength=entry.pushStrength
   body.kinematicMinX=p.X+math.min(0,delta.X)-radius
   body.kinematicMaxX=p.X+math.max(0,delta.X)+radius
   body.kinematicMinZ=p.Z+math.min(0,delta.Z)-radius
@@ -214,7 +242,7 @@ function Objects:prepareMotion(dt)
    if entry.path then offset,yaw=Motion.sample(entry.path,entry.clock) end
    entry.offset,entry.angle=offset,if yaw then yaw-entry.yaw else 0
    pose(entry,entry.offset,entry.angle,entry.spinAngle)
-   entry.model:PivotTo(entry.frame*entry.pivot)
+   if not entry.attached then entry.model:PivotTo(entry.frame*entry.pivot) end
    if dt==0 then continue end
   end
   local offset,yaw=Vector3.zero,nil
@@ -230,18 +258,10 @@ function Objects:prepareMotion(dt)
   entry.spinTurn=0;entry.previousSpinClock=entry.spinClock
   if entry.spin then
    local spin=entry.spin
-   -- Consume at most one phase at a time, preserving the full turn before pausing.
-   local advance=dt
-   if entry.spinClock<spin.duration then
-    local rate=2*math.pi/spin.duration
-    if record and record.solid then advance=math.min(advance,limit/rate) end
-    advance=math.min(advance,spin.duration-entry.spinClock)
-    entry.spinTurn=advance*rate
-   end
-   entry.spinClock=(entry.spinClock+advance)%spin.period
+   entry.spinClock,entry.spinTurn=Motion.advanceSpin(spin,entry.spinClock,dt,if record and record.solid then limit else math.huge)
    entry.endFrame=Motion.frame(entry.origin,offset,entry.angle+entry.turn,spin,entry.spinAngle+entry.spinTurn,entry.spinCenter)
   end
-  if entry.change.Magnitude<1e-6 and math.abs(entry.turn)+entry.spinTurn<1e-6 then
+  if entry.change.Magnitude<1e-6 and math.abs(entry.turn)+math.abs(entry.spinTurn)<1e-6 then
    entry.change=nil
    continue
   end
@@ -270,7 +290,7 @@ function Objects:finishMotion(accepted)
    entry.angle=(entry.angle+entry.turn+math.pi)%(2*math.pi)-math.pi
    entry.spinAngle=(entry.spinAngle+entry.spinTurn)%(2*math.pi)
    if not solid then pose(entry,entry.offset,entry.angle,entry.spinAngle) end
-   entry.model:PivotTo(entry.frame*entry.pivot)
+   if not entry.attached then entry.model:PivotTo(entry.frame*entry.pivot) end
   else
    entry.clock=entry.previousClock;entry.spinClock=entry.previousSpinClock
    pose(entry,entry.offset,entry.angle,entry.spinAngle)
@@ -309,9 +329,11 @@ function Objects:solveContacts(bodies,obstacles,dt,terrainBlocked,supportAfter)
  end
  for _,body in bodies do
   local state=body.state
+  VehicleMotion.ensure(state)
   local saved=self.savedMotion[state]
   if not saved then saved={};self.savedMotion[state]=saved end
   for _,field in savedFields do saved[field]=state[field] end
+  body.kinematicLimit=math.max(KinematicReleaseSpeed^2,motionEnergyPerMass(state,saved.linearVelocity,saved.angularVelocity))
   local platform=body.platform
   if platform and platform.change then
    local velocity=deltaAt(platform,state.motionStepStart or state.position)/dt
@@ -342,7 +364,7 @@ function Objects:solveContacts(bodies,obstacles,dt,terrainBlocked,supportAfter)
    local state=body.state
    local saved=self.savedMotion[state]
    for _,field in savedFields do state[field]=saved[field] end
-   body.platformLift=nil;body.carryVelocity=nil;body.carryYaw=nil
+   body.platformLift=nil;body.carryVelocity=nil;body.carryYaw=nil;body.kinematicLimit=nil
    VehicleMotion.sync(state)
   end
   Contacts.solve(bodies,obstacles,dt)
@@ -360,6 +382,7 @@ function Objects:solveContacts(bodies,obstacles,dt,terrainBlocked,supportAfter)
     VehicleMotion.setVelocity(state,v+Vector3.new(0,carry.Y,0))
    end
   end
+  if body.kinematicAffected then Contacts.limitKinematicVelocity(body) end
  end
  return true
 end
@@ -455,6 +478,7 @@ function Objects:reset()
   record.health=record.maxHealth; record.destroyed=record.destructible and record.health<=0; self:sync(record)
  end
  self:stepMotion(0)
+ if self.sounds then self.sounds:reset() end
  -- Keep weak projectile receipts: a completed projectile must not damage twice
  -- across reset. Entries vanish when the server releases the projectile record.
 end

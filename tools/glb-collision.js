@@ -44,17 +44,23 @@ function visualGlb(bytes){
   node.mesh=usedMeshes.get(node.mesh);
  }
  json.meshes=[...usedMeshes.keys()].map(index=>json.meshes[index]);
- const jsonData=Buffer.from(JSON.stringify(json));
- const padded=Buffer.concat([jsonData,Buffer.alloc((4-jsonData.length%4)%4,32)]);
+ return writeGlb(json,chunks);
+}
+function writeGlb(json,chunks,bin){
+ const text=Buffer.from(JSON.stringify(json));
+ const padded=Buffer.concat([text,Buffer.alloc((4-text.length%4)%4,32)]);
  const payload=chunks.map(({kind,data})=>{
   if(kind===0x4e4f534a)data=padded;
+  if(kind===0x004e4942&&bin)data=bin;
   const header=Buffer.alloc(8);header.writeUInt32LE(data.length);header.writeUInt32LE(kind,4);
   return Buffer.concat([header,data]);
  });
- const header=Buffer.from(bytes.subarray(0,12));
+ const header=Buffer.alloc(12);
+ header.writeUInt32LE(0x46546c67);header.writeUInt32LE(2,4);
  header.writeUInt32LE(12+payload.reduce((sum,chunk)=>sum+chunk.length,0),8);
  return Buffer.concat([header,...payload]);
 }
+
 function extractFaces(bytes,options={}){
  const source=readGlb(bytes);
  const {json}=source;
@@ -66,42 +72,47 @@ function extractPairedFaces(visual,collision){
  const source=readGlb(collision);
  return extractProfile(readGlb(visual),{preserveClearance:true},source);
 }
+function readAccessor({json,bin},index,position=false){
+ const fail=m=>{throw new Error("GLB collision profile: "+m);};
+ const a=json.accessors?.[index],v=json.bufferViews?.[a?.bufferView];
+ if(!a||!v||a.sparse||a.normalized||v.buffer!==0||v.extensions?.EXT_meshopt_compression)fail('unsupported accessor');
+ const components=position?3:1;
+ if(a.type!==(position?'VEC3':'SCALAR')||(position&&a.componentType!==5126))fail('unsupported position/index type');
+ if(!position&&![5121,5123,5125].includes(a.componentType))fail('unsupported index component type');
+ const types={5121:[1,'readUInt8'],5123:[2,'readUInt16LE'],5125:[4,'readUInt32LE'],5126:[4,'readFloatLE']};
+ const type=types[a.componentType];if(!type)fail('unsupported component type');
+ const stride=v.byteStride||type[0]*components,start=(v.byteOffset||0)+(a.byteOffset||0),end=(v.byteOffset||0)+v.byteLength;
+ if(!Number.isInteger(a.count)||a.count<0||a.count>1000000||!Number.isInteger(stride)||stride<type[0]*components||!Number.isInteger(start)||start<(v.byteOffset||0))fail('invalid accessor dimensions');
+ return Array.from({length:a.count},(_,i)=>Array.from({length:components},(_,c)=>{
+  const at=start+i*stride+c*type[0];if(at<0||at+type[0]>end||at+type[0]>bin.length)fail('accessor outside buffer');
+  const n=bin[type[1]](at);if(!Number.isFinite(n))fail('nonfinite vertex');return n;
+ }));
+}
+function walkNodes({json,bin},callback){
+ const fail=m=>{throw new Error("GLB collision profile: "+m);};
+ if(!bin||json.buffers?.length!==1||json.buffers[0].uri)fail('expected one embedded binary buffer');
+ const visit=(index,parent,ancestors)=>{
+  if(ancestors.has(index)||!json.nodes?.[index])fail('invalid/cyclic node hierarchy');
+  const node=json.nodes[index],m=multiply(parent,nodeMatrix(node));
+  if(!m.every(Number.isFinite))fail('invalid node transform');
+  callback(node,m,index);
+  ancestors.add(index);
+  for(const child of node.children||[])visit(child,m,ancestors);
+  ancestors.delete(index);
+ };
+ const roots=json.scenes?.[json.scene??0]?.nodes;
+ if(!roots)fail('missing scene');
+ for(const root of roots)visit(root,identity(),new Set());
+}
 function extractProfile(visual,options,collider){
  let explicit=!!collider;
  const fail=m=>{throw new Error('GLB collision profile: '+m);};
  const nodes=[];
- const collect=({json,bin},forceCollision)=>{
-  const read=(index,position=false)=>{
-   const a=json.accessors?.[index],v=json.bufferViews?.[a?.bufferView];
-   if(!a||!v||a.sparse||a.normalized||v.buffer!==0||v.extensions?.EXT_meshopt_compression)fail('unsupported accessor');
-   const components=position?3:1;
-   if(a.type!==(position?'VEC3':'SCALAR')||(position&&a.componentType!==5126))fail('unsupported position/index type');
-   if(!position&&![5121,5123,5125].includes(a.componentType))fail('unsupported index component type');
-   const types={5121:[1,'readUInt8'],5123:[2,'readUInt16LE'],5125:[4,'readUInt32LE'],5126:[4,'readFloatLE']};
-   const type=types[a.componentType];if(!type)fail('unsupported component type');
-   const stride=v.byteStride||type[0]*components,start=(v.byteOffset||0)+(a.byteOffset||0),end=(v.byteOffset||0)+v.byteLength;
-   if(!Number.isInteger(a.count)||a.count<0||a.count>1000000||!Number.isInteger(stride)||stride<type[0]*components||!Number.isInteger(start)||start<(v.byteOffset||0))fail('invalid accessor dimensions');
-   return Array.from({length:a.count},(_,i)=>Array.from({length:components},(_,c)=>{
-    const at=start+i*stride+c*type[0];if(at<0||at+type[0]>end||at+type[0]>bin.length)fail('accessor outside buffer');
-    const n=bin[type[1]](at);if(!Number.isFinite(n))fail('nonfinite vertex');return n;
-   }));
-  };
-  const visit=(index,parent,ancestors)=>{
-   if(ancestors.has(index)||!json.nodes?.[index])fail('invalid/cyclic node hierarchy');
-   const node=json.nodes[index],m=multiply(parent,nodeMatrix(node));
-   if(!m.every(Number.isFinite))fail('invalid node transform');
-   const collision=forceCollision??isCollisionNode(node.name);
-   if(collision&&node.mesh!==undefined)explicit=true;
-   nodes.push({node,m,collision,read,meshes:json.meshes});
-   ancestors.add(index);
-   for(const child of node.children||[])visit(child,m,ancestors);
-   ancestors.delete(index);
-  };
-  const roots=json.scenes?.[json.scene??0]?.nodes;
-  if(!roots)fail('missing scene');
-  for(const root of roots)visit(root,identity(),new Set());
-  if(!bin||json.buffers?.length!==1||json.buffers[0].uri)fail('expected one embedded binary buffer');
- };
+ const collect=(source,forceCollision)=>walkNodes(source,(node,m)=>{
+  const collision=forceCollision??isCollisionNode(node.name);
+  if(collision&&node.mesh!==undefined)explicit=true;
+  nodes.push({node,m,collision,read:(i,p)=>readAccessor(source,i,p),meshes:source.json.meshes});
+ });
  collect(visual,collider?false:undefined);
  if(collider)collect(collider,true);
  const preserveClearance=explicit||options.preserveClearance;
@@ -184,7 +195,7 @@ function extractProfile(visual,options,collider){
  return profile;
 }
 async function loadFaces(filename,options){return extractFaces(await fs.readFile(filename),options);}
-module.exports={extractFaces,extractPairedFaces,loadFaces,visualGlb,isCollisionNode};
+module.exports={extractFaces,extractPairedFaces,loadFaces,visualGlb,isCollisionNode,readGlb,writeGlb,readAccessor,walkNodes};
 if(require.main===module){
  const [input,output]=process.argv.slice(2);
  (async()=>{

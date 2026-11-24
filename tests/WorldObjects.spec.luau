@@ -18,14 +18,23 @@ local function model()
  function m:SetAttribute(k,v) self.attributes[k]=v end
  return m
 end
-local function setup(options)
+local function setup(options,traction)
  local registry=Objects.new(); local m=model()
  local interaction={solid=true,destructible=true,hp=150,fractions=Vector3.new(.18,.45,.18)}
  for k,v in options or {} do interaction[k]=v end
- local spec={id="tree-large",position=Vector3.zero,rotation=Vector3.zero,interaction=interaction}
+ local spec={id="tree-large",position=Vector3.zero,rotation=Vector3.zero,interaction=interaction,traction=traction}
  local r=registry:add(m,spec); return registry,r,m
 end
 local registry,r,m=setup()
+do
+ local slick=setup(nil,20)
+ local _,support=slick:support(0,0,50)
+ local material=support.material
+ check(material.assetTraction and material.authoredTraction==.2 and material.trackedTraction==.3,"solid support returns authored asset grip and the tracked bonus")
+ local ice=setup(nil,0)
+ local _,iceSupport=ice:support(0,0,50)
+ check(iceSupport.material.staticFriction==0 and iceSupport.material.trackedTraction==.1,"explicit zero grip survives support lookup")
+end
 check(m.attributes.Health==150 and m.attributes.MaxHealth==150 and not m.attributes.Destroyed,"initial HP is replicated on the placed Model")
 check(r.proxy.Size.X<4 and r.proxy.Size.Z<4 and r.proxy.Size.Y==9,"trunk dimensions exclude the large canopy")
 check(r.proxy.CanQuery and not r.proxy.CanCollide and r.proxy.Transparency==1,"authoritative query proxy; native body physics disabled")
@@ -174,7 +183,7 @@ do
   env.rocks={};env.logs={};env.trees={};env.zones={};env.worldObjects=objects
   return objects,env
  end
- local function asset(objects,id,base,size,points,speed,pause,collider,face)
+ local function asset(objects,id,base,size,points,speed,pause,collider,face,spin)
   local native=model()
   native.Parent={}
   native.mesh.Parent=native
@@ -185,7 +194,7 @@ do
   function native:PivotTo(value) pivot=value end
   local interaction=collider or {solid=true,destructible=false,hp=100,fractions=Vector3.new(1,1,1)}
   local path=if points then {points=points,speed=speed,pause=pause or 0,enabled=true,face=face==true} else nil
-  local record=objects:add(native,{id=id,position=base,rotation=Vector3.zero,interaction=interaction,motion=path})
+  local record=objects:add(native,{id=id,position=base,rotation=Vector3.zero,interaction=interaction,motion=path,spin=spin})
   objects:stepMotion(0)
   return native,record
  end
@@ -296,6 +305,22 @@ do
  simulate(sweep,ground,{tank},5,{opposing})
  check(tank.position.X>=wall:GetPivot().Position.X+4,"a tank driving into the moving wall cannot pass through")
 
+ local function pushOf(thickness)
+  local weighted,field=world()
+  asset(weighted,"weighted",Vector3.new(-6-thickness/2,0,0),Vector3.new(thickness,8,12),{{0,0,0},{30,0,0}},30)
+  local state=Sim.new(Vector3.zero,"Boomer")
+  simulate(weighted,field,{state},8)
+  return Motion.ensure(state).X
+ end
+ local light,heavy=pushOf(.3),pushOf(8)
+ check(light>0 and heavy>light+.5 and heavy<90,"heavier collision geometry gives a stronger but bounded push")
+
+ local escape,escapeGround=world()
+ asset(escape,"open_rotor",Vector3.new(0,5.1,0),Vector3.new(6,1,18),nil,nil,nil,nil,nil,{axis={1,0,0},speed=180,pause=0})
+ local free=Sim.new(Vector3.new(0,0,13.5),"Boomer")
+ simulate(escape,escapeGround,{free},70)
+ check(free.position.Z>13.6 and Motion.ensure(free).Magnitude<90,"a tank near the rotating asset's edge is pushed clear when it has an escape route")
+
  local lane,field=world()
  local pusher=asset(lane,"pusher",Vector3.new(-8,0,0),Vector3.new(.5,8,30),{{0,0,0},{40,0,0}},20)
  local first=Sim.new(Vector3.zero,"Boomer")
@@ -304,6 +329,35 @@ do
  local rejected=simulate(lane,field,{first,second},85,nil,stop)
  check(first.position.X>0 and first.position.X<second.position.X and second.position.X>12 and second.position.X<=18.55,string.format("pushing a tank chain transmits contacts and respects stationary cover: %.3f %.3f wall %.3f rejected %d",first.position.X,second.position.X,pusher:GetPivot().Position.X,rejected))
  check(rejected>0 and pusher:GetPivot().Position.X<first.position.X-3.9,"an unresolved squeeze blocks the motion path")
+
+ local jam,jamGround=world()
+ local rotor=asset(jam,"rotor",Vector3.new(0,5.1,0),Vector3.new(6,1,18),nil,nil,nil,nil,nil,{axis={1,0,0},speed=180,pause=0})
+ local wedged=Sim.new(Vector3.zero,"Boomer")
+ local jamWall=Contacts.box("jam_wall",Vector3.new(-6,0,0),.5,20,0,10)
+ local peak,rejections=0,0
+ for _=1,120 do
+  rejections+=simulate(jam,jamGround,{wedged},1,{opposing},jamWall)
+  peak=math.max(peak,Motion.ensure(wedged).Magnitude)
+ end
+ check(rejections>0 and peak<120,"squeezing a tank under a rotating item blocks the rotor without a launch")
+
+ -- Exercise the rollback even when the contact solver reports no overlap.
+ local pose=rotor:GetPivot()
+ local beforePosition=wedged.position
+ local solve=Contacts.solve
+ Contacts.solve=function(bodies,statics,step,stats,advance,objects)
+  if advance then
+   advance(objects,step)
+   bodies[1].kinematicAffected=true
+   Motion.setVelocity(bodies[1].state,Vector3.new(1900,0,0))
+   return true
+  end
+ end
+ local accepted=jam:solveContacts({Contacts.body("wedged",wedged,Components.get(wedged).Chassis)},jam:obstacles(),dt)
+ Contacts.solve=solve
+ check(accepted and (rotor:GetPivot().LookVector-pose.LookVector).Magnitude>.001
+  and (wedged.position-beforePosition).Magnitude<.001 and math.abs(Motion.ensure(wedged).X-90)<.01,
+  "a clear 1900 studs/sec release is limited without stopping the rotor")
 
  local bridge,ravine=world()
  asset(bridge,"bridge",Vector3.zero,Vector3.new(12,8,28))
@@ -346,6 +400,28 @@ do
 end
 do
  local Motion=require(Shared.WorldMotion)
+ local registry=Objects.new()
+ local native=model();native.Parent={}
+ local pivot=CFrame.new()
+ function native:GetPivot() return pivot end
+ function native:PivotTo(value) pivot=value end
+ local spec={axis={1,0,0},speed=90,pause=1,swing=90}
+ local swing=Motion.compileSpin(spec,CFrame.new())
+ for time,angle in {[0.5]=45,[1.5]=90,[2.5]=45,[3.5]=0,[4.5]=45} do
+  check(math.abs(Motion.spinAngle(swing,time)-math.rad(angle))<1e-6,"swing preview samples outbound, both pauses, return and repeat")
+ end
+ registry:add(native,{id="swinging",position=Vector3.zero,rotation=Vector3.zero,spin=spec})
+ registry:stepMotion(1);registry:stepMotion(1)
+ check(math.abs(pivot.UpVector.Y)<1e-6,"swing pauses at the configured angle")
+ registry:stepMotion(.5)
+ check(math.abs(pivot.UpVector.Y-math.sqrt(.5))<1e-6,"reverse-only swing updates the runtime pose")
+ registry:stepMotion(.5);registry:stepMotion(1)
+ check(pivot.UpVector.Y>.9999,"swing returns and pauses at the starting orientation")
+ registry:stepMotion(1)
+ check(math.abs(pivot.UpVector.Y)<1e-6,"swing repeats")
+end
+do
+ local Motion=require(Shared.WorldMotion)
  local axle=Vector3.new(1,0,0)
  local authored=CFrame.Angles(0,math.pi/3,0)
  local localSpin=Motion.compileSpin({axis={1,0,0},speed=30,pause=0,space="local"},authored)
@@ -358,6 +434,170 @@ do
   "local spin preserves the axle after authored rotation and path yaw")
  check((Motion.orientation(0,worldSpin,.8):PointToWorldSpace(axle)-axle).Magnitude<1e-5,
   "legacy spins retain world-axis rotation")
+end
+do
+ local Audio=require(Shared.WorldSound)
+ check(Audio.playbackAction("Occupied","Repeat",true,2.9,3,false)=="Idle" and
+  Audio.playbackAction("Occupied","Repeat",true,3,3,false)=="Repeat" and
+  Audio.playbackAction("Occupied","Repeat",false,4,3,false)=="Idle","repeat scheduling honors interval and active state")
+ check(Audio.playbackAction("Always","Once",true,1,0,false)=="Once" and
+  Audio.playbackAction("Always","Once",true,2,0,true)=="Idle","ambient once plays just once per listener")
+ check(Audio.accepts({filter="Moving"},nil,"block","mover",true,true) and
+  not Audio.accepts({filter="Moving"},nil,"block","mover",true,false) and
+  not Audio.accepts({filter="Both"},"mover","block","mover",true,true),"moving-only excludes static objects and attachments exclude the parent")
+ local Attachment=require(Shared.AssetAttachment)
+ local Blocks=require("WorldSoundBlocks")
+ local oldIndex=mt.__index
+ mt.__index=function(frame,key)
+  if key=="Lerp" then return function(self,other,t)
+   local p=self.Position+(other.Position-self.Position)*t
+   return CFrame.fromMatrix(p,self.RightVector,self.UpVector,self.LookVector*-1)
+  end end
+  if key=="ToObjectSpace" then return function(self,other)
+   local function localVector(p)
+    return Vector3.new(self.RightVector:Dot(p),self.UpVector:Dot(p),-self.LookVector:Dot(p))
+   end
+   return CFrame.fromMatrix(localVector(other.Position-self.Position),localVector(other.RightVector),localVector(other.UpVector),localVector(other.LookVector)*-1)
+  end end
+  return oldIndex(frame,key)
+ end
+ local function soundConfig(activation,filter)
+  local config=table.clone(Audio.Default)
+  config.effect="bell";config.activation=activation;config.filter=filter
+  config.playback="Once";config.cooldown=.5
+  return config
+ end
+ local function volume(registry,id,config,link,x,z)
+  local pivot=CFrame.new(x or 0,0,z or 0)*CFrame.Angles(0,math.rad(20),0)
+  local part=Instance.new("Part");part.CFrame=pivot;part.Size=Vector3.new(.15,6,8);part.Destroying=signal()
+  function part:AddTag(tag) self.tag=tag end
+  local trigger={Parent={}}
+  function trigger:GetPivot() return pivot end
+  function trigger:PivotTo(frame) pivot=frame;part.CFrame=frame end
+  function trigger:FindFirstChildWhichIsA() return part end
+  registry:add(trigger,{id=id,position=Vector3.zero,rotation=Vector3.zero,template=Audio.Asset,sound=config,attachment=link})
+  return part,trigger
+ end
+ local function setupSounds()
+  local registry=Objects.new()
+  registry.sounds=Blocks.new(registry.placements)
+  registry.sounds.ids.bell="123"
+  return registry
+ end
+ local function tank(id,from,to)
+  return {id=id,halfX=1,halfZ=1,bottom=-1,top=1,state={health=100,position=Vector3.new(to,0,0),motionStepStart=Vector3.new(from,0,0),yaw=.2}}
+ end
+ local soundWorld=setupSounds()
+ local entry=volume(soundWorld,"entry",soundConfig("Entry","Tanks"))
+ local leave=volume(soundWorld,"exit",soundConfig("Exit","Tanks"))
+ local occupied=volume(soundWorld,"occupied",soundConfig("Occupied","Tanks"))
+ check(not entry.CanCollide and not entry.CanQuery and entry.Transparency==1 and #soundWorld:obstacles()==0,
+  "runtime Sound Blocks are invisible and excluded from both collision and queries")
+ soundWorld.sounds:step({tank("a",-20,20)},.05,{})
+ check(entry:GetAttribute("Sfx_Pulse")==1 and leave:GetAttribute("Sfx_Pulse")==1 and occupied:GetAttribute("Sfx_Pulse")==1 and not occupied:GetAttribute("Sfx_Active"),
+  "a high-speed crossing pulses every contact mode without claiming end-of-step occupancy")
+ soundWorld.sounds:step({tank("a",-20,1),tank("b",-20,0)},.05,{})
+ check(entry:GetAttribute("Sfx_Pulse")==1 and occupied:GetAttribute("Sfx_Active")~=true,
+  "footprint overlap works outside the block center; entry cooldown is global and occupancy is shared")
+ soundWorld.sounds:step({tank("a",1,20),tank("b",0,0)},.6,{})
+ check(occupied:GetAttribute("Sfx_Active")~=true and occupied:GetAttribute("Sfx_Pulse")==1,"a cooldown-suppressed occupancy does not restart without a new entry")
+ soundWorld.sounds:step({tank("b",0,20)},.1,{})
+ check(occupied:GetAttribute("Sfx_Active")~=true,"last departure clears occupancy")
+ soundWorld.sounds:step({tank("a",20,0)},.6,{})
+ check(entry:GetAttribute("Sfx_Pulse")==2 and occupied:GetAttribute("Sfx_Pulse")==2,"the next activation after cooldown plays normally")
+ soundWorld.sounds:step({tank("a",0,0),tank("b",20,0)},.1,{})
+ soundWorld.sounds:step({tank("b",0,0)},.1,{})
+ check(occupied:GetAttribute("Sfx_Active")==true and occupied:GetAttribute("Sfx_Pulse")==2,"one subject leaving preserves aggregate occupancy")
+ entry.Destroying:Fire()
+ soundWorld:reset()
+ check(occupied:GetAttribute("Sfx_Pulse")==0 and not occupied:GetAttribute("Sfx_Active"),"removal and reset release playback state")
+ local movingWorld=setupSounds()
+ local ferry=model();local origin=CFrame.new();ferry.Parent={}
+ function ferry:GetPivot()return origin end
+ function ferry:PivotTo(frame)origin=frame end
+ local route={points={{0,0,0},{15,0,0}},speed=15,pause=0,enabled=true}
+ movingWorld:add(ferry,{id="ferry",position=Vector3.zero,rotation=Vector3.zero,motion=route,
+  spin={axis={0,1,0},speed=45,pause=0,swing=30},interaction={solid=true,destructible=false,hp=10,fractions=Vector3.new(1,1,1)}})
+ local link={parent="ferry",position={0,0,0},rotation={0,0,0}}
+ local cfg=soundConfig("Entry","Both")
+ local attached,sensor=volume(movingWorld,"attached",cfg,link)
+ movingWorld:stepMotion(.1);movingWorld.sounds:step({},.1,movingWorld.moving)
+ check(math.abs(sensor:GetPivot().Position.X-1.5)<.001 and math.abs(sensor:GetPivot().LookVector.X)>0,
+  "an attached trigger inherits the model's accepted translation and swing")
+ check(attached:GetAttribute("Sfx_Pulse")==0,"a trigger ignores its own moving parent")
+ local accepted=sensor:GetPivot()
+ movingWorld:prepareMotion(.1);movingWorld:advanceMotion(.1);movingWorld:finishMotion(false)
+ movingWorld.sounds:step({},.1,movingWorld.moving)
+ check((sensor:GetPivot().Position-accepted.Position).Magnitude<1e-7,"a blocked parent does not advance its attached trigger")
+ ferry.Parent=nil
+ movingWorld.sounds:step({},.1,movingWorld.moving)
+ check((sensor:GetPivot().Position-accepted.Position).Magnitude<1e-7,"removing a parent preserves its child's last accepted pose")
+ local direct=setupSounds()
+ local filter=soundConfig("Entry","Specific");filter.targets={"moving"};filter.origin="Trigger"
+ local targetOnly=volume(direct,"targetOnly",filter)
+ local moving=model();local movePivot=CFrame.new(-30,0,0);moving.Parent={}
+ function moving:GetPivot()return movePivot end
+ function moving:PivotTo(frame)movePivot=frame end
+ function moving:GetBoundingBox() return movePivot,Vector3.new(2,2,2) end
+ direct:add(moving,{id="moving",position=Vector3.new(-30,0,0),rotation=Vector3.zero,motion={points={{0,0,0},{60,0,0}},speed=60,pause=0,enabled=true}})
+ direct.sounds:step({tank("a",-20,20)},.1,direct.moving)
+ check(targetOnly:GetAttribute("Sfx_Pulse")==0,"a persistent asset filter ignores tanks")
+ direct:stepMotion(1);direct.sounds:step({},1,direct.moving)
+ check(targetOnly:GetAttribute("Sfx_Pulse")==1,"relative sweep detects a selected moving asset crossing the entire trigger")
+ for trigger in direct.sounds.entries do
+  check(trigger.source.Value==moving.mesh,"trigger-owned playback uses the activating model's moving audio source")
+ end
+ local parent={id="mount",position={10,0,0},rotation={0,90,0}}
+ local child={position={10,0,-2},rotation={0,90,0}}
+ child.attachment=Attachment.relative(parent,child)
+ parent.position={20,0,0}
+ Attachment.apply(parent,child)
+ check(math.abs(child.position[1]-20)<1e-6 and math.abs(child.position[3]+2)<1e-6,
+  "local authored attachment round trips and follows translated parents")
+ local State=require(Shared.WorldEditorState)
+ parent.asset="Builtin/BW_crate";child.id="speaker";child.sound=soundConfig("Entry","Specific");child.sound.targets={parent.id}
+ local draft=State.new({objects={parent,child},spawns={}})
+ draft.selection[parent.id]=true;draft.selection[child.id]=true
+ draft:duplicate()
+ local newParent,newChild=draft.document.objects[3],draft.document.objects[4]
+ check(newChild.attachment.parent==newParent.id and newChild.sound.targets[1]==newParent.id,"duplicate group remaps both link and trigger ID")
+ draft.selection={[newParent.id]=true};draft:delete()
+ check(newChild.attachment==nil and #newChild.sound.targets==0,"deleting the parent detaches the child and prunes trigger references")
+ check(draft:undo() and draft:find(newChild.id).attachment.parent==newParent.id,"undo restores the attachment and trigger target")
+ local populated=setupSounds()
+ local close=volume(populated,"close",soundConfig("Entry","Tanks"))
+ for n=1,260 do volume(populated,"distant_"..n,soundConfig("Entry","Tanks"),nil,(n%13)*48-288,96+math.floor(n/13)*40) end
+ local tests=0;local overlap=Audio.overlap
+ Audio.overlap=function(...) tests+=1;return overlap(...) end
+ populated.sounds:step({tank("a",-20,20)},.05,{})
+ Audio.overlap=overlap
+ check(tests==1 and close:GetAttribute("Sfx_Pulse")==1,"spatial queries avoid narrow-phase checks on hundreds of distant triggers")
+ local ground=setupSounds()
+ local thump=volume(ground,"thump",soundConfig("Entry","Terrain"))
+ local function height() return 0 end
+ ground.sounds:step({tank("a",-20,20)},.1,{},nil)
+ check(thump:GetAttribute("Sfx_Pulse")==0,"terrain-only filters ignore passing tanks")
+ ground.sounds:step({},.1,{},height)
+ ground.sounds:step({},.6,{},height)
+ check(thump:GetAttribute("Sfx_Pulse")==1,"continuous ground contact plays only one thump")
+ for block in ground.sounds.terrain do
+  local resting=block.frame
+  block.previous=resting;block.frame=CFrame.new(0,10,0)*resting
+  ground.sounds:step({},.3,{},height)
+  block.previous=block.frame;block.frame=resting
+  ground.sounds:step({},.3,{},height)
+ end
+ check(thump:GetAttribute("Sfx_Pulse")==2,"lifting off and touching down re-arms the terrain trigger")
+ local flat=CFrame.new(0,2,0)
+ local half=Vector3.new(.5,.5,.5)
+ local inside,passed=Audio.terrainOverlap(CFrame.new(-2,2,0),CFrame.new(2,2,0),half,function(point)
+  return if math.abs(point.X)<.25 then 2 else 0
+ end,false)
+ check(not inside and passed,"sweeping over a narrow crest detects a momentary terrain hit")
+ check(not Audio.terrainOverlap(flat,flat,half,height,false),"a trigger above the terrain stays off")
+ local corner=CFrame.new(0,math.sqrt(2),0)*CFrame.Angles(0,0,math.pi/4)
+ check(Audio.terrainOverlap(corner,corner,Vector3.one,height,false),"a rotated block triggers on corner-to-ground contact")
+ mt.__index=oldIndex
 end
 CFrame.new=saveNew; CFrame.Angles=saveAngles; CFrame.lookAt=saveLookAt
 print(string.format("Imported world object suite passed: %d assertions",checks))

@@ -5,6 +5,7 @@ const {createHash}=require('node:crypto');
 const {entriesFor,validResizeAxes,validCloudModel,validatePath}=require('../world/asset-path');
 const {nativeExports,findExport}=require('../native-assets');
 const builtins=[
+ ['sound_block','Sound Block','Audio',[8,4,8],'Block','SmoothPlastic',[64,157,195],false,false],
  ['block','Block / obstacle','Rocks & obstacles',[8,5,8],'Block','Slate',[115,123,126],true,false],
  ['wall','Wall','Walls & fences',[12,6,1],'Block','Concrete',[155,155,145],true,false],
  ['house','Simple building','Buildings & structures',[14,12,12],'Block','Brick',[175,110,75],true,true],
@@ -18,7 +19,7 @@ const builtins=[
  ['crate','Crate','Special gameplay objects',[5,5,5],'Block','WoodPlanks',[155,115,65],true,true],
  ['decoration','Decoration','Decorations',[3,3,3],'Ball','SmoothPlastic',[220,185,80],false,false],
 ];
-function builtinCatalog() {return builtins.map(([id,name,category,size,shape,material,color,solid,destructible])=>({id:`builtin.${id}`,name,category,source:`builtin/${id}.glb`,model:`Builtin/BW_${id}`,size,shape,material,color,stretchable:shape==='Block',defaultScale:1,solid,destructible,hp:100,collider:{widthFraction:1,depthFraction:1,heightFraction:1},...(id==='water'||id==='mud'?{zone:id==='water'?'Water':'Mud'}:{})}));}
+function builtinCatalog() {return builtins.map(([id,name,category,size,shape,material,color,solid,destructible])=>({id:`builtin.${id}`,name,category,source:`builtin/${id}.glb`,model:`Builtin/BW_${id}`,size,shape,material,color,stretchable:shape==='Block',defaultScale:1,solid,destructible,hp:100,...(id==='sound_block'?{soundBlock:true,palettePath:'Audio/Sound Block'}:{collider:{widthFraction:1,depthFraction:1,heightFraction:1}}),...(id==='water'||id==='mud'?{zone:id==='water'?'Water':'Mud'}:{})}));}
 async function catalogData(root) {
  const bindings=JSON.parse(await fs.readFile(path.join(root,'worlds/roblox-assets.json'),'utf8'));
  let profiles={};try{profiles=JSON.parse(await fs.readFile(path.join(root,'worlds/asset-collision-profiles.json'),'utf8'));}catch(e){if(e.code!=='ENOENT')throw e;}
@@ -60,6 +61,7 @@ async function catalogData(root) {
   if(!validResizeAxes(axes)||!imported.some(item=>item.model===asset||item.palettePath===asset))throw new Error(`Invalid or unknown resizable imported asset '${asset}'`);
  }
  for(const item of imported){
+  if(item.collider?.explicitCollision)item.solid=true;
   const axes=resizing[item.model]||resizing[item.palettePath]||(item.collider?.explicitCollision?[true,true,true]:undefined);
   if(axes)item.resizeAxes=axes;
  }
@@ -71,7 +73,7 @@ async function catalog(root){
 }
 function bindingsFor(items) {return Object.fromEntries(items.map(i=>[i.id,{source:i.source,model:i.model,stretchable:!!i.stretchable,...(i.resizeAxes?{resizeAxes:i.resizeAxes}:{}),...(i.collider?{collider:i.collider}:{})}]));}
 async function generateBuiltins(root) {
- const folder={ClassName:'Folder',Children:builtinCatalog().map(i=>({Name:i.model.split('/').at(-1),ClassName:'Model',Children:[{Name:'Geometry',ClassName:'Part',Properties:{Size:i.size,Position:[0,i.size[1]/2,0],Shape:i.shape,Material:i.material,Color:i.color.map(v=>v/255),Anchored:true,CanCollide:false,CanQuery:false,CanTouch:false}}]}))};
+ const folder={ClassName:'Folder',Children:builtinCatalog().map(i=>({Name:i.model.split('/').at(-1),ClassName:'Model',Children:[{Name:'Geometry',ClassName:'Part',Properties:{Size:i.size,Position:[0,i.size[1]/2,0],Shape:i.shape,Material:i.material,Color:i.color.map(v=>v/255),Anchored:true,CanCollide:false,CanQuery:false,CanTouch:false,...(i.soundBlock?{Transparency:.6,CastShadow:false}:{})}}]}))};
  await fs.mkdir(path.join(root,'assets/builtin'),{recursive:true});
  await fs.writeFile(path.join(root,'assets/builtin/catalog.model.json'),JSON.stringify(folder,null,2)+'\n');
 }

@@ -6,6 +6,7 @@ local View={};View.__index=View
 local ink=Color3.fromRGB(235,241,230)
 local accent=Color3.fromRGB(174,135,255)
 local panel=Color3.fromRGB(29,28,39)
+local collisionTile=Color3.fromRGB(41,70,53)
 View.buttonColor=Color3.fromRGB(46,44,62)
 View.activeColor=Color3.fromRGB(92,65,145)
 local function make(class,parent,props)
@@ -82,10 +83,23 @@ function View.new(context)
  self.regenerates=row(button(self.properties,"Regenerates","☑ Regenerates"))
  self.regenerationLabel=row(text(self.properties,"RegenerationLabel","Regeneration delay (seconds)",20))
  self.regenerationDelay=row(make("TextBox",self.properties,{Name="RegenerationDelay",Size=UDim2.new(1,-8,0,28),Text="5",ClearTextOnFocus=false,TextColor3=ink,BackgroundColor3=View.buttonColor,Font=Enum.Font.Code,TextSize=14}))
- self.spinToggle=row(button(self.properties,"AssetSpin","Add continuous rotation"))
+ self.assetTractionLabel=row(text(self.properties,"AssetTractionLabel","Traction (% of pavement)",20))
+ self.assetTraction=row(make("TextBox",self.properties,{Name="AssetTraction",Size=UDim2.new(1,-8,0,28),Text="",PlaceholderText="Use material default",ClearTextOnFocus=false,TextColor3=ink,BackgroundColor3=View.buttonColor,Font=Enum.Font.Code,TextSize=14}))
+ self.soundButtons={}
+ for _,spec in {{"effect","Choose Sound Effect"},{"preview","Preview Sound"},{"activation","Activation"},{"playback","Playback"},{"rollOff","RollOff"},{"filter","Trigger Filter"},{"origin","Sound Origin"},{"targets","Select Trigger Assets"},{"attach","Snap & Lock to Asset"}} do
+  self.soundButtons[spec[1]]=row(button(self.properties,"Sfx_"..spec[1],spec[2]))
+ end
+ self.soundFields={}
+ for _,spec in {{"interval","Repeat interval (sec)"},{"cooldown","Cooldown (sec)"},{"volume","Volume"},{"speed","Playback speed / pitch"},{"minDistance","Minimum audible distance"},{"maxDistance","Maximum audible distance"}} do
+  local label=row(text(self.properties,"Sfx_"..spec[1].."Label",spec[2],20))
+  local field=row(make("TextBox",self.properties,{Name="Sfx_"..spec[1],Size=UDim2.new(1,-8,0,28),Text="",ClearTextOnFocus=false,TextColor3=ink,BackgroundColor3=View.buttonColor,Font=Enum.Font.Code,TextSize=14}))
+  self.soundFields[spec[1]]={label=label,field=field}
+ end
+ self.spinToggle=row(button(self.properties,"AssetSpin","Add automatic rotation"))
  self.spinSpace=row(button(self.properties,"SpinSpace","Axis space: Local"))
+ self.spinMode=row(button(self.properties,"SpinMode","Rotation mode: Continuous"))
  self.spinFields={}
- for _,spec in {{"x","Rotation axis X (−1 to 1)"},{"y","Rotation axis Y (−1 to 1)"},{"z","Rotation axis Z (−1 to 1)"},{"speed","Rotation speed (degrees/sec)"},{"pause","Pause after each turn (seconds)"}} do
+ for _,spec in {{"x","Rotation axis X (−1 to 1)"},{"y","Rotation axis Y (−1 to 1)"},{"z","Rotation axis Z (−1 to 1)"},{"speed","Rotation speed (degrees/sec)"},{"swing","Swing angle (degrees)"},{"pause","Pause at each end (seconds)"}} do
   local label=row(text(self.properties,"Spin"..spec[1].."Label",spec[2],20))
   local field=row(make("TextBox",self.properties,{Name="Spin"..spec[1],Size=UDim2.new(1,-8,0,28),Text="",ClearTextOnFocus=false,TextColor3=ink,BackgroundColor3=View.buttonColor,Font=Enum.Font.Code,TextSize=14}))
   self.spinFields[spec[1]]={label=label,field=field}
@@ -135,6 +149,14 @@ function View.new(context)
  self.pinStatus.Position=UDim2.fromOffset(8,110)
  magnets.Size=UDim2.fromOffset(208,174)
  self.placeStart=button(toolbar,"PlaceStartingPosition","Place start zone  •  0/5",UDim2.fromOffset(172,32),UDim2.fromOffset(556,12));self.placeStart.BackgroundColor3=Color3.fromRGB(121,89,37)
+ self.sfxPicker=make("Frame",frame,{Name="SoundPicker",Size=UDim2.fromScale(.56,.67),Position=UDim2.fromScale(.22,.15),BackgroundColor3=panel,Visible=false,Active=true,ZIndex=25})
+ self.sfxTitle=text(self.sfxPicker,"Title","Sound Effects",30);self.sfxTitle.ZIndex=26
+ self.sfxSearch=make("TextBox",self.sfxPicker,{Name="Search",Size=UDim2.new(1,-108,0,32),Position=UDim2.fromOffset(8,35),Text="",PlaceholderText="Search by name or category",ClearTextOnFocus=false,TextColor3=ink,BackgroundColor3=View.buttonColor,ZIndex=26})
+ self.sfxClose=button(self.sfxPicker,"Close","Close",UDim2.fromOffset(86,32),UDim2.new(1,-94,0,35));self.sfxClose.ZIndex=26
+ self.sfxList=scrolling(self.sfxPicker,"Choices",UDim2.new(1,-16,1,-82),UDim2.fromOffset(8,75));self.sfxList.ZIndex=26
+ self.sfxList.AutomaticCanvasSize=Enum.AutomaticSize.Y
+ make("UIListLayout",self.sfxList,{SortOrder=Enum.SortOrder.LayoutOrder,Padding=UDim.new(0,3)})
+ self.sfxConnections={}
  self.status=text(frame,"EditorStatus","Loading native asset library…",30);self.status.Position=UDim2.new(0,12,1,-72);self.status.Size=UDim2.new(1,-344,0,30);self.status.BackgroundTransparency=.1;self.status.BackgroundColor3=Color3.fromRGB(19,30,35)
  self.hint=text(frame,"EditorHints","RMB orbit • MMB pan • WASD move • E/Q height while dragging • Wheel zoom • F reset",30);self.hint.Position=UDim2.new(0,12,1,-36);self.hint.Size=UDim2.new(1,-344,0,30)
  local overlay=make("Frame",frame,{Name="ExportOverlay",Position=UDim2.fromScale(.08,.12),Size=UDim2.fromScale(.84,.76),BackgroundColor3=Color3.fromRGB(17,28,33),Visible=false,Active=true,ZIndex=10});self.overlay=overlay
@@ -297,14 +319,14 @@ function View:terrainMode(enabled,operation)
 end
 function View:on(event,callback) table.insert(self.connections,event:Connect(callback)) end
 function View:message(message) self.status.Text=tostring(message):gsub("^.-:%d+:%s*","") end
-function View:isModal() return self.overlay.Visible or (self.library and self.library.frame.Visible) end
+function View:isModal() return self.sfxPicker.Visible or self.overlay.Visible or (self.library and self.library.frame.Visible) end
 function View:isScene(point)
  return self.frame.Visible and not self:isModal() and rectContains(self.viewport,point) and not (self.left.Visible and rectContains(self.left,point))
 end
 function View:thumbnail(parent,item,assets)
  local templates=assets and assets:FindFirstChild("Templates")
  if not templates or not item.available then return end
- local viewport=make("ViewportFrame",parent,{Name="AssetPreview",Position=UDim2.fromOffset(4,4),Size=UDim2.new(1,-8,0,78),BackgroundColor3=Color3.fromRGB(50,68,72),BorderSizePixel=0,Ambient=Color3.fromRGB(190,190,190),LightColor=Color3.fromRGB(255,235,210),Active=false})
+ local viewport=make("ViewportFrame",parent,{Name="AssetPreview",Position=UDim2.fromOffset(4,4),Size=UDim2.new(1,-8,0,78),BackgroundColor3=if Document.canSetAssetTraction(item) then collisionTile else Color3.fromRGB(50,68,72),BorderSizePixel=0,Ambient=Color3.fromRGB(190,190,190),LightColor=Color3.fromRGB(255,235,210),Active=false})
  local world=Instance.new("Folder");world.Parent=viewport
  local model=Placement.place(templates,{id="thumbnail",template=item.model,position=Vector3.zero,rotation=Vector3.zero,scale=1},nil,world)
  if model then
@@ -327,7 +349,8 @@ function View:paletteEntries(directories,items,prefix,page,assets,onFolder,onAss
   else
    local item=entry.item;self:thumbnail(tile,item,assets)
    local name=text(tile,"AssetName",(if item.available then item.name.."\n"..item.model else "[Missing] "..item.model),30);name.Position=UDim2.fromOffset(5,83);name.Size=UDim2.new(1,-10,0,30);name.TextSize=11
-   if not item.available then tile.BackgroundColor3=Color3.fromRGB(64,45,43) end
+   if not item.available then tile.BackgroundColor3=Color3.fromRGB(64,45,43)
+   elseif Document.canSetAssetTraction(item) then tile.BackgroundColor3=collisionTile end
    if tile.MouseButton1Down then
     table.insert(self.paletteConnections,tile.MouseButton1Down:Connect(function() onAsset(item) end))
    else
@@ -338,7 +361,26 @@ function View:paletteEntries(directories,items,prefix,page,assets,onFolder,onAss
  self.page.Text=string.format("%d assets / folders • %d/%d",#entries,page,pages)
  return page,pages
 end
+function View:soundChoices(rows,choose,preview)
+ for _,connection in self.sfxConnections do connection:Disconnect() end
+ self.sfxConnections={}
+ for _,child in self.sfxList:GetChildren() do if child:IsA("GuiObject") then child:Destroy() end end
+ for i,item in rows do
+  local row=make("Frame",self.sfxList,{Size=UDim2.new(1,-8,0,34),BackgroundTransparency=1,LayoutOrder=i,ZIndex=27})
+  local select=button(row,"Choose",item.name,UDim2.new(1,if preview and item.assetId then -84 else 0,1,0));select.ZIndex=28
+  table.insert(self.sfxConnections,select.Activated:Connect(function() choose(item) end))
+  if preview and item.assetId then
+   local play=button(row,"Preview","Preview",UDim2.fromOffset(78,34),UDim2.new(1,-78,0,0));play.ZIndex=28
+   table.insert(self.sfxConnections,play.Activated:Connect(function() preview(item) end))
+  end
+ end
+end
 function View:selection(entry,item)
+ local tractionVisible=entry~=nil and Document.canSetAssetTraction(item)
+ self.assetTractionLabel.Visible=tractionVisible;self.assetTraction.Visible=tractionVisible
+ if tractionVisible and game:GetService("UserInputService"):GetFocusedTextBox()~=self.assetTraction then
+  self.assetTraction.Text=if entry.traction~=nil then tostring(entry.traction) else ""
+ end
  local destructible=entry~=nil and entry.destructible==true
  local enabled=destructible and entry.regenerates~=false
  self.regenerates.Visible=destructible
@@ -365,7 +407,7 @@ function View:selection(entry,item)
   if entry then values[key]=entry.bounds[axis]*entry.scale*(entry.stretch and entry.stretch[axis] or 1) end
  end
  for key,field in self.fields do field.Text=if values[key] then string.format("%.5g",values[key]) else "" end
- self.solid.Text="Collision: "..(if entry then (if entry.solid then "SOLID" else "NONE") else "—")
+ self.solid.Text=if entry and entry.sound then "Audio trigger • no collision" else "Collision: "..(if entry then (if entry.solid then "SOLID" else "NONE") else "—")
  self.destructible.Text="Destructible: "..(if entry then (if entry.destructible then "YES" else "NO") else "—")
  self.influences.Text=if entry then "physical.movable = false\n"..(if item.zone then item.zone.." zone: "..(if item.zone=="Water" then "90%" else "75%").." speed\n" else "")..(if item.collider then string.format("Collider W %.3g / D %.3g / H %.3g",item.collider.widthFraction,item.collider.depthFraction,item.collider.heightFraction) else "No registered collider; visual only") else "Fixed objects • height / tilt • uniform scale"
 end

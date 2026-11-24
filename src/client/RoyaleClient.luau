@@ -122,13 +122,12 @@ local function worldRequest(action,payload)
   notice.Text="The saved Playground could not be loaded. The default arena is open.";notice.Visible=true
  end
  local function home()
-  local ok,result=pcall(ensureShell)
+  local ok,result=pcall(function() ensureShell().home() end)
   if not ok then
    warn("BattleWorks could not open the menu: "..tostring(result))
    notice.Text="Could not open the menu. Try again.";notice.Visible=true
    return
   end
-  result.home()
   gameplay:setActive(false)
  end
  local modeSwitch=Instance.new("TextButton");modeSwitch.Name="PlaygroundControlMode";modeSwitch.AnchorPoint=Vector2.new(.5,1);modeSwitch.Position=UDim2.new(.5,0,1,-12);modeSwitch.Size=UDim2.new(.42,0,0,56);modeSwitch.BackgroundColor3=Color3.fromRGB(32,81,69);modeSwitch.TextColor3=Color3.fromRGB(245,246,229);modeSwitch.Font=Enum.Font.GothamBold;modeSwitch.TextSize=18;modeSwitch.TextWrapped=true;modeSwitch.Visible=false;modeSwitch.Parent=navigation
@@ -197,14 +196,18 @@ local function worldRequest(action,payload)
   if screen.setStatus then screen:setStatus(message) end
  end) end
  remote.OnClientEvent:Connect(function(nextReading)
-  if type(nextReading)~="table" or type(nextReading.revision)~="number" or nextReading.revision~=nextReading.revision or (reading and nextReading.revision<=reading.revision)then return end
+  if type(nextReading)~="table" or type(nextReading.revision)~="number" or nextReading.revision~=nextReading.revision or (reading and nextReading.revision<reading.revision)then return end
   local requestId=nextReading.requestId
   -- Shared request IDs fence canceled menu/join transitions independently of
   -- the tank's control lease and occupancy revision.
   if requestId~=session.requestId or (session.mode=="Menu" and nextReading.mode~="Menu")then return end
   local control=nextReading
   if nextReading.mode=="Menu"then control=table.clone(nextReading);control.mode="OnFoot"end
-  if not battle:setControl(control)then return end
+  local sameLease=reading and nextReading.revision==reading.revision
+  -- A server can acknowledge an idempotent Join without changing the
+  -- lease. Reapply that lease when a new request was actually acknowledged.
+  if sameLease and (requestId==reading.requestId or nextReading.mode~=reading.mode) then return end
+  if not battle:setControl(control,sameLease) then return end
   notice.Text=nextReading.message or "";notice.Visible=notice.Text~=""
   reading=nextReading
   if coursePanel then coursePanel.Visible=false end

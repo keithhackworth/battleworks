@@ -32,9 +32,10 @@ function Adapter.validate(raw,items,assets)
  end
  Settings.validate(settings,true)
  local catalog=Document.catalog(items)
+ Document.resolveAttachments(raw)
  local specs={}
  for _,object in raw.objects do
-  keys(object,{id=true,type=true,asset=true,position=true,rotation=true,scale=true,stretch=true,solid=true,destructible=true,hp=true,bounds=true,motion=true,spin=true,regenerates=true,regenerationDelay=true})
+  keys(object,{id=true,type=true,asset=true,position=true,rotation=true,scale=true,stretch=true,solid=true,destructible=true,hp=true,bounds=true,motion=true,spin=true,regenerates=true,regenerationDelay=true,traction=true,sound=true,attachment=true})
   array(object.position,3);array(object.rotation,3)
   local item=catalog.byPath[object.asset]
   assert(item and item.id==object.type and item.available,"Asset is not available in this experience")
@@ -52,7 +53,7 @@ function Adapter.validate(raw,items,assets)
   Document.checkEntry(raw,catalog,object)
   if object.stretch and item.resizeAxes then Placement.checkResizeSize(model,object.scale,object.stretch) end
   local spec={id=object.id,asset=item.model,source=item.source,template=item.model,
-   position=Vector3.new(table.unpack(object.position)),rotation=Vector3.new(table.unpack(object.rotation)),scale=object.scale,stretch=object.stretch,resizeAxes=item.resizeAxes,motion=object.motion,spin=object.spin}
+   position=Vector3.new(table.unpack(object.position)),rotation=Vector3.new(table.unpack(object.rotation)),scale=object.scale,stretch=object.stretch,resizeAxes=item.resizeAxes,motion=object.motion,spin=object.spin,traction=object.traction,sound=object.sound,attachment=object.attachment}
   if item.collider then
    local c=item.collider
    spec.interaction={solid=object.solid,destructible=object.destructible,hp=object.hp,regenerates=object.regenerates,regenerationDelay=object.regenerationDelay,fractions=Vector3.new(c.widthFraction,c.heightFraction,c.depthFraction),fit=c.fit,boxes=c.boxes,faces=c.faces,bases=c.bases,walls=c.walls,sourceSize=c.sourceSize}

@@ -2,6 +2,7 @@
 -- lifecycle stand-ins and recording public occupancy acknowledgments.
 math.randomseed(43)
 check(require("BattleRoyaleConfig").mode(nil,nil)=="BattleRoyale","production startup defaults to Royale even without a configuration object")
+check(require("BattleRoyaleConfig").mode(nil,"Playground")=="BattleRoyale","Playground is a valid mode name for the public arena")
 check(require("BattleRoyaleConfig").mode(nil,"Classic")=="Classic","explicit Classic startup remains available")
 check(not pcall(require("BattleRoyaleConfig").mode,nil,"bad"),"invalid startup configuration fails clearly")
 require("BattleRoyaleConfig").TankCount=6

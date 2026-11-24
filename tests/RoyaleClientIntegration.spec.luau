@@ -30,6 +30,7 @@ local arena=Instance.new("Folder")
 arena:SetAttribute("MapWidth",160);arena:SetAttribute("MapDepth",120)
 workspace.WaitForChild=function(_,name) assert(name=="Arena");return arena end
 game.ReplicatedStorage.WaitForChild=function(_,name) assert(name=="TankNetwork");return network end
+game.ReplicatedStorage.FindFirstChild=function() return nil end
 local bindings={}
 local actions={BindAction=function(_,name,fn)bindings[name]=fn end,BindActionAtPriority=function(_,name,fn)bindings[name]=fn end,UnbindAction=function(_,name)bindings[name]=nil end}
 local frame
@@ -74,6 +75,9 @@ Renderer.shot=function(origin,direction)effects+=1;effectOrigin=origin;effectDir
 local humanoid={Health=100}
 player.Character={FindFirstChildOfClass=function()return humanoid end}
 local client=require("RoyaleClient").start()
+client.chat.box.ReleaseFocus=function(self)
+ assert(chatBar.TextBox~=self,"Roblox reserves ReleaseFocus for its registered chat box")
+end
 local fireControl=remotes.RoyaleControl.OnClientEvent.Fire
 remotes.RoyaleControl.OnClientEvent.Fire=function(event,value)
  if value.requestId==nil then value.requestId=client.session.requestId end
@@ -214,6 +218,17 @@ check(not client.navigation.Enabled and not defaultControls.controlsEnabled and 
 remotes.RoyaleControl.OnClientEvent:Fire({revision=100,mode="Menu",requestId=menuRequest})
 remotes.RoyaleControl.OnClientEvent:Fire({revision=101,mode="Tank",selected="public:1",epoch=20,requestId=menuRequest-1})
 check(shell.manager.current=="MainMenu" and not named("TankHUD").Enabled,"late occupancy from before menu departure cannot reopen controls")
+check(not defaultControls.controlsEnabled,"the menu acknowledgment leaves native movement disabled")
+UIS.MouseBehavior=Enum.MouseBehavior.LockCenter;UIS.MouseIconEnabled=false
+named("EditPlayground").Activated:Fire()
+check(shell.manager.current=="WorldEditor","Edit Playground opens the world editor directly from the menu")
+check(UIS.MouseBehavior==Enum.MouseBehavior.Default and UIS.MouseIconEnabled,"editor entry clears leftover turret mouse capture")
+remotes.Snapshot.OnClientEvent:Fire({["public:1"]=state},{})
+remotes.RoyaleControl.OnClientEvent:Fire({revision=101,mode="Tank",selected="public:1",epoch=20,requestId=menuRequest-1})
+check(not client.navigation.Enabled and not defaultControls.controlsEnabled and not named("TankHUD").Enabled and UIS.MouseIconEnabled,
+ "late Playground traffic cannot restore gameplay controls in the editor")
+shell.home()
+check(shell.manager.current=="MainMenu" and shell.gui.Enabled,"returning from the editor restores the visible main menu")
 local main=shell.manager:get("MainMenu")
 check(main.buttons[1].Text=="The Playground","main screen clearly offers the shared running Royale")
 main.buttons[1].Activated:Fire()
@@ -222,6 +237,13 @@ remotes.Snapshot.OnClientEvent:Fire({["public:1"]=state},{})
 remotes.RoyaleControl.OnClientEvent:Fire({revision=102,mode="OnFoot"})
 check(shell.manager.current=="Battle" and client.navigation.Enabled and defaultControls.controlsEnabled and not named("TankHUD").Enabled,"return to Royale resumes on foot with native controls and shared tank rendering")
 check(bindings.BattleWorksShellNavigation(nil,Enum.UserInputState.Begin,{KeyCode=Enum.KeyCode.ButtonB})==Enum.ContextActionResult.Pass,"shell does not steal Royale's controller-B tank exit binding")
+-- The server can already be in Playground and acknowledge a new Join
+-- under the same lease. A missing departure ACK must not strand the shell.
+named("RoyaleMainMenu").Activated:Fire()
+main.buttons[1].Activated:Fire()
+remotes.RoyaleControl.OnClientEvent:Fire({revision=102,mode="OnFoot"})
+check(client.session.mode=="Battle" and client.navigation.Enabled and defaultControls.controlsEnabled,
+ "a new Join acknowledgment restores gameplay even when the lease revision is unchanged")
 state.controlEpoch=22
 remotes.Snapshot.OnClientEvent:Fire({["public:1"]=state},{})
 remotes.RoyaleControl.OnClientEvent:Fire({revision=103,mode="Tank",selected="public:1",epoch=22})
@@ -286,8 +308,17 @@ check(not prompts.Enabled,"closing chat while in a tank keeps prompts hidden")
 remotes.RoyaleControl.OnClientEvent:Fire({revision=116,mode="OnFoot"})
 check(defaultControls.controlsEnabled and client.chat.gui.Enabled,"on-foot native controls and chat resume after text entry")
 check(prompts.Enabled,"on-foot prompts return after the tank and chat both release suppression")
+client.chat:setExpanded(true)
+UIS.focusedTextBox=client.chat.box
+client.chat.box.Focused:Fire()
 named("RoyaleMainMenu").Activated:Fire();remotes.RoyaleControl.OnClientEvent:Fire({revision=117,mode="Menu"})
-check(not client.chat.gui.Enabled and not chatBar.Enabled,"menu and its World Editor do not retain active chat input")
+check(not client.chat.gui.Enabled and not chatBar.Enabled and not client.battle.inputController.textEntryActive,
+ "leaving Playground while native chat has focus disables the chat UI and clears the gameplay focus lease")
+named("EditPlayground").Activated:Fire()
+check(shell.manager.current=="WorldEditor" and shell.manager:get("WorldEditor").frame.Visible and not client.navigation.Enabled,
+ "the Playground editor becomes visible after leaving focused native chat")
+UIS.focusedTextBox=nil
+shell.home()
 main.buttons[1].Activated:Fire();remotes.RoyaleControl.OnClientEvent:Fire({revision=118,mode="OnFoot"})
 check(client.chat.window==chatWindow and #created==chatWidgets,"returning to Playground reuses chat across menu transitions without duplicate UI")
 state.controlEpoch=30;state.controlMode="Manual";state.bwRunning=false

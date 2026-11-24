@@ -119,7 +119,7 @@ function Simulation.moveBody(state,command,dt,mapSize,environment,deferContacts)
   local _,_,scale,_,profile=Environment.sample(environment,state.position.X,state.position.Z,state.position.Y+1.5)
   speedScale=scale;painted=profile
  end
- local base=painted or (if material and material.authoredTraction~=nil then material
+ local base=(if material and material.assetTraction then material else painted) or (if material and material.authoredTraction~=nil then material
   elseif environment and environment.weather~="IceWind" and math.abs(pitch)+math.abs(roll)>.0001 then material else nil)
  local static,kinetic,resistance,passiveGrip,terrainScale=Surface.contact(if base then nil else environment and environment.physicsSurfaces,state.position,state.yaw,c.Chassis,c.Mobility.Kind,base)
  if environment and environment.materialTerrain then

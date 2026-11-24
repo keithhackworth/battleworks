@@ -49,7 +49,8 @@ function Motion.sample(path,elapsed)
 end
 function Motion.validateSpin(spin)
  assert(type(spin)=="table","Invalid asset rotation")
- for key in spin do assert(key=="axis" or key=="speed" or key=="pause" or key=="space","Unknown rotation property") end
+ for key in spin do assert(key=="axis" or key=="speed" or key=="pause" or key=="space" or key=="swing","Unknown rotation property") end
+ assert(spin.swing==nil or finite(spin.swing,1,360),"Swing angle must be 1–360 degrees")
  assert(spin.space==nil or spin.space=="local" or spin.space=="world","Rotation axis space must be local or world")
  assert(type(spin.axis)=="table" and #spin.axis==3,"Rotation requires X, Y and Z axes")
  for k,n in spin.axis do assert(finite(k,1,3) and k%1==0 and finite(n,-1,1),"Rotation axes must be within −1 to 1") end
@@ -60,11 +61,30 @@ function Motion.compileSpin(spin,authoredRotation)
  if axis.Magnitude==0 then return nil end
  local follows=spin.space=="local"
  if follows and authoredRotation then axis=authoredRotation:PointToWorldSpace(axis) end
- local duration=360/spin.speed
- return {axis=axis.Unit,follows=follows,duration=duration,period=duration+spin.pause}
+ local angle=spin.swing or 360
+ local duration=angle/spin.speed
+ local leg=duration+spin.pause
+ return {axis=axis.Unit,follows=follows,duration=duration,leg=leg,period=if spin.swing then 2*leg else leg,
+  rate=math.rad(spin.speed),swing=spin.swing~=nil}
 end
 function Motion.spinAngle(spin,clock)
- return math.min(1,(clock%spin.period)/spin.duration)*2*math.pi
+ local phase=clock%spin.period
+ if spin.swing and phase>=spin.leg then
+  return math.max(0,spin.duration-(phase-spin.leg))*spin.rate
+ end
+ return math.min(spin.duration,phase)*spin.rate
+end
+function Motion.advanceSpin(spin,clock,dt,limit)
+ local returning=spin.swing and clock>=spin.leg
+ local start=if returning then spin.leg else 0
+ local turnEnd=start+spin.duration
+ if clock<turnEnd then
+  local advance=math.min(dt,turnEnd-clock,limit/spin.rate)
+  return (clock+advance)%spin.period,advance*spin.rate*(if returning then -1 else 1)
+ end
+ -- Do not sweep across a reversal within a single contact step.
+ if spin.swing then dt=math.min(dt,start+spin.leg-clock) end
+ return (clock+dt)%spin.period,0
 end
 function Motion.orientation(yaw,spin,angle)
  local turn=CFrame.Angles(0,yaw,0)

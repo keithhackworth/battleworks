@@ -11,6 +11,9 @@
       }
     },
     "ReplicatedStorage": {
+      "BattleWorksSfxCatalog": {
+        "$path": "assets/sfx-catalog.model.json"
+      },
       "Shared": {
         "$path": "src/shared"
       }

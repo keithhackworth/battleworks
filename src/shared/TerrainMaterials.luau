@@ -60,6 +60,7 @@ end
 local overridesCache=setmetatable({},{__mode="k"})
 local defaultTractionCache={}
 function M.withTraction(profile,overrides)
+ if profile.assetTraction then return profile end
  if not M.TunableTraction[profile.surfaceType] then return profile end
  local percent=overrides and overrides[profile.surfaceType]
  local default=M.defaultTraction(profile.surfaceType)
@@ -79,5 +80,17 @@ function M.withTraction(profile,overrides)
  table.freeze(tuned)
  cache[profile]={percent=percent,profile=tuned}
  return tuned
+end
+function M.withAssetTraction(profile,percent)
+ if percent==nil then return profile end
+ local tuned=table.clone(profile)
+ local pavement=M.Definitions.Pavement
+ local wheels=percent/100
+ local tracks=math.min(100,percent+M.TreadTractionPoints)/100
+ tuned.assetTraction=true
+ tuned.authoredTraction=wheels;tuned.trackedTraction=tracks
+ tuned.staticFriction=pavement.static*wheels;tuned.kineticFriction=pavement.kinetic*wheels
+ tuned.trackedStaticFriction=pavement.static*tracks;tuned.trackedKineticFriction=pavement.kinetic*tracks
+ return table.freeze(tuned)
 end
 return M

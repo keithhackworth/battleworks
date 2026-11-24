@@ -1,4 +1,5 @@
 -- Pure authoring state. No services, gameplay physics, filesystem or UI side effects.
+local Audio=require(script.Parent.WorldSound)
 local State={}; State.__index=State
 local function copy(v)
  if type(v)~="table" then return v end
@@ -56,11 +57,15 @@ function State:snapValue(value) return if self.snap then math.round(value/self.g
 function State:nextId()
  local n=1; while self:find("object_"..n) do n+=1 end; return "object_"..n
 end
+function State.defaultSolid(item)
+ return item.solid==true or (item.collider~=nil and item.collider.explicitCollision==true)
+end
 function State:add(item,position,bounds,scale)
  assert(#self.document.objects<512,"Object limit: 512")
  local id=self:nextId()
  self:change(function()
-  table.insert(self.document.objects,{id=id,type=item.id,asset=item.model,position={self:snapValue(position[1]),0,self:snapValue(position[3])},rotation={0,0,0},scale=scale or item.defaultScale or 1,solid=item.solid or false,destructible=item.destructible or false,hp=item.hp or 100,bounds=copy(bounds or item.size)})
+  table.insert(self.document.objects,{id=id,type=item.id,asset=item.model,position={self:snapValue(position[1]),0,self:snapValue(position[3])},rotation={0,0,0},scale=scale or item.defaultScale or 1,solid=State.defaultSolid(item),destructible=item.destructible or false,hp=item.hp or 100,bounds=copy(bounds or item.size)})
+  if item.model==Audio.Asset then self.document.objects[#self.document.objects].sound=copy(Audio.Default) end
   self.selection={[id]=true}
  end)
  return id
@@ -82,6 +87,12 @@ function State:delete()
   for id in self.selection do local p,spawn=self:find(id);assert(not spawn or p.slot,"Legacy tank spawns cannot be deleted") end
   for i=#self.document.spawns,1,-1 do if self.selection[self.document.spawns[i].id] then table.remove(self.document.spawns,i) end end
   for i=#self.document.objects,1,-1 do if self.selection[self.document.objects[i].id] then self.pins[self.document.objects[i].id]=nil;table.remove(self.document.objects,i) end end
+  for _,object in self.document.objects do
+   if object.attachment and self.selection[object.attachment.parent] then object.attachment=nil end
+   if object.sound and object.sound.targets then
+    for i=#object.sound.targets,1,-1 do if self.selection[object.sound.targets[i]] then table.remove(object.sound.targets,i) end end
+   end
+  end
   self.selection={}
  end)
 end
@@ -91,7 +102,15 @@ function State:duplicate()
   local originals={}; for _,o in self.document.objects do if self.selection[o.id] then table.insert(originals,copy(o)) end end
   assert(#self.document.objects+#originals<=512,"Object limit: 512")
   self.selection={}
-  for _,o in originals do o.id=self:nextId(); o.position[1]+=self.grid; table.insert(self.document.objects,o); self.selection[o.id]=true end
+  local ids={}
+  for _,o in originals do
+   local original=o.id;o.id=self:nextId();ids[original]=o.id
+   o.position[1]+=self.grid;table.insert(self.document.objects,o);self.selection[o.id]=true
+  end
+  for _,o in originals do
+   if o.attachment then o.attachment.parent=ids[o.attachment.parent] or o.attachment.parent end
+   if o.sound and o.sound.targets then for i,id in o.sound.targets do o.sound.targets[i]=ids[id] or id end end
+  end
  end)
 end
 function State:move(dx,dz)

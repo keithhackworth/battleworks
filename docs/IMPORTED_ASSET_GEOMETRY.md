@@ -37,3 +37,66 @@ Structural tank support now intersects complete chassis footprints with these co
 Forest/rocks-ramp now uses an opt-in source GLB terrain face profile instead of a full box. See [GLB terrain collision](GLB_TERRAIN_COLLISION.md) for real terraces, climbing limits and Studio checks.
 
 The enabled [bulk collision generator](BULK_ASSET_COLLISION.md) now supersedes those per-asset mesh profiles for imported models with supported source GLBs, including buildings, bridges and fences. Existing builtin colliders are retained.
+
+## Automatic GLB collision generation
+
+The generator uses the existing GLB reader and needs only Node.js. It leaves
+source files alone by default and writes validated `*.with-collision.glb`
+files with separate `COLLISION_Auto_*` nodes. No Roblox upload occurs.
+
+```sh
+node tools/generate-collision.js GLBs/coaster/curve.glb
+node tools/generate-collision.js GLBs/coaster/ --recursive --output-dir /tmp/coaster-collision
+node tools/generate-collision.js GLBs/coaster/ --recursive --dry-run
+node tools/generate-collision.js GLBs/coaster/curve.glb --mode exact --replace-collision
+```
+
+- **Simplified** is the default. It removes duplicate coplanar triangles and
+  reduces flat, closed interior triangle fans. Creases, open rims, and
+  nonplanar surfaces retain their triangles. Use `--threshold` to set the
+  allowed planarity error in transformed GLB units (default `0.000001`,
+  maximum `0.01`). `--passes` controls the maximum passes (default `8`).
+- **Exact** retains the shape and triangulation of usable visible meshes.
+  Degenerate triangles are reported and discarded. The original visual nodes
+  and data remain in the file with their original transforms and appearance.
+- Runtime collision uses individual support prisms and wall faces. A separate
+  convex decomposition or whole-model hull would change clearances and is
+  unnecessary for this representation. Keep the driveable and wall surfaces
+  correctly wound, and use distinct meshes for physically distinct
+  components. Closed decks retain the authored underside when supported by
+  the profile reader. Open surfaces remain shells.
+- Existing `COLLISION_` meshes are validated and kept by default. Use
+  `--replace-collision` to regenerate them. Use `--in-place` to modify the
+  input explicitly. Generator inputs omit mesh nodes named with a
+  `SNAP_`, `SOCKET_`, `HELPER_`, or `MARKER_` prefix or with
+  `extras.helper`, `extras.snapPoint`, or `extras.nonVisual` set to true.
+  Visual children retain inherited transforms.
+- `--max-triangles` limits generated triangles before profiling (default
+  4,096). Existing runtime limits still apply, including 512 upward support
+  faces, 2,048 vertical wall faces and 170,000 characters of profile metadata.
+  Detailed curved meshes can exceed these limits in either mode. Use a
+  lower-detail source or authored collision when that happens. Unsupported
+  inputs and validation failures are reported without a bounding-box fallback.
+  The profile reader requires volumetric visual bounds and supports static,
+  uncompressed triangle geometry with embedded data.
+
+Open a generated GLB in Blender with **File → Import → glTF 2.0**. Search the
+Outliner for `COLLISION_Auto_`, then hide the ordinary meshes or select the
+collision meshes and use **Local View** (numpad `/`). Inspect the deck and
+walls from both sides, especially around openings and module seams.
+
+The importer can generate and register collisions in one command. It uploads
+the visual-only GLB and stores the validated collision source alongside the
+original.
+
+```sh
+node tools/import-glb.js Coaster/curve GLBs/coaster/curve.glb --auto-collision
+node tools/import-glb.js GLBs/coaster/ --auto-collision --recursive --asset-prefix Coaster
+node tools/import-glb.js Coaster/curve GLBs/coaster/curve.glb --auto-collision --mode exact --prepare-only /tmp/curve.visual.glb
+```
+
+The last command validates and writes visual-only bytes locally. Sync Rojo
+after registration. In the editor, place two adjacent modules, snap their
+deck edges, and resize and rotate one. In Play Test, drive across the seam,
+along the inside bank, and under a raised deck. Generated collision uses the
+same traction, support, and slope rules as authored collision.

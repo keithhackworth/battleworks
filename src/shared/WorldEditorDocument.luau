@@ -5,6 +5,8 @@ local Geometry=require(script.Parent.WorldObjectGeometry)
 local Snap=require(script.Parent.WorldEditorSnap)
 local Settings=require(script.Parent.WorldSettings)
 local Motion=require(script.Parent.WorldMotion)
+local Audio=require(script.Parent.WorldSound)
+local Attachment=require(script.Parent.AssetAttachment)
 local Document={DefaultRegenerationDelay=5,MaxRegenerationDelay=3600}
 function Document.fresh()
  return {schemaVersion=2,id="ingame_world",name="My BattleWorks World",description="",settings={width=230,depth=230,ground={material="Grass",color={100,112,86}},boundary=true},objects={},spawns={{id="boomer_spawn",tank="Boomer",position={-22,0,34.5},heading=90},{id="rattler_spawn",tank="Rattler",position={22,0,34.5},heading=270}},gameplay={}}
@@ -25,6 +27,10 @@ end
 function Document.canResize(item,axis)
  return item~=nil and not item.zone and (item.stretchable==true or (item.resizeAxes~=nil and item.resizeAxes[axis]==true))
 end
+function Document.canSetAssetTraction(item)
+ return item~=nil and item.collider~=nil and not item.zone and
+  (item.collider.explicitCollision==true or (string.sub(item.id,1,8)=="builtin." and item.id~="builtin.decoration" and item.id~="builtin.sphere"))
+end
 function Document.checkEntry(doc,catalog,o)
  local item=catalog.byPath[o.asset]
  assert(item and item.id==o.type and Paths.valid(o.asset),"Asset identity is missing or conflicting")
@@ -32,6 +38,11 @@ function Document.checkEntry(doc,catalog,o)
  assert(type(o.solid)=="boolean" and type(o.destructible)=="boolean","Collision and destructibility must be boolean")
  assert(o.regenerates==nil or type(o.regenerates)=="boolean","Invalid regeneration setting")
  assert(o.regenerationDelay==nil or finite(o.regenerationDelay,0,Document.MaxRegenerationDelay),"Regeneration delay must be 0–3600 seconds")
+ assert(o.traction==nil or (finite(o.traction,0,100) and Document.canSetAssetTraction(item)),"Asset traction requires an eligible collider and 0–100%")
+ if item.model==Audio.Asset then
+  assert(not o.solid and not o.destructible and o.traction==nil,"Sound Blocks cannot collide or take damage")
+  Audio.validate(o.sound)
+ else assert(o.sound==nil and o.attachment==nil,"Only Sound Blocks support audio settings and attachment") end
  assert(finite(o.hp,1,100000),"HP must be in [1,100000]")
  assert(not (o.solid or o.destructible) or item.collider,"This asset has no registered collider")
  assert(finite(o.scale,.001,1000),"Uniform scale must be in [.001,1000]")
@@ -69,11 +80,25 @@ function Document.checkEntry(doc,catalog,o)
  end
  return true
 end
+function Document.resolveAttachments(doc)
+ local entries={}
+ for _,entry in doc.objects do entries[entry.id]=entry end
+ for _,entry in doc.objects do
+  if entry.attachment then
+   local link=entry.attachment
+   assert(Attachment.valid(link),"Invalid asset attachment")
+   local parent=entries[link.parent]
+   assert(entry.asset==Audio.Asset and parent and parent.asset~=Audio.Asset and parent~=entry and not parent.attachment,"Missing or invalid attachment parent")
+   Attachment.apply(parent,entry)
+  end
+ end
+end
 function Document.export(doc,catalog)
  assert(doc.schemaVersion==2 and #doc.objects<=512,"Invalid authoring document")
  assert(doc.id:match("^[a-zA-Z][a-zA-Z0-9_-]*$") and doc.id~="default" and #doc.id<=64,"Invalid world ID")
  assert(type(doc.name)=="string" and doc.name:find("%S") and #doc.name<=100,"World name must contain 1–100 characters")
  Settings.validate({width=doc.settings.width,depth=doc.settings.depth,ground=doc.settings.ground,boundary=doc.settings.boundary,terrain=doc.settings.terrain,tunnels=doc.settings.tunnels,spawns=doc.spawns,zones={}},true)
+ Document.resolveAttachments(doc)
  local ids={}
  for _,spawn in doc.spawns do assert(not ids[spawn.id],"Duplicate starting position ID");ids[spawn.id]=true end
  for _,o in doc.objects do assert(not ids[o.id],"Duplicate object ID");ids[o.id]=true;Document.checkEntry(doc,catalog,o) end

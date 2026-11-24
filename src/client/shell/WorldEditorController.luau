@@ -6,6 +6,9 @@ local Snap=require(Shared.WorldEditorSnap)
 local Visual=require(Shared.AssetGeometry)
 local Placement=require(Shared.ModelPlacement)
 local Motion=require(Shared.WorldMotion)
+local Audio=require(Shared.WorldSound)
+local Catalog=require(Shared.CatalogData)
+local Attachment=require(Shared.AssetAttachment)
 local Tunnel=require(Shared.WorldTunnel)
 local Heightfield=require(Shared.WorldHeightfield)
 local Materials=require(Shared.TerrainMaterials)
@@ -225,6 +228,31 @@ function Controller.new(context)
   if changed and key=="scale" then self.assetScales[entry.asset]=entry.scale end
  end) end
  action(view.motionDraw.Activated,function() self:toggleMotionDraw() end)
+ local modes={activation=Audio.Modes,playback=Audio.Playback,rollOff=Audio.RollOff,filter=Audio.Filters,origin=Audio.Origins}
+ for key,values in modes do action(view.soundButtons[key].Activated,function()
+  local entry=self:selected()
+  if not entry or not entry.sound then return end
+  self:perform(function()
+   local index=table.find(values,entry.sound[key] or Audio.Default[key]) or 1
+   entry.sound[key]=values[index%#values+1]
+  end,"Sound Block updated.")
+ end) end
+ for key,row in view.soundFields do action(row.field.FocusLost,function()
+  local entry=self:selected();local value=tonumber(row.field.Text)
+  if not entry or not entry.sound then return end
+  if not value then self:refresh();return end
+  self:perform(function() entry.sound[key]=value end,"Sound Block updated.")
+ end) end
+ action(view.soundButtons.effect.Activated,function() self:openSoundPicker("effect") end)
+ action(view.soundButtons.targets.Activated,function() self:openSoundPicker("targets") end)
+ action(view.sfxClose.Activated,function() self:closeSoundPicker() end)
+ action(view.sfxSearch:GetPropertyChangedSignal("Text"),function() if self.soundPicker then self:showSoundPicker() end end)
+ action(view.soundButtons.preview.Activated,function()
+  local entry=self:selected()
+  if self.soundPreview then self:stopSoundPreview()
+  elseif entry and entry.sound then self:playSoundPreview(self.sfxByKey[entry.sound.effect],entry.sound) end
+ end)
+ action(view.soundButtons.attach.Activated,function() self:toggleAttachment() end)
  action(view.spinToggle.Activated,function()
   local entry=self:motionEntry()
   if entry then self:perform(function()
@@ -236,6 +264,12 @@ function Controller.new(context)
   if entry and entry.spin then self:perform(function()
    entry.spin.space=if entry.spin.space=="local" then "world" else "local"
   end,"Rotation axis space updated.") end
+ end)
+ action(view.spinMode.Activated,function()
+  local entry=self:motionEntry()
+  if entry and entry.spin then self:perform(function()
+   entry.spin.swing=if entry.spin.swing then nil else 90
+  end,"Rotation mode updated.") end
  end)
  for key,row in view.spinFields do action(row.field.FocusLost,function()
   local entry=self:motionEntry()
@@ -281,12 +315,22 @@ function Controller.new(context)
  for key,row in view.motionFields do
   action(row.field.FocusLost,function() self:updateMotionProperty(key,tonumber(row.field.Text)) end)
  end
- action(view.solid.Activated,function() local o=self:selected();if o and not o.slot then self:perform(function() o.solid=not o.solid end,"Collision updated.") end end)
+ action(view.solid.Activated,function() local o=self:selected();if o and not o.slot and not o.sound then self:perform(function() o.solid=not o.solid end,"Collision updated.") end end)
  action(view.regenerates.Activated,function()
   local entry=self:selected()
   if entry and entry.destructible then
    self:perform(function() entry.regenerates=entry.regenerates==false end,"Regeneration updated.")
   end
+ end)
+ action(view.assetTraction.FocusLost,function()
+  local entry=self:selected()
+  if not entry or not Document.canSetAssetTraction(self.catalog.byPath[entry.asset]) then return end
+  local raw=view.assetTraction.Text
+  local value=tonumber(raw)
+  if not raw:match("^%s*$") and not (value and value>=0 and value<=100) then
+   self:refresh();self.view:message("Enter asset traction from 0 to 100%, or clear it to use the material default.");return
+  end
+  self:perform(function() entry.traction=value end,"Asset traction updated. It applies when the asset is solid.")
  end)
  action(view.regenerationDelay.FocusLost,function()
   local entry=self:selected()
@@ -297,7 +341,7 @@ function Controller.new(context)
   end
   self:perform(function() entry.regenerationDelay=delay end,"Regeneration delay updated.")
  end)
- action(view.destructible.Activated,function() local o=self:selected();if o and not o.slot then self:perform(function() o.destructible=not o.destructible end,"Destructibility updated.") end end)
+ action(view.destructible.Activated,function() local o=self:selected();if o and not o.slot and not o.sound then self:perform(function() o.destructible=not o.destructible end,"Destructibility updated.") end end)
  action(view.export.Activated,function()
   self:cancel();view.name.Text=self.state.document.name;view.worldId.Text=self.state.document.id
   view.overlay.Visible=true;self:export()
@@ -312,6 +356,168 @@ function Controller:checkResizeSize(entry)
  if entry.stretch and item.resizeAxes and self.scene then
   Placement.checkResizeSize(self.scene:template(item),entry.scale,entry.stretch)
  end
+end
+function Controller:loadSounds()
+ self.sfx={};self.sfxByKey={}
+ local value=Shared.Parent and Shared.Parent:FindFirstChild("BattleWorksSfxCatalog")
+ if not value then return end
+ local ok,items=pcall(Catalog.decode,value,Http)
+ if not ok or type(items)~="table" then return end
+ for _,item in items do
+  if type(item)=="table" and type(item.name)=="string" and type(item.category)=="string" and type(item.key)=="string" and type(item.assetId)=="string" and item.assetId:match("^[1-9]%d*$") then
+   table.insert(self.sfx,item);self.sfxByKey[item.key]=item
+  end
+ end
+ table.sort(self.sfx,function(a,b)
+  if a.category==b.category then return a.name<b.name end
+  return a.category<b.category
+ end)
+end
+function Controller:stopSoundPreview()
+ if self.soundPreview then self.soundPreview:Destroy();self.soundPreview=nil end
+ self.soundPreviewId=nil
+ self.view.soundButtons.preview.Text="Preview Sound"
+end
+function Controller:playSoundPreview(item,settings)
+ self:stopSoundPreview()
+ if not item then self.view:message("Choose an available sound first.");return end
+ if string.find(string.lower(item.moderation or ""),"reject",1,true) then self.view:message("Roblox has rejected this sound.");return end
+ local preview=Instance.new("Sound")
+ preview.SoundId="rbxassetid://"..item.assetId
+ preview.Volume=settings.volume;preview.PlaybackSpeed=settings.speed
+ preview.Parent=game:GetService("SoundService")
+ self.soundPreview=preview;self.view.soundButtons.preview.Text="Stop Preview"
+ local entry=self:selected();self.soundPreviewId=entry and entry.id
+ preview.Ended:Connect(function() if self.soundPreview==preview then self:stopSoundPreview() end end)
+ preview:Play()
+ task.delay(8,function()
+  if self.soundPreview==preview and not preview.IsLoaded then
+   self:stopSoundPreview();self.view:message("Sound unavailable. Check Roblox moderation and experience audio permissions.")
+  end
+ end)
+end
+function Controller:openSoundPicker(mode)
+ local entry=self:selected()
+ if not entry or not entry.sound then return end
+ self:stopCamera()
+ self.soundPicker={mode=mode,id=entry.id}
+ self.view.sfxPicker.Visible=true
+ self.view.sfxSearch.Text=""
+ self:showSoundPicker()
+end
+function Controller:closeSoundPicker()
+ self.soundPicker=nil;self.view.sfxPicker.Visible=false
+ self.view:soundChoices({},function()end)
+ self:stopSoundPreview()
+end
+function Controller:showSoundPicker()
+ local picker=self.soundPicker
+ local entry=picker and self.state:find(picker.id)
+ if not entry then return end
+ local search=self.view.sfxSearch.Text:lower()
+ local rows={}
+ local function matches(text) return text:lower():find(search,1,true)~=nil end
+ if picker.mode=="effect" then
+  self.view.sfxTitle.Text=if #self.sfx==0 then "No sounds imported yet" else "Sound Effects"
+  if matches("None") then table.insert(rows,{key="",name="None"}) end
+  for _,item in self.sfx do
+   local name=item.category.."  /  "..item.name
+   if matches(name) then table.insert(rows,{key=item.key,name=name,assetId=item.assetId,moderation=item.moderation}) end
+  end
+  self.view:soundChoices(rows,function(item)
+   self:closeSoundPicker()
+   self:perform(function() entry.sound.effect=item.key end,"Sound effect selected.")
+  end,function(item)
+   if self.soundPreview and self.soundPreview.SoundId=="rbxassetid://"..item.assetId then self:stopSoundPreview()
+   else self:playSoundPreview(item,entry.sound) end
+  end)
+ else
+  self.view.sfxTitle.Text="Trigger Assets"
+  for _,asset in self.state.document.objects do
+   if asset~=entry and (not entry.attachment or entry.attachment.parent~=asset.id) then
+    local name=asset.id.."  /  "..asset.asset
+    if matches(name) then
+     local checked=table.find(entry.sound.targets or {},asset.id)
+     table.insert(rows,{id=asset.id,name=(if checked then "☑  " else "☐  ")..name})
+    end
+   end
+  end
+  self.view:soundChoices(rows,function(item)
+   self:perform(function()
+    local targets=entry.sound.targets or {};entry.sound.targets=targets
+    local i=table.find(targets,item.id)
+    if i then table.remove(targets,i)
+    else assert(#targets<32,"Select up to 32 trigger assets");table.insert(targets,item.id) end
+   end,"Trigger assets updated.")
+   self:showSoundPicker()
+  end)
+ end
+end
+function Controller:refreshSound(entry)
+ if self.soundPreview and (not entry or entry.id~=self.soundPreviewId) then self:stopSoundPreview() end
+ local sound=entry and entry.sound
+ local buttons=self.view.soundButtons
+ for _,button in buttons do button.Visible=sound~=nil end
+ for key,row in self.view.soundFields do
+  local visible=sound~=nil and (key~="interval" or sound.playback=="Repeat")
+  row.label.Visible=visible;row.field.Visible=visible
+  if visible and UIS:GetFocusedTextBox()~=row.field then row.field.Text=tostring(sound[key]) end
+ end
+ if not sound then return end
+ local item=self.sfxByKey and self.sfxByKey[sound.effect]
+ buttons.effect.Text=if item then item.category.." / "..item.name elseif sound.effect~="" then "Unavailable sound • Choose Effect" else "Choose Sound Effect"
+ buttons.activation.Text="Activation: "..({Always="Always Active",Entry="On Entry",Exit="On Exit",Occupied="While Occupied"})[sound.activation]
+ buttons.playback.Text="Playback: "..({Once="Once per activation",Loop="Loop while active",Repeat="Repeat while active"})[sound.playback]
+ buttons.rollOff.Text="RollOff: "..sound.rollOff
+ buttons.filter.Text="Trigger: "..({Tanks="Tanks only",Moving="Moving assets only",Both="Tanks and moving assets",Specific="Specific placed assets",Terrain="Terrain contact"})[sound.filter or "Tanks"]
+ buttons.origin.Text=if sound.origin=="Trigger" then "Sound origin: Triggering object" else "Sound origin: Sound Block"
+ buttons.targets.Visible=sound.filter=="Specific"
+ buttons.targets.Text="Select Trigger Assets ("..#(sound.targets or {})..")"
+ buttons.attach.Text=if entry.attachment then "Detach from "..entry.attachment.parent else "Snap & Lock to Asset"
+end
+function Controller:reconcileAttachments(before)
+ local prior={}
+ for _,entry in before.objects do prior[entry.id]=entry end
+ for _,entry in self.state.document.objects do
+  if entry.attachment then
+   local old=prior[entry.id]
+   local parent=self.state:find(entry.attachment.parent)
+   if not parent then entry.attachment=nil
+   elseif (old and State.equal(old.attachment,entry.attachment) and
+    (not State.equal(old.position,entry.position) or not State.equal(old.rotation,entry.rotation))) or
+    (not old and prior[parent.id]) then
+    entry.attachment=Attachment.relative(parent,entry)
+   end
+  end
+ end
+ Document.resolveAttachments(self.state.document)
+end
+function Controller:lockAttachment(entry,parent)
+ if not parent or parent.slot or parent.sound or parent==entry then self.view:message("Select a placed asset to attach to.");return end
+ self:perform(function() entry.attachment=Attachment.relative(parent,entry) end,"Sound Block attached to "..parent.id..".")
+end
+function Controller:toggleAttachment()
+ local entry=self:selected()
+ if not entry or not entry.sound then return end
+ if entry.attachment then
+  local pose
+  local preview=self.motionPreview
+  local record=self.scene and self.scene.models[entry.id]
+  if preview and record and preview.children[entry.id] then
+   local rest=preview.children[entry.id].pivot
+   pose=record.model:GetPivot()*rest:ToObjectSpace(Attachment.frame(entry.position,entry.rotation))
+  end
+  self:perform(function()
+   if pose then Attachment.setPose(entry,pose) end
+   entry.attachment=nil
+  end,"Sound Block detached.")
+  return
+ end
+ local pin=self.state.pins[entry.id]
+ local target=pin and ((pin.second and pin.second.targetId) or pin.targetId)
+ if target and self.state:find(target) then self:lockAttachment(entry,self.state:find(target));return end
+ self:cancel();self.attaching=entry.id
+ self.view:message("Click or tap the parent asset. The Sound Block keeps its current offset.")
 end
 function Controller:replaceDocument(document)
  self:cancel()
@@ -385,15 +591,19 @@ function Controller:drawMotion()
  view.motionDraw.Text=if self.motionDraft then "Finish Motion Path" elseif m then "Edit Motion Path" else "Draw Motion Path"
  local spin=entry and entry.spin
  view.spinToggle.Visible=entry~=nil and not self.motionDraft
- view.spinToggle.Text=if spin then "Remove rotation" else "Add continuous rotation"
+ view.spinToggle.Text=if spin then "Remove rotation" else "Add automatic rotation"
  view.spinSpace.Visible=spin~=nil and not self.motionDraft
  view.spinSpace.Text=if spin and spin.space=="local" then "Axis space: Local" else "Axis space: World"
+ view.spinMode.Visible=view.spinSpace.Visible
+ view.spinMode.Text=if spin and spin.swing then "Rotation mode: Swing" else "Rotation mode: Continuous"
+ view.spinFields.pause.label.Text=if spin and spin.swing then "Pause at each end (seconds)" else "Pause after each turn (seconds)"
  for key,row in view.spinFields do
-  row.label.Visible=spin~=nil and not self.motionDraft;row.field.Visible=row.label.Visible
+  row.label.Visible=spin~=nil and not self.motionDraft and (key~="swing" or spin.swing~=nil);row.field.Visible=row.label.Visible
   local axis=({x=1,y=2,z=3})[key]
-  if spin and UIS:GetFocusedTextBox()~=row.field then row.field.Text=tostring(if axis then spin.axis[axis] else spin[key]) end
+  if row.field.Visible and UIS:GetFocusedTextBox()~=row.field then row.field.Text=tostring(if axis then spin.axis[axis] else spin[key]) end
  end
- view.motionPreview.Visible=(m~=nil or spin~=nil) and not self.motionDraft
+ local parent=entry and entry.attachment and self.state:find(entry.attachment.parent)
+ view.motionPreview.Visible=(m~=nil or spin~=nil or (parent and (parent.motion or parent.spin)~=nil)) and not self.motionDraft
  view.motionPreview.Text=if self.motionPreview then "Stop Preview" else "Preview Motion"
  view.motionRemove.Visible=entry~=nil and entry.motion~=nil and not self.motionDraft
  local point=self.motionDraft and self.motionPoint and self.motionDraft.points[self.motionPoint]
@@ -490,14 +700,39 @@ function Controller:moveMotionPoint(mouse)
  end
  self:drawMotion()
 end
+local function motionPreview(entry,model)
+ local r=entry.rotation
+ local orientation=CFrame.Angles(math.rad(r[1]),math.rad(r[2]),math.rad(r[3]))
+ return {entry=entry,model=model,pivot=model:GetPivot(),
+  path=entry.motion and entry.motion.enabled and Motion.compile(entry.motion),
+  spin=entry.spin and Motion.compileSpin(entry.spin,orientation),center=Visual.measure(model).Position}
+end
+local function previewPose(preview,time)
+ if not preview.path and not preview.spin then return preview.pivot end
+ local offset,yaw=Vector3.zero,nil
+ if preview.path then offset,yaw=Motion.sample(preview.path,time) end
+ local origin=Vector3.new(table.unpack(preview.entry.position))
+ local angle=if yaw then yaw-math.rad(preview.entry.rotation[2]) else 0
+ local spinAngle=if preview.spin then Motion.spinAngle(preview.spin,time) else 0
+ return Motion.frame(origin,offset,angle,preview.spin,spinAngle,preview.center)*preview.pivot
+end
 function Controller:toggleMotionPreview()
  if self.motionPreview then self:stopMotionPreview();self:drawMotion();return end
  local entry=self:motionEntry()
+ if entry and entry.attachment then
+  local parent=self.state:find(entry.attachment.parent)
+  if parent and (parent.motion or parent.spin) then entry=parent end
+ end
  local record=entry and (entry.motion or entry.spin) and self.scene.models[entry.id]
  if not record then return end
- local r=entry.rotation
- local orientation=CFrame.Angles(math.rad(r[1]),math.rad(r[2]),math.rad(r[3]))
- self.motionPreview={entry=entry,model=record.model,pivot=record.model:GetPivot(),path=entry.motion and Motion.compile(entry.motion),spin=entry.spin and Motion.compileSpin(entry.spin,orientation),center=Visual.measure(record.model).Position,time=0}
+ self.motionPreview=motionPreview(entry,record.model)
+ self.motionPreview.time=0;self.motionPreview.children={}
+ for _,child in self.state.document.objects do
+  if child.attachment and child.attachment.parent==entry.id then
+   local model=self.scene.models[child.id].model
+   self.motionPreview.children[child.id]=motionPreview(child,model)
+  end
+ end
  self:drawMotion()
 end
 function Controller:stopMotionPreview()
@@ -505,6 +740,7 @@ function Controller:stopMotionPreview()
  if not preview then return end
  self.motionPreview=nil
  if preview.model.Parent then preview.model:PivotTo(preview.pivot) end
+ for _,child in preview.children do if child.model.Parent then child.model:PivotTo(child.pivot) end end
 end
 function Controller:refreshTunnel()
  local enabled=self.mode=="Terrain" and self.brush.operation=="Tunnel"
@@ -565,7 +801,7 @@ function Controller:refresh()
   self.scene.traversability=self.traversability
   self.scene:sync(self.state.document,self.catalog)
  end
- local selected=self:selected();self.view:selection(selected,selected and self.catalog.byPath[selected.asset])
+ local selected=self:selected();self.view:selection(selected,selected and self.catalog.byPath[selected.asset]);self:refreshSound(selected)
  if self.scene then self.scene:selection(selected and selected.id,self.distance) end
  self:updateSnap()
  self:drawMotion()
@@ -626,7 +862,7 @@ end
 function Controller:perform(fn,message)
  self:cancel()
  local before=self.state:snapshot();local past,future=table.clone(self.state.past),table.clone(self.state.future)
- local ok,err=pcall(function() fn();self:reconcilePins(before.document);Document.export(self.state.document,self.catalog) end)
+ local ok,err=pcall(function() fn();self:reconcilePins(before.document);self:reconcileAttachments(before.document);Document.export(self.state.document,self.catalog) end)
  if not ok then self.state:restore(before);self.state.past=past;self.state.future=future
  elseif self.state.past[#self.state.past]==past[#past] then self.state:record(before) end
  self:refresh();self.view:message(if ok then message else tostring(err))
@@ -747,7 +983,7 @@ function Controller:finishTerrain(cancel)
 end
 function Controller:candidate(point)
  local item=self.placing
- return {id="placement_preview",type=item.id,asset=item.model,position={self.state:snapValue(point.X),0,self.state:snapValue(point.Z)},rotation={0,0,0},scale=self.assetScales[item.model] or item.defaultScale or 1,solid=item.solid or false,destructible=item.destructible or false,hp=item.hp or 100,bounds=State.copy(item.size)}
+ return {id="placement_preview",type=item.id,asset=item.model,position={self.state:snapValue(point.X),0,self.state:snapValue(point.Z)},rotation={0,0,0},scale=self.assetScales[item.model] or item.defaultScale or 1,solid=State.defaultSolid(item),destructible=item.destructible or false,hp=item.hp or 100,bounds=State.copy(item.size),sound=if item.model==Audio.Asset then State.copy(Audio.Default) else nil}
 end
 function Controller:place(point)
  if self.placingStart and point then
@@ -768,6 +1004,7 @@ function Controller:place(point)
 end
 function Controller:cancel()
  self.tunnelStart=nil
+ self.attaching=nil
  self.motionDraft=nil;self.motionPoint=nil;self.motionDrag=nil;self:stopMotionPreview()
  if self.scene then self:drawMotion() end
  self:finishTerrain(true)
@@ -796,6 +1033,7 @@ function Controller:finishGesture(cancel)
    if pin then pin.second=Snap.pin(preview.endpoint,preview.target,pin.side,g.edgeIndex,g.edgeFraction)
    else self.state.pins[g.id]=Snap.pin(preview.endpoint,preview.target,preview.side) end
   end
+  self:reconcileAttachments(g.before.document)
   Document.export(self.state.document,self.catalog)
  end)
  if cancel or not ok then self.state:restore(g.before) else
@@ -833,9 +1071,12 @@ function Controller:beginSnap(endpoint,entry,choice,pixel)
  self.snapPreview=nil;self:updateSnap()
  self.view:message("Drag this end; the opposite end stays fixed. Release to hold the fit. Esc cancels.")
 end
+local function releaseEditorCursor()
+ if UIS.MouseBehavior~=Enum.MouseBehavior.Default then UIS.MouseBehavior=Enum.MouseBehavior.Default end
+ if not UIS.MouseIconEnabled then UIS.MouseIconEnabled=true end
+end
 function Controller:stopCamera()
- local drag=self.cameraDrag
- if drag then UIS.MouseBehavior=drag.behavior;UIS.MouseIconEnabled=drag.icon end
+ if self.cameraDrag then releaseEditorCursor() end
  self.cameraDrag=nil;self.cameraDelta=Vector2.zero
 end
 function Controller:beginCamera(input)
@@ -845,7 +1086,7 @@ function Controller:beginCamera(input)
  if button~=Enum.UserInputType.MouseButton2 and button~=Enum.UserInputType.MouseButton3 then return false end
  if self.gesture then return false end
  self:stopCamera()
- self.cameraDrag={button=button,behavior=UIS.MouseBehavior,icon=UIS.MouseIconEnabled}
+ self.cameraDrag={button=button}
  self.cameraDelta=Vector2.zero
  UIS.MouseBehavior=Enum.MouseBehavior.LockCurrentPosition;UIS.MouseIconEnabled=false
  return true
@@ -871,6 +1112,12 @@ function Controller:begin(input,processed)
  if not origin or not direction or not self.view:isScene(mouse) then return end
  if processed and not touch then return end
  if input.UserInputType~=Enum.UserInputType.MouseButton1 and not touch then return end
+ if self.attaching then
+  local id=self.scene:pick(origin,direction,mouse-self.view.viewport.AbsolutePosition,self.view.viewport.AbsoluteSize)
+  local child=self.state:find(self.attaching)
+  if child and id then self:lockAttachment(child,self.state:find(id)) end
+  return
+ end
  if self.motionDraft then if not self.motionDrag then self:motionInput(input,point,mouse) end;return end
  self:stopMotionPreview()
  if self.mode=="Terrain" and self.brush.operation=="Tunnel" then self:tunnelClick(point);return end
@@ -929,6 +1176,8 @@ function Controller:begin(input,processed)
  elseif not id and not handle then self.state.selection={};self:refresh() end
 end
 function Controller:key(input,processed)
+ if input.KeyCode==Enum.KeyCode.Escape and self.soundPicker then self:stopCamera();releaseEditorCursor();self:closeSoundPicker();return end
+ if input.KeyCode==Enum.KeyCode.Escape then self:stopCamera();releaseEditorCursor() end
  if self.paused or processed or UIS:GetFocusedTextBox() or self.view:isModal() then return end
  if self.gesture and input.KeyCode~=Enum.KeyCode.Escape then return end
  self.keys[input.KeyCode]=true
@@ -947,15 +1196,17 @@ function Controller:key(input,processed)
  elseif input.KeyCode==Enum.KeyCode.Home then self:frameWorld() end
 end
 function Controller:step(dt)
+ if self.cameraDrag and not UIS:IsMouseButtonPressed(self.cameraDrag.button) then self:stopCamera() end
+ if not self.cameraDrag then releaseEditorCursor() end
  local scene=self.scene;if not scene then return end
  local preview=self.motionPreview
  if preview then
   preview.time+=dt
-  local offset,yaw=Vector3.zero,nil
-  if preview.path then offset,yaw=Motion.sample(preview.path,preview.time) end
-  local origin=Vector3.new(table.unpack(preview.entry.position))
-  local angle=if yaw then yaw-math.rad(preview.entry.rotation[2]) else 0
-  preview.model:PivotTo(Motion.frame(origin,offset,angle,preview.spin,if preview.spin then Motion.spinAngle(preview.spin,preview.time) else 0,preview.center)*preview.pivot)
+  local pose=previewPose(preview,preview.time)
+  preview.model:PivotTo(pose)
+  for _,child in preview.children do
+   child.model:PivotTo(Attachment.follow(pose,preview.pivot,previewPose(child,preview.time)))
+  end
  end
  local mouse=self:mousePosition()
  local pixel=mouse-self.view.viewport.AbsolutePosition
@@ -975,7 +1226,6 @@ function Controller:step(dt)
   end
   if not overScene then return end
  end
- if self.cameraDrag and not UIS:IsMouseButtonPressed(self.cameraDrag.button) then self:stopCamera() end
  if self.cameraDrag then
   UIS.MouseBehavior=Enum.MouseBehavior.LockCurrentPosition
   local delta=self.cameraDelta*self.cameraSensitivity;self.cameraDelta=Vector2.zero
@@ -998,6 +1248,7 @@ function Controller:step(dt)
  local cameraOffset=Vector3.new(math.sin(self.yaw)*math.cos(self.pitch),math.sin(self.pitch),math.cos(self.yaw)*math.cos(self.pitch))*self.distance
  scene.camera.CFrame=CFrame.lookAt(self.focus+cameraOffset,self.focus)
  scene:updateTankScale(self.view,cameraOffset,self.distance)
+ if next(scene.soundMarkers) then scene:updateSoundMarkers() end
  local point,origin,direction=self:pointer()
  if self.mode=="Terrain" then
   local brushPoint=if not self.cameraDrag and not self.paused and self.view:isScene(mouse) then point else nil
@@ -1076,7 +1327,7 @@ function Controller:step(dt)
     copyPose(entry,transform)
    end
   end
-  scene:sync(self.state.document,self.catalog,true)
+  scene:sync(self.state.document,self.catalog,g)
   scene:snapFeedback(self.snapPreview and self.snapPreview.target,not self.snapPreview or self.snapPreview.valid)
  end
  if self.placing and point and self.view:isScene(mouse) then
@@ -1102,6 +1353,9 @@ function Controller:export()
 end
 function Controller:enter(playtest)
  assert(self.context.session.mode=="Menu","Leave battle before editing")
+ self.context.gameplay:setActive(false)
+ self:loadSounds()
+ releaseEditorCursor()
  if playtest and playtest.document then
   local draft=Document.numberStarts(State.copy(playtest.document))
   self.state=State.new(draft);self.state.snap=false
@@ -1161,14 +1415,21 @@ function Controller:enter(playtest)
  local gui=game:GetService("GuiService")
  connect(gui.MenuOpened,function() self.paused=true;self:cancel();self.keys={} end)
  connect(gui.MenuClosed,function() self.paused=false end)
- if self.scene then connect(Run.RenderStepped,function(dt) self:step(dt) end) end
+ if self.scene then
+  connect(Run.RenderStepped,function(dt) self:step(dt) end)
+  if playtest and playtest.openPlayground and self.state.document.id~="playground" then
+   self.library:open(self.state.document,"playground")
+  end
+ end
 end
 function Controller:exit()
+ self:closeSoundPicker()
  self.library:hide()
  self:cancel();self.active=false;self.frame.Visible=false;self.keys={}
  Actions:UnbindAction("BattleWorksEditorCamera")
  for _,connection in self.runtime do connection:Disconnect() end;self.runtime={}
- local focused=UIS:GetFocusedTextBox();if focused then focused:ReleaseFocus() end
+ local focused=UIS:GetFocusedTextBox()
+ if focused and focused:IsDescendantOf(self.frame) then focused:ReleaseFocus() end
  if self.scene then self.scene:destroy();self.scene=nil end
 end
 function Controller:moveFocus() game:GetService("GuiService").SelectedObject=self.view.back end

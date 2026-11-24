@@ -23,7 +23,7 @@ function Chat.new(playerGui,input,mode)
  local status=label(panel,"ChatStatus","Connecting to Roblox chat…",UDim2.new(1,-12,0,24));status.Position=UDim2.new(0,6,1,-24);status.TextSize=12;self.status=status
  self:connect(toggle.Activated,function()self:setExpanded(not self.state.expanded)end)
  self:connect(box.Focused,function()
-  if not self.active or not self.state.expanded then box:ReleaseFocus();return end
+  if not self.active or not self.state.expanded then return end
   self.fieldFocused=true;self:focusChanged()
  end)
  self:connect(box.FocusLost,function()self.fieldFocused=false;self:focusChanged()end)
@@ -148,10 +148,8 @@ end
 function Chat:setExpanded(expanded)
  if expanded and self.ready and not self.allowed then self:checkPermission()end
  self.state:setExpanded(expanded)
- if not self.state.expanded then
-  self.fieldFocused=false
-  self.box:ReleaseFocus()
- end
+ -- Roblox owns focus for the registered TextBox. Refresh hides and disables the input bar.
+ if not self.state.expanded then self.fieldFocused=false end
  self:refresh()
 end
 function Chat:setActive(active)

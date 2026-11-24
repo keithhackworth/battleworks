@@ -10,7 +10,8 @@ compiler/export pipeline. It never edits the running arena.
 
 ## Edit and play a saved Playground
 
-In Playground mode, leave combat and open **Main Menu → World Editor → Open Playground**.
+In Playground mode, open **Main Menu → Edit Playground**. You can also use
+**Open Playground** from the World Editor toolbar.
 The initial arena and the first editor draft use the same starter document, derived
 from the original Playground layout. It uses the editable
 heightfield for the banks and river, and regular asset placements for the bridge,
@@ -796,3 +797,84 @@ from both overhead and low camera angles, move/delete/undo a start, and save/reo
 an incomplete draft. Confirm Play reports missing starts until all five are valid.
 Launch the saved world and check all markings remain visible, player 3 starts in
 area 3, owned tanks use separate bays, and bullets/tanks ignore the markings.
+
+### Sound Blocks
+
+Place **Audio → Sound Block**. The blue volume and speaker badge are visible
+in the editor. In battle the block is invisible and has no physical,
+projectile, or scanner collision. Use the normal Move, Rotate, Resize and Snap
+tools to place it, including making a thin trigger plate. Select the block to
+set an effect, test it with **Preview Sound**, and edit playback, volume, speed,
+audible distances, and Roblox rolloff. The sound starts at the volume center
+unless **Sound origin** is set to **Triggering object**.
+
+- **Always Active** makes ambient sounds. With **Once**, each nearby listener
+  hears one play per world run. **Loop** and **Repeat** continue while audible.
+- **On Entry** and **On Exit** trigger per subject, including subjects that
+  cross a thin volume in one simulation step. **While Occupied** activates
+  on the transition from empty to occupied and ends when the last subject leaves.
+- For **Loop** or **Repeat**, entry stays active while occupied, and exit
+  stays active while empty after a departure. A complete pass-through in one
+  tick produces a single audible entry or exit. Cooldown is shared per
+  block and suppressed events are dropped. A block has one voice, so rapid
+  triggers cannot stack copies of the same sound from that block.
+- **Trigger Filter** defaults to tanks. Select moving assets, both, or a list
+  of specific placed IDs. A specifically selected static asset can trigger
+  a moving block. Moving asset overlap uses oriented model bounds, while
+  tanks use their physical footprint. Rotating sweeps use conservative bounds.
+- **Terrain contact** detects when the Sound Block touches the ground, including
+  sculpted hills and tunnel floors. For a rolling cube, attach a thin trigger
+  plate to each face and set each plate to **On Entry → Once per activation**.
+  Each plate can play again after it lifts off and touches down. A single volume
+  that stays on the ground plays once as long as contact is continuous.
+- For entry/exit on a particular moving object, use **Specific placed
+  assets** and **Triggering object**. The positional voice stays on the
+  selected tank or asset for that play. If its emitter is unavailable to
+  the client at activation, playback falls back to the block.
+
+Use **Snap & Lock to Asset** after snapping the block to a placed asset, or
+click/tap the parent when prompted to lock the current offset. The speaker badge
+shows the parent's ID. Move or rotate the block to change its local offset.
+The block follows the parent's accepted translation and rotation, including
+Swing and movement stopped by physics. Parent scale changes do not scale child
+offsets. **Detach** preserves the current pose. Deleting the parent detaches
+the block, and deleting a selected trigger asset removes it from the filter.
+Duplicating a parent and its blocks together remaps the copied links.
+
+#### Import audio
+
+Put licensed source audio under `SFX/`. The first subfolder becomes the
+category, for example `Nature`, `Water`, `Weather`, `Vehicles`,
+`Machinery`, `Mechanical`, or `Miscellaneous`. Use MP3, OGG, WAV, or FLAC
+under 20 MB, with one audio stream, at most seven minutes, and at most 48 kHz.
+
+```sh
+node tools/import-sfx.js SFX/Mechanical/ferry_horn.wav
+node tools/import-sfx.js SFX/Mechanical
+node tools/import-sfx.js SFX
+```
+
+The importer uses the GLB importer's `ROBLOX_API_KEY` and exactly one of
+`ROBLOX_USER_ID` or `ROBLOX_GROUP_ID`. Use **Assets Write** for creation and
+**Assets Read** for metadata checks. An interrupted upload can resume with the
+printed `--operation ID` or `--asset-id ID` on the single-file command. Unchanged
+content is reused. If you replace the file at the same path, Roblox requires a
+new audio asset, but BattleWorks keeps the same sound key in saved worlds.
+Use `--refresh-status` to check moderation again for an unchanged file.
+
+Rojo syncs the separate audio catalog into the experience. Private audio needs
+permission for the target experience in Creator Hub and Roblox moderation
+approval. The importer reports moderation when Roblox provides it. An
+unavailable sound stays silent without preventing world loading. Verify the
+experience grant in Studio using **Preview Sound** and two clients in
+**Save & Play Test**. Local and GroupBoard validators support these fields.
+Deploy the updated GroupBoard API before saving Sound Blocks through the hosted
+world service.
+
+Roblox references [Open Cloud Assets](https://create.roblox.com/docs/cloud/guides/usage-assets)
+and [Audio assets and permissions](https://create.roblox.com/docs/audio/assets).
+
+To make new imported models driveable without hand-authoring every collider,
+see [automatic GLB collision generation](IMPORTED_ASSET_GEOMETRY.md#automatic-glb-collision-generation).
+Generated models use the same snapping, resizing, and traction controls as
+models with authored collision meshes.

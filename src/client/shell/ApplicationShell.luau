@@ -49,6 +49,7 @@ function Shell.new(playerGui,arena,session,gameplay,presenter,editorAssets,world
  context.home=function()
   self.playtest=nil
   self.manager:show(homeScreen)
+  gui.Enabled=true
   if session.mode~="Menu" then session:leave() end
  end
  self.home=context.home

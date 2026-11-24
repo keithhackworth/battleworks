@@ -223,7 +223,9 @@ try {
         let setup=harness.slice(0,harness.indexOf(' require("ServerEntrypoint")'));
         const headless=suite==='RoyaleHeadlessServerIntegration';
         if(headless)setup=setup.replace('Heartbeat=heartbeat,IsStudio=function() return true end','Heartbeat=heartbeat,IsStudio=function() return false end');
-        tests+='\ndo\nlocal headlessStartup='+String(headless)+'\n'+setup+await readFile('tests/RoyaleServerIntegration.spec.luau','utf8')+'\nend\n';
+        const royale = (await readFile('tests/RoyaleServerIntegration.spec.luau','utf8'))
+          .replace('workspace:SetAttribute("BattleWorksGameMode","BattleRoyale")','workspace:SetAttribute("BattleWorksGameMode","Playground")');
+        tests+='\ndo\nlocal headlessStartup='+String(headless)+'\n'+setup+royale+'\nend\n';
       } else if (suite === 'ProvingGround' || suite === 'TerrainMaterials' || suite === 'BWPersonalityFailures' || suite === 'ScannerTerrain' || suite === 'BWLargePrograms' || suite === 'BWPersonalities' || suite === 'BWCoreAPI' || suite === 'Aiming' || suite === 'Playground' || suite === 'StudioAssetPlacement' || suite === 'WorldObjects' || suite === 'InGameEditorRuntime' || suite === 'PlayerWorlds' || suite === 'WorldElevation' || suite === 'StartingPositions' || suite === 'ImportedGeometry' || suite === 'FootprintSupport' || suite === 'TerrainFaces' || suite === 'BulkAssetCollision' || suite === 'BulkBuildingCollision') {
         const harness = await readFile('tests/ServerIntegration.spec.luau', 'utf8');
         const marker = 'Vector3.one=';

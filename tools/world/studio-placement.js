@@ -47,6 +47,7 @@ function itemIssue(item, bindings) {
   let binding;
   try { binding=resolveAsset(item.asset, bindings); } catch(error) { return error.message; }
   if (!binding) return `Resource '${item.asset}' has no Roblox asset mapping.`;
+  if(Object.hasOwn(item,'traction')&&(!Number.isFinite(item.traction)||item.traction<0||item.traction>100))return 'Invalid asset traction.';
   const m = item.transform;
   if (!Array.isArray(m) || m.length !== 16 || !m.every(Number.isFinite)) return 'Invalid imported-model transform.';
   const s = Math.hypot(m[0], m[1], m[2]);
@@ -81,6 +82,6 @@ function studioPlacement(manifest, bindings) {
   }
   const upright=Math.abs(normalized[1])<1e-6 && Math.abs(normalized[9])<1e-6 && normalized[5]>1-1e-6;
   const rotation = upright ? [0, Math.atan2(normalized[8], normalized[0]) * 180 / Math.PI, 0] : [x, y, z].map(n => n * 180 / Math.PI);
-  return { ...binding, id: item.id, assetId: binding.id, position: m.slice(12, 15), rotation, scale: s, ...(item.motion?{motion:item.motion}:{}),...(item.spin?{spin:item.spin}:{}), ...(stretch.some(n=>Math.abs(n-1)>1e-6)?{stretch}:{}), interaction };
+  return { ...binding, id: item.id, assetId: binding.id, position: m.slice(12, 15), rotation, scale: s, ...(item.motion?{motion:item.motion}:{}),...(item.spin?{spin:item.spin}:{}), ...(item.sound?{sound:item.sound}:{}), ...(item.attachment?{attachment:item.attachment}:{}), ...(Object.hasOwn(item,'traction')?{traction:item.traction}:{}), ...(stretch.some(n=>Math.abs(n-1)>1e-6)?{stretch}:{}), interaction };
 }
 module.exports = { resolveAsset, studioPlacement, studioPlacements, placementIssue, interactionFor, MaxPlacements };

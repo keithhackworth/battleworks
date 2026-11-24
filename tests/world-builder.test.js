@@ -174,6 +174,46 @@ test('asset spin keeps its axes, speed and full-turn pause through compilation',
  world.objects=[{id:'wheel',type:'builtin.crate',asset:'Builtin/BW_crate',position:[0,0,0],rotation:[0,0,0],scale:1,solid:true,destructible:false,hp:100,spin}];
  const {manifest}=compileDocument(world,items);
  assert.deepEqual(migrate(manifest,items,'spin_copy').objects[0].spin,spin);
+ spin.swing=60;
+ assert.deepEqual(migrate(compileDocument(world,items).manifest,items,'swing_copy').objects[0].spin,spin);
+ spin.swing=361;
+ assert.throws(()=>validate(world,items),/spin.swing/);
+ spin.swing=60;
  world.objects[0].spin.speed=0;
  assert.throws(()=>validate(world,items),/spin.speed/);
+});
+
+test('asset traction round trips even while collision is disabled',()=>{
+ const world=fresh('asset_grip');
+ const crate={id:'crate',type:'builtin.crate',asset:'Builtin/BW_crate',position:[0,0,0],rotation:[0,0,0],scale:1,solid:false,destructible:false,hp:100,traction:0};
+ world.objects=[crate];
+ const {manifest}=compileDocument(world,items);
+ assert.equal(migrate(manifest,items,'asset_grip_copy').objects[0].traction,0);
+ crate.traction=101;
+ assert.throws(()=>validate(world,items),/traction/);
+ crate.traction=20;crate.type='builtin.decoration';crate.asset='Builtin/BW_decoration';
+ assert.throws(()=>validate(world,items),/eligible collision surface/);
+});
+
+test('Sound Blocks retain trigger filters, local attachment, dimensions and motion through compilation',()=>{
+ const world=fresh('sfx_world');
+ const parent={id:'ferry',type:'builtin.crate',asset:'Builtin/BW_crate',position:[0,0,-8],rotation:[0,20,0],scale:1,solid:true,destructible:false,hp:100};
+ const block={id:'horn',type:'builtin.sound_block',asset:'Builtin/BW_sound_block',position:[0,3,-8],rotation:[0,20,0],scale:1,stretch:[2,.05,1],solid:false,destructible:false,hp:100,
+  sound:{effect:'sfx_horn',activation:'Entry',playback:'Once',interval:3,cooldown:.5,volume:.6,speed:1,minDistance:8,maxDistance:100,rollOff:'InverseTapered',filter:'Specific',targets:['target'],origin:'Trigger'},
+  attachment:{parent:'ferry',position:[0,3,0],rotation:[0,0,0]},spin:{axis:[0,1,0],speed:30,pause:1,swing:35}};
+ world.objects=[parent,block];
+ const {manifest}=compileDocument(world,items);
+ const saved=migrate(manifest,items,'sfx_copy').objects.find(entry=>entry.id==='horn');
+ for(const key of ['sound','attachment','spin'])assert.deepEqual(saved[key],block[key]);
+ for(let axis=0;axis<3;axis++)assert.ok(Math.abs(saved.scale*saved.stretch[axis]-block.scale*block.stretch[axis])<1e-8);
+ assert.equal(saved.solid,false);
+ block.sound.filter='Terrain';
+ assert.equal(migrate(compileDocument(world,items).manifest,items,'terrain_sfx').objects.find(entry=>entry.id==='horn').sound.filter,'Terrain');
+ block.attachment.parent='missing';
+ assert.throws(()=>validate(world,items),/invalid parent/);
+ block.attachment.parent='ferry';
+ block.sound.targets=['target','target'];
+ assert.throws(()=>validate(world,items),/unique placed IDs/);
+ delete block.sound.targets;block.solid=true;
+ assert.throws(()=>validate(world,items),/non-solid|no collider/);
 });

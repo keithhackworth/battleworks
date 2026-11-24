@@ -6,6 +6,7 @@ function Screen.new(context)
   view:button(item[1],if context.royale and item[1]=="Lobby" then "The Playground" else item[2],function() if context.royale and item[1]=="Lobby" then context.join()else context.navigate(item[1])end end,item[1]=="Lobby")
  end
  if context.royale and context.worldRequest then
+  view:button("EditPlayground","Edit Playground",function() context.navigate("WorldEditor",{openPlayground=true}) end)
   local savedStatus
   local pending=false
   view:button("SavedPlayground","Play Saved Playground",function()
