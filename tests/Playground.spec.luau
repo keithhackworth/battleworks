@@ -72,3 +72,39 @@ do
  exported.settings.terrain.heights[1]+=8
  check(not State.equal(first,exported),"an edited Playground save is independent of the seed")
 end
+
+do
+ local Tunnel=require("WorldTunnel")
+ local H=require("WorldHeightfield")
+ local Contacts=require("VehicleContacts")
+ local Settings=require("WorldSettings")
+ local size=Vector2.new(120,120)
+ local settings={width=120,depth=120,boundary=true,ground={material="Grass",color={100,112,86}},terrain=H.new(120,120),spawns={},zones={},
+  tunnels={{a={-40,0,0},b={40,0,0},diameter=16,traction=35}}}
+ for z=0,settings.terrain.rows do for x=0,settings.terrain.columns do
+  if x>=7 and x<=13 then settings.terrain.heights[H.index(settings.terrain,x,z)]=30*H.Unit end
+ end end
+ Settings.validate(settings,true)
+ local env=Env.create(size);env.terrainSettings=settings;env.rocks={};env.trees={};env.logs={};env.zones={}
+ local floor,_,_,kind,_,material=Env.pose(env,Vector3.new(0,0,0),0)
+ check(floor==0 and kind=="Tunnel" and material.authoredTraction==.35,"under the ridge the tunnel floor and traction replace the surface")
+ check(Env.pose(env,Vector3.new(0,30,0),0)==30,"hill above the bore keeps its original ground")
+ local bodies=Contacts.obstacles(env,size)
+ check(#bodies>4 and bodies[5].id:find("tunnel:",1,true),"tunnel liner walls use the ordinary fixed obstacle solver")
+ local slabs=Tunnel.compile(settings)
+ local cut={}
+ Tunnel.cut(slabs[1],{Vector3.new(-1,4,-1),Vector3.new(1,4,-1),Vector3.new(0,4,1)},cut)
+ check(#cut==0,"terrain inside portal clearance is removed")
+ Tunnel.cut(slabs[1],{Vector3.new(-1,30,-1),Vector3.new(1,30,-1),Vector3.new(0,30,1)},cut)
+ check(#cut==1,"terrain above the bore remains available to terrain queries")
+ local rider=Sim.new(Vector3.new(-32,0,0),"Boomer");rider.yaw=-math.pi/2
+ local command=Command.neutral();command.throttle=1
+ for _=1,160 do Sim.step(rider,command,1/60,size,env) end
+ check(rider.position.X>0 and rider.position.Y<.1,"a tank drives through the hill without climbing the original terrain")
+ local sideways=Sim.new(Vector3.new(0,0,0),"Rattler")
+ sideways.yaw=math.pi
+ for _=1,90 do Sim.step(sideways,command,1/60,size,env) end
+ check(sideways.position.Z>0 and sideways.position.Z<8,"the side liner physically contains a tank inside the bore")
+ settings.tunnels[1].diameter=4
+ check(not pcall(Settings.validate,settings,true),"invalid tunnel dimensions are rejected")
+end

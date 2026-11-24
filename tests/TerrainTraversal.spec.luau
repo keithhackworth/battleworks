@@ -177,3 +177,15 @@ do
  assert(math.abs(slick.yaw)>.02 and math.abs(slick.yaw)<math.abs(standard.yaw)*.7,"tracked tanks can still pivot on slick snow with reduced grip")
 end
 print("Unified terrain slopes, traction, braking, tick-rate stability and geometry passed")
+
+do
+ local high=Heightfield.new(96,96)
+ for i=1,#high.heights do high.heights[i]=Heightfield.MaxHeight*Heightfield.Unit end
+ local point=Heightfield.pick(high,96,96,Vector3.new(0,700,0),Vector3.new(0,-1,0))
+ assert(point and math.abs(point.Y-500)<.25,"the brush picks a 500-stud plateau")
+ Heightfield.validate(high,96,96)
+ Heightfield.brush(high,96,96,Vector3.new(0,500,0),"Raise",20,96,0,0,1)
+ assert(Heightfield.sample(high,96,96,0,0)==500,"raising terrain clamps at 500 studs")
+ high.heights[1]=-769
+ assert(not pcall(Heightfield.validate,high,96,96),"the existing lower height limit is preserved")
+end

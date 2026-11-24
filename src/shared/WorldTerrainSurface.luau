@@ -1,4 +1,5 @@
 local H=require(script.Parent.WorldHeightfield)
+local Tunnel=require(script.Parent.WorldTunnel)
 local Traversal=require(script.Parent.TerrainTraversal)
 local Materials=require(script.Parent.TerrainMaterials)
 local chassis=require(script.Parent.ComponentCatalog)["chassis.standard"].Properties
@@ -6,7 +7,22 @@ local Surface={};Surface.__index=Surface
 function Surface.new(parent,settings,physical,overlay)
  local folder=Instance.new("Folder")
  folder.Name=if overlay then "TerrainTraversability" else "AuthoredTerrain";folder.Parent=parent
- return setmetatable({folder=folder,settings=settings,physical=physical,chunks={},overlay=overlay},Surface)
+ local tunnels=Tunnel.compile(settings)
+ if not overlay then
+  for _,t in tunnels do for _,section in Tunnel.sections(t) do
+   local part=Instance.new("Part")
+   part.Name="Tunnel"..section.kind;part.Anchored=true;part.CanTouch=false
+   part.CanCollide=physical;part.CanQuery=true
+   part.Size=section.size;part.CFrame=section.frame;part.Material=Enum.Material.Concrete
+   part.Color=if section.kind=="Floor" then Color3.fromRGB(100,107,110) else Color3.fromRGB(82,90,97)
+   if section.kind=="Floor" then
+    part:SetAttribute("ScannerTerrainOnly",true);part:SetAttribute("ScannerGroundSupport",true)
+    Materials.annotate(part,Materials.withTraction(Materials.fromMaterial("Grass"),{Grass=t.traction}))
+   end
+   part.Parent=folder
+  end end
+ end
+ return setmetatable({folder=folder,settings=settings,physical=physical,chunks={},overlay=overlay,tunnels=tunnels},Surface)
 end
 local colors={Treads=Color3.fromRGB(246,196,48),Impossible=Color3.fromRGB(239,64,70)}
 function Surface.waterAppearance(depth)
@@ -45,6 +61,7 @@ function Surface:chunk(cx,cz)
   if p.Parent~=self.folder then p.Parent=self.folder end
  end
  local function triangle(a,b,c)
+  if (b-a):Cross(c-a).Magnitude<1e-6 then return end
   local ab,ac,bc=b-a,c-a,c-b
   if ab.Magnitude>ac.Magnitude and ab.Magnitude>bc.Magnitude then a,b,c=c,a,b
   elseif ac.Magnitude>bc.Magnitude then a,b,c=b,a,c end
@@ -78,6 +95,27 @@ function Surface:chunk(cx,cz)
   if self.overlay and waterLevel and Traversal.waterBlocked(waterLevel-a.Y+.13,chassis) then tint=colors.Impossible end
   draw(Enum.PartType.Block,Vector3.new(b.X-a.X,.18,b.Z-a.Z),CFrame.new((a+b)*.5-Vector3.new(0,.09,0)),tint)
  end
+ local chunkA,chunkB=point(x0,z0),point(x1,z1)
+ local cuts={}
+ for _,t in self.tunnels do
+  if Tunnel.overlaps(t,chunkA.X,chunkB.X,chunkA.Z,chunkB.Z) then table.insert(cuts,t) end
+ end
+ local function ground(a,b,c)
+  local minX,maxX=math.min(a.X,b.X,c.X),math.max(a.X,b.X,c.X)
+  local minZ,maxZ=math.min(a.Z,b.Z,c.Z),math.max(a.Z,b.Z,c.Z)
+  local fragments
+  for _,t in cuts do
+   if Tunnel.overlaps(t,minX,maxX,minZ,maxZ) then
+    local rest={}
+    for _,polygon in fragments or {{a,b,c}} do Tunnel.cut(t,polygon,rest) end
+    fragments=rest
+   end
+  end
+  if not fragments then triangle(a,b,c);return end
+  for _,polygon in fragments do
+   for i=2,#polygon-1 do triangle(polygon[1],polygon[i],polygon[i+1]) end
+  end
+ end
  local elevation=H.height(field,x0,z0)
  local level=true
  for z=z0,z1 do for x=x0,x1 do if H.height(field,x,z)~=elevation then level=false;break end end;if not level then break end end
@@ -91,7 +129,7 @@ function Surface:chunk(cx,cz)
    if painted then break end
   end
  end
- if level and not painted then flat(point(x0,z0),point(x1,z1))
+ if level and not painted and #cuts==0 then flat(point(x0,z0),point(x1,z1))
  else
   for z=z0,z1-1 do for x=x0,x1-1 do
    local a,b,c,d=point(x,z),point(x+1,z),point(x,z+1),point(x+1,z+1)
@@ -104,8 +142,8 @@ function Surface:chunk(cx,cz)
    cellMaterial=paint and Enum.Material[Materials.Materials[paint]]
    cellColor=paint and Color3.fromRGB(table.unpack(Materials.Colors[paint]))
    profile=if self.overlay then Materials.withTraction(Materials.fromMaterial(paint or settings.ground.material),field.traction) else nil
-   if a.Y==b.Y and a.Y==c.Y and a.Y==d.Y then flat(a,d)
-   else triangle(a,b,c);triangle(d,c,b) end
+   if #cuts==0 and a.Y==b.Y and a.Y==c.Y and a.Y==d.Y then flat(a,d)
+   else ground(a,b,c);ground(d,c,b) end
    if self.overlay and waterLevel and Traversal.waterBlocked(waterLevel-math.min(a.Y,b.Y,c.Y,d.Y)+.13,chassis) then
     draw(Enum.PartType.Block,Vector3.new(dx,.035,dz),CFrame.new((a.X+d.X)/2,waterLevel+.035,(a.Z+d.Z)/2),colors.Impossible)
    end
@@ -114,9 +152,17 @@ function Surface:chunk(cx,cz)
     if y>math.min(a.Y,b.Y,c.Y,d.Y) then
      -- The cell center is on the shared diagonal of the two ground triangles.
      local waterColor,transparency=Surface.waterAppearance(y-(b.Y+c.Y)/2)
-     draw(Enum.PartType.Block,Vector3.new(dx,.04,dz),CFrame.new((a.X+d.X)/2,y-.02,(a.Z+d.Z)/2),waterColor)
-     local p=parts[used];p.Name="WaterSurface";p.Material=Enum.Material.Glass;p.Transparency=transparency
-     p.CanCollide=false;p.CanQuery=false
+     local first=used+1
+     if #cuts>0 then
+      local wa,wb,wc,wd=Vector3.new(a.X,y,a.Z),Vector3.new(b.X,y,b.Z),Vector3.new(c.X,y,c.Z),Vector3.new(d.X,y,d.Z)
+      ground(wa,wb,wc);ground(wd,wc,wb)
+     else
+      draw(Enum.PartType.Block,Vector3.new(dx,.04,dz),CFrame.new((a.X+d.X)/2,y-.02,(a.Z+d.Z)/2),waterColor)
+     end
+     for i=first,used do
+      local p=parts[i];p.Name="WaterSurface";p.Material=Enum.Material.Glass;p.Transparency=transparency;p.Color=waterColor
+      p.CanCollide=false;p.CanQuery=false
+     end
     end
    end
   end end

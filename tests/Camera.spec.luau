@@ -313,6 +313,17 @@ check((camera.CFrame.LookVector - b.forward).Magnitude < 1e-5 and camera.Focus.P
 local inside = { position = Vector3.new(5,0,-3), health = 100 }
 battlefield:observe(inside); battlefield:update(camera,1/60,inside)
 check(battlefield.focus.Magnitude < 1e-5,"controller keeps camera stationary for movement inside dead zone")
+local elevated = { position = Vector3.new(5,80,-3), health = 100 }
+local fixedXZ = battlefield.focus
+battlefield:update(camera, 1/60, elevated, Vector3.new(5,45,-3))
+check(camera.Focus.Position.Y==45 and battlefield.focus.X==fixedXZ.X and battlefield.focus.Z==fixedXZ.Z,
+ "camera follows the rendered elevator rise without horizontal drift")
+battlefield:update(camera, 1/60, inside, Vector3.new(5,12,-3))
+check(camera.Focus.Position.Y==12, "camera follows the same interpolation when the elevator descends")
+battlefield:update(camera, 1/60, inside)
+check(camera.Focus.Position.Y==0, "camera uses tank elevation without a renderer")
+local liftFocus=Math.track(fitted,Vector3.new(0,200,0),fitted.map.center,true)
+check(liftFocus.Y==200,"whole-map framing follows elevator height")
 local moved = { position = Vector3.new(40, 0, 0), health = 100, yaw = 2, turretYaw = -1 }
 check(not battlefield:observe(moved), "normal movement does not request camera teleport")
 battlefield:update(camera, 1 / 60, moved)

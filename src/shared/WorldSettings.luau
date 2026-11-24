@@ -1,5 +1,6 @@
 -- Validated editor metadata; it never contains executable world behavior.
 local Settings={}
+local Tunnel=require(script.Parent.WorldTunnel)
 local Heightfield=require(script.Parent.WorldHeightfield)
 local Traversal=require(script.Parent.TerrainTraversal)
 local defaultChassis=require(script.Parent.ComponentCatalog)["chassis.standard"].Properties
@@ -26,6 +27,7 @@ function Settings.validate(v,draft)
  for _,n in {v.width,v.depth} do assert(finite(n) and n>=25 and n<=2000 and n%1==0,"World dimensions must be integers in [25,2000]") end
  assert(v.boundary==true,"World boundaries must be enabled")
  if v.terrain~=nil then Heightfield.validate(v.terrain,v.width,v.depth) end
+ Tunnel.validate(v)
  assert(type(v.ground)=="table" and materials[v.ground.material],"Invalid ground material")
  vector(v.ground.color,3,255); for _,c in v.ground.color do assert(c>=0,"Invalid ground color") end
  assert(type(v.spawns)=="table","Missing starting positions")

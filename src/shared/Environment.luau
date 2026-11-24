@@ -1,5 +1,6 @@
 local DefaultFootprint=require(script.Parent.ComponentCatalog)["chassis.standard"].Properties
 -- Deterministic terrain descriptions shared by rendering and authoritative movement.
+local Tunnel=require(script.Parent.WorldTunnel)
 local Environment = {}
 local Playground=require(script.Parent.PlaygroundTerrain)
 local Surface=require(script.Parent.SurfacePhysics)
@@ -73,7 +74,24 @@ function Environment.create(size,weather)
  end
 	return data
 end
+function Environment.tunnels(data)
+ local settings=data and data.terrainSettings
+ if not settings or not settings.tunnels then return nil end
+ if not data.tunnels then
+  data.tunnels=Tunnel.compile(settings)
+  for _,t in data.tunnels do t.material=Materials.withTraction(Materials.fromMaterial("Grass"),{Grass=t.traction}) end
+ end
+ return data.tunnels
+end
+function Environment.tunnelFloor(data,x,z,y)
+ local tunnels=Environment.tunnels(data)
+ if tunnels then return Tunnel.floor(tunnels,x,z,y) end
+end
 function Environment.sample(data,x,z,maxHeight)
+ if maxHeight then
+  local floor,tunnel=Environment.tunnelFloor(data,x,z,maxHeight)
+  if tunnel then return floor,"Tunnel",1,nil,tunnel.material end
+ end
 	local height,kind,speed=0,if data.weather=="IceWind" then "Ice" else "Grass",1
  if data.playground and not data.playground.authored then return Playground.sample(data.playground,x,z),"Grass",1 end
  if data.terrainSettings then
@@ -123,6 +141,11 @@ end
 function Environment.pose(data,position,yaw,footprint)
  local shape=footprint or DefaultFootprint
  if data.playground and not data.playground.authored then return Playground.pose(data.playground,position,yaw,shape)end
+ local floor,tunnel=Environment.tunnelFloor(data,position.X,position.Z,position.Y+.01)
+ if tunnel then
+  local s,c=math.sin(yaw),math.cos(yaw)
+  return floor,math.atan(-tunnel.slope*(s*tunnel.x+c*tunnel.z)),math.atan(tunnel.slope*(c*tunnel.x-s*tunnel.z)),"Tunnel",1,tunnel.material
+ end
  local structural=data.worldObjects and data.worldObjects.footprintSupport
  local structureHeight,structurePitch,structureRoll,structureMaterial,platform
  if structural then
@@ -170,6 +193,13 @@ function Environment.pose(data,position,yaw,footprint)
  end
  local center,front,rear,right,left=table.unpack(heights)
  local terrainHeight=math.max(center,(front+rear+right+left)/4)
+ local tunnels=Environment.tunnels(data)
+ if tunnels then
+  local roof,shape=Tunnel.roof(tunnels,x,z,position.Y+WorldGeometry.MaxStep)
+  if roof and roof>terrainHeight and (not structureHeight or roof>structureHeight) then
+   return roof,math.atan(-shape.slope*(s*shape.x+c*shape.z)),0,"Structure",1,Materials.fromMaterial("Concrete")
+  end
+ end
  local traction=data.terrainSettings and data.terrainSettings.terrain.traction
  if structureHeight and structureHeight>=terrainHeight then
   return structureHeight,structurePitch,structureRoll,"Structure",1,structureMaterial and Materials.withTraction(structureMaterial,traction),platform

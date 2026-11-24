@@ -1268,7 +1268,7 @@ RunService.Heartbeat:Connect(function(dt)
         for _,record in contactBodies do
             local tank=tanks[record.id]
             Simulation.reconcileGround(tank.state,environment,record.carryVelocity~=nil)
-            if Simulation.stepDeepWater(tank.state,environment.terrainSettings,Config.Step) then
+            if Simulation.stepDeepWater(tank.state,environment.terrainSettings,Config.Step,environment) then
                 local battle=if tank.public then royale.battle else battles[tank.owner]
                 if battle and Battle.environmentDamage(battle,tank) then
                     if tank.public then royale:destroyed(tank)

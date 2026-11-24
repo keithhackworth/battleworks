@@ -5,6 +5,7 @@ local Drive = require(script.Parent.RattlerDrive)
 local Motion = require(script.Parent.VehicleMotion)
 local Surface = require(script.Parent.SurfacePhysics)
 local Materials = require(script.Parent.TerrainMaterials)
+local Tunnel=require(script.Parent.WorldTunnel)
 local Heightfield = require(script.Parent.WorldHeightfield)
 local Traversal = require(script.Parent.TerrainTraversal)
 local WorldSettings = require(script.Parent.WorldSettings)
@@ -59,12 +60,12 @@ local function suspension(state, dt)
 	state.bodyPitch = (math.sin(state.bounceClock or 0)*tuning.Pitch*(state.movement or 0))+(state.flightPitch or 0)
 	state.bodyRoll = (math.cos((state.bounceClock or 0)*tuning.RollFrequency)*tuning.Roll*(state.movement or 0))+(state.flightRoll or 0)
 end
-function Simulation.terrainRiseBlocked(start,finish,terrain)
+function Simulation.terrainRiseBlocked(start,finish,terrain,environment)
  if not terrain or not start then return false end
  local distance=math.sqrt((finish.X-start.X)^2+(finish.Z-start.Z)^2)
  if distance<=1e-6 then return end
- local a=Heightfield.sample(terrain.terrain,terrain.width,terrain.depth,start.X,start.Z)
- local b=Heightfield.sample(terrain.terrain,terrain.width,terrain.depth,finish.X,finish.Z)
+ local a=Environment.tunnelFloor(environment,start.X,start.Z,start.Y+.01) or Heightfield.sample(terrain.terrain,terrain.width,terrain.depth,start.X,start.Z)
+ local b=Environment.tunnelFloor(environment,finish.X,finish.Z,start.Y+.01) or Heightfield.sample(terrain.terrain,terrain.width,terrain.depth,finish.X,finish.Z)
  -- An airborne tank already above this ground may cross it. For a ground
  -- crossing, use a numerical tolerance only so slow motion cannot creep up a wall.
  return start.Y<=b+Geometry.MaxStep and b-a>math.min(Geometry.MaxStep,distance*Traversal.MaxGradient)+1e-6
@@ -80,18 +81,18 @@ function Simulation.platformTerrainBlocked(state,body,environment)
   return finish.Y<Environment.sample(environment,finish.X,finish.Z)-.025
    or middle.Y<Environment.sample(environment,middle.X,middle.Z)-.025
  end
- return Simulation.terrainRiseBlocked(state.motionStepStart,finish,terrain)
+ return Simulation.terrainRiseBlocked(state.motionStepStart,finish,terrain,environment)
 end
-local function limitTerrainRise(state,terrain)
+local function limitTerrainRise(state,terrain,environment)
  local start,finish=state.motionStepStart,state.position
- if not Simulation.terrainRiseBlocked(start,finish,terrain) then return end
+ if not Simulation.terrainRiseBlocked(start,finish,terrain,environment) then return end
  state.position=Vector3.new(start.X,finish.Y,start.Z)
  state.motionForwardTravel=state.motionForwardStart
  local velocity=Motion.ensure(state)
  Motion.setVelocity(state,Vector3.new(0,velocity.Y,0))
 end
-function Simulation.stepDeepWater(state,terrain,dt)
- if state.health<=0 or not terrain or not WorldSettings.deepWater(terrain,state.position,Components.get(state).Chassis) then
+function Simulation.stepDeepWater(state,terrain,dt,environment)
+ if state.health<=0 or Environment.tunnelFloor(environment,state.position.X,state.position.Z,state.position.Y+.01) or not terrain or not WorldSettings.deepWater(terrain,state.position,Components.get(state).Chassis) then
   state.deepWaterRemaining=nil
   return false
  end
@@ -135,10 +136,10 @@ function Simulation.moveBody(state,command,dt,mapSize,environment,deferContacts)
  state.motionForwardStart=state.motionForwardTravel or 0; state.motionYawTravelStart=state.motionYawTravel or 0
  Motion.integrateHorizontal(state,dt)
  local terrain=environment and environment.terrainSettings
- limitTerrainRise(state,terrain)
+ limitTerrainRise(state,terrain,environment)
  if not deferContacts then
   Contacts.solve({Contacts.body("vehicle",state,c.Chassis)},Contacts.obstacles(environment,mapSize or Vector2.new(Config.ArenaLimit*2,Config.ArenaLimit*2)),dt)
-  limitTerrainRise(state,terrain)
+  limitTerrainRise(state,terrain,environment)
  end
  local x,z=state.position.X,state.position.Z
  local ground,pitch,roll,kind=0,0,0,"Grass"
@@ -152,13 +153,14 @@ function Simulation.moveBody(state,command,dt,mapSize,environment,deferContacts)
 end
 function Simulation.reconcileGround(state,environment,carried)
  local terrain=environment and environment.terrainSettings
- if state.motionDeferredDt and not carried then limitTerrainRise(state,terrain) end
+ if state.motionDeferredDt and not carried then limitTerrainRise(state,terrain,environment) end
  local c=Components.get(state); local h,p,r,kind=0,0,0,"Grass"
  if environment then h,p,r,kind=Environment.pose(environment,state.position,state.yaw,c.Chassis) end
  if terrain then
   local _,gx,gz=Heightfield.sample(terrain.terrain,terrain.width,terrain.depth,state.position.X,state.position.Z,true)
   state.terrainFaceDegrees=math.deg(math.atan(math.sqrt(gx*gx+gz*gz)))
  end
+ local _,tunnel=Environment.tunnelFloor(environment,state.position.X,state.position.Z,state.position.Y+.01)
  local dt=state.motionDeferredDt
  state.motionDeferredDt=nil
  if dt then
@@ -171,6 +173,16 @@ function Simulation.reconcileGround(state,environment,carried)
   state.bodyRoll=(state.bodyRoll or 0)+r-(state.groundRoll or 0)
   state.groundPitch=p; state.groundRoll=r; state.surface=kind
   Recoil.step(state,0,h+(state.groundPlaneY or 0))
+ end
+ if tunnel then
+  state.terrainFaceDegrees=math.deg(math.atan(math.abs(tunnel.slope)))
+  local limit=h+Tunnel.clearance(tunnel,state.position.X,state.position.Z,c.Chassis.Hitbox.X/2)-c.Chassis.Hitbox.Y-.05
+  if state.position.Y>limit then
+   local p,v=state.position,Motion.ensure(state)
+   state.position=Vector3.new(p.X,limit,p.Z)
+   state.lift=math.max(0,limit-h)
+   Motion.setVelocity(state,Vector3.new(v.X,math.min(0,v.Y),v.Z))
+  end
  end
  Motion.sync(state)
 end

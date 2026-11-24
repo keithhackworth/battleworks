@@ -102,6 +102,7 @@ local run={RenderStepped=stepping,IsStudio=function()return true end}
 game.GetService=function(self,name)if name=="HttpService"then return http elseif name=="RunService"then return run elseif name=="ContextActionService"then return actions end;return oldService(self,name)end
 local mouse=Vector2.new(400,200)
 UIS.GetMouseLocation=function()return mouse end;UIS.IsKeyDown=function()return false end
+UIS.IsMouseButtonPressed=function()return true end
 local worldBefore=#workspace:GetChildren();local cameraBefore=workspace.CurrentCamera
 local menu=0
 local controller=require("WorldEditorController").new({parent=Instance.new("Frame"),editorAssets=library,session={mode="Menu"},home=function()menu+=1 end})
@@ -433,7 +434,7 @@ UIS.IsKeyDown=function(_,key)return key==Enum.KeyCode.LeftShift end
 local beforeFocus=controller.focus
 UIS.InputChanged:Fire({UserInputType=Enum.UserInputType.MouseMovement,Delta=Vector3.new(40,20,0)})
 controller:step(1/60)
-check((controller.focus-beforeFocus).Magnitude>1 and controller.yaw==beforeYaw,"Shift+right drag pans at eye level even when terrain ray misses")
+check((controller.focus-beforeFocus).Magnitude<1e-6 and controller.yaw~=beforeYaw,"right drag still orbits at eye level while Shift is held")
 UIS.IsKeyDown=function()return false end
 local beforeHeight=controller.focus.Y
 controller.placing=controller.catalog.byPath["Trees/Oak"]
@@ -454,6 +455,13 @@ controller:step(1/60)
 check((controller.focus-beforeFocus).Magnitude>1,"middle drag pans without relying on a ground-plane intersection")
 UIS.InputEnded:Fire(middle)
 check(not controller.cameraDrag and UIS.MouseBehavior==Enum.MouseBehavior.Default,"global mouse release also safely unlocks camera")
+controller:beginCamera(middle)
+controller:beginCamera(rightClick)
+check(controller.cameraDrag.button==Enum.UserInputType.MouseButton2,"right drag replaces middle capture even if its release was missed")
+UIS.IsMouseButtonPressed=function()return false end
+controller:step(1/60)
+check(not controller.cameraDrag and UIS.MouseBehavior==Enum.MouseBehavior.Default,"button polling recovers from a missed release")
+UIS.IsMouseButtonPressed=function()return true end
 controller.view.isScene=function()return false end
 check(cameraAction.callback("BattleWorksEditorCamera",Enum.UserInputState.Begin,rightClick)==Enum.ContextActionResult.Pass and not controller.cameraDrag,"palette/panel clicks are not captured by camera action")
 controller.view.isScene=function()return true end

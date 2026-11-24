@@ -6,17 +6,17 @@ const {Store}=require('../tools/world-builder/store');const {createServer}=requi
 const items=builtinCatalog();
 test('sculpted terrain survives offline serialization, compilation, and migration',()=>{
  const d=fresh('terrain_world');
- const heights=Array(37*37).fill(0);heights[102]=87;heights[233]=-156;
+ const heights=Array(37*37).fill(0);heights[102]=4000;heights[233]=-156;
  d.settings.terrain={version:1,columns:36,rows:36,heights};
  d.settings.terrain.paint=Array(36*36).fill(5);
- d.settings.terrain.water=Array(36*36).fill(0);d.settings.terrain.water[5]=1032;
+ d.settings.terrain.water=Array(36*36).fill(0);d.settings.terrain.water[5]=5024;
  d.settings.terrain.traction={Ice:5.25,Mud:0,Grass:55,Snow:100};
  const built=compileDocument(JSON.parse(serialize(d)),items);
  assert.deepEqual(built.manifest.builderSettings.terrain,d.settings.terrain);
  assert.deepEqual(migrate(built.manifest,items,'terrain_copy').settings.terrain,d.settings.terrain);
  const invalid=structuredClone(d);invalid.settings.terrain.traction.Ice=101;
  assert.throws(()=>compileDocument(invalid,items),/traction/);
- d.settings.terrain.heights[102]=769;
+ d.settings.terrain.heights[102]=4001;
  assert.throws(()=>compileDocument(d,items),/invalid height sample/);
 });
 function object(extra={}){return {id:'obstacle_1',type:'builtin.block',position:[0,0,-25],rotation:[0,30,0],scale:1,solid:true,destructible:false,hp:100,...extra};}
@@ -156,4 +156,14 @@ test('asset regeneration survives offline compilation and editing',()=>{
  assert.equal(object.regenerationDelay,12.5);
  world.objects[0].regenerationDelay=-1;
  assert.throws(()=>validate(world,items),/regenerationDelay/);
+});
+
+test('tunnels retain portal elevations, diameter and traction through compilation and migration',()=>{
+ const world=fresh('tunnel_world');
+ world.settings.terrain={version:1,columns:36,rows:36,heights:Array(37*37).fill(0)};
+ world.settings.tunnels=[{a:[-40,0,0],b:[40,3,0],diameter:18,traction:55}];
+ const {manifest}=compileDocument(world,items);
+ assert.deepEqual(migrate(manifest,items,'tunnel_copy').settings.tunnels,world.settings.tunnels);
+ world.settings.tunnels[0].b[1]=52;
+ assert.throws(()=>validate(world,items),/grade/);
 });

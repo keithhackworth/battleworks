@@ -6,6 +6,7 @@ local Snap=require(Shared.WorldEditorSnap)
 local Visual=require(Shared.AssetGeometry)
 local Placement=require(Shared.ModelPlacement)
 local Motion=require(Shared.WorldMotion)
+local Tunnel=require(Shared.WorldTunnel)
 local Heightfield=require(Shared.WorldHeightfield)
 local Materials=require(Shared.TerrainMaterials)
 local View=require(script.Parent.WorldEditorView)
@@ -49,11 +50,49 @@ function Controller.new(context)
  for operation,control in view.surfaceTools do
   action(control.Activated,function()
    self:finishTerrain(false);self.brush.operation=operation;self:setMode("Terrain")
-   if operation=="Water" then view:message("Click a channel or basin to route water downhill. Set fill depth in the inspector.")
+   if operation=="Tunnel" then self:refreshTunnel();view:message("Click or tap two portals to build a straight tunnel.")
+   elseif operation=="Water" then view:message("Click a channel or basin to route water downhill. Set fill depth in the inspector.")
    elseif operation=="Carve Ravine" then view:message("Drag to cut a channel. Radius sets width and depth sets the bed below your stroke's start.")
    else view:message("Drag to paint "..operation..". Radius sets the width.") end
   end)
  end
+ action(view.tunnelNew.Activated,function()
+  self.tunnelIndex=nil;self.tunnelStart=nil;self:refreshTunnel()
+  view:message("Click or tap two portal positions.")
+ end)
+ action(view.tunnelNext.Activated,function()
+  local list=self.state.document.settings.tunnels
+  if list and #list>0 then
+   self.tunnelStart=nil;self.tunnelIndex=(self.tunnelIndex or 0)%#list+1;self:refreshTunnel()
+   view:message("Selected tunnel "..self.tunnelIndex.." of "..#list..".")
+  end
+ end)
+ action(view.tunnelDelete.Activated,function()
+  local index=self.tunnelIndex
+  if not index then return end
+  self.tunnelIndex=nil
+  self:perform(function()
+   local settings=self.state.document.settings
+   local list=State.copy(settings.tunnels);table.remove(list,index)
+   settings.tunnels=if #list>0 then list else nil
+  end,"Tunnel removed.")
+ end)
+ for key,field in view.tunnelFields do action(field.FocusLost,function()
+  local settings=self.state.document.settings
+  local index=self.tunnelIndex
+  local value=tonumber(field.Text)
+  if not value then self:refreshTunnel();return end
+  if index and settings.tunnels and settings.tunnels[index] then
+   self:perform(function()
+    local list=State.copy(settings.tunnels)
+    local tunnel=list[index]
+    if key=="start" then tunnel.a[2]=value elseif key=="finish" then tunnel.b[2]=value else tunnel[key]=value end
+    settings.tunnels=list
+   end,"Tunnel updated.")
+  elseif key=="diameter" and value>=12 and value<=48 then self.tunnelDiameter=value
+  elseif key=="traction" and value>=0 and value<=100 then self.tunnelTraction=value end
+  self:refreshTunnel()
+ end) end
  action(view.traction.FocusLost,function()
   local kind=self.brush.operation
   if not Materials.TunableTraction[kind] then return end
@@ -73,7 +112,7 @@ function Controller.new(context)
    settings.terrain=field
   end,string.format("%s traction set to %.4g%% of pavement.",kind,percent))
  end)
- local bounds={radius={2,160},strength={.5,96},falloff={0,1},elevation={-Heightfield.MaxHeight,Heightfield.MaxHeight},depth={.25,32}}
+ local bounds={radius={2,160},strength={.5,96},falloff={0,1},elevation={Heightfield.MinHeight,Heightfield.MaxHeight},depth={.25,32}}
  for key,field in view.brushFields do
   action(field.FocusLost,function()
    local value=tonumber(field.Text);local range=bounds[key]
@@ -434,6 +473,55 @@ function Controller:stopMotionPreview()
  self.motionPreview=nil
  if preview.model.Parent then preview.model:PivotTo(preview.pivot) end
 end
+function Controller:refreshTunnel()
+ local enabled=self.mode=="Terrain" and self.brush.operation=="Tunnel"
+ local list=self.state.document.settings.tunnels
+ local tunnel=list and self.tunnelIndex and list[self.tunnelIndex]
+ if not tunnel then self.tunnelIndex=nil end
+ local view=self.view
+ view.tunnelNew.Visible=enabled;view.tunnelNext.Visible=enabled and list~=nil;view.tunnelDelete.Visible=enabled and tunnel~=nil
+ for key,field in view.tunnelFields do
+  local visible=enabled and (tunnel~=nil or key=="diameter" or key=="traction")
+  field.Visible=visible;view.tunnelLabels[key].Visible=visible
+  if visible and UIS:GetFocusedTextBox()~=field then
+   field.Text=tostring(if tunnel then (if key=="start" then tunnel.a[2] elseif key=="finish" then tunnel.b[2] else tunnel[key])
+    elseif key=="diameter" then self.tunnelDiameter or 18 else self.tunnelTraction or 100)
+  end
+ end
+ if enabled and self.scene then
+  local points={}
+  if tunnel then points={Vector3.new(table.unpack(tunnel.a)),Vector3.new(table.unpack(tunnel.b))}
+  elseif self.tunnelStart then points={self.tunnelStart} end
+  self.scene:drawMotion(points,false,nil)
+ end
+end
+function Controller:tunnelClick(point)
+ if not point then return end
+ if not self.tunnelStart then
+  self.tunnelIndex=nil;self.tunnelStart=point;self:refreshTunnel()
+  self.view:message("Choose the second portal. You can adjust both elevations after placement.")
+  return
+ end
+ local start=self.tunnelStart
+ local function portal(p) return {p.X,p.Y,p.Z} end
+ local tunnel={a=portal(start),b=portal(point),diameter=self.tunnelDiameter or 18,traction=self.tunnelTraction or 100}
+ local ok=self:perform(function()
+  local settings=self.state.document.settings
+  settings.terrain=settings.terrain or Heightfield.new(settings.width,settings.depth)
+  local list=State.copy(settings.tunnels or {})
+  table.insert(list,tunnel);settings.tunnels=list
+ end,"Tunnel created.")
+ if ok then
+  local settings=self.state.document.settings
+  self.tunnelIndex=#settings.tunnels
+  if Tunnel.cover(settings,tunnel)<0 then
+   self.view:message("Tunnel created. The lining is exposed at the midpoint. Raise the hill or lower both portals for more cover.")
+  end
+ else
+  self.tunnelStart=start
+ end
+ self:refreshTunnel()
+end
 function Controller:refresh()
  self:refreshTraction()
  for axis,field in self.view.dimensions do
@@ -448,6 +536,7 @@ function Controller:refresh()
  if self.scene then self.scene:selection(selected and selected.id,self.distance) end
  self:updateSnap()
  self:drawMotion()
+ self:refreshTunnel()
  self.view.undo.Text="Undo ("..#self.state.past..")";self.view.redo.Text="Redo ("..#self.state.future..")"
 end
 local function copyPose(entry,pose)
@@ -546,6 +635,7 @@ function Controller:setMode(mode)
  self.edgeSnap=mode=="Snap"
  self.view:terrainMode(mode=="Terrain",self.brush.operation)
  self:refreshTraction()
+ self:refreshTunnel()
  if self.scene then
   self.scene:setMode(mode,self.rotationAxis or "Yaw")
   local selected=self:selected();self.scene:selection(selected and selected.id,self.distance)
@@ -644,6 +734,7 @@ function Controller:place(point)
  end
 end
 function Controller:cancel()
+ self.tunnelStart=nil
  self.motionDraft=nil;self.motionPoint=nil;self.motionDrag=nil;self:stopMotionPreview()
  if self.scene then self:drawMotion() end
  self:finishTerrain(true)
@@ -715,11 +806,12 @@ function Controller:stopCamera()
  self.cameraDrag=nil;self.cameraDelta=Vector2.zero
 end
 function Controller:beginCamera(input)
- if self.cameraDrag then return self.cameraDrag.button==input.UserInputType end
+ if self.cameraDrag and self.cameraDrag.button==input.UserInputType then return true end
  if not self.active or not self.scene or self.terrainStroke or self.paused or UIS:GetFocusedTextBox() or self.view:isModal() or not self.view:isScene(self:mousePosition()) then return false end
  local button=input.UserInputType
  if button~=Enum.UserInputType.MouseButton2 and button~=Enum.UserInputType.MouseButton3 then return false end
  if self.gesture then return false end
+ self:stopCamera()
  self.cameraDrag={button=button,behavior=UIS.MouseBehavior,icon=UIS.MouseIconEnabled}
  self.cameraDelta=Vector2.zero
  UIS.MouseBehavior=Enum.MouseBehavior.LockCurrentPosition;UIS.MouseIconEnabled=false
@@ -735,11 +827,11 @@ function Controller:cameraAction(_,state,input)
 end
 function Controller:begin(input,processed)
  if self.paused or UIS:GetFocusedTextBox() or self.view:isModal() then return end
- if self.cameraDrag then return end
  if input.UserInputType==Enum.UserInputType.MouseButton2 or input.UserInputType==Enum.UserInputType.MouseButton3 then
   if not processed then self:beginCamera(input) end
   return
  end
+ if self.cameraDrag then return end
  local touch=input.UserInputType==Enum.UserInputType.Touch
  local mousePoint=if touch then Math.guiPoint(Vector2.new(input.Position.X,input.Position.Y),game:GetService("GuiService"):GetInsetArea(Enum.ScreenInsets.None).Min) else nil
  local point,origin,direction,mouse=self:pointer(mousePoint,self.motionDraft~=nil)
@@ -748,6 +840,7 @@ function Controller:begin(input,processed)
  if input.UserInputType~=Enum.UserInputType.MouseButton1 and not touch then return end
  if self.motionDraft then if not self.motionDrag then self:motionInput(input,point,mouse) end;return end
  self:stopMotionPreview()
+ if self.mode=="Terrain" and self.brush.operation=="Tunnel" then self:tunnelClick(point);return end
  if touch then
   if self.placing or self.placingStart then self:place(point)
   elseif self.mode~="Terrain" then
@@ -848,11 +941,11 @@ function Controller:step(dt)
   end
   if not overScene then return end
  end
+ if self.cameraDrag and not UIS:IsMouseButtonPressed(self.cameraDrag.button) then self:stopCamera() end
  if self.cameraDrag then
   UIS.MouseBehavior=Enum.MouseBehavior.LockCurrentPosition
   local delta=self.cameraDelta*self.cameraSensitivity;self.cameraDelta=Vector2.zero
-  local shift=UIS:IsKeyDown(Enum.KeyCode.LeftShift) or UIS:IsKeyDown(Enum.KeyCode.RightShift)
-  if self.cameraDrag.button==Enum.UserInputType.MouseButton3 or shift then
+  if self.cameraDrag.button==Enum.UserInputType.MouseButton3 then
    self.focus+=Math.cameraPan(scene.camera.CFrame,self.view.viewport.AbsoluteSize,delta,self.distance,scene.camera.FieldOfView)
    self.focus=Vector3.new(self.focus.X,math.max(0,self.focus.Y),self.focus.Z)
   else self.yaw-=delta.X*.006;self.pitch+=delta.Y*.004 end
@@ -874,6 +967,11 @@ function Controller:step(dt)
  local point,origin,direction=self:pointer()
  if self.mode=="Terrain" then
   local brushPoint=if not self.cameraDrag and not self.paused and self.view:isScene(mouse) then point else nil
+  if self.brush.operation=="Tunnel" then
+   scene:brushFootprint(nil)
+   if self.tunnelStart then scene:drawMotion(if brushPoint then {self.tunnelStart,brushPoint} else {self.tunnelStart},false,nil) end
+   return
+  end
   scene:brushFootprint(brushPoint,self.brush.radius)
   local stroke=self.terrainStroke
   if stroke and brushPoint then

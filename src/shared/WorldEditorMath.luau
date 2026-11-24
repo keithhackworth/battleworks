@@ -32,7 +32,8 @@ function Math.cameraPitch(pitch,focusY,distance)
  return math.clamp(pitch,minimum,1.5)
 end
 function Math.cameraPan(frame,size,delta,distance,fov)
- local scale=2*distance*math.tan(math.rad(fov)/2)/math.max(size.Y,1)
+ -- Keep distant views and short windows from magnifying small drags.
+ local scale=math.min(distance,500)*math.tan(math.rad(fov)/2)/math.max(size.Y,240)
  return (frame.RightVector*(-delta.X)+frame.UpVector*delta.Y)*scale
 end
 function Math.project(frame,size,point,fov)

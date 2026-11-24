@@ -1,6 +1,6 @@
 -- Optional authoring-v2 terrain. Integer samples are eighth-studs; the surface
 -- between samples is the same two triangles in the renderer and simulation.
-local H={MaxHeight=96,Unit=8,Chunk=6}
+local H={MinHeight=-96,MaxHeight=500,Unit=8,Chunk=6}
 local Materials=require(script.Parent.TerrainMaterials)
 H.Paint={"Grass","Mud","Ice","Snow","Pavement"}
 H.WaterOffset=1024
@@ -26,7 +26,7 @@ function H.validate(field,width,depth)
  local count=0
  for k,value in field.heights do
   assert(type(k)=="number" and k%1==0 and k>=1 and k<=n,"Invalid terrain sample index")
-  assert(type(value)=="number" and value%1==0 and math.abs(value)<=H.MaxHeight*H.Unit,"Invalid terrain height")
+  assert(type(value)=="number" and value%1==0 and value>=H.MinHeight*H.Unit and value<=H.MaxHeight*H.Unit,"Invalid terrain height")
   count+=1
  end
  assert(count==n,"Missing terrain sample")
@@ -39,7 +39,7 @@ function H.validate(field,width,depth)
    for key,value in values do
     assert(type(key)=="number" and key%1==0 and key>=1 and key<=cells,"Invalid terrain layer index")
     assert(type(value)=="number" and value%1==0 and (value==0 or
-     (if layer=="paint" then value>=1 and value<=#H.Paint else math.abs(value-H.WaterOffset)<=H.MaxHeight*H.Unit)),"Invalid terrain layer value")
+     (if layer=="paint" then value>=1 and value<=#H.Paint else value>=H.WaterOffset+H.MinHeight*H.Unit and value<=H.WaterOffset+H.MaxHeight*H.Unit)),"Invalid terrain layer value")
     total+=1
    end
    assert(total==cells,"Missing terrain layer value")
@@ -95,7 +95,7 @@ function H.fillWater(field,width,depth,point,depthStuds)
  local function inside(i,j) return i>=0 and i<columns and j>=0 and j<rows end
  local function set(i,j,level)
   local index=j*columns+i+1
-  local value=math.clamp(math.round(level*H.Unit),-H.MaxHeight*H.Unit,H.MaxHeight*H.Unit)+H.WaterOffset
+  local value=math.clamp(math.round(level*H.Unit),H.MinHeight*H.Unit,H.MaxHeight*H.Unit)+H.WaterOffset
   if field.water[index]<value then field.water[index]=value;mark(field,dirty,i,j) end
  end
  field.water=field.water or table.create(columns*rows,0)
@@ -204,7 +204,7 @@ function H.brush(field,width,depth,point,mode,radius,strength,falloff,target,dt,
     end
     value=current+(desired-current)*math.clamp(dt*strength*.3*weight,0,1)
    end
-   local exact=math.clamp(value+(remainder and remainder[index] or 0),-H.MaxHeight*H.Unit,H.MaxHeight*H.Unit)
+   local exact=math.clamp(value+(remainder and remainder[index] or 0),H.MinHeight*H.Unit,H.MaxHeight*H.Unit)
    value=math.round(exact)
    if remainder then remainder[index]=exact-value end
    if value~=current then

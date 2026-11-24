@@ -128,7 +128,7 @@ function View.new(context)
  magnets.Size=UDim2.fromOffset(208,174)
  self.placeStart=button(toolbar,"PlaceStartingPosition","Place start zone  •  0/5",UDim2.fromOffset(172,32),UDim2.fromOffset(556,12));self.placeStart.BackgroundColor3=Color3.fromRGB(121,89,37)
  self.status=text(frame,"EditorStatus","Loading native asset library…",30);self.status.Position=UDim2.new(0,12,1,-72);self.status.Size=UDim2.new(1,-344,0,30);self.status.BackgroundTransparency=.1;self.status.BackgroundColor3=Color3.fromRGB(19,30,35)
- self.hint=text(frame,"EditorHints","RMB orbit • Shift+RMB / middle drag pan • WASD move • E/Q height while dragging • Wheel zoom • F reset",30);self.hint.Position=UDim2.new(0,12,1,-36);self.hint.Size=UDim2.new(1,-344,0,30)
+ self.hint=text(frame,"EditorHints","RMB orbit • MMB pan • WASD move • E/Q height while dragging • Wheel zoom • F reset",30);self.hint.Position=UDim2.new(0,12,1,-36);self.hint.Size=UDim2.new(1,-344,0,30)
  local overlay=make("Frame",frame,{Name="ExportOverlay",Position=UDim2.fromScale(.08,.12),Size=UDim2.fromScale(.84,.76),BackgroundColor3=Color3.fromRGB(17,28,33),Visible=false,Active=true,ZIndex=10});self.overlay=overlay
  local exportTitle=text(overlay,"ExportTitle","WORLD JSON  /  export or paste a backup to import",32);exportTitle.Position=UDim2.fromOffset(16,8);exportTitle.ZIndex=11
  self.name=make("TextBox",overlay,{Name="WorldName",Text="My BattleWorks World",PlaceholderText="World name",ClearTextOnFocus=false,Position=UDim2.fromOffset(16,48),Size=UDim2.new(.5,-24,0,30),TextColor3=ink,BackgroundColor3=Color3.fromRGB(43,61,66),Font=Enum.Font.Gotham,TextSize=14,ZIndex=11})
@@ -212,6 +212,18 @@ function View.new(context)
   self.brushFields[spec[1]]=make("TextBox",self.brushPanel,{Name=spec[1],LayoutOrder=i*2+3,Size=UDim2.new(1,-14,0,28),
    Text=tostring(spec[3]),ClearTextOnFocus=false,TextColor3=ink,BackgroundColor3=View.buttonColor,Font=Enum.Font.Code,TextSize=14})
  end
+ self.tunnelFields={}
+ self.tunnelLabels={}
+ for i,spec in {{"diameter","Inside diameter (studs)"},{"traction","Tunnel traction (% of pavement)"},{"start","Start elevation (studs)"},{"finish","End elevation (studs)"}} do
+  local label=text(self.brushPanel,"Tunnel"..spec[1].."Label",spec[2],22)
+  label.LayoutOrder=15+i*2;label.Visible=false
+  self.tunnelLabels[spec[1]]=label
+  self.tunnelFields[spec[1]]=make("TextBox",self.brushPanel,{Name="Tunnel"..spec[1],LayoutOrder=16+i*2,Size=UDim2.new(1,-14,0,28),Text="",ClearTextOnFocus=false,TextColor3=ink,BackgroundColor3=View.buttonColor,Font=Enum.Font.Code,TextSize=14,Visible=false})
+ end
+ self.tunnelNew=button(self.brushPanel,"NewTunnel","Draw new tunnel")
+ self.tunnelNext=button(self.brushPanel,"NextTunnel","Select next tunnel")
+ self.tunnelDelete=button(self.brushPanel,"DeleteTunnel","Delete selected tunnel")
+ for i,b in {self.tunnelNew,self.tunnelNext,self.tunnelDelete} do b.LayoutOrder=25+i;b.Visible=false end
  self.traversability=button(self.brushPanel,"TerrainTraversability","Terrain Traversability")
  self.traversability.LayoutOrder=14;self.traversability.Size=UDim2.new(1,-14,0,34)
  self.traversalLegend=text(self.brushPanel,"TraversalLegend","No tint · Both drivetrains\nYellow · Requires treads\nRed · Too steep or too deep",84)
@@ -220,7 +232,7 @@ function View.new(context)
  self.terrainDock.AutomaticCanvasSize=Enum.AutomaticSize.X;self.terrainDock.ScrollingDirection=Enum.ScrollingDirection.X
  make("UIListLayout",self.terrainDock,{FillDirection=Enum.FillDirection.Horizontal,SortOrder=Enum.SortOrder.LayoutOrder,Padding=UDim.new(0,6)})
  self.surfaceTools={}
- for index,name in {"Grass","Mud","Ice","Snow","Pavement","Water","Carve Ravine"} do
+ for index,name in {"Grass","Mud","Ice","Snow","Pavement","Water","Carve Ravine","Tunnel"} do
   local tile=button(self.terrainDock,"Brush"..name,name,UDim2.fromOffset(if index==7 then 112 else 78,40))
   tile.LayoutOrder=index;self.surfaceTools[name]=tile
  end

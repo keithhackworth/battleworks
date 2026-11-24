@@ -93,6 +93,26 @@ Hosted motion-path saves require the GroupBoard World API build that accepts the
    Add a stationary blocker for a second pass and verify that a trapped tank
    causes the sweeper to stop until it has clearance.
 
+## Cut a straight tunnel
+
+1. Sculpt a ridge with ground-level approaches on both sides. For an 18-stud
+   tunnel, raise the middle of the ridge higher than 18 studs above the portal floors.
+2. Open **Terrain → Tunnel** in the bottom tools row. Set **Inside diameter** and
+   **Tunnel traction** in the right panel, then click or tap the two portal locations.
+   The editor marks the first portal and previews the route before the second click.
+3. Adjust either portal's elevation in the inspector. Use **Select next tunnel**
+   to switch between tunnels and **Delete selected tunnel** to remove a cut.
+   Tunnel changes participate in undo and redo.
+4. Save and play. Drive through both ways, then drive across the ridge above it.
+   Check camera clearance, aim through one entrance, and try a low traction setting.
+
+The tool supports up to eight separate straight tunnels with 12–48 stud diameters.
+The portals must be at least 12 studs apart with a grade of at most 35%.
+The tunnel has a flat cross-section at the floor and a faceted arch overhead.
+Its lining is visible wherever the terrain does not cover it. Curves, branches,
+and crossing routes require a different layout. Hosted worlds need the GroupBoard
+API version that accepts tunnel settings.
+
 ## Mouse and keyboard workflow
 
 1. Browse the **Object Library** in the bottom dock. Click directory tiles to
@@ -117,7 +137,7 @@ Hosted motion-path saves require the GroupBoard World API build that accepts the
 5. Grid snapping starts **OFF**. Toggle it and choose 0.1–50 studs when useful.
    Rotation snaps to 15° when grid snapping is enabled. The visual grid shows
    bounded major lines on fine grids; snapping still uses the exact entered size.
-6. Right-drag orbits down to eye level. Middle-drag or Shift+right-drag pans.
+6. Right-drag orbits down to eye level. Middle-drag pans.
    WASD moves across the scene, Q/E lowers/raises the camera, and Shift increases travel speed.
    Scroll over the viewport to zoom toward the cursor. **F** focuses the selection,
    **Home** frames the entire world, and the inspector controls mouse sensitivity.
@@ -632,7 +652,7 @@ relative MouseMovement deltas while the cursor is locked, so orbiting does not
 freeze when GetMouseLocation stays constant. Starting orbit/pan no longer needs
 a successful ground-ray hit; neither does picking a visible raised object.
 
-Controls: RMB orbit, Shift+RMB or middle drag screen-plane pan, WASD horizontal
+Controls: RMB orbit, middle drag screen-plane pan, WASD horizontal
 movement, E/Q vertical movement while dragging, wheel zoom, F reset. Orbit can
 reach eye level (camera floor clearance 1.5 studs), including at different zoom
 levels; it can look upward at a raised focus. Panning uses the camera right/up
@@ -649,7 +669,7 @@ Regression suites: document/math130, runtime104, covering locked-cursor movement
 processed viewport delivery, no ground hit, eye-level pitch, pan and vertical
 navigation, all release paths, no stale callbacks and unchanged document/history
 and gameplay camera. All 35 Luau groups are run without Rojo builds. After live
-Rojo sync, restart Play and validate RMB/Shift+RMB/middle dragging on Windows,
+Rojo sync, restart Play and validate RMB and middle dragging on Windows,
 low-angle object selection, zoom/F reset, Escape/CoreGui, alt-tab and returning to
 battle. CLI mocks do not establish native input delivery or visual camera feel.
 

@@ -70,7 +70,7 @@ function Battlefield:orbit(delta)
 	self.orbitElevation = math.clamp((self.orbitElevation or self.config.Elevation) + delta.Y * 0.25, 30, 80)
 	self.orbitBasis = Math.basis(self.orbitElevation, self.orbitAzimuth)
 end
-function Battlefield:update(camera, _dt, state)
+function Battlefield:update(camera, _dt, state, renderedPosition)
 	-- Only Studio may bypass ownership/masks. Live clients retain fixed policy.
 	local studio = game:GetService("RunService"):IsStudio()
 	self.gui.Enabled = not (studio and self.gui:GetAttribute("HideMasks") == true)
@@ -116,17 +116,35 @@ function Battlefield:update(camera, _dt, state)
 	end
 	local layout = self.layout
 	local tank = if state then state.position else (self.focus or layout.map.center)
+	if state and renderedPosition then tank = Vector3.new(tank.X,renderedPosition.Y,tank.Z) end
 	if self.orbitBasis then
 		self.focus, self.edgeOverflow = tank, nil
 	else
-		self.focus, self.edgeOverflow = Math.track(layout, tank, self.focus)
+		self.focus, self.edgeOverflow = Math.track(layout, tank, self.focus, true)
 	end
 	local basis = self.orbitBasis or layout.basis
 	camera.CameraType = Enum.CameraType.Scriptable
 	camera.FieldOfViewMode = Enum.FieldOfViewMode.Vertical
 	camera.FieldOfView = layout.lens.fov
-	camera.CFrame = CFrame.lookAt(self.focus - basis.forward * layout.distance, self.focus, Vector3.new(0, 1, 0))
-	camera.Focus = CFrame.new(self.focus)
+ local focus,offset=self.focus,basis.forward*(-layout.distance)
+ if state and state.surface=="Tunnel" then
+  focus=tank+Vector3.new(0,3,0)
+  local arena=workspace:FindFirstChild("Arena")
+  local environment=arena and arena:FindFirstChild("Environment")
+  local terrain=environment and environment:FindFirstChild("AuthoredTerrain")
+  if terrain then
+   if self.tunnelTerrain~=terrain then
+    local params=RaycastParams.new()
+    params.FilterType=Enum.RaycastFilterType.Include
+    params.FilterDescendantsInstances={terrain}
+    self.tunnelTerrain,self.tunnelCameraRay=terrain,params
+   end
+   local hit=workspace:Raycast(focus,offset,self.tunnelCameraRay)
+   if hit then offset=offset.Unit*math.max(.1,hit.Distance-.4) end
+  end
+ end
+ camera.CFrame = CFrame.lookAt(focus+offset,focus,Vector3.new(0,1,0))
+	camera.Focus = CFrame.new(focus)
 	if self.testPanel then self.testPanel:refresh() end
 end
 function Battlefield:destroy()

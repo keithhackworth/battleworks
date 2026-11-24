@@ -224,9 +224,9 @@ function Scene:markStructure(record,traction)
  record.traversalMarker=marker
 end
 function Scene:syncTerrain(settings,dirty)
- if self.terrainData~=settings.terrain or (settings.terrain and self.terrain.settings~=settings) then
+ if self.terrainData~=settings.terrain or self.tunnelData~=settings.tunnels or (settings.terrain and self.terrain.settings~=settings) then
   if self.terrain then self.terrain:destroy();self.terrain=nil end
-  self.terrainData=settings.terrain
+  self.terrainData=settings.terrain;self.tunnelData=settings.tunnels
   if settings.terrain then self.terrain=TerrainSurface.new(self.world,settings,false);self.terrain:all() end
  elseif dirty and self.terrain then
   for _,chunk in dirty do self.terrain:chunk(chunk[1],chunk[2]) end
@@ -235,13 +235,13 @@ function Scene:syncTerrain(settings,dirty)
  self.floor.CanQuery=self.terrain==nil
  if self.traversability then
   if not self.terrainOverlay or self.overlaySource~=settings.terrain or self.overlayWidth~=settings.width or self.overlayDepth~=settings.depth
-   or self.overlayMaterial~=settings.ground.material then
+   or self.overlayMaterial~=settings.ground.material or self.overlayTunnels~=settings.tunnels then
    if self.terrainOverlay then self.terrainOverlay:destroy() end
    local config=table.clone(settings)
    config.traversalZones=self.overlayZones
    config.terrain=settings.terrain or Heightfield.new(settings.width,settings.depth)
    self.terrainOverlay=TerrainSurface.new(self.world,config,false,true);self.terrainOverlay:all()
-   self.overlaySource=settings.terrain;self.overlayWidth=settings.width;self.overlayDepth=settings.depth;self.overlayMaterial=settings.ground.material
+   self.overlayTunnels=settings.tunnels;self.overlaySource=settings.terrain;self.overlayWidth=settings.width;self.overlayDepth=settings.depth;self.overlayMaterial=settings.ground.material
   elseif dirty then
    for _,chunk in dirty do self.terrainOverlay:chunk(chunk[1],chunk[2]) end
   end

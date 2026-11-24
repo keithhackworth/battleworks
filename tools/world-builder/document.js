@@ -7,6 +7,7 @@ const {createHash}=require('node:crypto');
 const Geometry=require('./geometry');
 const Materials=['Grass','Concrete','Sand','Slate','Ice','Mud','Asphalt','WoodPlanks'];
 const MaxObjects=512;
+const MinTerrainHeight=-96,MaxTerrainHeight=500,TerrainUnit=8,WaterOffset=1024;
 const own=(o,k)=>Object.hasOwn(o,k);
 function fail(where,message){throw new Error(`${where}: ${message}`);}
 function keys(o,allowed,where){if(!o||typeof o!=='object'||Array.isArray(o))fail(where,'expected object');for(const k of Object.keys(o))if(!allowed.includes(k))fail(`${where}.${k}`,'unsupported property');}
@@ -22,7 +23,7 @@ function validate(input,items){
  keys(input,['schemaVersion','id','name','description','settings','objects','spawns','gameplay'],'world');
  if(input.schemaVersion!==2)fail('schemaVersion','expected 2; import legacy worlds through migration');
  id(input.id,'id');text(input.name,100,'name');if(typeof input.description!=='string'||input.description.length>2000)fail('description','expected text <=2000 characters');
- keys(input.settings,['width','depth','ground','boundary','terrain'],'settings');
+ keys(input.settings,['width','depth','ground','boundary','terrain','tunnels'],'settings');
  const {width,depth,ground}=input.settings;
  for(const [k,n] of [['width',width],['depth',depth]]){number(n,25,2000,`settings.${k}`);if(n%1)fail(`settings.${k}`,'expected integer studs');}
  if (input.settings.terrain !== undefined) {
@@ -36,16 +37,32 @@ function validate(input,items){
   if (terrain.version!==1 || terrain.columns!==grid(width) || terrain.rows!==grid(depth)) fail('settings.terrain','grid does not match map dimensions');
   const count=(terrain.columns+1)*(terrain.rows+1);
   if (!Array.isArray(terrain.heights) || terrain.heights.length!==count) fail('settings.terrain.heights','incorrect sample count');
-  for (const value of terrain.heights) if (!Number.isInteger(value) || Math.abs(value)>768) fail('settings.terrain.heights','invalid height sample');
+  for (const value of terrain.heights) if (!Number.isInteger(value) || value<MinTerrainHeight*TerrainUnit || value>MaxTerrainHeight*TerrainUnit) fail('settings.terrain.heights','invalid height sample');
   for (const layer of ['paint','water']) if (Object.hasOwn(terrain,layer)) {
    const values=terrain[layer];
    if (!Array.isArray(values) || values.length!==terrain.columns*terrain.rows) fail(`settings.terrain.${layer}`,'incorrect cell count');
    for (const value of values) if (!Number.isInteger(value) || (value!==0 &&
-    (layer==='paint' ? value<1 || value>5 : value<256 || value>1792))) fail(`settings.terrain.${layer}`,'invalid cell');
+    (layer==='paint' ? value<1 || value>5 : value<WaterOffset+MinTerrainHeight*TerrainUnit || value>WaterOffset+MaxTerrainHeight*TerrainUnit))) fail(`settings.terrain.${layer}`,'invalid cell');
   }
  }
  bool(input.settings.boundary,'settings.boundary');
  if(!input.settings.boundary)fail('settings.boundary','open boundaries are not supported by current tank physics');
+ if(input.settings.tunnels!==undefined){
+  const tunnels=input.settings.tunnels;
+  if(!input.settings.terrain||!Array.isArray(tunnels)||tunnels.length>8)fail('settings.tunnels','expected authored terrain and up to eight tunnels');
+  for(const [i,tunnel] of tunnels.entries()){
+   const at=`settings.tunnels[${i}]`;
+   keys(tunnel,['a','b','diameter','traction'],at);
+   const diameter=number(tunnel.diameter,12,48,at+'.diameter');
+   number(tunnel.traction,0,100,at+'.traction');
+   for(const point of [tunnel.a,tunnel.b]){
+    vector(point,3,-2000,2000,at);
+    if(Math.abs(point[0])+diameter/2+1>width/2||Math.abs(point[2])+diameter/2+1>depth/2||point[1]<MinTerrainHeight||point[1]>MaxTerrainHeight)fail(at,'portal outside clear world dimensions');
+   }
+   const length=Math.hypot(tunnel.a[0]-tunnel.b[0],tunnel.a[2]-tunnel.b[2]);
+   if(length<12||Math.abs(tunnel.a[1]-tunnel.b[1])>length*.35)fail(at,'portals must be separated by 12 studs with a grade of at most 35%');
+  }
+ }
  keys(ground,['material','color'],'settings.ground');if(!Materials.includes(ground.material))fail('settings.ground.material','unsupported material');vector(ground.color,3,0,255,'settings.ground.color');
  keys(input.gameplay,[],'gameplay');
  if(!Array.isArray(input.objects)||input.objects.length>MaxObjects)fail('objects',`expected array of up to ${MaxObjects} objects`);
@@ -127,8 +144,8 @@ function compileDocument(input,items){
 function migrate(manifest,items,newId){
  const doc=fresh(newId,manifest.name+' (editable copy)');const bindings=bindingsFor(items);
  if (manifest.builderSettings) {
-  const {width,depth,ground,boundary,terrain,spawns}=manifest.builderSettings;
-  doc.settings=structuredClone({width,depth,ground,boundary,...(terrain?{terrain}:{})});
+  const {width,depth,ground,boundary,terrain,tunnels,spawns}=manifest.builderSettings;
+  doc.settings=structuredClone({width,depth,ground,boundary,...(terrain?{terrain}:{}),...(tunnels?{tunnels}:{})});
   doc.spawns=structuredClone(spawns);
  }
  const placements=manifest.objects.length?studioPlacements(manifest,bindings):[];

@@ -202,7 +202,8 @@ RunService:BindToRenderStep("BattleWorksFrame", Enum.RenderPriority.Camera.Value
 	if not royale or driving then
 		local orbitDelta=controller:takeOrbitDelta(own~=nil and own.health>0 and not zoneLease)
 		if own then battlefieldCamera:orbit(orbitDelta)end
-		battlefieldCamera:update(camera, dt, own)
+		local renderer=own and renderers[selectedId]
+		battlefieldCamera:update(camera, dt, own, renderer and renderer.position)
 	end
 	if RunService:IsStudio() and battlefieldCamera.gui:GetAttribute("DebugEnabled") == true then
 		debugElapsed += dt

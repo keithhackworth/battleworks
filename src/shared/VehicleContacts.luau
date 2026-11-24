@@ -1,5 +1,6 @@
 -- Deterministic planar rigid contacts for the existing scripted simulation.
 -- Records are generic body+box geometry; no tank names, Instances or tasks.
+local Environment=require(script.Parent.Environment)
 local Motion=require(script.Parent.VehicleMotion)
 local WorldGeometry=require(script.Parent.WorldObjectGeometry)
 local C={Skin=0.0001,Iterations=10,MaxEvents=12,MaxSubsteps=16,Friction=0.15}
@@ -34,6 +35,14 @@ end
 local function vertical(a,b)
  if b.surface and WorldGeometry.canTraverse(b.surface,a.state.position,a.halfX+a.halfZ,a.state) then return false end
  local ay=a.state.position.Y; local by=b.state.position.Y
+ local tunnel=b.tunnelWall
+ if tunnel then
+  local p=a.state.position
+  local along=math.clamp((p.X-tunnel.a.X)*tunnel.x+(p.Z-tunnel.a.Z)*tunnel.z,0,tunnel.length)
+  local floor=tunnel.a.Y+along*tunnel.slope
+  local reach=math.abs(tunnel.slope)*(a.halfX+a.halfZ)
+  return ay+a.top>floor-1-reach+C.Skin and floor+2*tunnel.r+reach>ay+a.bottom+C.Skin
+ end
  return ay+a.top>by+b.bottom+C.Skin and by+b.top>ay+a.bottom+C.Skin
 end
 local function separating(a,b,margin,stats)
@@ -468,6 +477,18 @@ function C.obstacles(environment,mapSize,radius)
   zone.configurationOnly=true
   table.insert(out,zone)
  end
+ local tunnels=Environment.tunnels(environment)
+ if tunnels then for i,t in tunnels do
+  local yaw=math.atan2(t.x,t.z)
+  local center=(t.a+t.b)/2
+  local rise=math.abs(t.b.Y-t.a.Y)/2
+  for _,side in {-1,1} do
+   local r=side*(t.r+.5)
+   local wall=C.box("tunnel:"..i..":"..side,center+Vector3.new(-t.z*r,0,t.x*r),.5,t.length/2,-1-rise,2*t.r+rise,yaw)
+   wall.tunnelWall=t
+   table.insert(out,wall)
+  end
+ end end
  local course=environment and environment.playground and environment.playground.course
  for index,area in course and course.areas or {} do
   local zone=C.box("course:boundary:"..index,Vector3.new((area.x0+area.x1)/2,0,(area.z0+area.z1)/2),(area.x1-area.x0)/2,(area.z1-area.z0)/2,-math.huge,math.huge)

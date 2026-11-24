@@ -221,9 +221,13 @@ function Math.overflow(layout, worldFocus)
 	end
 	return overflow
 end
-function Math.track(layout, tank, previous)
-	-- Immediate minimal correction: no speed cap, easing, or accumulated drift.
-	return Math.target(layout, tank, previous or layout.map.center)
+function Math.track(layout, tank, previous, followElevation)
+	-- Apply the map dead zone horizontally and follow the tank's elevation.
+	local mapY = layout.map.center.Y
+	local current = previous or layout.map.center
+	if not followElevation or (tank.Y == mapY and current.Y == mapY) then return Math.target(layout, tank, current) end
+	local focus, overflow = Math.target(layout, Vector3.new(tank.X,mapY,tank.Z), Vector3.new(current.X,mapY,current.Z))
+	return Vector3.new(focus.X,tank.Y,focus.Z), overflow
 end
 function Math.shouldSnap(previous, state, threshold)
 	return previous == nil or (previous.health <= 0 and state.health > 0)
