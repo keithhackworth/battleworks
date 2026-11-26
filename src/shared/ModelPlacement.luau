@@ -134,7 +134,7 @@ function Placement.place(assets,spec,arena,destination,builtins)
   if Visual.isCollisionNode(part.Name) then
    return nil,"Imported Model '"..spec.template.."' contains '"..part.Name.."'. Import the visual-only GLB."
   end
-  if part:IsA("BasePart") then hasParts=true end
+  if part:IsA("BasePart") and not Visual.isSnapNode(part.Name) then hasParts=true end
  end
  if not hasParts then return nil,"Imported Model '"..spec.template.."' has no mesh/part geometry." end
  local clone
@@ -142,7 +142,7 @@ function Placement.place(assets,spec,arena,destination,builtins)
   clone=template:Clone(); assert(clone,"Imported Model is not Archivable.")
   clone.Name=spec.id
   for _,part in clone:GetDescendants() do
-   if part:IsA("LuaSourceContainer") then part:Destroy()
+   if part:IsA("LuaSourceContainer") or (part:IsA("BasePart") and Visual.isSnapNode(part.Name)) then part:Destroy()
    elseif part:IsA("BasePart") then part.Anchored=true; part.CanCollide=false; part.CanTouch=false; part.CanQuery=false end
   end
   Placement.pose(clone,template:GetScale(),spec)

@@ -4,10 +4,25 @@ const assert=require('node:assert/strict');
 const fs=require('node:fs/promises');
 const os=require('node:os');
 const path=require('node:path');
-const {readGlb,writeGlb,visualGlb,extractFaces}=require('../tools/glb-collision');
+const {readGlb,writeGlb,visualGlb,extractFaces,extractPairedFaces}=require('../tools/glb-collision');
 const {generateCollision,processFiles}=require('../tools/generate-collision');
 const {importGlb,importDirectory}=require('../tools/import-glb');
-const {generateCollisions}=require('../tools/bulk-collision');
+const {generateCollisions,alignProfile}=require('../tools/bulk-collision');
+
+test('native axis alignment reflects points while preserving surface winding and heights',()=>{
+ const triangle=[[-.3,.1,-.4],[-.3,.1,.2],[.4,.1,-.4]];
+ const profile={sourceSize:[3,1,4],faces:[triangle],walls:[triangle],bases:[-.2],
+  snap:{faces:[triangle],segments:[[triangle[0],triangle[1]]]}};
+ const aligned=alignProfile(profile,[-3,2,-1]);
+ const expected=[[.4,.1,.3],[.4,.1,-.4],[-.2,.1,.3]];
+ assert.deepEqual(aligned.sourceSize,[4,1,3]);
+ assert.deepEqual(aligned.faces,[expected]);
+ assert.deepEqual(aligned.walls,[expected]);
+ assert.deepEqual(aligned.bases,[-.2]);
+ assert.deepEqual(aligned.snap,{faces:[expected],segments:[[expected[0],expected[2]]]});
+ assert.deepEqual(profile.faces,[triangle]);
+ assert.throws(()=>alignProfile(profile,[1,3,2]),/Invalid native collision axes/);
+});
 
 function glb(meshes, setup=()=>{}){
  const buffers=[];
@@ -119,8 +134,35 @@ test('nested transforms, mirrors, independent meshes, helpers and authored colli
  replace.profile.sourceSize.forEach((n,i)=>assert.ok(Math.abs(n-[8,3,4][i])<1e-8));
  assert.equal(replace.profile.walls.length,8);
  assert.ok(replace.report.warnings.some(s=>s.includes('SNAP_marker')));
+ assert.deepEqual(replace.profile.snap,preserve.profile.snap,'replacing collision preserves the authored snap mesh');
  assert.deepEqual(generateCollision(replace.bytes,{'replace-collision':true}).bytes,replace.bytes);
  assert.throws(()=>generateCollision(glb([box(-1,1,0,1,-1,1)],json=>{json.nodes[0].scale=[1,0,1];})),/singular/);
+});
+test('SNAP mesh names and line primitives produce editor-only metadata in the visual coordinate frame',async t=>{
+ const body=box(-1,1,0,1,-1,1);
+ const source=glb([body,[[[-.5,0,0],[0,0,0],[.5,0,0]]]],json=>{
+  json.meshes[1].name='SNAP_connector';
+  json.meshes[1].primitives[0].mode=3;
+  json.nodes[1].translation=[0,.25,0];
+ });
+ const automatic=generateCollision(source).profile;
+ const paired=extractPairedFaces(source,glb([body]));
+ const rendered=visualGlb(source);
+ assert.equal(readGlb(rendered).json.meshes.length,1);
+ assert.equal(readGlb(rendered).json.nodes[1].mesh,undefined);
+ for(const profile of [automatic,paired]){
+  const {snap,...collision}=profile;
+  assert.deepEqual(snap,{faces:[],segments:[[[-.25,-.25,0],[0,-.25,0]],[[0,-.25,0],[.25,-.25,0]]]});
+  assert.deepEqual(collision,generateCollision(rendered).profile);
+ }
+ const root=await fs.mkdtemp(path.join(os.tmpdir(),'bw-snap-catalog-'));
+ t.after(()=>fs.rm(root,{recursive:true,force:true}));
+ await fs.mkdir(path.join(root,'worlds'));
+ await fs.writeFile(path.join(root,'worlds/asset-collision-generation.json'),'{"enabled":true}');
+ await fs.writeFile(path.join(root,'connector.glb'),source);
+ const item={model:'Kit/Connector',source:'connector.glb'};
+ await generateCollisions(root,[item]);
+ assert.deepEqual(item.collider.snap,automatic.snap,'catalog regeneration picks up the authored override from the existing GLB');
 });
 test('batch, dry-run, visual-only importer and runtime catalog validate the generated source',async t=>{
  const root=await fs.mkdtemp(path.join(os.tmpdir(),'bw-auto-collision-'));
@@ -158,6 +200,7 @@ test('batch, dry-run, visual-only importer and runtime catalog validate the gene
   return {assetId:'123456',creatorId:'123',creatorType:'User'};
  });
  assert.equal(registered.collider.explicitCollision,true);
+ assert.equal(registered.checkNativeProfile,true,'automatic imports are marked for a native orientation check at load');
  assert.deepEqual(registered.resizeAxes,[true,true,true]);
  assert.equal(registered.source,'GLBs/kit/Ramp.with-collision.glb');
  assert.deepEqual(await fs.readFile(file),original,'import does not modify a source already at the canonical path');

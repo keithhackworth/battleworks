@@ -1,0 +1,658 @@
+{
+  "seed": 5,
+  "wear": 30.0,
+  "fade": 0,
+  "fade_scale": 0.25,
+  "base_saturation": 75,
+  "saturation_jitter": 10,
+  "fade_saturation": 40,
+  "fade_brightness": 105,
+  "base": "assets/ui/dogtags/cartoon_tag.png",
+  "images": [
+    {
+      "file": "tag_001.png",
+      "layers": [
+        {
+          "category": "deep_scratches",
+          "file": "decals/deep_scratches/01.png",
+          "width": 87,
+          "angle": 333,
+          "opacity": 0.48834874949981255,
+          "x": 227,
+          "y": 16,
+          "flip": false
+        },
+        {
+          "category": "scuffs",
+          "file": "decals/scuffs/02.png",
+          "width": 59,
+          "angle": 80,
+          "opacity": 0.08915074558164304,
+          "x": 292,
+          "y": 139,
+          "flip": true
+        },
+        {
+          "category": "dents",
+          "file": "decals/dents/01.png",
+          "width": 17,
+          "angle": 6,
+          "opacity": 0.4462367433558848,
+          "x": 382,
+          "y": 104,
+          "flip": false
+        },
+        {
+          "category": "grime",
+          "file": "decals/grime/02.png",
+          "width": 38,
+          "angle": 36,
+          "opacity": 0.0673459272998629,
+          "x": 375,
+          "y": 132,
+          "flip": true
+        }
+      ],
+      "fade_seed": null,
+      "base_saturation": 79.39641741132144
+    },
+    {
+      "file": "tag_002.png",
+      "layers": [
+        {
+          "category": "deep_scratches",
+          "file": "decals/deep_scratches/01.png",
+          "width": 42,
+          "angle": 110,
+          "opacity": 0.49401906503262494,
+          "x": 28,
+          "y": 55,
+          "flip": true
+        },
+        {
+          "category": "dents",
+          "file": "decals/dents/01.png",
+          "width": 16,
+          "angle": 347,
+          "opacity": 0.42514603913542554,
+          "x": 410,
+          "y": 64,
+          "flip": true
+        },
+        {
+          "category": "scuffs",
+          "file": "decals/scuffs/04.png",
+          "width": 41,
+          "angle": 184,
+          "opacity": 0.12686333895284313,
+          "x": 307,
+          "y": 49,
+          "flip": false
+        }
+      ],
+      "fade_seed": null,
+      "base_saturation": 82.91553244293578
+    },
+    {
+      "file": "tag_003.png",
+      "layers": [
+        {
+          "category": "deep_scratches",
+          "file": "decals/deep_scratches/01.png",
+          "width": 71,
+          "angle": 173,
+          "opacity": 0.35990336758266156,
+          "x": 256,
+          "y": 108,
+          "flip": false
+        },
+        {
+          "category": "grime",
+          "file": "decals/grime/02.png",
+          "width": 40,
+          "angle": 241,
+          "opacity": 0.13808364176761365,
+          "x": 391,
+          "y": 24,
+          "flip": false
+        }
+      ],
+      "fade_seed": null,
+      "base_saturation": 75.60615742911729
+    },
+    {
+      "file": "tag_004.png",
+      "layers": [
+        {
+          "category": "scuffs",
+          "file": "decals/scuffs/03.png",
+          "width": 69,
+          "angle": 9,
+          "opacity": 0.1436332432438976,
+          "x": 290,
+          "y": 125,
+          "flip": false
+        },
+        {
+          "category": "dents",
+          "file": "decals/dents/01.png",
+          "width": 14,
+          "angle": 92,
+          "opacity": 0.424742606215447,
+          "x": 271,
+          "y": 67,
+          "flip": true
+        }
+      ],
+      "fade_seed": null,
+      "base_saturation": 80.35036921139363
+    },
+    {
+      "file": "tag_005.png",
+      "layers": [
+        {
+          "category": "scuffs",
+          "file": "decals/scuffs/04.png",
+          "width": 43,
+          "angle": 181,
+          "opacity": 0.18658888649633323,
+          "x": 328,
+          "y": 78,
+          "flip": false
+        },
+        {
+          "category": "deep_scratches",
+          "file": "decals/deep_scratches/01.png",
+          "width": 92,
+          "angle": 18,
+          "opacity": 0.4149465027590843,
+          "x": 304,
+          "y": 34,
+          "flip": true
+        },
+        {
+          "category": "dents",
+          "file": "decals/dents/01.png",
+          "width": 24,
+          "angle": 174,
+          "opacity": 0.35513527531057243,
+          "x": 367,
+          "y": 128,
+          "flip": true
+        }
+      ],
+      "fade_seed": null,
+      "base_saturation": 70.95460341908637
+    },
+    {
+      "file": "tag_006.png",
+      "layers": [
+        {
+          "category": "grime",
+          "file": "decals/grime/02.png",
+          "width": 39,
+          "angle": 40,
+          "opacity": 0.1283507210657634,
+          "x": 257,
+          "y": 95,
+          "flip": false
+        },
+        {
+          "category": "deep_scratches",
+          "file": "decals/deep_scratches/01.png",
+          "width": 32,
+          "angle": 307,
+          "opacity": 0.43002961120412514,
+          "x": 38,
+          "y": 122,
+          "flip": true
+        },
+        {
+          "category": "dents",
+          "file": "decals/dents/01.png",
+          "width": 22,
+          "angle": 233,
+          "opacity": 0.4301932877626379,
+          "x": 278,
+          "y": 58,
+          "flip": true
+        },
+        {
+          "category": "scuffs",
+          "file": "decals/scuffs/06.png",
+          "width": 27,
+          "angle": 252,
+          "opacity": 0.11677316170039519,
+          "x": 101,
+          "y": 66,
+          "flip": true
+        }
+      ],
+      "fade_seed": null,
+      "base_saturation": 69.34049118017735
+    },
+    {
+      "file": "tag_007.png",
+      "layers": [
+        {
+          "category": "dents",
+          "file": "decals/dents/01.png",
+          "width": 18,
+          "angle": 211,
+          "opacity": 0.32132612193945176,
+          "x": 248,
+          "y": 109,
+          "flip": false
+        },
+        {
+          "category": "deep_scratches",
+          "file": "decals/deep_scratches/01.png",
+          "width": 48,
+          "angle": 232,
+          "opacity": 0.488300501554422,
+          "x": 478,
+          "y": 55,
+          "flip": false
+        },
+        {
+          "category": "scuffs",
+          "file": "decals/scuffs/06.png",
+          "width": 63,
+          "angle": 245,
+          "opacity": 0.10925444130881001,
+          "x": 425,
+          "y": 139,
+          "flip": false
+        },
+        {
+          "category": "scuffs",
+          "file": "decals/scuffs/01.png",
+          "width": 45,
+          "angle": 272,
+          "opacity": 0.19497698543537056,
+          "x": 200,
+          "y": 148,
+          "flip": false
+        },
+        {
+          "category": "grime",
+          "file": "decals/grime/02.png",
+          "width": 47,
+          "angle": 280,
+          "opacity": 0.15842335084716275,
+          "x": 56,
+          "y": 110,
+          "flip": true
+        }
+      ],
+      "fade_seed": null,
+      "base_saturation": 78.29823366015093
+    },
+    {
+      "file": "tag_008.png",
+      "layers": [
+        {
+          "category": "grime",
+          "file": "decals/grime/03.png",
+          "width": 28,
+          "angle": 156,
+          "opacity": 0.09542897041823187,
+          "x": 172,
+          "y": 87,
+          "flip": false
+        },
+        {
+          "category": "deep_scratches",
+          "file": "decals/deep_scratches/01.png",
+          "width": 99,
+          "angle": 174,
+          "opacity": 0.44745382239518616,
+          "x": 440,
+          "y": 10,
+          "flip": false
+        },
+        {
+          "category": "grime",
+          "file": "decals/grime/02.png",
+          "width": 51,
+          "angle": 140,
+          "opacity": 0.10786737360882248,
+          "x": 334,
+          "y": 148,
+          "flip": false
+        },
+        {
+          "category": "dents",
+          "file": "decals/dents/01.png",
+          "width": 20,
+          "angle": 209,
+          "opacity": 0.3700090302859742,
+          "x": 179,
+          "y": 63,
+          "flip": false
+        }
+      ],
+      "fade_seed": null,
+      "base_saturation": 67.42249197977202
+    },
+    {
+      "file": "tag_009.png",
+      "layers": [
+        {
+          "category": "scuffs",
+          "file": "decals/scuffs/05.png",
+          "width": 33,
+          "angle": 85,
+          "opacity": 0.09983164969516943,
+          "x": 148,
+          "y": 110,
+          "flip": false
+        },
+        {
+          "category": "deep_scratches",
+          "file": "decals/deep_scratches/01.png",
+          "width": 81,
+          "angle": 213,
+          "opacity": 0.375774013195314,
+          "x": 269,
+          "y": 153,
+          "flip": false
+        },
+        {
+          "category": "dents",
+          "file": "decals/dents/01.png",
+          "width": 20,
+          "angle": 14,
+          "opacity": 0.3391197713613854,
+          "x": 407,
+          "y": 135,
+          "flip": false
+        },
+        {
+          "category": "scuffs",
+          "file": "decals/scuffs/02.png",
+          "width": 37,
+          "angle": 351,
+          "opacity": 0.09756664319975782,
+          "x": 178,
+          "y": 20,
+          "flip": false
+        }
+      ],
+      "fade_seed": null,
+      "base_saturation": 76.77644461577059
+    },
+    {
+      "file": "tag_010.png",
+      "layers": [
+        {
+          "category": "deep_scratches",
+          "file": "decals/deep_scratches/01.png",
+          "width": 34,
+          "angle": 92,
+          "opacity": 0.42239928006383787,
+          "x": 93,
+          "y": 164,
+          "flip": true
+        },
+        {
+          "category": "grime",
+          "file": "decals/grime/02.png",
+          "width": 55,
+          "angle": 313,
+          "opacity": 0.05899712330677025,
+          "x": 214,
+          "y": 65,
+          "flip": true
+        },
+        {
+          "category": "scuffs",
+          "file": "decals/scuffs/03.png",
+          "width": 26,
+          "angle": 207,
+          "opacity": 0.194013325570643,
+          "x": 100,
+          "y": 123,
+          "flip": true
+        }
+      ],
+      "fade_seed": null,
+      "base_saturation": 78.07817729463501
+    },
+    {
+      "file": "tag_011.png",
+      "layers": [
+        {
+          "category": "scuffs",
+          "file": "decals/scuffs/03.png",
+          "width": 75,
+          "angle": 281,
+          "opacity": 0.15169551139826182,
+          "x": 312,
+          "y": 35,
+          "flip": false
+        },
+        {
+          "category": "dents",
+          "file": "decals/dents/01.png",
+          "width": 25,
+          "angle": 150,
+          "opacity": 0.4916601007455858,
+          "x": 317,
+          "y": 55,
+          "flip": false
+        },
+        {
+          "category": "deep_scratches",
+          "file": "decals/deep_scratches/01.png",
+          "width": 62,
+          "angle": 80,
+          "opacity": 0.43939064634898267,
+          "x": 421,
+          "y": 141,
+          "flip": true
+        },
+        {
+          "category": "scuffs",
+          "file": "decals/scuffs/05.png",
+          "width": 30,
+          "angle": 338,
+          "opacity": 0.07511843478479778,
+          "x": 139,
+          "y": 39,
+          "flip": false
+        },
+        {
+          "category": "grime",
+          "file": "decals/grime/03.png",
+          "width": 67,
+          "angle": 166,
+          "opacity": 0.12868203695537492,
+          "x": 485,
+          "y": 113,
+          "flip": false
+        }
+      ],
+      "fade_seed": null,
+      "base_saturation": 83.10013405482754
+    },
+    {
+      "file": "tag_012.png",
+      "layers": [
+        {
+          "category": "scuffs",
+          "file": "decals/scuffs/04.png",
+          "width": 41,
+          "angle": 194,
+          "opacity": 0.12298644311832178,
+          "x": 110,
+          "y": 53,
+          "flip": false
+        },
+        {
+          "category": "grime",
+          "file": "decals/grime/02.png",
+          "width": 64,
+          "angle": 212,
+          "opacity": 0.05245891448031416,
+          "x": 477,
+          "y": 94,
+          "flip": false
+        },
+        {
+          "category": "scuffs",
+          "file": "decals/scuffs/02.png",
+          "width": 50,
+          "angle": 62,
+          "opacity": 0.15750735571765023,
+          "x": 196,
+          "y": 132,
+          "flip": true
+        },
+        {
+          "category": "deep_scratches",
+          "file": "decals/deep_scratches/01.png",
+          "width": 89,
+          "angle": 6,
+          "opacity": 0.4220444890103094,
+          "x": 152,
+          "y": 85,
+          "flip": true
+        }
+      ],
+      "fade_seed": null,
+      "base_saturation": 74.64139068486172
+    },
+    {
+      "file": "tag_013.png",
+      "layers": [
+        {
+          "category": "scuffs",
+          "file": "decals/scuffs/02.png",
+          "width": 51,
+          "angle": 79,
+          "opacity": 0.1651820361510154,
+          "x": 360,
+          "y": 88,
+          "flip": false
+        },
+        {
+          "category": "dents",
+          "file": "decals/dents/01.png",
+          "width": 16,
+          "angle": 309,
+          "opacity": 0.47613195887725535,
+          "x": 344,
+          "y": 53,
+          "flip": true
+        },
+        {
+          "category": "scuffs",
+          "file": "decals/scuffs/03.png",
+          "width": 40,
+          "angle": 172,
+          "opacity": 0.1516964399226216,
+          "x": 337,
+          "y": 157,
+          "flip": true
+        },
+        {
+          "category": "deep_scratches",
+          "file": "decals/deep_scratches/01.png",
+          "width": 78,
+          "angle": 302,
+          "opacity": 0.36987194124955186,
+          "x": 92,
+          "y": 8,
+          "flip": false
+        }
+      ],
+      "fade_seed": null,
+      "base_saturation": 69.15386043132277
+    },
+    {
+      "file": "tag_014.png",
+      "layers": [
+        {
+          "category": "dents",
+          "file": "decals/dents/01.png",
+          "width": 23,
+          "angle": 279,
+          "opacity": 0.3382358610847004,
+          "x": 300,
+          "y": 108,
+          "flip": false
+        },
+        {
+          "category": "grime",
+          "file": "decals/grime/03.png",
+          "width": 80,
+          "angle": 323,
+          "opacity": 0.13110805552627802,
+          "x": 278,
+          "y": 116,
+          "flip": false
+        },
+        {
+          "category": "deep_scratches",
+          "file": "decals/deep_scratches/01.png",
+          "width": 95,
+          "angle": 238,
+          "opacity": 0.4745035310367458,
+          "x": 227,
+          "y": 27,
+          "flip": false
+        },
+        {
+          "category": "scuffs",
+          "file": "decals/scuffs/06.png",
+          "width": 65,
+          "angle": 298,
+          "opacity": 0.11079513509608299,
+          "x": 277,
+          "y": 140,
+          "flip": false
+        }
+      ],
+      "fade_seed": null,
+      "base_saturation": 76.29949518085427
+    },
+    {
+      "file": "tag_015.png",
+      "layers": [
+        {
+          "category": "deep_scratches",
+          "file": "decals/deep_scratches/01.png",
+          "width": 100,
+          "angle": 275,
+          "opacity": 0.373029162092761,
+          "x": 258,
+          "y": 161,
+          "flip": true
+        },
+        {
+          "category": "dents",
+          "file": "decals/dents/01.png",
+          "width": 11,
+          "angle": 43,
+          "opacity": 0.45835010120707387,
+          "x": 282,
+          "y": 37,
+          "flip": false
+        },
+        {
+          "category": "scuffs",
+          "file": "decals/scuffs/01.png",
+          "width": 77,
+          "angle": 359,
+          "opacity": 0.13583638877504778,
+          "x": 263,
+          "y": 43,
+          "flip": true
+        }
+      ],
+      "fade_seed": null,
+      "base_saturation": 77.61108653248387
+    }
+  ]
+}

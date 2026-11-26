@@ -86,7 +86,7 @@ function View.new(context)
  self.assetTractionLabel=row(text(self.properties,"AssetTractionLabel","Traction (% of pavement)",20))
  self.assetTraction=row(make("TextBox",self.properties,{Name="AssetTraction",Size=UDim2.new(1,-8,0,28),Text="",PlaceholderText="Use material default",ClearTextOnFocus=false,TextColor3=ink,BackgroundColor3=View.buttonColor,Font=Enum.Font.Code,TextSize=14}))
  self.soundButtons={}
- for _,spec in {{"effect","Choose Sound Effect"},{"preview","Preview Sound"},{"activation","Activation"},{"playback","Playback"},{"rollOff","RollOff"},{"filter","Trigger Filter"},{"origin","Sound Origin"},{"targets","Select Trigger Assets"},{"attach","Snap & Lock to Asset"}} do
+ for _,spec in {{"effect","Choose Sound Effect"},{"preview","Preview Sound"},{"follow","Follow collision: Off"},{"paint","Repaint Sound Trail"},{"activation","Activation"},{"playback","Playback"},{"rollOff","RollOff"},{"filter","Trigger Filter"},{"origin","Sound Origin"},{"targets","Select Trigger Assets"},{"attach","Snap & Lock to Asset"}} do
   self.soundButtons[spec[1]]=row(button(self.properties,"Sfx_"..spec[1],spec[2]))
  end
  self.soundFields={}
@@ -158,6 +158,10 @@ function View.new(context)
  make("UIListLayout",self.sfxList,{SortOrder=Enum.SortOrder.LayoutOrder,Padding=UDim.new(0,3)})
  self.sfxConnections={}
  self.status=text(frame,"EditorStatus","Loading native asset library…",30);self.status.Position=UDim2.new(0,12,1,-72);self.status.Size=UDim2.new(1,-344,0,30);self.status.BackgroundTransparency=.1;self.status.BackgroundColor3=Color3.fromRGB(19,30,35)
+ self.finishPaint=button(frame,"FinishPaint","Finish Painting",UDim2.fromOffset(132,24),UDim2.new(1,-140,1,-46))
+ self.finishPaint.Visible=false
+ self.paintBucket=button(frame,"PaintBucket","Paint Bucket",UDim2.fromOffset(132,24),UDim2.new(1,-140,1,-46))
+ self.paintBucket.Visible=false
  self.hint=text(frame,"EditorHints","RMB orbit • MMB pan • WASD move • E/Q height while dragging • Wheel zoom • F reset",30);self.hint.Position=UDim2.new(0,12,1,-36);self.hint.Size=UDim2.new(1,-344,0,30)
  local overlay=make("Frame",frame,{Name="ExportOverlay",Position=UDim2.fromScale(.08,.12),Size=UDim2.fromScale(.84,.76),BackgroundColor3=Color3.fromRGB(17,28,33),Visible=false,Active=true,ZIndex=10});self.overlay=overlay
  local exportTitle=text(overlay,"ExportTitle","WORLD JSON  /  export or paste a backup to import",32);exportTitle.Position=UDim2.fromOffset(16,8);exportTitle.ZIndex=11
@@ -181,11 +185,12 @@ function View.new(context)
  self.toolShelf=button(commands,"ToggleTools","Tools")
  self.inspect=button(commands,"Inspector","Inspector")
  self.assets=button(commands,"Assets","Object Library")
+ self.soundVisibility=button(commands,"SoundVisibility","Hide Audio")
  self.terrain=button(commands,"TerrainMode","Terrain")
  self.openPlayground=button(frame,"OpenPlayground","Open Playground");self.openPlayground.Visible=context.royale==true
- for index,control in {self.back,self.newWorld,self.openWorld,self.openPlayground,self.saveWorld,self.saveAs,self.undo,self.redo,self.terrain,self.toolShelf,self.inspect,self.assets,self.placeStart,self.worlds,self.export} do
+ for index,control in {self.back,self.newWorld,self.openWorld,self.openPlayground,self.saveWorld,self.saveAs,self.undo,self.redo,self.terrain,self.toolShelf,self.inspect,self.assets,self.soundVisibility,self.placeStart,self.worlds,self.export} do
   control.Parent=commands;control.LayoutOrder=index
-  control.Size=UDim2.fromOffset(({100,90,55,130,55,74,68,68,78,62,80,108,156,156,100})[index],31)
+  control.Size=UDim2.fromOffset(({100,90,55,130,55,74,68,68,78,62,80,108,136,156,156,100})[index],31)
  end
  self.worlds.Text="Save & Play Test";self.worlds.BackgroundColor3=View.activeColor
  self.export.BackgroundColor3=View.buttonColor
@@ -295,7 +300,7 @@ function View:layout()
  self.palette.Visible=self.dockOpen and not self.terrainActive;self.palette.Position=UDim2.new(0,left,1,-dock-48)
  self.palette.Size=UDim2.new(1,-left-right-6,0,dock)
  self.terrainDock.Visible=self.terrainActive==true;self.terrainDock.Position=self.palette.Position;self.terrainDock.Size=self.palette.Size
- self.status.Position=UDim2.new(0,8,1,-46);self.status.Size=UDim2.new(1,-16,0,24)
+ self.status.Position=UDim2.new(0,8,1,-46);self.status.Size=UDim2.new(1,if self.finishPaint.Visible or self.paintBucket.Visible then -154 else -16,0,24)
  self.hint.Position=UDim2.new(0,8,1,-23);self.hint.Size=UDim2.new(1,-16,0,22)
  self.inspect.BackgroundColor3=if self.inspectorOpen then View.activeColor else View.buttonColor
  self.assets.BackgroundColor3=if self.dockOpen then View.activeColor else View.buttonColor

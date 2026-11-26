@@ -20,6 +20,7 @@ function Controller.new(gui, onRelease)
   self.onRelease(Command.neutral())
  end)
  UIS.InputBegan:Connect(function(input,processed)
+  if self.studioDemoOpen then return end
   if input.KeyCode==Enum.KeyCode.Escape then
    self:exitDirectMouse()
    return
@@ -61,6 +62,16 @@ function Controller.new(gui, onRelease)
 	end)
 	GuiService.MenuClosed:Connect(function() self.menuOpen = false; self:refreshSuspension() end)
 	local player = Players.LocalPlayer
+	local function updateStudioDemo()
+		self.studioDemoOpen = player:GetAttribute("BattleWorksUIDemoOpen") == true
+		self:refreshSuspension()
+		if self.studioDemoOpen then
+			self.providers.KeyboardMouse:setExternalOrbit(false)
+			self.mouseView:update(self.providers.KeyboardMouse, false)
+		end
+	end
+	player:GetAttributeChangedSignal("BattleWorksUIDemoOpen"):Connect(updateStudioDemo)
+	updateStudioDemo()
 	self.playerGui = player:WaitForChild("PlayerGui")
 	self.playerGui.ChildAdded:Connect(function(child)
   if self.textEntryActive or self.characterControl==false or (self.mode == "Touch" and not self.characterControl) then self:hideDefaultTouch(child) end
@@ -132,7 +143,7 @@ function Controller:setExternalControl(enabled)
 	self:refreshSuspension()
 end
 function Controller:refreshSuspension()
-	local suspended = self.textEntryActive or self.externalControl or not self.focused or self.menuOpen or UIS:GetFocusedTextBox() ~= nil
+	local suspended = self.studioDemoOpen or self.textEntryActive or self.externalControl or not self.focused or self.menuOpen or UIS:GetFocusedTextBox() ~= nil
 	if suspended ~= self.suspended then
 		self.suspended = suspended
   if suspended and self.mouseView then self.mouseView:open(false)end
@@ -203,7 +214,7 @@ function Controller:bindTextEntry(name,callbacks)
  return function()Actions:UnbindAction(action);self:setTextEntryFocus(name,false)end
 end
 function Controller:takeOrbitDelta(allowExternal)
-	local enabled = allowExternal and self.externalControl and self.focused and not self.menuOpen
+	local enabled = allowExternal and not self.studioDemoOpen and self.externalControl and self.focused and not self.menuOpen
 		and not self.textEntryActive and not UIS:GetFocusedTextBox()
 	local mouse, touch = self.providers.KeyboardMouse, self.providers.Touch
 	mouse:setExternalOrbit(enabled and self.mode == "KeyboardMouse")
@@ -213,7 +224,7 @@ end
 function Controller:sample(camera,context,dt)
 	-- Some native UI transitions clear the focused TextBox without sending
 	-- our focus-release signal. Re-read it while waiting on that signal.
-	if self.suspended and not self.textEntryActive and not self.externalControl and self.focused and not self.menuOpen then
+	if self.suspended and not self.studioDemoOpen and not self.textEntryActive and not self.externalControl and self.focused and not self.menuOpen then
 		self:refreshSuspension()
 	end
 	local command = if self.suspended then Command.neutral() else self.providers[self.mode]:sample(camera,context,dt)

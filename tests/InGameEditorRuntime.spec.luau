@@ -559,7 +559,7 @@ controller:setMode("Move")
 check(not controller.scene.snapEnds.A.CanQuery and not controller.scene.snapEnds.C.CanQuery,"side handles cannot steal Move drags")
 controller:setMode("Snap")
 controller.view.snapContact.Activated:Fire()
-check(controller.fitMode=="Stretch" and controller.view.snapContact.Text=="Scale / [Stretch]","left button selects Stretch")
+check(controller.fitMode=="Stretch" and controller.view.snapContact.Text=="Scale / [Stretch] / Move","Snap mode cycles from Scale to Stretch")
 controller:beginSnap("C",selected)
 check(controller.gesture and controller.fitMode=="Scale","imported meshes can snap by falling back from unsupported stretch to proportional scale")
 controller:finishGesture(true);selected=controller:selected()
@@ -651,6 +651,30 @@ controller:step(.016)
 check(controller.snapPreview and not controller.snapPreview.valid,"invalid world-boundary fit displays rejection")
 controller:finishGesture(false)
 check(controller.state.pins[first.id].second~=nil,"invalid fit leaves previous contacts intact")
+do
+ local before=State.copy(controller:selected())
+ local contacts=State.copy(controller.state.pins[first.id])
+ local profile=controller:snapProfile(before)
+ controller.view.snapContact.Activated:Fire()
+ controller.view.snapContact.Activated:Fire()
+ check(controller.fitMode=="Move" and controller.view.snapContact.Text=="Scale / Stretch / [Move]","Snap mode cycles from Stretch to Move")
+ local start=Snap.contact(before,"B",contacts.side,profile)
+ local destination=start+Vector3.new(1,0,0)
+ controller.scene.snapTarget=function()return {point={destination.X,destination.Y,destination.Z},kind="edge"} end
+ controller:beginSnap("B",controller:selected());controller:step(.016)
+ check(controller.snapPreview and controller.snapPreview.valid and not controller.gesture.pin,"Move previews a translation without an opposite anchor")
+ controller:finishGesture(true)
+ check(State.equal(controller:selected(),before) and State.equal(controller.state.pins[first.id],contacts),"canceling a snap move restores the pose and both pins")
+ controller:beginSnap("B",controller:selected());controller:step(.016);controller:finishGesture(false)
+ local moved=controller:selected()
+ local pin=controller.state.pins[first.id]
+ check(pin and not pin.second and (Snap.contact(moved,"B",pin.side,profile)-destination).Magnitude<1e-5,"Move lands the grabbed contact exactly on the target and pins it")
+ check(moved.scale==before.scale and State.equal(moved.stretch,before.stretch) and State.equal(moved.rotation,before.rotation),"snap movement preserves scale, stretch and rotation")
+ controller:history(false)
+ check(State.equal(controller:selected(),before) and State.equal(controller.state.pins[first.id],contacts),"undo restores the pose and previous pins")
+ controller.view.snapContact.Activated:Fire()
+ check(controller.fitMode=="Scale","Snap mode cycles from Move back to Scale")
+end
 controller.pointer=oldPointer;controller.scene.snapTarget=oldTarget
 local fixedBefore=State.copy(controller.state.pins[first.id])
 controller:beginSnap(fixedBefore.endpoint,controller:selected())
@@ -845,6 +869,20 @@ do
  local block=controller:selected()
  local view=controller.view
  check(block and block.sound and not block.solid and controller.scene.models[block.id].badge,"sound placement defaults to an editor-only marked volume")
+ local volume=controller.scene.models[block.id].model:FindFirstChild("Geometry")
+ check(volume.Transparency==.5 and volume.CanQuery,"Sound Blocks render and can be selected as translucent volumes")
+ view.soundVisibility.Activated:Fire()
+ check(volume.LocalTransparencyModifier==1 and not volume.CanQuery and not controller:selected(),"hiding Sound Blocks also disables picking")
+ view.soundVisibility.Activated:Fire()
+ check(volume.LocalTransparencyModifier==0 and volume.CanQuery,"showing Sound Blocks restores picking")
+ controller.state:select(block.id);controller:refresh()
+ view.soundButtons.follow.Activated:Fire()
+ view.duplicate.Activated:Fire()
+ local duplicate=controller:selected()
+ check(duplicate.id~=block.id and State.equal(duplicate.position,block.position) and State.equal(duplicate.sound,block.sound),
+  "duplicating with collision following on preserves the starting contact and sound settings")
+ controller:history(false);controller.state:select(block.id);controller:refresh()
+ block=controller:selected()
  view.solid.Activated:Fire()
  check(not block.solid,"the Sound Block inspector never enables physical collision")
  check(Document.canResize(meta,1) and Document.canResize(meta,2) and Document.canResize(meta,3),"sound triggers expose all three native resize dimensions")
@@ -861,7 +899,38 @@ do
  view.soundButtons.attach.Activated:Fire()
  check(not block.attachment and State.equal(block.position,pose),"detach preserves the world pose")
 end
+do
+ local before=controller.state:snapshot()
+ local painting={kind="PaintSoundTrail",before=before,penDown=true,lastStamp=Vector3.zero,previousPixel=Vector2.zero,previousHit=Vector3.zero}
+ controller.gesture=painting
+ check(controller:gestureBlocksCamera(),"the pointer controls the brush while pressed")
+ check(controller:liftPaintPointer() and controller.gesture==painting and painting.lastStamp==Vector3.zero,
+  "lifting retains the same audio trigger and its existing stamps")
+ check(not controller:gestureBlocksCamera() and painting.previousPixel==nil and painting.previousHit==nil and controller.view.finishPaint.Visible,
+  "between strokes the camera is movable, the next stroke starts disconnected, and Finish Painting is visible")
+ controller:cancel();controller:refresh()
+ check(not controller.view.finishPaint.Visible,"cancel closes the entire pending paint session")
+end
 controller:destroy()
 check(cameraBindings.BattleWorksEditorCamera==nil,"destroy removes camera binding")
+do
+ local replicatedLibrary
+ local delayed=require("WorldEditorController").new({parent=Instance.new("Frame"),
+  getEditorAssets=function()return replicatedLibrary end,session={mode="Menu"},
+  gameplay={setActive=function()end},home=function()end})
+ delayed:enter()
+ check(not delayed.scene and delayed.view.status.Text:find("Loading",1,true),"early entry shows the loading state")
+ replicatedLibrary=library
+ local data=library:FindFirstChild("Catalog")
+ local raw=data.Value
+ data.Value=require("CatalogData").Prefix.."1"
+ stepping:Fire(.25)
+ check(not delayed.scene,"the editor waits for the complete replicated catalog")
+ local chunk=node("StringValue","Chunk0001",data);chunk.Value=raw
+ stepping:Fire(.25)
+ check(delayed.scene and delayed.catalog.byPath["Trees/Oak"].available,"the open editor builds its scene and palette when the catalog arrives")
+ delayed:destroy()
+ chunk:Destroy();data.Value=raw
+end
 Instance.new=baseFactory;game.GetService=oldService
 print(string.format("In-game editor production catalog/scene/controller passed: %d assertions",count))

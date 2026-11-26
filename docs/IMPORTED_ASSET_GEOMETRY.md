@@ -96,7 +96,15 @@ node tools/import-glb.js Coaster/curve GLBs/coaster/curve.glb --auto-collision -
 ```
 
 The last command validates and writes visual-only bytes locally. Sync Rojo
-after registration. In the editor, place two adjacent modules, snap their
+after registration. When the server loads the asset, it compares automatically
+generated collision faces with the native mesh and applies clear orientation
+matches. Check server Output for the collision check summary and for assets
+that need review. Ambiguous matches keep their existing profile. Confirmed
+per-asset overrides live under `nativeProfileAxes` in
+`worlds/asset-collision-generation.json`. Rebuild the editor catalog to apply
+an override to an existing model and its saved placements.
+
+In the editor, place two adjacent modules, snap their
 deck edges, and resize and rotate one. In Play Test, drive across the seam,
 along the inside bank, and under a raised deck. Generated collision uses the
 same traction, support, and slope rules as authored collision.

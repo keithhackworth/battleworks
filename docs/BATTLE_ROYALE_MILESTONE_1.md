@@ -1,6 +1,6 @@
 # Battle Royale Milestone 1
 
-Battle Royale is the default startup mode. Players join one continuous, server-authoritative battlefield on foot, approach an available public tank and use its proximity prompt to enter. Exit ejects the Roblox character just above the tank with an upward jump. There are no rounds, elimination, score, rewards or personal tank collections in this mode.
+Battle Royale is the default startup mode. Players start on Home and select **Training Grounds** to join one continuous, server-authoritative battlefield on foot, approach an available public tank and use its proximity prompt to enter. Exit ejects the Roblox character just above the tank with an upward jump. There are no rounds, elimination, score, rewards or personal tank collections in this mode.
 
 ## Configuration and controls
 

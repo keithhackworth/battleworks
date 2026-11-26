@@ -19,7 +19,7 @@ for _,name in {"RoyaleControl","RoyaleSprint","Input","Snapshot","Shot","SelectT
 end
 local courseActions={}
 remotes.ProvingGroundsAction={FireServer=function(_,...)table.insert(courseActions,{...})end}
-local network={WaitForChild=function(_,name) return assert(remotes[name],name) end,FindFirstChild=function(_,name)return remotes[name]end,ChildAdded=signal()}
+local network={GetAttribute=function() return nil end,WaitForChild=function(_,name) return assert(remotes[name],name) end,FindFirstChild=function(_,name)return remotes[name]end,ChildAdded=signal()}
 remotes.GarageConfiguration={InvokeServer=function(_,action,id,draft,epoch)
  table.insert(requests,{name=action,args={id,epoch}})
  if action=="SaveZone" then return {ok=true,draft=draft} end
@@ -34,7 +34,7 @@ game.ReplicatedStorage.FindFirstChild=function() return nil end
 local bindings={}
 local actions={BindAction=function(_,name,fn)bindings[name]=fn end,BindActionAtPriority=function(_,name,fn)bindings[name]=fn end,UnbindAction=function(_,name)bindings[name]=nil end}
 local frame
-local run={IsStudio=function() return false end,BindToRenderStep=function(_,_,_,callback) frame=callback end}
+local run={RenderStepped=signal(),IsStudio=function() return false end,BindToRenderStep=function(_,_,_,callback) frame=callback end}
 if run:IsStudio() then
  local execution=Instance.new("RemoteEvent")
  execution:SetAttribute("Enabled",true)

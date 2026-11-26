@@ -7,6 +7,8 @@ function Client.start(inLab)
  local GuiService=game:GetService("GuiService")
  local network=game.ReplicatedStorage:WaitForChild("TankNetwork")
  local remote=network:WaitForChild("RoyaleControl")
+ local startsAtHome=not inLab and network:GetAttribute("StartInMenu")==true
+ local grounds=if not inLab then require(script.Parent.UI.TrainingGrounds) else nil
  local sprintRemote=network:WaitForChild("RoyaleSprint")
  local labRemote=network:FindFirstChild("InnovationLabTravel")
  local arena=workspace:WaitForChild("Arena")
@@ -17,7 +19,7 @@ function Client.start(inLab)
   remote:FireServer(if joining then "Join"else "Menu",requestId,
    if joining and inLab then experiment else reading and reading.selected,reading and reading.epoch)
  end)
- if not inLab then session.mode="Battle" end -- Playground admission is automatic.
+ if not inLab and not startsAtHome then session.mode="Battle" end -- Compatibility with older arena servers.
  local function request(action)
   session.requestId+=1;remote:FireServer(action,session.requestId,reading and reading.selected,reading and reading.epoch)
  end
@@ -122,6 +124,7 @@ local function worldRequest(action,payload)
   notice.Text="The saved Playground could not be loaded. The default arena is open.";notice.Visible=true
  end
  local function home()
+  if startsAtHome and grounds.openHome() then return end
   local ok,result=pcall(function() ensureShell().home() end)
   if not ok then
    warn("BattleWorks could not open the menu: "..tostring(result))
@@ -188,7 +191,7 @@ local function worldRequest(action,payload)
   end
  end)
  menu.Activated:Connect(home)
- gameplay:setActive(not inLab)
+ gameplay:setActive(not inLab and not startsAtHome)
  if inLab then ensureShell() end
  if labRemote then labRemote.OnClientEvent:Connect(function(message)
   if not shell then return end
@@ -242,6 +245,17 @@ local function worldRequest(action,payload)
   return Enum.ContextActionResult.Sink
  end,false,Enum.KeyCode.F,Enum.KeyCode.ButtonB)
  request("Sync")
+ if grounds then
+  grounds.register(function()
+   if session.mode=="Menu" then session:join() end
+   return true
+  end, if startsAtHome then function()
+   if session.mode~="Menu" then
+    session:leave()
+    gameplay:setActive(false)
+   end
+  end else nil)
+ end
  return {battle=battle,request=request,gui=gui,navigation=navigation,chat=chat,session=session,home=home,getShell=function()return shell end,modeSwitch=modeSwitch}
 end
 return Client

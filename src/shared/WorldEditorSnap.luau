@@ -2,6 +2,7 @@
 -- runtime welds or world-schema fields. Stretch factors are part of saved geometry.
 local G=require(script.Parent.WorldObjectGeometry)
 local State=require(script.Parent.WorldEditorState)
+local Boundary=require(script.Parent.SnapBoundary)
 local Snap={Radius=2}
 local function dot(a,b)return a.X*b.X+a.Y*b.Y+a.Z*b.Z end
 local function cross(a,b)return Vector3.new(a.Y*b.Z-a.Z*b.Y,a.Z*b.X-a.X*b.Z,a.X*b.Y-a.Y*b.X)end
@@ -17,20 +18,36 @@ function Snap.axis(entry,endpoint)
  return if alongX then 1 else 3
 end
 local sourceEdges=setmetatable({},{__mode="k"})
+function Snap.hasGeometry(profile)
+ return profile and (profile.snap~=nil or profile.fit=="faces" or profile.fit=="mesh")
+end
+local function supportFaces(profile)
+ if profile.fit=="faces" then return profile.faces,profile.bases end
+ local triangles,bases={},{}
+ for _,cell in profile.boxes or {} do
+  local x,y,z=table.unpack(cell.center)
+  local w,h,d=table.unpack(cell.size)
+  y+=h/2
+  local a,b,c,v={x-w/2,y,z-d/2},{x-w/2,y,z+d/2},{x+w/2,y,z+d/2},{x+w/2,y,z-d/2}
+  table.insert(triangles,{a,b,c});table.insert(triangles,{a,c,v})
+  table.insert(bases,y-h);table.insert(bases,y-h)
+ end
+ return triangles,bases
+end
 local function sourceGeometry(profile)
- if not profile or profile.fit~="faces" then return end
+ if not Snap.hasGeometry(profile) then return end
  local cached=sourceEdges[profile]
  if not cached then
-  local unit={position={0,-.5,0},rotation={0,0,0},bounds={1,1,1},scale=1}
-  local geometry=Snap.collisionGeometry(unit,{faces=profile.faces,bases=profile.bases})
+  local triangles,bases=supportFaces(profile)
+  local edges=Boundary.edges(if profile.snap then profile.snap.faces or {} else triangles,profile.snap,if not profile.snap then bases else nil)
   local minX,maxX,minZ,maxZ=math.huge,-math.huge,math.huge,-math.huge
-  for _,edge in geometry.edges do
+  for _,edge in edges do
    for _,v in {edge.a,edge.b} do
     minX=math.min(minX,v.X);maxX=math.max(maxX,v.X)
     minZ=math.min(minZ,v.Z);maxZ=math.max(maxZ,v.Z)
    end
   end
-  cached={edges=geometry.edges,minX=minX,maxX=maxX,minZ=minZ,maxZ=maxZ,handles={}}
+  cached={edges=edges,minX=minX,maxX=maxX,minZ=minZ,maxZ=maxZ,handles={}}
   sourceEdges[profile]=cached
  end
  return cached
@@ -66,6 +83,9 @@ end
 local function worldPoint(box,p)
  return box.position+box.right*(p.X*box.size.X)+box.up*(p.Y*box.size.Y)+box.back*(p.Z*box.size.Z)
 end
+local function worldNormal(box,n)
+ return (box.right*(n.X/box.size.X)+box.up*(n.Y/box.size.Y)+box.back*(n.Z/box.size.Z)).Unit
+end
 function Snap.sourceOptions(entry,profile)
  local geometry=sourceGeometry(profile)
  if not geometry then return nil end
@@ -80,7 +100,7 @@ function Snap.sourceOptions(entry,profile)
   else
    side=if alongX then (if outward.Z<0 then "C" else "D") else (if outward.Z<0 then "A" else "B")
   end
-  options[i]={index=i,side=side,a=worldPoint(box,edge.a),b=worldPoint(box,edge.b),normal=edge.normal}
+  options[i]={index=i,side=side,a=worldPoint(box,edge.a),b=worldPoint(box,edge.b),normal=worldNormal(box,edge.normal)}
  end
  return options
 end
@@ -105,6 +125,7 @@ function Snap.ends(entry,side,profile)
   end
   return ends,box
  end
+ if Snap.hasGeometry(profile) then return {},box end
  local mainX=entry.bounds[1]>entry.bounds[3]
  local axis=if mainX then box.right else box.back
  local span=if mainX then box.size.X else box.size.Z
@@ -220,37 +241,23 @@ function Snap.target(entry,point,radius,previous)
   if x>=0 and x<=1 and z>=0 and z<=1 then return {point=array(p),normal=array(normal),targetId=entry.id,kind="face"},math.abs(offset) end
  end
 end
-function Snap.collisionGeometry(entry,profile)
+function Snap.collisionGeometry(entry,profile,hitOnly)
  local box=Snap.box(entry)
- local faces=G.faces(box,profile.faces,profile.bases,profile.walls)
- local seen,edges={},{}
- local function key(p)return string.format("%.5f,%.5f,%.5f",p.X+0,p.Y+0,p.Z+0)end
- for _,face in faces do
-  local vertices=face.vertices
-  for i,a in vertices do
-   local b=vertices[i%3+1]
-   local x,y=key(a),key(b)
-   local identity=if x<y then x.."|"..y else y.."|"..x
-   local edge=seen[identity]
-   if edge then
-    edge.shared=true
-    if math.abs(dot(edge.normal,face.up))<.9999 then edge.crease=true end
-   else
-    edge={a=a,b=b,normal=face.up}
-    seen[identity]=edge;table.insert(edges,edge)
-   end
-  end
- end
- local boundary={}
- for _,edge in edges do if not edge.shared or edge.crease then table.insert(boundary,edge) end end
- return {faces=faces,edges=boundary,center=box.position,radius=box.size.Magnitude/2+.02}
+ local triangles,bases=supportFaces(profile)
+ local faces=if #triangles>0 then G.faces(box,triangles,bases,profile.walls) else {}
+ return {faces=faces,edges=if hitOnly then nil else Snap.sourceOptions(entry,profile),
+  center=box.position,radius=box.size.Magnitude/2+.02,explicit=profile.snap~=nil}
 end
-function Snap.collisionHit(geometry,origin,direction,limit)
+function Snap.isSupportFace(face)
+ return not face.wall and face.up.Y>=G.MinSupportNormal
+end
+function Snap.collisionHit(geometry,origin,direction,limit,supportOnly)
  local delta=geometry.center-origin
  local along=math.clamp(dot(delta,direction),0,limit)
  if (delta-direction*along).Magnitude>geometry.radius then return end
  local hit
  for _,face in geometry.faces do
+  if supportOnly and not Snap.isSupportFace(face) then continue end
   local a,b,c=table.unpack(face.vertices)
   local denominator=dot(direction,face.up)
   if math.abs(denominator)>1e-8 then
@@ -259,7 +266,7 @@ function Snap.collisionHit(geometry,origin,direction,limit)
     local p=origin+direction*distance
     local u,v,w=b-a,c-b,a-c
     if dot(cross(u,p-a),face.up)>=-1e-5 and dot(cross(v,p-b),face.up)>=-1e-5 and dot(cross(w,p-c),face.up)>=-1e-5 then
-     limit=distance;hit={point=p,normal=face.up}
+     limit=distance;hit={point=p,normal=face.up,face=face}
     end
    end
   end
@@ -267,7 +274,7 @@ function Snap.collisionHit(geometry,origin,direction,limit)
  return hit,limit
 end
 function Snap.collisionTarget(entry,geometry,point,radius,normal)
- if (point-geometry.center).Magnitude>geometry.radius+radius then return end
+ if not geometry.explicit and (point-geometry.center).Magnitude>geometry.radius+radius then return end
  local nearest,best,corner=nil,radius,nil
  for _,edge in geometry.edges do
   local close=Snap.closest(edge.a,edge.b,point)
@@ -283,7 +290,7 @@ function Snap.collisionTarget(entry,geometry,point,radius,normal)
   end
  end
  if nearest then return nearest,best end
- if normal then return {point=array(point),normal=array(normal),targetId=entry.id,kind="face"},0 end
+ if normal and not geometry.explicit then return {point=array(point),normal=array(normal),targetId=entry.id,kind="face"},0 end
 end
 -- Project a small neighborhood around the pointer. A dot selects a fixed
 -- midpoint, while a line selects the perspective-correct point along it.
@@ -328,7 +335,7 @@ function Snap.nearby(document,entry,onlyEndpoint,onlySide,findTarget,profile)
  for _,side in (if onlySide~=nil then {onlySide} else {0,-1,1}) do
  local ends=Snap.ends(entry,side,profile)
  for _,endpoint in {"A","B"} do
-  if onlyEndpoint and endpoint~=onlyEndpoint then continue end
+  if not ends[endpoint] or (onlyEndpoint and endpoint~=onlyEndpoint) then continue end
   for _,other in document.objects do
    if other.id~=entry.id then
     local target,d

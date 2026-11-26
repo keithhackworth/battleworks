@@ -449,6 +449,10 @@ do
  local Blocks=require("WorldSoundBlocks")
  local oldIndex=mt.__index
  mt.__index=function(frame,key)
+  if key=="PointToObjectSpace" then return function(self,p)
+   local delta=p-self.Position
+   return Vector3.new(self.RightVector:Dot(delta),self.UpVector:Dot(delta),-self.LookVector:Dot(delta))
+  end end
   if key=="Lerp" then return function(self,other,t)
    local p=self.Position+(other.Position-self.Position)*t
    return CFrame.fromMatrix(p,self.RightVector,self.UpVector,self.LookVector*-1)
@@ -475,7 +479,7 @@ do
   function trigger:GetPivot() return pivot end
   function trigger:PivotTo(frame) pivot=frame;part.CFrame=frame end
   function trigger:FindFirstChildWhichIsA() return part end
-  registry:add(trigger,{id=id,position=Vector3.zero,rotation=Vector3.zero,template=Audio.Asset,sound=config,attachment=link})
+  registry:add(trigger,{id=id,position=Vector3.zero,rotation=Vector3.zero,template=if config.trail then Audio.PaintAsset else Audio.Asset,sound=config,attachment=link})
   return part,trigger
  end
  local function setupSounds()
@@ -488,6 +492,41 @@ do
   return {id=id,halfX=1,halfZ=1,bottom=-1,top=1,state={health=100,position=Vector3.new(to,0,0),motionStepStart=Vector3.new(from,0,0),yaw=.2}}
  end
  local soundWorld=setupSounds()
+ do
+  local trailWorld=setupSounds()
+  local cfg=soundConfig("Occupied","Tanks")
+  cfg.cooldown=0;cfg.trail={{0,0,0},{1,0,0},{100,0,0}}
+  for i=1,200 do table.insert(cfg.trail,{i+1000,0,i+1000}) end
+  local getService=game.GetService
+  game.GetService=function(self,name)
+   if name=="HttpService" then return {JSONEncode=function(_,trail) assert(trail==cfg.trail);return "trail JSON" end} end
+   return getService(self,name)
+  end
+  local painted=volume(trailWorld,"painted",cfg)
+  game.GetService=getService
+  check(painted:GetAttribute("Sfx_HasTrail")==true,"painted audio publishes its trail to clients")
+  local start,far=Vector3.zero,Vector3.new(250,0,100)
+  check(Audio.nearestTrailOffset({start,far},Vector3.new(248,4,100))==far,"audio near the far end uses the nearby stamp rather than the anchor")
+  local pair={start,Vector3.new(8,0,0)}
+  local left=Audio.nearestTrailOffset(pair,Vector3.new(3.9,0,0),12)
+  local right=Audio.nearestTrailOffset(pair,Vector3.new(4.1,0,0),12)
+  check(left.X<4 and right.X>4 and right.X-left.X<.5,"audio location blends between neighboring stamps instead of switching sides")
+  local function at(x)
+   local body=tank("paint-test",0,0)
+   local p=painted.CFrame:PointToWorldSpace(Vector3.new(x,0,0))
+   body.state.position=p;body.state.motionStepStart=p
+   return body
+  end
+  trailWorld.sounds:step({at(0)},.1,{})
+  check(painted:GetAttribute("Sfx_TankOccupants")=="\npaint-test\n","painted audio identifies the tank inside it for centered playback")
+  trailWorld.sounds:step({at(.15)},.1,{})
+  check(painted:GetAttribute("Sfx_Pulse")==1,"overlapping stamps share one trail activation")
+  trailWorld.sounds:step({at(7)},.1,{})
+  check(not painted:GetAttribute("Sfx_Active"),"an unpainted gap ends the occupancy")
+  check(painted:GetAttribute("Sfx_TankOccupants")=="","leaving the painted section clears the tank listener")
+  trailWorld.sounds:step({at(15)},.1,{})
+  check(painted:GetAttribute("Sfx_Pulse")==2,"reentering a separated painted portion starts a new activation")
+ end
  local entry=volume(soundWorld,"entry",soundConfig("Entry","Tanks"))
  local leave=volume(soundWorld,"exit",soundConfig("Exit","Tanks"))
  local occupied=volume(soundWorld,"occupied",soundConfig("Occupied","Tanks"))

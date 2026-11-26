@@ -66,9 +66,14 @@ local remote=network:FindFirstChild("RoyaleControl")
 local input=network:FindFirstChild("Input")
 local bwRun=network:FindFirstChild("BWRun")
 local function advance(frames)for _=1,frames do time+=1/60;heartbeat:Fire(1/60)end end
+local function enterPlayground(player)
+ check(royale:join(royale.members[player.UserId]), "fixture admits player from the main menu")
+end
 advance(4)
 check((network:FindFirstChild("PlaygroundBWExecution")~=nil)==not headlessStartup,"diagnostic remote exists only in Studio")
-check(players.CharacterAutoLoads and network:GetAttribute("GameMode")=="BattleRoyale","Royale is native-character automatic admission, not menu admission")
+check(players.CharacterAutoLoads and network:GetAttribute("GameMode")=="BattleRoyale" and network:GetAttribute("StartInMenu"),"Royale spawns native characters under the Home UI")
+check(controls[101].mode=="Menu" and controls[102].mode=="Menu" and not battleStates["101"],"players start parked and outside the Playground")
+enterPlayground(first);enterPlayground(second);advance(4)
 local entryTerrain=require("PlaygroundTerrain")
 local layout=entryTerrain.create(entryTerrain.DefaultSize)
 check(first.RespawnLocation and first.RespawnLocation==second.RespawnLocation and first.RespawnLocation.Name=="PlaygroundCharacterSpawn","Roblox spawns both avatars at the designated Playground entry")
@@ -250,7 +255,7 @@ check(retaliated and snapshots[b].health==beforeRetaliation-require("VehicleComp
 workspace.Spherecast=function()return nil end
 -- Late joins share the current pool, and disconnect cannot delete arena tanks.
 local third={UserId=103,Name="Late",CharacterAdded=signal()};roots[103],humanoids[103]=character(third)
-players.PlayerAdded:Fire(third);advance(4)
+players.PlayerAdded:Fire(third);enterPlayground(third);advance(4)
 check(battleStates["103"].royale and not controls[103].selected and #ids==6,"late join is admitted on foot into the existing public battlefield")
 local currentB=controls[101].epoch
 local abandonedHealth=snapshots[b].health
@@ -276,7 +281,7 @@ check(snapshots[a] and not snapshots[a].occupantUserId and not snapshots[a].bwRu
 players.PlayerRemoving:Fire(third);advance(4)
 local remaining=0;for _ in snapshots do remaining+=1 end
 check(remaining==6 and next(battleStates)==nil,"empty server keeps only its configured arena pool and no orphaned memberships")
-roots[101],humanoids[101]=character(first);players.PlayerAdded:Fire(first);advance(25)
+roots[101],humanoids[101]=character(first);players.PlayerAdded:Fire(first);enterPlayground(first);advance(25)
 approach(first,b);enter(first,b,1)
 check(controls[101].selected==b,"rejoining creates fresh participation and can reuse available arena tanks")
 check(battleStates["101"].score.kills==1,"rejoining the same server preserves the player's scoreboard totals")
@@ -286,7 +291,7 @@ check((snapshots[b].position-rejoinPosition).Magnitude<.01,"a previous connectio
 players.PlayerRemoving:Fire(first);advance(4)
 -- Main Menu releases control but keeps the shared arena/pool running.
 local menuPlayer={UserId=104,Name="Menu Tester",CharacterAdded=signal()}
-roots[104],humanoids[104]=character(menuPlayer);players.PlayerAdded:Fire(menuPlayer);advance(25)
+roots[104],humanoids[104]=character(menuPlayer);players.PlayerAdded:Fire(menuPlayer);enterPlayground(menuPlayer);advance(25)
 local c=ids[3];approach(menuPlayer,c);enter(menuPlayer,c,1)
 local menuEpoch=controls[104].epoch;local menuHealth=snapshots[c].health
 bwRun.OnServerEvent:Fire(menuPlayer,"forward(100)",1,c,menuEpoch);advance(4)
@@ -326,7 +331,7 @@ for _,part in created do
 end
 check(bridge and bridge.CanCollide and bridge.Size.Z<16,"native bridge has a narrow deck for a single tank")
 local hazardPlayer={UserId=105,Name="Hazard Tester",CharacterAdded=signal()}
-roots[105],humanoids[105]=character(hazardPlayer);players.PlayerAdded:Fire(hazardPlayer);advance(25)
+roots[105],humanoids[105]=character(hazardPlayer);players.PlayerAdded:Fire(hazardPlayer);enterPlayground(hazardPlayer);advance(25)
 check(Terrain.safe(terrain,roots[105].Position-Vector3.new(0,3,0),7),"new character spawns on designated land clear of water/cliffs")
 approach(hazardPlayer,a);enter(hazardPlayer,a,1)
 check(controls[105].selected==a,"hazard occupant acquires a real public tank")

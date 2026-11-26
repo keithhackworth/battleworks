@@ -23,6 +23,9 @@ function Projectiles.new(origin, direction, exclusions, tuning, groundY, flight)
 end
 -- Exact point-to-solid distance for the primitive cover used by the arena.
 function Projectiles.overlaps(part, point, radius)
+	-- Mesh hits use the sweep. A bounding-box overlap would also hit the
+	-- empty space inside concave cover, and MeshParts have no Shape property.
+	if part.IsA and not part:IsA("Part") then return false end
 	local q=part.CFrame:PointToObjectSpace(point)
 	local half=part.Size/2
  if part.Shape==Enum.PartType.Wedge then

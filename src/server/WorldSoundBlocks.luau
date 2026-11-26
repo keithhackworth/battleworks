@@ -52,7 +52,7 @@ function Blocks:unindex(block)
  block.minX=nil
 end
 function Blocks:add(model,spec)
- assert(spec.template==Rules.Asset,"Only Sound Blocks can emit world audio")
+ assert(Rules.isAsset(spec.template),"Only audio assets can emit world audio")
  Rules.validate(spec.sound)
  local part=model:FindFirstChildWhichIsA("BasePart",true)
  assert(part,"Sound Block has no volume")
@@ -64,9 +64,24 @@ function Blocks:add(model,spec)
  local block={id=spec.id,part=part,model=model,config=spec.sound,attachment=spec.attachment,audible=id~=nil,
   relative=model:GetPivot():ToObjectSpace(frame),half=part.Size*.5,radius=part.Size.Magnitude*.5,
   frame=frame,previous=frame,occupants={},tracker={nextPlay=0,occupied=false},pulse=0,padding=0}
+ if spec.sound.trail then
+  block.trail={};block.trailGrid={}
+  for i,point in spec.sound.trail do
+   local offset=Rules.trailOffset(point,part.Size)
+   local frame=CFrame.new(offset)
+   local x,z=math.floor(offset.X/Cell),math.floor(offset.Z/Cell)
+   local column=block.trailGrid[x]
+   if not column then column={};block.trailGrid[x]=column end
+   local bucket=column[z]
+   if not bucket then bucket={};column[z]=bucket end
+   table.insert(bucket,frame)
+   block.trail[i]=frame
+   block.radius=math.max(block.radius,offset.Magnitude+block.half.Magnitude)
+  end
+ end
  self.entries[block]=true
  if spec.attachment or spec.motion or spec.spin then self.dynamic[block]=true end
- if id and spec.sound.activation~="Always" then
+ if id and (spec.sound.activation~="Always" or block.trail) then
   local filter=spec.sound.filter
   if filter=="Terrain" then self.terrain[block]=true
   else self:index(block,frame.Position,frame.Position,0) end
@@ -76,16 +91,59 @@ function Blocks:add(model,spec)
  end
  block.destroying=part.Destroying:Connect(function() self:remove(block) end)
  if not id then return end
+ if spec.sound.trail then
+  local trail=Instance.new("StringValue")
+  trail.Name="SfxTrail"
+  Catalog.write(trail,spec.sound.trail,game:GetService("HttpService"))
+  trail.Parent=part
+  part:SetAttribute("Sfx_HasTrail",true)
+  part:SetAttribute("Sfx_TankOccupants","")
+ end
  if spec.sound.origin=="Trigger" then
   local source=Instance.new("ObjectValue");source.Name="SfxSource";source.Parent=part;block.source=source
  end
  for name,value in spec.sound do
-  if name~="effect" and name~="targets" then part:SetAttribute("Sfx_"..name,value) end
+  if name~="effect" and name~="targets" and name~="trail" then part:SetAttribute("Sfx_"..name,value) end
  end
  part:SetAttribute("Sfx_AssetId",id)
  part:SetAttribute("Sfx_Active",spec.sound.activation=="Always")
  part:SetAttribute("Sfx_Pulse",0)
  part:AddTag(Tag)
+end
+local function checkVolumes(block,test,body)
+ if not block.trail then return test(block.previous,block.frame) end
+ local passed=false
+ local function visit(offsets)
+  for _,offset in offsets do
+   local inside,crossed=test(block.previous*offset,block.frame*offset)
+   if inside then return true end
+   passed=passed or crossed
+  end
+  return false
+ end
+ -- A static trail shares one local frame, so the swept subject only needs
+ -- nearby stamps. Rotating trails retain the existing full sweep.
+ if body and block.previous==block.frame then
+  local turn=(body.before.RightVector-body.after.RightVector).Magnitude+(body.before.UpVector-body.after.UpVector).Magnitude
+  local reach=block.half.Magnitude+body.radius*(1+turn)+block.padding+(body.padding or 0)+1e-5
+  local a=block.frame:PointToObjectSpace(body.before.Position)
+  local b=block.frame:PointToObjectSpace(body.after.Position)
+  local minX,maxX,minZ,maxZ=bounds(a,b,reach)
+  if (maxX-minX+1)*(maxZ-minZ+1)<=#block.trail then
+   for x=minX,maxX do
+    local column=block.trailGrid[x]
+    if column then
+     for z=minZ,maxZ do
+      local bucket=column[z]
+      if bucket and visit(bucket) then return true,true end
+     end
+    end
+   end
+   return false,passed
+  end
+ end
+ if visit(block.trail) then return true,true end
+ return false,passed
 end
 function Blocks:remove(block)
  if block.destroying then block.destroying:Disconnect();block.destroying=nil end
@@ -116,7 +174,7 @@ function Blocks:poses()
   end
   if block.attachment and block.model:GetPivot()~=pivot then block.model:PivotTo(pivot) end
   block.previous=block.frame;block.frame=pivot*block.relative;block.padding=padding
-  if block.audible and not self.terrain[block] and block.config.activation~="Always" then self:index(block,block.previous.Position,block.frame.Position,padding) end
+  if block.audible and not self.terrain[block] and (block.config.activation~="Always" or block.trail) then self:index(block,block.previous.Position,block.frame.Position,padding) end
  end
 end
 local function candidate(block,body,kind)
@@ -134,10 +192,17 @@ function Blocks:observe(block,body)
  local reach=block.radius+block.padding+body.radius
  local a,b=block.previous.Position,block.frame.Position
  if math.max(start.Y,finish.Y)+reach<math.min(a.Y,b.Y) or math.min(start.Y,finish.Y)-reach>math.max(a.Y,b.Y) then return end
- local inside,passed=Rules.overlap(block.previous,block.frame,block.half,body,block.padding+(body.padding or 0))
+ local inside,passed=checkVolumes(block,function(before,after)
+  return Rules.overlap(before,after,block.half,body,block.padding+(body.padding or 0))
+ end,body)
  local existing=block.occupants[body.id]
  if inside then
-  if not existing then candidate(block,body,"entered");existing={source=body.soundSource};block.occupants[body.id]=existing end
+  if not existing then
+   candidate(block,body,"entered")
+   existing={source=body.soundSource,tank=body.assetId==nil}
+   block.occupants[body.id]=existing
+   if block.trail and existing.tank then block.tankOccupantsChanged=true end
+  end
   existing.seen=self.serial
  elseif passed and not existing then
   candidate(block,body,"entered");candidate(block,body,"exited")
@@ -148,7 +213,7 @@ function Blocks:queryBody(body)
  self.query+=1
  local minX,maxX,minZ,maxZ=bounds(body.before.Position,body.after.Position,body.radius+(body.padding or 0))
  if (maxX-minX+1)*(maxZ-minZ+1)>128 then
-  for block in self.entries do if block.audible and block.config.activation~="Always" then self:observe(block,body) end end
+  for block in self.entries do if block.audible and (block.config.activation~="Always" or block.trail) then self:observe(block,body) end end
  else
   for x=minX,maxX do for z=minZ,maxZ do
    local bucket=self.grid[key(x,z)]
@@ -193,7 +258,9 @@ function Blocks:observeTerrain(height)
   local existing=block.occupants[id]
   local inside,passed=block.grounded,false
   if inside==nil or block.previous~=block.frame then
-   inside,passed=Rules.terrainOverlap(block.previous,block.frame,block.half,height,existing~=nil,block.padding)
+   inside,passed=checkVolumes(block,function(before,after)
+    return Rules.terrainOverlap(before,after,block.half,height,existing~=nil,block.padding)
+   end)
    block.grounded=inside
   end
   if inside then
@@ -235,8 +302,16 @@ function Blocks:step(bodies,dt,moving,groundHeight)
   for id,contact in block.occupants do
    if contact.seen~=self.serial then
     block.occupants[id]=nil
+    if block.trail and contact.tank then block.tankOccupantsChanged=true end
     if not block.exited or id<block.exited then block.exited=id;block.exitedSource=contact.source end
    end
+  end
+  if block.tankOccupantsChanged then
+   local tanks={}
+   for id,contact in block.occupants do if contact.tank then table.insert(tanks,tostring(id)) end end
+   table.sort(tanks)
+   block.part:SetAttribute("Sfx_TankOccupants",if #tanks==0 then "" else "\n"..table.concat(tanks,"\n").."\n")
+   block.tankOccupantsChanged=nil
   end
   local occupied=next(block.occupants)~=nil
   self.occupied[block]=if occupied then true else nil
@@ -256,6 +331,10 @@ function Blocks:reset()
   table.clear(block.occupants);block.tracker.nextPlay=0;block.tracker.occupied=false;block.tracker.started=false
   block.entered=nil;block.exited=nil;block.enteredSource=nil;block.exitedSource=nil;block.active=nil;block.pulse=0;block.parentPivot=nil;block.grounded=nil
   if block.source then block.source.Value=nil end
+  if block.trail then
+   block.tankOccupantsChanged=nil
+   block.part:SetAttribute("Sfx_TankOccupants","")
+  end
   block.part:SetAttribute("Sfx_Active",block.config.activation=="Always")
   block.part:SetAttribute("Sfx_Pulse",0)
   block.part:SetAttribute("Sfx_Reset",(block.part:GetAttribute("Sfx_Reset") or 0)+1)

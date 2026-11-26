@@ -1,0 +1,12 @@
+file,source,category,reason,color,core_area,elong,length,max_w,avg_w,strokes,shading,lum,sat,hue
+scuffs/01.png,cartoon_marks.png,scuffs,soft+elongated,black,4782,9.06,261.38,27.78,18.29,1,0.82,41.41,0.2,16.13
+scuffs/02.png,cartoon_marks.png,scuffs,soft+elongated,black,4711,3.28,198.69,20.59,23.71,2,0.98,41.27,0.2,15.73
+grime/01.png,cartoon_marks.png,grime,soft+blobby,black,6961,2.16,201.34,32.56,34.57,3,0.95,40.94,0.21,15.7
+dents/01.png,cartoon_marks.png,dents,small compact pit,black,5229,1.48,170.55,34.06,30.66,1,0.88,41.66,0.2,15.44
+scuffs/03.png,cartoon_marks.png,scuffs,soft+elongated,black,3660,5.36,193.86,25.61,18.88,1,0.95,42.03,0.2,15.77
+grime/02.png,cartoon_marks.png,grime,soft+blobby,black,2884,1.89,129.73,24.08,22.23,2,0.86,41.35,0.2,15.44
+scuffs/04.png,cartoon_marks.png,scuffs,soft+elongated,black,8396,9.17,376.96,36.0,22.27,1,0.82,40.86,0.2,15.49
+scuffs/05.png,cartoon_marks.png,scuffs,soft+elongated,black,9876,8.2,385.66,38.05,25.61,1,0.75,40.79,0.2,15.55
+scuffs/06.png,cartoon_marks.png,scuffs,soft+elongated,black,2920,2.68,146.0,22.0,20.0,2,1.05,40.58,0.2,15.14
+grime/03.png,cartoon_marks.png,grime,soft+blobby,black,5706,1.34,151.98,37.58,37.54,5,0.81,40.52,0.2,15.33
+deep_scratches/01.png,cartoon_marks.png,deep_scratches,long single/double stroke,black,841,6.62,93.96,14.42,8.95,1,0.91,41.81,0.19,14.81

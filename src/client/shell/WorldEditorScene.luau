@@ -3,6 +3,7 @@ local Placement=require(Shared.ModelPlacement)
 local Paths=require(Shared.AssetPaths)
 local Math=require(Shared.WorldEditorMath)
 local Snap=require(Shared.WorldEditorSnap)
+local AudioFill=require(Shared.AudioSurfaceFill)
 local Visual=require(Shared.AssetGeometry)
 local StartingAreas=require(Shared.StartingAreas)
 local Heightfield=require(Shared.WorldHeightfield)
@@ -123,9 +124,45 @@ function Scene:make(entry,item,parent)
  local model,reason=Placement.place(self.assets:FindFirstChild("Templates"),{id=entry.id,template=item.model,position=Vector3.new(table.unpack(entry.position)),rotation=Vector3.new(table.unpack(entry.rotation)),scale=entry.scale,stretch=entry.stretch,resizeAxes=item.resizeAxes},nil,parent or self.root)
  if model then
   model:SetAttribute("EditorObjectId",entry.id)
-  for _,p in model:GetDescendants() do if p:IsA("BasePart") then p.CanQuery=Visual.visible(p) end end
+  for _,p in model:GetDescendants() do if p:IsA("BasePart") then
+   p.CanQuery=Visual.visible(p)
+   if Audio.isAsset(entry.asset) then
+    p.Color=Color3.fromRGB(66,167,247);p.Transparency=.5
+   end
+  end end
  end
  return model,reason
+end
+function Scene:syncSoundTrail(record)
+ local trail=record.entry.sound.trail
+ local brush=record.model:FindFirstChild("Geometry")
+ if not brush then return end
+ local hidden=record.soundHidden
+ brush.LocalTransparencyModifier=if hidden or trail then 1 else 0
+ brush.CanQuery=not hidden and trail==nil
+ if not trail or hidden then
+  if record.trailFolder then record.trailFolder:Destroy();record.trailFolder=nil end
+  return
+ end
+ local frame,size=brush.CFrame,brush.Size
+ if record.trailFolder and record.trailData==trail and record.trailCount==#trail and record.trailFrame==frame and record.trailSize==size then return end
+ if not record.trailFolder then
+  record.trailFolder=Instance.new("Folder");record.trailFolder.Name="SoundTrail";record.trailFolder.Parent=self.root
+  record.trailFolder:SetAttribute("EditorObjectId",record.entry.id)
+  record.trailParts={}
+ end
+ local first=if record.trailData==trail and record.trailFrame==frame and record.trailSize==size and #record.trailParts<=#trail then #record.trailParts+1 else 1
+ for i=first,#trail do
+  local volume=record.trailParts[i]
+  if not volume then
+   volume=part(record.trailFolder,"SoundVolume",size,frame,Color3.fromRGB(66,167,247),.65)
+   volume.CanQuery=true
+   record.trailParts[i]=volume
+  end
+  volume.Size=size;volume.CFrame=frame*CFrame.new(Audio.trailOffset(trail[i],size))
+ end
+ for i=#record.trailParts,#trail+1,-1 do record.trailParts[i]:Destroy();record.trailParts[i]=nil end
+ record.trailData,record.trailCount,record.trailFrame,record.trailSize=trail,#trail,frame,size
 end
 function Scene:sync(document,catalog,preview)
  self.document=document
@@ -166,6 +203,7 @@ function Scene:sync(document,catalog,preview)
   local record=self.models[entry.id]
   if record and record.entry.asset~=entry.asset then
    if record.badge then record.badge:Destroy();self.soundMarkers[entry.id]=nil end
+   if record.trailFolder then record.trailFolder:Destroy() end
    if record.traversalMarker then record.traversalMarker:Destroy() end
    record.model:Destroy()
    record=nil
@@ -175,7 +213,7 @@ function Scene:sync(document,catalog,preview)
    assert(model,err);record={model=model,scale=self:template(item):GetScale()};self.models[entry.id]=record
   end
   record.entry=entry;record.item=catalog.byPath[entry.asset]
-  if entry.asset==Audio.Asset then
+  if Audio.isAsset(entry.asset) then
    if not record.badge then
     local badge=Instance.new("TextLabel");badge.Name="SoundMarker"
     badge.AnchorPoint=Vector2.new(.5,.5);badge.Size=UDim2.fromOffset(130,24)
@@ -183,7 +221,15 @@ function Scene:sync(document,catalog,preview)
     badge.BackgroundColor3=Color3.fromRGB(23,62,79);badge.TextColor3=Color3.fromRGB(205,241,255)
     badge.Parent=self.viewport;record.badge=badge;self.soundMarkers[entry.id]=record
    end
-   record.badge.Text=if entry.attachment then "🔊  ↳ "..entry.attachment.parent else "🔊  Sound"
+   record.badge.Text=if entry.attachment then "🔊  ↳ "..entry.attachment.parent else "🔊"
+   local hidden=self.soundBlocksHidden==true
+   if record.soundHidden~=hidden then
+    record.soundHidden=hidden;record.badge.Visible=false
+    for _,p in Visual.parts(record.model) do
+     p.LocalTransparencyModifier=if hidden then 1 else 0
+     p.CanQuery=not hidden
+    end
+   end
   end
   if previewParent and entry.attachment and entry.attachment.parent==previewParent.id then
    entry=table.clone(entry);Attachment.apply(previewParent,entry)
@@ -198,6 +244,7 @@ function Scene:sync(document,catalog,preview)
    record.traversalDirty=true
   end
   local traction=settings.terrain and settings.terrain.traction
+  if entry.sound then self:syncSoundTrail(record) end
   if self.traversability and entry.solid and (record.traversalDirty or not record.traversalChecked or record.traversalTraction~=traction or record.assetTraction~=entry.traction) then
    self:markStructure(record,traction)
   elseif (not self.traversability or not entry.solid) and record.traversalChecked then
@@ -208,6 +255,7 @@ function Scene:sync(document,catalog,preview)
  for id,record in self.models do if not retained[id] then
   if record.traversalMarker then record.traversalMarker:Destroy() end
   if record.badge then record.badge:Destroy();self.soundMarkers[id]=nil end
+  if record.trailFolder then record.trailFolder:Destroy() end
   record.model:Destroy();self.models[id]=nil
  end end
  local starts={}
@@ -297,7 +345,7 @@ function Scene:updateSoundMarkers()
  local size=viewport.AbsoluteSize
  for _,record in self.soundMarkers do
   local badge=record.badge
-  if badge then
+  if badge and not record.soundHidden then
    local part=record.model:FindFirstChild("Geometry")
    local center=(part and part.Position) or record.model:GetPivot().Position
    local pixel=Math.project(camera.CFrame,size,center,camera.FieldOfView)
@@ -380,7 +428,7 @@ function Scene:ghost(entry,item,valid)
  end
  if not self.ghostModel then return end
  Placement.pose(self.ghostModel,self:template(item):GetScale(),{position=Vector3.new(table.unpack(entry.position)),rotation=Vector3.new(table.unpack(entry.rotation)),scale=entry.scale})
- for _,p in self.ghostModel:GetDescendants() do if p:IsA("BasePart") then p.CanQuery=false;p.Transparency=.6;p.Color=if valid then Color3.fromRGB(94,224,171) else Color3.fromRGB(244,95,78) end end
+ for _,p in self.ghostModel:GetDescendants() do if p:IsA("BasePart") then p.CanQuery=false;p.Transparency=.6;p.Color=if not valid then Color3.fromRGB(244,95,78) elseif Audio.isAsset(item.model) then Color3.fromRGB(66,167,247) else Color3.fromRGB(94,224,171) end end
 end
 function Scene:clearGhost()
  if self.ghostModel then self.ghostModel:Destroy() end
@@ -405,8 +453,15 @@ function Scene:setMode(mode,rotationAxis)
   anchor("ResizeX",Color3.fromRGB(248,105,90));anchor("ResizeY",Color3.fromRGB(120,232,174));anchor("ResizeZ",Color3.fromRGB(85,170,255))
  end
 end
+local function sourceEdges(record,profile)
+ if not record.snapSource or record.snapSourceProfile~=profile then
+  record.snapSource=Snap.sourceOptions(record.entry,profile);record.snapSourceProfile=profile
+ end
+ return record.snapSource
+end
 function Scene:selection(id,distance)
  local record=id and (self.models[id] or self.spawnModels[id])
+ if record and record.soundHidden then record=nil end
  local size=math.clamp(distance*.012,1,3)
  for _,p in self.gizmos:GetChildren() do
   local enabled=record~=nil and (not record.spawn or (self.mode=="Move" and p.Name~="MoveY"))
@@ -418,8 +473,7 @@ function Scene:selection(id,distance)
  local pin=self.snapPins and self.snapPins[id]
  self.sourceChoices=nil
  if self.mode=="Snap" and record and not record.spawn and record.item and self.sourcePixel and not self.draggingSnap then
-  if not record.snapSource then record.snapSource=Snap.sourceOptions(record.entry,record.item.collider) end
-  self.sourceChoices=record.snapSource
+  self.sourceChoices=sourceEdges(record,record.item.collider)
   if self.sourceChoices then
    local choice,candidates=self:projectEdges(self.sourceChoices,self.sourcePixel)
    self:edgeMarkers("Source",candidates,choice,pin)
@@ -429,6 +483,7 @@ function Scene:selection(id,distance)
  if self.mode=="Snap" and not record.spawn then
   local ends=Snap.ends(record.entry,if pin then pin.side else self.snapSide,record.item and record.item.collider)
   for endpoint,p in self.snapEnds do
+   if not ends[endpoint] then continue end
    local pinned=pin and ((not pin.edgeIndex and pin.endpoint==endpoint) or (pin.second and not pin.second.edgeIndex and pin.second.endpoint==endpoint))
    p.Color=if pinned then Color3.fromRGB(100,245,145) elseif endpoint=="A" then Color3.fromRGB(80,215,255) else Color3.fromRGB(255,183,92)
    p.Transparency=0;p.CanQuery=true;p.Size=Vector3.new(size*1.3,size*1.3,size*1.3);p.CFrame=CFrame.new(ends[endpoint])
@@ -474,11 +529,14 @@ function Scene:selection(id,distance)
  end
 end
 function Scene:setSnap(enabled,pins,side)self.snapEnabled=enabled;self.snapPins=pins;self.snapSide=side or 0 end
-function Scene:collisionSnap(record)
+function Scene:collisionSnap(record,hitOnly)
  local profile=record.item and record.item.collider
- if not profile or profile.fit~="faces" then return nil end
+ if not Snap.hasGeometry(profile) then return nil end
  if not record.snapGeometry or record.snapProfile~=profile then
-  record.snapGeometry=Snap.collisionGeometry(record.entry,profile);record.snapProfile=profile
+  record.snapGeometry=Snap.collisionGeometry(record.entry,profile,true);record.snapProfile=profile
+ end
+ if not hitOnly and not record.snapGeometry.edges then
+  record.snapGeometry.edges=sourceEdges(record,profile)
  end
  return record.snapGeometry
 end
@@ -486,58 +544,96 @@ function Scene:nearbySnap(entry,point)
  local record=self.models[entry.id]
  local geometry=record and self:collisionSnap(record)
  if geometry then return Snap.collisionTarget(entry,geometry,point,Snap.Radius) end
- return Snap.target(entry,point,Snap.Radius)
+ if entry.asset:sub(1,8)=="Builtin/" then return Snap.target(entry,point,Snap.Radius) end
+end
+local function hasSoundSurface(record)
+ local profile=record.item and record.item.collider
+ return record.entry.solid and profile and profile.fit=="faces"
+end
+function Scene:soundSurface(origin,direction)
+ local nearest,limit=nil,5000
+ for _,record in self.models do
+  if hasSoundSurface(record) then
+   local hit,distance=Snap.collisionHit(self:collisionSnap(record,true),origin,direction,limit,true)
+   if hit then nearest,limit=hit,distance end
+  end
+ end
+ if nearest then return nearest.point,nearest.face end
+end
+function Scene:fillSoundSurface(origin,direction,size)
+ local seed,face=self:soundSurface(origin,direction)
+ if not seed then return nil,"Click a drivable collision surface." end
+ local faces={}
+ for _,record in self.models do
+  if hasSoundSurface(record) then
+   for _,candidate in self:collisionSnap(record,true).faces do
+    if Snap.isSupportFace(candidate) then table.insert(faces,candidate) end
+   end
+  end
+ end
+ local points=AudioFill.sample(AudioFill.connected(faces,face),seed,size,Audio.MaxTrailPoints)
+ if not points then return nil,"Fill exceeds one audio section at this brush size. Enlarge the selected Paint Audio brush or paint a smaller region." end
+ return points
 end
 function Scene:snapTarget(origin,direction,ignore,previous,pixel)
  local include={self.floor}
- local selected,selectedGeometry,contact,limit
- limit=5000
+ local selected,contact
+ local limit=5000
  for id,record in self.models do
   if id~=ignore then
-   local geometry=self:collisionSnap(record)
-   if geometry then
+   local geometry=self:collisionSnap(record,true)
+   if geometry and #geometry.faces>0 then
     local hit,distance=Snap.collisionHit(geometry,origin,direction,limit)
-    if hit then selected=record;selectedGeometry=geometry;contact=hit;limit=distance end
-   else table.insert(include,record.model) end
+    if hit then selected=record;contact=hit;limit=distance end
+   end
+   if not geometry or #geometry.faces==0 or geometry.explicit then table.insert(include,record.model) end
   end
  end
  local params=RaycastParams.new();params.FilterType=Enum.RaycastFilterType.Include;params.FilterDescendantsInstances=include;params.RespectCanCollide=false
  local hit=self.world:Raycast(origin,direction*5000,params)
  local onCollision=contact and (not hit or limit<=(hit.Position-origin).Magnitude)
+ local hitRecord
+ local instance=hit and hit.Instance
+ while instance and instance~=self.world do
+  local id=instance:GetAttribute("EditorObjectId")
+  if id then hitRecord=self.models[id];break end
+  instance=instance.Parent
+ end
  if pixel then
-  local hovered=if onCollision then selected else self.edgeTargetId and self.models[self.edgeTargetId]
+  local hovered=if onCollision then selected else hitRecord or (self.edgeTargetId and self.models[self.edgeTargetId])
   local geometry=hovered and hovered.entry.id~=ignore and self:collisionSnap(hovered)
-  if geometry then
-   local choice,candidates=self:projectEdges(geometry.edges,pixel)
-   if #candidates>0 then
-    self.edgeTargetId=hovered.entry.id;self:edgeMarkers("Target",candidates,choice)
-    if choice then return Snap.edgeTarget(hovered.entry,choice) end
-   else self:clearEdgeTargets() end
+  local choice,candidates
+  if geometry then choice,candidates=self:projectEdges(geometry.edges,pixel) end
+  -- Authored connectors can extend into empty space beyond the model's ray hit.
+  if not onCollision and not hitRecord and not choice then
+   local best=math.huge
+   local sight=if hit then (hit.Position-origin).Magnitude else limit
+   for id,record in self.models do
+    local profile=record.item and record.item.collider
+    if id==ignore or not profile or not profile.snap then continue end
+    local authored=self:collisionSnap(record)
+    local pick,markers=self:projectEdges(authored.edges,pixel)
+    if pick and pick.distance<best and (pick.point-origin).Magnitude<=sight+Snap.Radius then
+     hovered,choice,candidates=record,pick,markers;best=pick.distance
+    end
+   end
+  end
+  if candidates and #candidates>0 then
+   self.edgeTargetId=hovered.entry.id;self:edgeMarkers("Target",candidates,choice)
+   if choice then return Snap.edgeTarget(hovered.entry,choice) end
   else self:clearEdgeTargets() end
  end
  if onCollision then
-  return Snap.collisionTarget(selected.entry,selectedGeometry,contact.point,Snap.Radius,contact.normal)
+  return Snap.collisionTarget(selected.entry,self:collisionSnap(selected),contact.point,Snap.Radius,contact.normal)
  end
  if not hit then return nil end
  if hit.Instance==self.floor then return {point={hit.Position.X,0,hit.Position.Z},normal={0,1,0},targetId="ground",kind="ground"} end
- local p=hit.Instance
- while p and p~=self.world do
-  local id=p:GetAttribute("EditorObjectId")
-  if id then
-   local record=self.models[id];if not record then return nil end
-   local target=Snap.target(record.entry,hit.Position,Snap.Radius,previous)
-   if record.entry.asset:sub(1,8)=="Builtin/" then return target end
-   -- Imported geometry need not reach the upper face of its rectangular bounds
-   -- (rocks, roofs, arches). A native visible surface hit remains a valid target.
-   if target and target.kind~="face" and hit.Normal then
-    local point=Vector3.new(table.unpack(target.point));local normal=Vector3.new(table.unpack(target.normal))
-    local surfaceParams=RaycastParams.new();surfaceParams.FilterType=Enum.RaycastFilterType.Include;surfaceParams.FilterDescendantsInstances={record.model};surfaceParams.RespectCanCollide=false
-    local probe=self.world:Raycast(point+normal*.2,normal*-.4,surfaceParams)
-    if probe and (probe.Position-point).Magnitude<.08 then return target end
-   end
-   return {point={hit.Position.X,hit.Position.Y,hit.Position.Z},normal=if hit.Normal then {hit.Normal.X,hit.Normal.Y,hit.Normal.Z} else {0,1,0},targetId=id,kind="surface"}
-  end
-  p=p.Parent
+ if hitRecord then
+  local entry=hitRecord.entry
+  local geometry=self:collisionSnap(hitRecord)
+  if geometry and geometry.explicit then return Snap.collisionTarget(entry,geometry,hit.Position,Snap.Radius) end
+  if not geometry and entry.asset:sub(1,8)=="Builtin/" then return Snap.target(entry,hit.Position,Snap.Radius,previous) end
+  return {point={hit.Position.X,hit.Position.Y,hit.Position.Z},normal=if hit.Normal then {hit.Normal.X,hit.Normal.Y,hit.Normal.Z} else {0,1,0},targetId=entry.id,kind="surface"}
  end
 end
 function Scene:snapFeedback(target,valid)
@@ -620,7 +716,7 @@ function Scene:pick(origin,direction,pixel,viewportSize)
  hit=self.world:Raycast(origin,direction*5000,params)
  if not hit then return nil end
  local p=hit.Instance
- while p and p~=self.world do local id=p:GetAttribute("EditorObjectId");if id then return id end;p=p.Parent end
+ while p and p~=self.world do local id=p:GetAttribute("EditorObjectId");if id then return id,nil,nil,hit.Position end;p=p.Parent end
 end
 function Scene:destroy()
  for _,record in self.models do if record.badge then record.badge:Destroy() end end

@@ -5,7 +5,7 @@ const fs=require('node:fs/promises');
 const path=require('node:path');
 const {createHash}=require('node:crypto');
 const {parseArgs}=require('node:util');
-const {readGlb,writeGlb,readAccessor,walkNodes,extractFaces,isCollisionNode,visualGlb}=require('./glb-collision');
+const {readGlb,writeGlb,readAccessor,walkNodes,extractFaces,isCollisionNode,isSnapMesh,visualGlb}=require('./glb-collision');
 
 const autoOptions={
  mode:{type:'string'},threshold:{type:'string'},passes:{type:'string'},
@@ -163,6 +163,7 @@ function generateCollision(bytes,options={}){
  walkNodes(source,(node,m,index)=>{
   if(node.mesh===undefined)return;
   const label=node.name||`node ${index}`;
+  if(isSnapMesh(source.json,node)){warnings.push(`Excluded helper ${label}`);return;}
   if(isCollisionNode(node.name)){existing.push({node,m,label});return;}
   if(helper(node)){warnings.push(`Excluded helper ${label}`);return;}
   visual.push({node,m,label});
@@ -198,7 +199,7 @@ function generateCollision(bytes,options={}){
  }else{
   if(!groups.length)throw new Error('No usable collision geometry found');
   if(generatedTriangles>limit)throw new Error(`Generated ${generatedTriangles} triangles; limit ${limit}. Try simplified mode or use a lower-detail source mesh.`);
-  output=appendGeometry(existing.length?readGlb(visualGlb(bytes)):source,groups,stamp);
+  output=appendGeometry(existing.length?readGlb(visualGlb(bytes,{keepSnap:true})):source,groups,stamp);
  }
  let profile;
  try{profile=extractFaces(output);}

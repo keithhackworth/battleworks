@@ -90,6 +90,7 @@ local royaleSprint=if isRoyale then remote("RoyaleSprint") else nil
 local labTravel=if isRoyale then remote("InnovationLabTravel") else nil
 local courseAction=if isRoyale and not isLab then remote("ProvingGroundsAction") else nil
 network:SetAttribute("GameMode",gameMode)
+network:SetAttribute("StartInMenu",isRoyale)
 network:SetAttribute("PlaygroundBWEnabled",isLab or not isRoyale or RoyaleConfig.bwEnabled(studioConfiguration))
 local bwExecution
 if diagnostics and network:GetAttribute("PlaygroundBWEnabled") then
@@ -1041,7 +1042,7 @@ if isRoyale then
  startup("Playground BW execution enabled: "..tostring(bwEnabled))
  royale=require(script.BattleRoyale).new({count=if lab then 0 else settings.count,delay=settings.delay,
   autonomy=if lab then Lab.autonomy elseif bwEnabled and settings.personalities then require(script.PlaygroundAutonomy)else nil,tanks=tanks,characters=Characters,
-  startInMenu=isLab,loadout=Lab and Lab.loadout,
+  startInMenu=true,loadout=Lab and Lab.loadout,
   nativeSpawn=nativeSpawn,
   beforeJoin=if lab then function(member,id)return lab:start(royale,member,id)end else nil,
   onMenu=if lab then function(player)lab:clear(royale,player)end else nil,

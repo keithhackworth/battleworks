@@ -1,5 +1,9 @@
 {
   "enabled": true,
+  "nativeProfileAxes": {
+    "Coaster/Flume/corner-large": [-3, 2, -1],
+    "Coaster/Flume/corner-small": [-3, 2, -1]
+  },
   "sourceFolders": {
     "Forest": "GLBs/forest",
     "Surburban": "GLBs/suburban"

@@ -63,7 +63,7 @@ try {
       const namespace=file.includes('/shell/')?'Shell':file.includes('/shared/')?'Shared':'Client';
       bundle += `${namespace}[${JSON.stringify(name)}]=${JSON.stringify(name)}\n`;
     }
-    bundle += '\nClient.shell=Shell\n';
+    bundle += '\nClient.shell=Shell\nClient.UI=Client\n';
     for (const [file, originalSource] of selected) {
       // Preserve historical weapon baselines as explicit assembly data, without
       // changing production simulation modules. Group14 preserves an explicit swap
@@ -217,6 +217,7 @@ try {
           const travel=await readFile('tests/InnovationLabTravelSetup.luau','utf8');
           boot=boot.replace('require("ServerEntrypoint")','local labEntry='+String(suite==='InnovationLabEntry')+'\n'+travel+'\nrequire("ServerEntrypoint")');
         }
+        if(suite==='PlaygroundAutonomyIntegration'||suite==='PlaygroundEditorProgramIntegration')boot+='\nenterPlayground(first);enterPlayground(second)\n';
         tests+='\ndo\nlocal headlessStartup=false\n'+setup+boot+await readFile('tests/'+suite+'.spec.luau','utf8')+'\nend\n';
       } else if(suite==='RoyaleServerIntegration'||suite==='RoyaleHeadlessServerIntegration'){
         const harness=await readFile('tests/ServerIntegration.spec.luau','utf8');

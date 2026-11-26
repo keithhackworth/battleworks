@@ -30,7 +30,6 @@ function Controller.new(context)
   return self.state.document
  end,function() if self.active then (context.playWorld or context.join)() end end)
  view.library=self.library
- self:loadCatalog()
  local function action(event,fn) view:on(event,function(...) if self.active then fn(...) end end) end
  for mode,button in view.tools do action(button.Activated,function() self:setMode(mode) end) end
  action(view.terrain.Activated,function() self:setMode(if self.mode=="Terrain" then "Move" else "Terrain") end)
@@ -160,7 +159,14 @@ function Controller.new(context)
   else view:message("Camera sensitivity must be between 0.2 and 3.") end
   view.cameraSensitivity.Text=tostring(self.cameraSensitivity)
  end)
- action(view.duplicate.Activated,function() self:perform(function() self.state:duplicate() end,"Duplicated selection. Drag the new object to move it.") end)
+ action(view.duplicate.Activated,function() self:duplicateSelection() end)
+ action(view.soundVisibility.Activated,function()
+  self:cancel()
+  self.soundBlocksHidden=not self.soundBlocksHidden
+  local entry=self:selected()
+  if self.soundBlocksHidden and entry and entry.sound then self.state.selection={} end
+  self:refresh()
+ end)
  action(view.repeatPlacement.Activated,function()
   self.repeatPlacement=not self.repeatPlacement
   view.repeatPlacement.Text=if self.repeatPlacement then "Repeat: On" else "Repeat: Off"
@@ -199,7 +205,9 @@ function Controller.new(context)
  action(view.frameWorld.Activated,function() self:frameWorld() end)
  action(view.edgeSnap.Activated,function()self:setMode("Snap")end)
  action(view.snapContact.Activated,function()
-  self:cancel();self.fitMode=if self.fitMode=="Stretch" then "Scale" else "Stretch";self:refresh()
+  self:cancel()
+  self.fitMode=if self.fitMode=="Stretch" then "Move" elseif self.fitMode=="Move" then "Scale" else "Stretch"
+  self:refresh()
  end)
  action(view.pinA.Activated,function()self:pinHere("A")end)
  action(view.pinB.Activated,function()self:pinHere("B")end)
@@ -232,16 +240,16 @@ function Controller.new(context)
  for key,values in modes do action(view.soundButtons[key].Activated,function()
   local entry=self:selected()
   if not entry or not entry.sound then return end
-  self:perform(function()
-   local index=table.find(values,entry.sound[key] or Audio.Default[key]) or 1
-   entry.sound[key]=values[index%#values+1]
+  self:editSound(entry.id,function(sound)
+   local index=table.find(values,sound[key] or Audio.Default[key]) or 1
+   sound[key]=values[index%#values+1]
   end,"Sound Block updated.")
  end) end
  for key,row in view.soundFields do action(row.field.FocusLost,function()
   local entry=self:selected();local value=tonumber(row.field.Text)
   if not entry or not entry.sound then return end
   if not value then self:refresh();return end
-  self:perform(function() entry.sound[key]=value end,"Sound Block updated.")
+  self:editSound(entry.id,function(sound) sound[key]=value end,"Sound Block updated.")
  end) end
  action(view.soundButtons.effect.Activated,function() self:openSoundPicker("effect") end)
  action(view.soundButtons.targets.Activated,function() self:openSoundPicker("targets") end)
@@ -253,6 +261,34 @@ function Controller.new(context)
   elseif entry and entry.sound then self:playSoundPreview(self.sfxByKey[entry.sound.effect],entry.sound) end
  end)
  action(view.soundButtons.attach.Activated,function() self:toggleAttachment() end)
+ action(view.soundButtons.follow.Activated,function()
+  self:cancel();self.followSoundSurface=not self.followSoundSurface
+  self:refresh()
+  self.view:message(if self.followSoundSurface then "Use Move to drag the Sound Block along a collision surface." else "Sound Blocks can move freely.")
+ end)
+ action(view.soundButtons.paint.Activated,function()
+  if self.gesture and self.gesture.kind=="PaintSoundTrail" then self:finishGesture(false);return end
+  local entry=self:selected()
+  if not entry or not entry.sound then return end
+  local wasArmed=self.paintSoundId==entry.id
+  self:setMode("Move")
+  if not wasArmed then self.paintSoundId=entry.id end
+  self:refresh()
+  if self.paintSoundId then self.view:message("Drag over the track to paint. Lift to move the camera, then drag again. Finish Painting saves the trail.") end
+ end)
+ action(view.finishPaint.Activated,function()
+  if self.gesture and self.gesture.kind=="PaintSoundTrail" then self:finishGesture(false) end
+ end)
+ action(view.paintBucket.Activated,function()
+  if self.gesture then return end
+  local entry=self:selected()
+  if not self.paintSoundItem and (not entry or entry.asset~=Audio.PaintAsset) then return end
+  local enabled=not self.paintBucketEnabled
+  if not self.paintSoundItem then self:setMode("Move");self.paintSoundId=entry.id end
+  self.paintBucketEnabled=enabled
+  self:refresh()
+  self.view:message(if enabled then "Click a drivable collision surface to fill its connected area." else "Drag over the collision surface to paint.")
+ end)
  action(view.spinToggle.Activated,function()
   local entry=self:motionEntry()
   if entry then self:perform(function()
@@ -396,6 +432,15 @@ function Controller:playSoundPreview(item,settings)
   end
  end)
 end
+function Controller:editSound(id,edit,message)
+ local g=self.gesture
+ if g and g.kind=="PaintSoundTrail" and g.id==id and not self:finishGesture(false) then return false end
+ return self:perform(function()
+  local entry=self.state:find(id)
+  assert(entry and entry.sound,"Select an audio asset first.")
+  edit(entry.sound)
+ end,message)
+end
 function Controller:openSoundPicker(mode)
  local entry=self:selected()
  if not entry or not entry.sound then return end
@@ -426,7 +471,7 @@ function Controller:showSoundPicker()
   end
   self.view:soundChoices(rows,function(item)
    self:closeSoundPicker()
-   self:perform(function() entry.sound.effect=item.key end,"Sound effect selected.")
+   self:editSound(picker.id,function(sound) sound.effect=item.key end,"Sound effect selected.")
   end,function(item)
    if self.soundPreview and self.soundPreview.SoundId=="rbxassetid://"..item.assetId then self:stopSoundPreview()
    else self:playSoundPreview(item,entry.sound) end
@@ -443,8 +488,8 @@ function Controller:showSoundPicker()
    end
   end
   self.view:soundChoices(rows,function(item)
-   self:perform(function()
-    local targets=entry.sound.targets or {};entry.sound.targets=targets
+   self:editSound(picker.id,function(sound)
+    local targets=sound.targets or {};sound.targets=targets
     local i=table.find(targets,item.id)
     if i then table.remove(targets,i)
     else assert(#targets<32,"Select up to 32 trigger assets");table.insert(targets,item.id) end
@@ -473,6 +518,10 @@ function Controller:refreshSound(entry)
  buttons.origin.Text=if sound.origin=="Trigger" then "Sound origin: Triggering object" else "Sound origin: Sound Block"
  buttons.targets.Visible=sound.filter=="Specific"
  buttons.targets.Text="Select Trigger Assets ("..#(sound.targets or {})..")"
+ buttons.follow.Text=if self.followSoundSurface then "Follow collision: On" else "Follow collision: Off"
+ buttons.follow.Visible=entry.asset==Audio.Asset
+ buttons.paint.Visible=entry.asset==Audio.PaintAsset
+ buttons.paint.Text=if self.gesture and self.gesture.kind=="PaintSoundTrail" then "Finish Painting" elseif self.paintSoundId==entry.id then "Cancel Sound Trail" elseif sound.trail then "Repaint Sound Trail" else "Paint Sound Trail"
  buttons.attach.Text=if entry.attachment then "Detach from "..entry.attachment.parent else "Snap & Lock to Asset"
 end
 function Controller:reconcileAttachments(before)
@@ -558,10 +607,12 @@ function Controller:loadCatalog()
  if not context.editorAssets and context.getEditorAssets then context.editorAssets=context.getEditorAssets() end
  if not context.editorAssets then return false end
  local data=context.editorAssets:FindFirstChild("Catalog")
- if not data then return false end
- local ok,items=pcall(function() return require(Shared.CatalogData).decode(data,Http,true) end)
- if ok then self.catalog=Document.catalog(items) else self.view:message("Catalog could not be read: "..tostring(items)) end
- return ok
+ if not data or data.Value=="" or not context.editorAssets:FindFirstChild("Templates") then return false end
+ local ok,items=pcall(Catalog.decode,data,Http,"pending")
+ if not ok then return false,tostring(items) end
+ if not items then return false end
+ self.catalog=Document.catalog(items)
+ return true
 end
 function Controller:selected()
  for id in self.state.selection do return self.state:find(id) end
@@ -792,13 +843,20 @@ function Controller:tunnelClick(point)
  self:refreshTunnel()
 end
 function Controller:refresh()
+ self.view.finishPaint.Visible=self.gesture~=nil and self.gesture.kind=="PaintSoundTrail" and self.gesture.lastStamp~=nil
+ local audio=self:selected()
+ self.view.paintBucket.Visible=not self.gesture and (self.paintSoundItem~=nil or (audio~=nil and audio.asset==Audio.PaintAsset))
+ self.view.paintBucket.Text=if self.paintBucketEnabled then "Paint Bucket: On" else "Paint Bucket"
+ self.view.status.Size=UDim2.new(1,if self.view.finishPaint.Visible or self.view.paintBucket.Visible then -154 else -16,0,24)
  self:refreshTraction()
  for axis,field in self.view.dimensions do
   if UIS:GetFocusedTextBox()~=field then field.Text=tostring(self.state.document.settings[axis]) end
  end
  self.view.placeStart.Text="Place start zone  •  "..#self.state.document.spawns.."/5"
+ self.view.soundVisibility.Text=if self.soundBlocksHidden then "Show Audio" else "Hide Audio"
  if self.scene then
   self.scene.traversability=self.traversability
+  self.scene.soundBlocksHidden=self.soundBlocksHidden
   self.scene:sync(self.state.document,self.catalog)
  end
  local selected=self:selected();self.view:selection(selected,selected and self.catalog.byPath[selected.asset]);self:refreshSound(selected)
@@ -816,8 +874,8 @@ function Controller:updateSnap()
  local entry=self:selected();local pin=entry and self.state.pins[entry.id]
  local side=if pin then pin.side else (self.snapPreview and self.snapPreview.side) or self.snapSide or 0
  self.view.edgeSnap.Text="Snap tool"
- self.view.snapContact.Text=if self.fitMode=="Stretch" then "Scale / [Stretch]" else "[Scale] / Stretch"
- self.view.pinStatus.Text=if self.fitMode=="Stretch" then "Drag a handle on an enabled resize axis. The opposite side stays fixed." else "Drag A–D or an edge dot onto a target dot or line. Click a source dot to pin that edge."
+ self.view.snapContact.Text=if self.fitMode=="Stretch" then "Scale / [Stretch] / Move" elseif self.fitMode=="Move" then "Scale / Stretch / [Move]" else "[Scale] / Stretch / Move"
+ self.view.pinStatus.Text=if self.fitMode=="Move" then "Drag a handle or edge dot to move the entire asset to a target." elseif self.fitMode=="Stretch" then "Drag a handle on an enabled resize axis. The opposite side stays fixed." else "Drag A–D or an edge dot onto a target dot or line. Click a source dot to pin that edge."
  if self.scene then self.scene:setSnap(self.edgeSnap,self.state.pins,side);self.scene:selection(entry and entry.id,self.distance) end
 end
 function Controller:pinHere(endpoint)
@@ -825,7 +883,9 @@ function Controller:pinHere(endpoint)
  if self.state.pins[entry.id] then self.view:message("Release the existing pin before choosing a different fixed end.");return end
  local item=self.catalog.byPath[entry.asset]
  if item.zone then self.view:message("Water/mud regions stay on the ground and cannot be pinned.");return end
- local ends,box=Snap.ends(entry,self.snapSide,item.collider);self.edgeSnap=true
+ local ends,box=Snap.ends(entry,self.snapSide,item.collider)
+ if not ends[endpoint] then self.view:message("This asset has no snap edges.");return end
+ self.edgeSnap=true
  self:perform(function()
   self.state.pins[entry.id]=Snap.pin(endpoint,{point={ends[endpoint].X,ends[endpoint].Y,ends[endpoint].Z},normal={box.up.X,box.up.Y,box.up.Z},kind="position"},self.snapSide)
  end,"Pinned end "..endpoint.." at its current position. Drag the other end onto a platform or ground.")
@@ -891,9 +951,30 @@ function Controller:browse()
  end,function(item) self:choose(item) end)
 end
 function Controller:choose(item)
- if not item.available then self.view:message("Native model is not packaged: "..item.model);return end
+ if not item.available then
+  self.view:message(item.model..": "..(item.loadError or "Native model is unavailable."))
+  return
+ end
+ if item.model==Audio.PaintAsset then
+  self:setMode("Move")
+  self.paintSoundItem=item;self.soundBlocksHidden=false;self.state.selection={}
+  self:refresh()
+  self.view:message("Drag to paint the track, or choose Paint Bucket to fill a connected surface.")
+  return
+ end
  self:cancel();self.placing=item;self.paletteDrag=self:mousePosition()
- self.state.selection={};self:refresh();self.view:message(item.model.." • drag onto ground, or click ground to place. Esc cancels.")
+ if Audio.isAsset(item.model) then self.soundBlocksHidden=false end
+ self.state.selection={};self:refresh()
+ self.view:message(item.model.." • "..(item.collisionWarning or "Drag onto ground or click ground to place. Esc cancels."))
+end
+function Controller:duplicateSelection()
+ local entry=self:selected()
+ local sound=entry and entry.sound
+ local follow=sound and entry.asset==Audio.Asset and self.followSoundSurface
+ local message=if follow then "Duplicated in place. Drag the copy along the collision surface." else "Duplicated selection."
+ if self:perform(function() self.state:duplicate(follow) end,message) and sound and self.mode~="Move" then
+  self:setMode("Move");self.view:message(message)
+ end
 end
 function Controller:updateGrid()
  self.view.snap.Text="Grid snap: "..(if self.state.snap then "ON" else "OFF")
@@ -925,7 +1006,7 @@ function Controller:focusSelected()
  self.distance=if size then math.clamp(size.Magnitude*1.8,20,1600) else 48
 end
 function Controller:zoom(delta)
- if self.gesture or self.terrainStroke or self.paused or self.windowUnfocused then return end
+ if self:gestureBlocksCamera() or self.terrainStroke or self.paused or self.windowUnfocused then return end
  local point=self:pointer()
  local nextDistance=math.clamp(self.distance*math.exp(-delta*.12*self.cameraSensitivity),20,2200)
  if point then self.focus+=(point-self.focus)*(1-nextDistance/self.distance) end
@@ -983,7 +1064,7 @@ function Controller:finishTerrain(cancel)
 end
 function Controller:candidate(point)
  local item=self.placing
- return {id="placement_preview",type=item.id,asset=item.model,position={self.state:snapValue(point.X),0,self.state:snapValue(point.Z)},rotation={0,0,0},scale=self.assetScales[item.model] or item.defaultScale or 1,solid=State.defaultSolid(item),destructible=item.destructible or false,hp=item.hp or 100,bounds=State.copy(item.size),sound=if item.model==Audio.Asset then State.copy(Audio.Default) else nil}
+ return {id="placement_preview",type=item.id,asset=item.model,position={self.state:snapValue(point.X),0,self.state:snapValue(point.Z)},rotation={0,0,0},scale=self.assetScales[item.model] or item.defaultScale or 1,solid=State.defaultSolid(item),destructible=item.destructible or false,hp=item.hp or 100,bounds=State.copy(item.size),sound=if Audio.isAsset(item.model) then State.copy(Audio.Default) else nil}
 end
 function Controller:place(point)
  if self.placingStart and point then
@@ -1003,12 +1084,18 @@ function Controller:place(point)
  end
 end
 function Controller:cancel()
+ self.paintSoundId=nil
+ self.paintSoundItem=nil
+ self.paintBucketEnabled=nil
  self.tunnelStart=nil
  self.attaching=nil
  self.motionDraft=nil;self.motionPoint=nil;self.motionDrag=nil;self:stopMotionPreview()
  if self.scene then self:drawMotion() end
  self:finishTerrain(true)
- if self.gesture then self.state:restore(self.gesture.before);self.gesture=nil;if self.scene then self.scene:sync(self.state.document,self.catalog) end end
+ if self.gesture then
+  self.state:restore(self.gesture.before);self.gesture=nil
+  if self.scene then self.scene.draggingSnap=false;self.scene:sync(self.state.document,self.catalog) end
+ end
  self.placing=nil;self.placingStart=nil;self.paletteDrag=nil;self:stopCamera()
  self.snapPreview=nil
  if self.scene then self.scene:snapFeedback(nil);self.scene:clearEdgeTargets();self.scene:setSnap(self.edgeSnap,self.state.pins,self.snapSide) end
@@ -1018,9 +1105,19 @@ end
 function Controller:finishGesture(cancel)
  local g=self.gesture;if not g then return end
  self.gesture=nil
+ if g.kind=="PaintSoundTrail" then
+  self.paintSoundId=nil
+  self.paintSoundItem=nil
+  self.paintBucketEnabled=nil
+  if not g.lastStamp then cancel=true end
+ end
  if self.scene then self.scene.draggingSnap=false;self.scene:clearEdgeTargets() end
  local ok,err=pcall(function()
   local preview=self.snapPreview
+  if not cancel and g.kind=="SoundSurfaceMove" and not g.surfaceMoved then
+   self.state:restore(g.before)
+   return
+  end
   if not cancel and g.clickPin and not g.moved then
    self.state:restore(g.before)
    self.state.pins[g.id]=g.clickPin
@@ -1031,7 +1128,7 @@ function Controller:finishGesture(cancel)
    local pin=if g.kind=="Snap" then State.copy(g.pin) else self.state.pins[g.id]
    if g.kind=="Snap" then self.state.pins[g.id]=pin end
    if pin then pin.second=Snap.pin(preview.endpoint,preview.target,pin.side,g.edgeIndex,g.edgeFraction)
-   else self.state.pins[g.id]=Snap.pin(preview.endpoint,preview.target,preview.side) end
+   else self.state.pins[g.id]=Snap.pin(preview.endpoint,preview.target,preview.side,g.edgeIndex,g.edgeFraction) end
   end
   self:reconcileAttachments(g.before.document)
   Document.export(self.state.document,self.catalog)
@@ -1042,7 +1139,53 @@ function Controller:finishGesture(cancel)
   if entry and entry.asset and entry.scale~=g.base.scale then self.assetScales[entry.asset]=entry.scale end
  end
  self.snapPreview=nil;if self.scene then self.scene:snapFeedback(nil) end
- self:refresh();self.view:message(if cancel then "Transform canceled." elseif ok then "Transform applied." else tostring(err))
+ self:refresh();self.view:message(if cancel then "Transform canceled." elseif not ok then tostring(err) elseif g.kind=="PaintSoundTrail" then "Sound trail painted." else "Transform applied.")
+ return ok and not cancel
+end
+local function stampSound(g,entry,hit)
+ if not g.lastStamp then
+  local delta=hit-(g.brushFrame.Position-g.brushFrame.UpVector*(g.brushSize.Y*.5))
+  g.brushFrame=CFrame.new(delta)*g.brushFrame
+  entry.position={g.base.position[1]+delta.X,g.base.position[2]+delta.Y,g.base.position[3]+delta.Z}
+  entry.sound.trail={}
+ end
+ local trail=entry.sound.trail
+ local p=g.brushFrame:PointToObjectSpace(hit+g.brushFrame.UpVector*(g.brushSize.Y*.5))
+ local function coordinate(n,dimension) return math.round(n/dimension*10000)/10000 end
+ local offset={coordinate(p.X,g.brushSize.X),coordinate(p.Y,g.brushSize.Y),coordinate(p.Z,g.brushSize.Z)}
+ if #trail>=Audio.MaxTrailPoints or math.max(math.abs(offset[1]),math.abs(offset[2]),math.abs(offset[3]))>Audio.MaxTrailOffset then return false end
+ table.insert(trail,offset);g.lastStamp=hit;g.previousHit=hit
+ return true
+end
+function Controller:paintSoundTrail(g,entry,pixel,overScene)
+ if not overScene then g.previousPixel=nil;g.previousHit=nil;return end
+ local scene,viewport=self.scene,self.view.viewport
+ local previous=g.previousPixel or pixel
+ local samples=math.clamp(math.ceil((pixel-previous).Magnitude/4),1,32)
+ local spacing=math.min(g.brushSize.X,g.brushSize.Z)*.3
+ for i=1,samples do
+  local at=previous+(pixel-previous)*(i/samples)
+  local origin,direction=Math.ray(scene.camera.CFrame,viewport.AbsoluteSize,at,scene.camera.FieldOfView)
+  local hit=scene:soundSurface(origin,direction)
+  if not hit then g.previousHit=nil;continue end
+  if g.previousHit and g.lastStamp and (hit-g.lastStamp).Magnitude<spacing then continue end
+  if not stampSound(g,entry,hit) then
+   self.view:message("Sound section limit reached. Finish Painting to keep this section.");break
+  end
+ end
+ g.previousPixel=pixel
+end
+function Controller:gestureBlocksCamera()
+ local g=self.gesture
+ return g and (g.kind~="PaintSoundTrail" or g.penDown)
+end
+function Controller:liftPaintPointer()
+ local g=self.gesture
+ if not g or g.kind~="PaintSoundTrail" then return false end
+ g.penDown=false;g.previousPixel=nil;g.previousHit=nil
+ self:refresh()
+ self.view:message("Painting paused. Pan or zoom, then drag again. Choose Finish Painting or press Enter when done.")
+ return true
 end
 function Controller:beginSnap(endpoint,entry,choice,pixel)
  local pin=self.state.pins[entry.id]
@@ -1057,19 +1200,28 @@ function Controller:beginSnap(endpoint,entry,choice,pixel)
   self.fitMode="Scale"
  end
  local ends,box=Snap.ends(entry,side,item.collider)
- local fixed=if pin and pin.endpoint==opposite then State.copy(pin) elseif pin and pin.second and pin.second.endpoint==opposite then State.copy(pin.second) else Snap.pin(opposite,{point={ends[opposite].X,ends[opposite].Y,ends[opposite].Z},normal={box.up.X,box.up.Y,box.up.Z},kind="position"},side)
- fixed.second=nil
+ if not ends[endpoint] or not ends[opposite] then self.view:message("This asset has no snap edges.");return end
+ local fixed
+ if self.fitMode~="Move" then
+  fixed=if pin and pin.endpoint==opposite then State.copy(pin) elseif pin and pin.second and pin.second.endpoint==opposite then State.copy(pin.second) else Snap.pin(opposite,{point={ends[opposite].X,ends[opposite].Y,ends[opposite].Z},normal={box.up.X,box.up.Y,box.up.Z},kind="position"},side)
+  fixed.second=nil
+ end
  self.edgeSnap=true
  local picked=if choice then choice.point else ends[endpoint]
  local edgeIndex=choice and choice.edge.index
  local fraction=choice and choice.fraction
- local clickPin=if edgeIndex then Snap.pin(endpoint,{point={picked.X,picked.Y,picked.Z},normal={box.up.X,box.up.Y,box.up.Z},kind="position"},side,edgeIndex,fraction) else nil
+ local normal=if choice then choice.edge.normal else box.up
+ local clickPin=if edgeIndex then Snap.pin(endpoint,{point={picked.X,picked.Y,picked.Z},normal={normal.X,normal.Y,normal.Z},kind="position"},side,edgeIndex,fraction) else nil
  self.gesture={kind="Snap",endpoint=endpoint,id=entry.id,before=self.state:snapshot(),base=State.copy(entry),pin=fixed,side=side,startPoint=picked,
   edgeIndex=edgeIndex,edgeFraction=fraction,clickPin=clickPin,startPixel=pixel}
  self.scene.draggingSnap=true
  self.state.pins[entry.id]=State.copy(fixed)
  self.snapPreview=nil;self:updateSnap()
- self.view:message("Drag this end; the opposite end stays fixed. Release to hold the fit. Esc cancels.")
+ self.view:message(if fixed then "Drag this end while the opposite end stays fixed. Release to hold the fit. Esc cancels." else "Drag this contact to move the entire asset. Release to pin it. Esc cancels.")
+end
+local function demoOwnsCursor()
+ local player=game:GetService("Players").LocalPlayer
+ return player and player:GetAttribute("BattleWorksUIDemoOpen")==true
 end
 local function releaseEditorCursor()
  if UIS.MouseBehavior~=Enum.MouseBehavior.Default then UIS.MouseBehavior=Enum.MouseBehavior.Default end
@@ -1080,11 +1232,12 @@ function Controller:stopCamera()
  self.cameraDrag=nil;self.cameraDelta=Vector2.zero
 end
 function Controller:beginCamera(input)
+ if demoOwnsCursor() then return false end
  if self.cameraDrag and self.cameraDrag.button==input.UserInputType then return true end
  if not self.active or not self.scene or self.terrainStroke or self.paused or UIS:GetFocusedTextBox() or self.view:isModal() or not self.view:isScene(self:mousePosition()) then return false end
  local button=input.UserInputType
  if button~=Enum.UserInputType.MouseButton2 and button~=Enum.UserInputType.MouseButton3 then return false end
- if self.gesture then return false end
+ if self:gestureBlocksCamera() then return false end
  self:stopCamera()
  self.cameraDrag={button=button}
  self.cameraDelta=Vector2.zero
@@ -1148,7 +1301,51 @@ function Controller:begin(input,processed)
  end
  if self.placing or self.placingStart then self:place(point);return end
  local pixel=mouse-self.view.viewport.AbsolutePosition
- local id,handle,choice=self.scene:pick(origin,direction,pixel,self.view.viewport.AbsoluteSize)
+ local painting=self.gesture
+ if painting and painting.kind=="PaintSoundTrail" then
+  painting.penDown=true
+  self:paintSoundTrail(painting,self.state:find(painting.id),pixel,true)
+  self.scene:sync(self.state.document,self.catalog,painting)
+  return
+ end
+ local beforePaint
+ if self.paintSoundItem then
+  local hit=self.scene:soundSurface(origin,direction)
+  if not hit then self.view:message("Start the stroke over a collision surface.");return end
+  if #self.state.document.objects>=512 then self.view:message("Object limit: 512");return end
+  beforePaint=self.state:snapshot()
+  local item=self.paintSoundItem
+  local id=self.state:add(item,{hit.X,0,hit.Z},item.size,self.assetScales[item.model],true)
+  self.paintSoundId=id
+  self.scene:sync(self.state.document,self.catalog)
+ end
+ if self.paintSoundId then
+  local entry=self:selected()
+  local record=entry and entry.id==self.paintSoundId and self.scene.models[entry.id]
+  local brush=record and record.model:FindFirstChild("Geometry")
+  if brush then
+   local before=beforePaint or self.state:snapshot()
+   self:clearContacts(entry.id)
+   self.gesture={kind="PaintSoundTrail",id=entry.id,before=before,base=State.copy(entry),
+    brushFrame=brush.CFrame,brushSize=brush.Size,penDown=true}
+   if self.paintBucketEnabled then
+    local points,reason=self.scene:fillSoundSurface(origin,direction,brush.Size)
+    if points then
+     for _,point in points do
+      if not stampSound(self.gesture,entry,point) then reason="Fill exceeds one audio section at this brush size.";break end
+     end
+    end
+    if self:finishGesture(reason~=nil) then self.view:message("Filled the connected collision surface.")
+    elseif reason then self.view:message(reason) end
+    return
+   end
+   self:paintSoundTrail(self.gesture,entry,pixel,true)
+   self:refresh()
+   self.view:message("Lift the pointer to move the camera. Choose Finish Painting or press Enter when done.")
+   return
+  end
+ end
+ local id,handle,choice,grabPoint=self.scene:pick(origin,direction,pixel,self.view.viewport.AbsoluteSize)
  if id then self.state:select(id);self:refresh() end
  if self.mode=="Select" then
   if not id then self.state.selection={};self:refresh() end
@@ -1164,7 +1361,14 @@ function Controller:begin(input,processed)
  if entry and (handle or (id and self.mode=="Move")) then
   local kind=handle or "Move"
   local before=self.state:snapshot()
-  local pivot=if Math.resizeAxis(kind) then self.scene.anchors[kind].CFrame.Position elseif kind:sub(1,6)=="Rotate" then Visual.measure(self.scene.models[entry.id].model).Position else nil
+  if entry.asset==Audio.Asset and self.followSoundSurface and (kind=="Move" or kind=="MoveX" or kind=="MoveZ") then
+   self:clearContacts(entry.id)
+   self.gesture={before=before,base=State.copy(entry),id=entry.id,kind="SoundSurfaceMove",startPixel=pixel}
+   return
+  end
+  local pivot=if Math.resizeAxis(kind) then self.scene.anchors[kind].CFrame.Position
+   elseif kind:sub(1,6)=="Rotate" or (entry.sound and kind=="Scale") then Visual.measure(self.scene.models[entry.id].model).Position
+   elseif entry.sound and kind=="Move" then grabPoint else nil
   local start=Math.dragPoint(kind,entry,origin,direction,self.scene.camera.CFrame,pivot)
   if not start then self.view:message("Orbit the camera slightly to face this rotation ring, then drag again.");return end
   self:clearContacts(entry.id)
@@ -1179,14 +1383,20 @@ function Controller:key(input,processed)
  if input.KeyCode==Enum.KeyCode.Escape and self.soundPicker then self:stopCamera();releaseEditorCursor();self:closeSoundPicker();return end
  if input.KeyCode==Enum.KeyCode.Escape then self:stopCamera();releaseEditorCursor() end
  if self.paused or processed or UIS:GetFocusedTextBox() or self.view:isModal() then return end
- if self.gesture and input.KeyCode~=Enum.KeyCode.Escape then return end
+ if self.gesture and input.KeyCode~=Enum.KeyCode.Escape then
+  if self.gesture.kind=="PaintSoundTrail" then
+   if input.KeyCode==Enum.KeyCode.Return or input.KeyCode==Enum.KeyCode.KeypadEnter then self:finishGesture(false)
+   elseif not self.gesture.penDown then self.keys[input.KeyCode]=true end
+  end
+  return
+ end
  self.keys[input.KeyCode]=true
  local control=UIS:IsKeyDown(Enum.KeyCode.LeftControl) or UIS:IsKeyDown(Enum.KeyCode.RightControl) or UIS:IsKeyDown(Enum.KeyCode.LeftMeta) or UIS:IsKeyDown(Enum.KeyCode.RightMeta)
  local shift=UIS:IsKeyDown(Enum.KeyCode.LeftShift) or UIS:IsKeyDown(Enum.KeyCode.RightShift)
  if input.KeyCode==Enum.KeyCode.Escape then self:cancel();self:refresh()
  elseif control and input.KeyCode==Enum.KeyCode.Z then self:history(shift)
  elseif control and input.KeyCode==Enum.KeyCode.Y then self:history(true)
- elseif control and input.KeyCode==Enum.KeyCode.D then self:perform(function() self.state:duplicate() end,"Duplicated selection.")
+ elseif control and input.KeyCode==Enum.KeyCode.D then self:duplicateSelection()
  elseif input.KeyCode==Enum.KeyCode.Delete or input.KeyCode==Enum.KeyCode.Backspace then self:perform(function() self.state:delete() end,"Deleted selection.")
  elseif input.KeyCode==Enum.KeyCode.One then self:setMode("Move") elseif input.KeyCode==Enum.KeyCode.Two then self:setMode("Rotate")
  elseif input.KeyCode==Enum.KeyCode.Three then self:setMode("Scale")
@@ -1196,6 +1406,7 @@ function Controller:key(input,processed)
  elseif input.KeyCode==Enum.KeyCode.Home then self:frameWorld() end
 end
 function Controller:step(dt)
+ if demoOwnsCursor() then self:stopCamera();self.keys={};return end
  if self.cameraDrag and not UIS:IsMouseButtonPressed(self.cameraDrag.button) then self:stopCamera() end
  if not self.cameraDrag then releaseEditorCursor() end
  local scene=self.scene;if not scene then return end
@@ -1213,6 +1424,9 @@ function Controller:step(dt)
  local overScene=self.view:isScene(mouse)
  scene.sourcePixel=if overScene then pixel else nil
  local gesture=self.gesture
+ if gesture and gesture.kind=="PaintSoundTrail" and gesture.penDown and not UIS:IsMouseButtonPressed(Enum.UserInputType.MouseButton1) then
+  self:liftPaintPointer()
+ end
  if gesture and Math.resizeAxis(gesture.kind) then
   if gesture.viewportSize~=self.view.viewport.AbsoluteSize or gesture.viewportPosition~=self.view.viewport.AbsolutePosition then
    self:finishGesture(true)
@@ -1234,7 +1448,7 @@ function Controller:step(dt)
    self.focus=Vector3.new(self.focus.X,math.max(0,self.focus.Y),self.focus.Z)
   else self.yaw-=delta.X*.006;self.pitch+=delta.Y*.004 end
  end
- if not self.paused and not UIS:GetFocusedTextBox() and not self.gesture and not self.terrainStroke and (not self.placing or self.cameraDrag) and not self.view:isModal() then
+ if not self.paused and not UIS:GetFocusedTextBox() and not self:gestureBlocksCamera() and not self.terrainStroke and (not self.placing or self.cameraDrag) and not self.view:isModal() then
   local forward=(if self.keys[Enum.KeyCode.W] then 1 else 0)-(if self.keys[Enum.KeyCode.S] then 1 else 0)
   local right=(if self.keys[Enum.KeyCode.D] then 1 else 0)-(if self.keys[Enum.KeyCode.A] then 1 else 0)
   if UIS:IsKeyDown(Enum.KeyCode.LeftControl) or UIS:IsKeyDown(Enum.KeyCode.RightControl) then forward=0;right=0 end
@@ -1278,6 +1492,19 @@ function Controller:step(dt)
   self.snapPreview=nil
   if g.kind=="StartMove" then
    if point then entry.position={if g.axis=="MoveZ" then g.base.position[1] else self.state:snapValue(g.base.position[1]+point.X-g.start.X),0,if g.axis=="MoveX" then g.base.position[3] else self.state:snapValue(g.base.position[3]+point.Z-g.start.Z)} end
+  elseif g.kind=="PaintSoundTrail" then
+   if g.penDown then self:paintSoundTrail(g,entry,pixel,overScene) end
+  elseif g.kind=="SoundSurfaceMove" then
+   if overScene and origin and direction and (g.surfaceMoved or (pixel-g.startPixel).Magnitude>4) then
+    local hit=scene:soundSurface(origin,direction)
+    if hit then
+     local candidate=table.clone(entry)
+     candidate.position={hit.X,hit.Y,hit.Z}
+     local valid,reason=pcall(Document.checkEntry,self.state.document,self.catalog,candidate)
+     if valid then entry.position=candidate.position;g.surfaceMoved=true end
+     self.view:message(if valid then "Following collision surface." else tostring(reason))
+    else self.view:message("Move the pointer over a collision surface to continue.") end
+   end
   elseif g.kind=="Snap" then
    copyPose(entry,g.base)
    if not g.startPixel or (pixel-g.startPixel).Magnitude>4 then g.moved=true end
@@ -1304,7 +1531,7 @@ function Controller:step(dt)
       self:checkResizeSize(fitted)
       return fitted
      end
-     return Snap.anchor(State.copy(g.base),Snap.pin(g.endpoint,target,g.side),self:snapProfile(entry))
+     return Snap.anchor(State.copy(g.base),Snap.pin(g.endpoint,target,g.side,g.edgeIndex,g.edgeFraction),self:snapProfile(entry))
     end)
     if ok then copyPose(entry,pose) end
     local valid,reason=pcall(Document.checkEntry,self.state.document,self.catalog,entry)
@@ -1364,16 +1591,31 @@ function Controller:enter(playtest)
  end
  self.active=true;self.paused=false;self.windowUnfocused=false;self.frame.Visible=true;self.view.overlay.Visible=false
  game:GetService("GuiService").SelectedObject=nil
- if self:loadCatalog() then
+ local function openScene()
+  local loaded,reason=self:loadCatalog()
+  if not loaded then
+   if reason then self.view:message("Catalog could not be read: "..reason) end
+   return false,reason
+  end
   self.scene=Scene.new(self.view.viewport,self.context.editorAssets,self.state.document)
   self:frameWorld();self:refresh();self:updateGrid();self:setMode(self.mode)
- else self.view:message("Asset library unavailable. Rebuild/sync the place with its editor catalog; no live battle objects will be edited.") end
- self:browse()
+  self:browse()
+  if playtest and playtest.openPlayground and self.state.document.id~="playground" then
+   self.library:open(self.state.document,"playground")
+  end
+  return true
+ end
+ local ready,readError=openScene()
+ if not ready then
+  self:browse()
+  if not readError then self.view:message("Loading the asset library…") end
+ end
  local function connect(event,fn) table.insert(self.runtime,event:Connect(fn)) end
  Actions:BindActionAtPriority("BattleWorksEditorCamera",function(...)return self:cameraAction(...)end,false,3000,Enum.UserInputType.MouseButton2,Enum.UserInputType.MouseButton3)
  -- Viewport-local delivery also works when UI marks the global event processed.
  connect(self.view.viewport.InputBegan,function(input) self:beginCamera(input) end)
  connect(UIS.InputBegan,function(input,processed)
+  if demoOwnsCursor() then return end
   if input.UserInputType==Enum.UserInputType.Keyboard then self:key(input,processed) elseif self.scene then self:begin(input,processed) end
  end)
  connect(UIS.InputEnded,function(input)
@@ -1389,6 +1631,7 @@ function Controller:enter(playtest)
   self.keys[input.KeyCode]=nil
   if self.cameraDrag and self.cameraDrag.button==input.UserInputType then self:stopCamera() end
   if input.UserInputType==Enum.UserInputType.MouseButton1 then
+   if self:liftPaintPointer() then return end
    if self.cameraDrag then self.paletteDrag=nil;return end
    if self.paused then self:cancel();return end
    if self.paletteDrag then
@@ -1400,6 +1643,7 @@ function Controller:enter(playtest)
   end
  end)
  connect(UIS.InputChanged,function(input)
+  if demoOwnsCursor() then return end
   if self.motionDrag and (input==self.motionDrag.input or input.UserInputType==Enum.UserInputType.MouseMovement) then
    local pointer=if input.UserInputType==Enum.UserInputType.Touch then Math.guiPoint(Vector2.new(input.Position.X,input.Position.Y),game:GetService("GuiService"):GetInsetArea(Enum.ScreenInsets.None).Min) else self:mousePosition()
    self:moveMotionPoint(pointer)
@@ -1409,18 +1653,31 @@ function Controller:enter(playtest)
   end
   if input.UserInputType==Enum.UserInputType.MouseWheel and not UIS:GetFocusedTextBox() and not self.view:isModal() and self.view:isScene(self:mousePosition()) then self:zoom(input.Position.Z) end
  end)
- connect(UIS.WindowFocusReleased,function() self.windowUnfocused=true;self:cancel();self.keys={};self:refresh() end)
+ connect(UIS.WindowFocusReleased,function()
+  self.windowUnfocused=true;self:stopCamera()
+  if not self:liftPaintPointer() then self:cancel();self:refresh() end
+  self.keys={}
+ end)
  connect(UIS.WindowFocused,function() self.windowUnfocused=false end)
  connect(UIS.TextBoxFocused,function() self:stopCamera();self.keys={} end)
  local gui=game:GetService("GuiService")
  connect(gui.MenuOpened,function() self.paused=true;self:cancel();self.keys={} end)
  connect(gui.MenuClosed,function() self.paused=false end)
- if self.scene then
-  connect(Run.RenderStepped,function(dt) self:step(dt) end)
-  if playtest and playtest.openPlayground and self.state.document.id~="playground" then
-   self.library:open(self.state.document,"playground")
+ local retryIn,loadingTime=0,0
+ connect(Run.RenderStepped,function(dt)
+  if self.scene then self:step(dt);return end
+  if readError then return end
+  if loadingTime<60 and loadingTime+dt>=60 then
+   self.view:message("Still waiting for the asset library. Check the server output for catalog errors.")
   end
- end
+  loadingTime+=dt
+  retryIn-=dt
+  if retryIn>0 then return end
+  retryIn=.25
+  local loaded,reason=openScene()
+  readError=reason
+  if loaded then self.view:message("Asset library ready.") end
+ end)
 end
 function Controller:exit()
  self:closeSoundPicker()

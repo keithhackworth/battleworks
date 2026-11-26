@@ -1,6 +1,10 @@
 -- Authored settings and pure contact/audio activation rules.
 local Sound={}
 Sound.Asset="Builtin/BW_sound_block"
+Sound.PaintAsset="Builtin/BW_paint_audio"
+function Sound.isAsset(path) return path==Sound.Asset or path==Sound.PaintAsset end
+Sound.MaxTrailPoints=2048
+Sound.MaxTrailOffset=8192
 Sound.Modes=table.freeze({"Always","Entry","Exit","Occupied"})
 Sound.Playback=table.freeze({"Once","Loop","Repeat"})
 Sound.RollOff=table.freeze({"Inverse","Linear","LinearSquare","InverseTapered"})
@@ -10,7 +14,17 @@ Sound.Default=table.freeze({effect="",activation="Always",playback="Loop",interv
 local limits={interval={.1,3600},cooldown={0,3600},volume={0,10},speed={.1,4},minDistance={0,1000},maxDistance={1,2000}}
 function Sound.validate(value)
  assert(type(value)=="table","Invalid Sound Block settings")
- for key in value do assert(Sound.Default[key]~=nil or key=="targets","Unknown Sound Block setting") end
+ for key in value do assert(Sound.Default[key]~=nil or key=="targets" or key=="trail","Unknown Sound Block setting") end
+ if value.trail~=nil then
+  local trail=value.trail
+  assert(type(trail)=="table" and #trail>=1 and #trail<=Sound.MaxTrailPoints,"Invalid sound trail length")
+  for i,p in trail do
+   assert(type(i)=="number" and i%1==0 and i>=1 and i<=#trail and type(p)=="table" and #p==3,"Invalid sound trail point")
+   for axis,n in p do
+    assert(type(axis)=="number" and axis%1==0 and axis>=1 and axis<=3 and type(n)=="number" and math.abs(n)<=Sound.MaxTrailOffset,"Invalid sound trail coordinate")
+   end
+  end
+ end
  assert(type(value.effect)=="string" and #value.effect<=160 and (value.effect=="" or value.effect:match("^[%w][%w_-]*$")),"Invalid sound catalog key")
  assert(table.find(Sound.Modes,value.activation) and table.find(Sound.Playback,value.playback) and table.find(Sound.RollOff,value.rollOff),"Invalid Sound Block mode")
  for key,range in limits do
@@ -27,6 +41,24 @@ function Sound.validate(value)
   end
  end
  assert(value.minDistance<=value.maxDistance,"Minimum audible distance exceeds maximum")
+end
+function Sound.trailOffset(point,size)
+ return Vector3.new(point[1]*size.X,point[2]*size.Y,point[3]*size.Z)
+end
+function Sound.nearestTrailOffset(offsets,listener,blendRadius)
+ local nearest,distance=nil,math.huge
+ local blend,total=Vector3.zero,0
+ local radiusSquared=(blendRadius or 0)^2
+ for _,offset in offsets do
+  local delta=offset-listener
+  local squared=delta:Dot(delta)
+  if squared<distance then nearest,distance=offset,squared end
+  if squared<radiusSquared then
+   local weight=(1-squared/radiusSquared)^2
+   blend+=offset*weight;total+=weight
+  end
+ end
+ return if total>0 then blend/total else nearest
 end
 local function radius(axis,tank,body)
  return math.abs(axis:Dot(tank.RightVector))*body.halfX+math.abs(axis:Dot(tank.UpVector))*(body.top-body.bottom)/2+math.abs(axis:Dot(tank.LookVector))*body.halfZ

@@ -8,7 +8,8 @@ function C.decode(node,http,waitForChunks)
   local chunks={}
   for i=1,count do
    local name=string.format("Chunk%04d",i)
-   local child=node:FindFirstChild(name) or (waitForChunks and node:WaitForChild(name,5))
+   local child=node:FindFirstChild(name) or (waitForChunks==true and node:WaitForChild(name,5))
+   if waitForChunks=="pending" and (not child or child.Value=="") then return nil end
    assert(child and child:IsA("StringValue"),"Catalog chunk not available yet");chunks[i]=child.Value
   end
   raw=table.concat(chunks)

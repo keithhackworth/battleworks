@@ -11,6 +11,7 @@ const {validatePath} = require('./world/asset-path');
 const {extractFaces, extractPairedFaces, visualGlb} = require('./glb-collision');
 const {nativeExports, findExport} = require('./native-assets');
 const {buildEditorCatalog} = require('./build-editor-catalog');
+const {alignProfile} = require('./bulk-collision');
 const {generateCollision,glbFiles,reportText,autoOptions} = require('./generate-collision');
 
 const cloud = 'https://apis.roblox.com';
@@ -138,13 +139,13 @@ async function importGlb(root, asset, sourceFile, options, log = console.log, re
  const visualSource = automatic ? automatic.bytes : original;
  const collisionSource = options.collision && await readGLB(options.collision);
  const visual = visualGlb(original);
- if (collisionSource && visual !== visualSource) throw new Error('Choose either named collision meshes or a separate collision GLB');
+ if (collisionSource && visualGlb(original,{keepSnap:true}) !== original) throw new Error('Choose either named collision meshes or a separate collision GLB');
  let profile;
  try {
   profile = automatic ? automatic.profile : collisionSource ? extractPairedFaces(visualSource, collisionSource) : extractFaces(visualSource, {preserveClearance: true});
   if (JSON.stringify(profile).length > 170000) throw new Error('Collision profile exceeds the catalog size limit');
  } catch (error) {
-  if (collisionSource || visual !== visualSource || profile?.explicitCollision) throw error;
+  if (collisionSource || visual !== visualSource || profile?.explicitCollision || error.explicitSnap) throw error;
   profile = null;
   log(`Collision will use native sampling: ${error.message}`);
  }
@@ -210,15 +211,17 @@ async function importGlb(root, asset, sourceFile, options, log = console.log, re
   await fs.writeFile(registry, JSON.stringify(bindings, null, 2) + '\n');
   changedRegistry = true;
   let item;
+  const nativeProfile=alignProfile(profile,config.nativeProfileAxes?.[asset]);
   await buildEditorCatalog(root, items => {
    item = items.find(item => item.model === asset);
    if ((!item?.packaged && (!reference || !isDeepStrictEqual(item?.cloudModel, reference))) || !item ||
      item.collider?.fit !== (profile ? 'faces' : 'mesh') ||
-     (profile && !Object.keys(profile).every(key => isDeepStrictEqual(item.collider[key], profile[key])))) {
+     (nativeProfile && !Object.keys(nativeProfile).every(key => isDeepStrictEqual(item.collider[key], nativeProfile[key])))) {
     throw new Error('Catalog could not match the native model to its verified collision profile');
    }
   });
   log(`Registered: ${asset} (${ext || 'Roblox model ' + reference.assetId}), ${profile ? profile.faces.length + ' collision faces' : 'native collision sampling'}. Sync Rojo and restart Play.`);
+  if(item.checkNativeProfile)log('BattleWorks will check collision orientation against the native model when it loads. See server Output for corrections or ambiguous matches.');
   return item;
  } catch (error) {
   if (changedRegistry) await fs.writeFile(registry, originalRegistry);

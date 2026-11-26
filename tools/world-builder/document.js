@@ -109,7 +109,12 @@ function validate(input,items){
    if(o.solid||o.destructible)fail(at,'Sound Blocks must be non-solid and indestructible');
    const audio=o.sound,loc=at+'.sound';
    const limits={interval:[.1,3600],cooldown:[0,3600],volume:[0,10],speed:[.1,4],minDistance:[0,1000],maxDistance:[1,2000]};
-   keys(audio,['effect','activation','playback','rollOff','filter','origin','targets',...Object.keys(limits)],loc);
+   keys(audio,['effect','activation','playback','rollOff','filter','origin','targets','trail',...Object.keys(limits)],loc);
+   if((type.model==='Builtin/BW_paint_audio')!==own(audio,'trail'))fail(loc,'Paint Audio requires a painted trail');
+   if(own(audio,'trail')){
+    if(!Array.isArray(audio.trail)||audio.trail.length<1||audio.trail.length>2048)fail(loc+'.trail','expected 1–2048 points');
+    audio.trail.forEach((p,i)=>vector(p,3,-8192,8192,loc+'.trail['+i+']'));
+   }
    if(typeof audio.effect!=='string'||!/^(?:[A-Za-z0-9][A-Za-z0-9_-]{0,159})?$/.test(audio.effect))fail(loc+'.effect','invalid catalog key');
    for(const [key,options] of Object.entries({activation:['Always','Entry','Exit','Occupied'],playback:['Once','Loop','Repeat'],rollOff:['Inverse','Linear','LinearSquare','InverseTapered'],filter:['Tanks','Moving','Both','Specific','Terrain'],origin:['Block','Trigger']})){
     const optional=key==='filter'||key==='origin';
@@ -128,7 +133,7 @@ function validate(input,items){
     vector(link.position,3,-8000,8000,at+'.attachment.position');
     vector(link.rotation,3,-8000,8000,at+'.attachment.rotation');
     const parent=input.objects.find(candidate=>candidate?.id===link.parent);
-    if(!parent||parent.asset==='Builtin/BW_sound_block'||parent.type==='builtin.sound_block'||parent.attachment)fail(at+'.attachment','missing or invalid parent');
+    if(!parent||['Builtin/BW_sound_block','Builtin/BW_paint_audio'].includes(parent.asset)||['builtin.sound_block','builtin.paint_audio'].includes(parent.type)||parent.attachment)fail(at+'.attachment','missing or invalid parent');
     vector(parent.position,3,-2000,2000,at+'.attachment.parent position');
     vector(parent.rotation,3,-360000,360000,at+'.attachment.parent rotation');
     pose=attachedPose(parent,link);

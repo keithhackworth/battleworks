@@ -1,0 +1,17 @@
+Import dent sprites:
+python3 tools/split_dents.py /tmp/dents6.png -o /tmp/decals
+
+Build tags:
+python3 tools/generate_wear.py   --base assets/ui/dogtags/steel/new_dogtag.png   --decals /tmp/decals   --count 50   --width 512   --wear 60   --min-stamps 16   --max-stamps 100   --seed 64
+
+outputs to /tmp/wear-generated
+
+to remove extra and rename to 01.png -> NN.png
+for i in {01..15}; do
+    mv -n "/tmp/wear-generated/tag_0${i}.png" "${i}.png"
+done
+
+Load assets into Roblox
+node tools/import-ui.js assets/ui/branding/logo.png
+or for a whole directory
+node tools/import-ui.js assets/ui/branding/

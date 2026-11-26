@@ -8,6 +8,8 @@ function nodeMatrix(node){
  return [(1-2*y*y-2*z*z)*s[0],(2*x*y+2*z*w)*s[0],(2*x*z-2*y*w)*s[0],0,(2*x*y-2*z*w)*s[1],(1-2*x*x-2*z*z)*s[1],(2*y*z+2*x*w)*s[1],0,(2*x*z+2*y*w)*s[2],(2*y*z-2*x*w)*s[2],(1-2*x*x-2*y*y)*s[2],0,...t,1];
 }
 const isCollisionNode=name=>typeof name==="string"&&/^COLLISION_/i.test(name);
+const isSnapName=name=>typeof name==='string'&&/^SNAP_/i.test(name);
+const isSnapMesh=(json,node)=>node?.mesh!==undefined&&(isSnapName(node.name)||isSnapName(json.meshes?.[node.mesh]?.name));
 function readGlb(bytes){
  const fail=m=>{throw new Error('GLB collision profile: '+m);};
  if(bytes.length<20||bytes.readUInt32LE(0)!==0x46546c67||bytes.readUInt32LE(4)!==2||bytes.readUInt32LE(8)!==bytes.length)fail('invalid GLB v2 header');
@@ -23,17 +25,18 @@ function readGlb(bytes){
  return {json,bin,chunks};
 }
 
-// Keep the hierarchy and transforms so visual children of a collision node
-// retain their authored pose. The original GLB remains the collision source.
-function visualGlb(bytes){
+// Retain helper transforms so any visible children keep their authored pose.
+// The original GLB supplies collision and snapping metadata.
+function visualGlb(bytes,{keepSnap=false}={}){
  const {json,chunks}=readGlb(bytes);
  let changed=false;
  for(const [index,node] of (json.nodes||[]).entries()){
-  if(!isCollisionNode(node.name))continue;
+  const snap=isSnapMesh(json,node);
+  if(snap?keepSnap:!isCollisionNode(node.name))continue;
   delete node.mesh;
   delete node.skin;
   delete node.weights;
-  node.name=`ColliderTransform_${index}`;
+  node.name=`${snap?'Snap':'Collider'}Transform_${index}`;
   changed=true;
  }
  if(!changed)return bytes;
@@ -66,7 +69,11 @@ function extractFaces(bytes,options={}){
  const {json}=source;
  const containsNamedMeshes=(json.nodes||[]).some(node=>node?.mesh!==undefined&&isCollisionNode(node?.name));
  try{return extractProfile(source,options);}
- catch(error){if(containsNamedMeshes)error.explicitCollision=true;throw error;}
+ catch(error){
+  if(containsNamedMeshes)error.explicitCollision=true;
+  if((json.nodes||[]).some(node=>isSnapMesh(json,node)))error.explicitSnap=true;
+  throw error;
+ }
 }
 function extractPairedFaces(visual,collision){
  const source=readGlb(collision);
@@ -104,23 +111,44 @@ function walkNodes({json,bin},callback){
  if(!roots)fail('missing scene');
  for(const root of roots)visit(root,identity(),new Set());
 }
+function appendSnap(snap,primitive,positions,read,mirrored){
+ const mode=primitive.mode??4;
+ const indices=primitive.indices===undefined?positions.map((_,i)=>i):read(primitive.indices).map(v=>v[0]);
+ if(indices.length>1536)throw new Error('SNAP_ mesh exceeds the 512 primitive limit');
+ if(indices.some(i=>!Number.isInteger(i)||i<0||i>=positions.length))throw new Error('Invalid SNAP_ mesh indices');
+ const points=indices.map(i=>positions[i]);
+ if(mode===4&&points.length%3===0){
+  for(let i=0;i<points.length;i+=3){
+   const [a,b,c]=points.slice(i,i+3);
+   snap.faces.push(mirrored?[a,c,b]:[a,b,c]);
+  }
+ }else if(mode===1&&points.length%2===0){
+  for(let i=0;i<points.length;i+=2)snap.segments.push(points.slice(i,i+2));
+ }else if((mode===2||mode===3)&&points.length>=2){
+  for(let i=1;i<points.length;i++)snap.segments.push([points[i-1],points[i]]);
+  if(mode===2)snap.segments.push([points.at(-1),points[0]]);
+ }else throw new Error('SNAP_ meshes require static triangles or lines');
+ if(snap.faces.length+snap.segments.length>512)throw new Error('SNAP_ mesh exceeds the 512 primitive limit');
+}
 function extractProfile(visual,options,collider){
  let explicit=!!collider;
  const fail=m=>{throw new Error('GLB collision profile: '+m);};
  const nodes=[];
  const collect=(source,forceCollision)=>walkNodes(source,(node,m)=>{
-  const collision=forceCollision??isCollisionNode(node.name);
+  const snap=isSnapMesh(source.json,node);
+  const collision=!snap&&(forceCollision??isCollisionNode(node.name));
   if(collision&&node.mesh!==undefined)explicit=true;
-  nodes.push({node,m,collision,read:(i,p)=>readAccessor(source,i,p),meshes:source.json.meshes});
+  nodes.push({node,m,collision,snap,read:(i,p)=>readAccessor(source,i,p),meshes:source.json.meshes});
  });
  collect(visual,collider?false:undefined);
  if(collider)collect(collider,true);
  const preserveClearance=explicit||options.preserveClearance;
  const triangles=[],undersides=[],downward=[],walls=[];
+ const snap={faces:[],segments:[]};
  const min=[Infinity,Infinity,Infinity],max=[-Infinity,-Infinity,-Infinity];
  const collisionMin=[Infinity,Infinity,Infinity],collisionMax=[-Infinity,-Infinity,-Infinity];
  let budget=0;
- for(const {node,m,collision,read,meshes} of nodes){
+ for(const {node,m,collision,snap:helper,read,meshes} of nodes){
   if(node.mesh===undefined)continue;
   const selected=!explicit||collision;
   const nodeUndersides=explicit?[]:downward;
@@ -130,12 +158,14 @@ function extractProfile(visual,options,collider){
   const initialFaces=triangles.length,initialWalls=walls.length;
   for(const primitive of mesh.primitives){
    if(primitive.extensions?.KHR_draco_mesh_compression)fail('compressed positions are unsupported');
-   if(selected&&((primitive.mode??4)!==4||primitive.targets||node.skin!==undefined))fail('only static uncompressed triangle primitives are supported');
+   if((selected||helper)&&(primitive.targets||node.skin!==undefined))fail('only static geometry is supported');
+   if(selected&&!helper&&(primitive.mode??4)!==4)fail('only static uncompressed triangle primitives are supported');
    const positions=read(primitive.attributes?.POSITION,true).map(p=>[0,1,2].map(i=>m[i]*p[0]+m[4+i]*p[1]+m[8+i]*p[2]+m[12+i]));
+   if(positions.some(p=>!p.every(Number.isFinite)))fail('nonfinite transformed vertex');
+   if(helper){appendSnap(snap,primitive,positions,read,determinant<0);continue;}
    // Anchor the profile to the bounds of the rendered asset, not the slabs.
    const low=explicit&&collision?collisionMin:min,high=explicit&&collision?collisionMax:max;
    for(const p of positions){
-    if(!p.every(Number.isFinite))fail('nonfinite transformed vertex');
     for(let i=0;i<3;i++){low[i]=Math.min(low[i],p[i]);high[i]=Math.max(high[i],p[i]);}
    }
    if(!selected)continue;
@@ -160,14 +190,19 @@ function extractProfile(visual,options,collider){
  const size=max.map((v,i)=>v-min[i]);
  if(size.some(n=>!Number.isFinite(n)||n<=1e-8))fail('visual mesh bounds must have volume');
  if(explicit&&size.some((n,i)=>collisionMin[i]<min[i]-n*.0005||collisionMax[i]>max[i]+n*.0005))fail('collision meshes must fit inside visual mesh bounds');
+ const normalizePoint=v=>v.map((n,i)=>(n-(min[i]+max[i])/2)/size[i]);
  const normalized=t=>{
-  const raw=t.map(v=>v.map((n,i)=>(n-(min[i]+max[i])/2)/size[i]));
+  const raw=t.map(normalizePoint);
   if(!preserveClearance)return raw;
   const rounded=raw.map(v=>v.map(n=>Math.round(n*1e6)/1e6||0));
   const [a,b,c]=rounded,u=b.map((n,i)=>n-a[i]),v=c.map((n,i)=>n-a[i]);
   return Math.hypot(u[1]*v[2]-u[2]*v[1],u[2]*v[0]-u[0]*v[2],u[0]*v[1]-u[1]*v[0])>1e-14?rounded:raw;
  };
  const profile={sourceSize:size,faces:triangles.map(normalized),...(explicit?{explicitCollision:true}:{})};
+ if(nodes.some(entry=>entry.snap)){
+  if(!snap.faces.length&&!snap.segments.length)fail('empty SNAP_ geometry');
+  profile.snap={faces:snap.faces.map(normalized),segments:snap.segments.map(segment=>segment.map(normalizePoint))};
+ }
  if(preserveClearance){
   if(walls.length>2048)fail('vertical face budget exceeded');
   profile.walls=walls.map(normalized);
@@ -195,7 +230,7 @@ function extractProfile(visual,options,collider){
  return profile;
 }
 async function loadFaces(filename,options){return extractFaces(await fs.readFile(filename),options);}
-module.exports={extractFaces,extractPairedFaces,loadFaces,visualGlb,isCollisionNode,readGlb,writeGlb,readAccessor,walkNodes};
+module.exports={extractFaces,extractPairedFaces,loadFaces,visualGlb,isCollisionNode,isSnapMesh,readGlb,writeGlb,readAccessor,walkNodes};
 if(require.main===module){
  const [input,output]=process.argv.slice(2);
  (async()=>{

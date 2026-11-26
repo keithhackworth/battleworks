@@ -24,11 +24,15 @@ workspace.WaitForChild=function(_,name) assert(name=="Arena");return arena end
 game.ReplicatedStorage.WaitForChild=function(_,name) assert(name=="TankNetwork");return network end
 local frame
 local run={IsStudio=function() return false end,BindToRenderStep=function(_,_,_,callback) frame=callback end}
+local listener={}
+local soundService={SetListener=function(_,kind,target) listener.kind=kind;listener.target=target end}
 game.GetService=function(self,name)
  if name=="RunService" then return run end
+ if name=="SoundService" then return soundService end
  return originalService(self,name)
 end
 Enum.RenderPriority.Camera={Value=200}
+Enum.ListenerType={ObjectPosition="Tank position",Camera="Camera"}
 player.UserId=101
 workspace.CurrentCamera={CameraType="Custom",CameraSubject="Original",CFrame=CFrame.new(Vector3.new(0,20,40)),Focus=CFrame.new(Vector3.zero),FieldOfView=70,FieldOfViewMode="Diagonal",ViewportSize=Vector2.new(1280,720)}
 workspace.CurrentCamera.ScreenPointToRay=function() return {Origin=Vector3.new(0,20,0),Direction=Vector3.new(0,-1,0)} end
@@ -37,7 +41,7 @@ local Renderer=require("TankRenderer")
 local renderers={}
 local effects=0
 Renderer.new=function(id,kind,weapon)
- local renderer={tankType=kind,weaponId=weapon,update=function() end,resetPose=function(self,state) self.position=state.position end,destroy=function(self) self.destroyed=true end}
+ local renderer={tankType=kind,weaponId=weapon,chassis={Position=Vector3.new(12,2,9),Parent=workspace},update=function() end,resetPose=function(self,state) self.position=state.position end,destroy=function(self) self.destroyed=true end}
  table.insert(renderers,renderer);return renderer
 end
 Renderer.shot=function() effects+=1 end
@@ -59,11 +63,17 @@ frame(1/30)
 check(named("TankHUD").Enabled and named("BWEditor").Enabled and #renderers==1,"admitted gameplay enables existing HUD, editor and renderer")
 check(requests[#requests].name=="Input" and requests[#requests].args[1].throttle==1,"existing keyboard path works after entry")
 check(workspace.CurrentCamera.CameraType==Enum.CameraType.Scriptable,"battle camera owns gameplay view")
+check(listener.kind==Enum.ListenerType.ObjectPosition and listener.target==renderers[1].chassis and
+ require("BattleAudioListener").position(workspace.CurrentCamera)==listener.target.Position,
+ "world audio uses the driven tank position for both Roblox playback and proximity checks")
+check(require("BattleAudioListener").vehicleId()=="101","audio can match the driven tank to a painted section's occupants")
 remotes.Shot.OnClientEvent:Fire("101",Vector3.zero,Vector3.new(0,0,-1),"Boomer",0)
 check(effects==1,"battle effects work while active")
 client:setActive(false)
 check(renderers[1].destroyed and not named("TankHUD").Enabled and not named("BWEditor").Enabled,"leaving removes render models and hides every gameplay layer")
 check(workspace.CurrentCamera.CameraType=="Custom" and workspace.CurrentCamera.CFrame==initial and workspace.CurrentCamera.FieldOfView==70 and workspace.CurrentCamera.FieldOfViewMode=="Diagonal","leaving restores camera state")
+check(listener.kind==Enum.ListenerType.Camera and listener.target==nil,"leaving a tank restores the camera audio listener")
+check(not require("BattleAudioListener").vehicleId(),"leaving clears the tank identity from the audio listener")
 local total=#requests
 for _=1,10 do frame(1/30) end
 remotes.Snapshot.OnClientEvent:Fire({["101"]=state},{["101"]={selected="101"}})

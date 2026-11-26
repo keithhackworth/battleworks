@@ -75,6 +75,11 @@ check(hit.Instance == box and hit.Distance == 0 and shell.done, "initial overlap
 box.CFrame.PointToObjectSpace = function() return Vector3.new(1.6,1.6,0) end
 shell = newShell(); hit = Projectiles.step(world,shell,1/60)
 check(hit == nil and not shell.done, "broadphase corner false positive rejected by sphere-box check")
+local mesh={IsA=function(_,class)return class=="MeshPart" end}
+setmetatable(mesh,{__index=function(_,key)error("MeshPart overlap queried "..key)end})
+world.overlap={mesh}
+shell=newShell();hit=Projectiles.step(world,shell,1/60)
+check(hit==nil and not shell.done,"native mesh bounds do not catch a shell in the empty part of a concave model")
 world.overlap = {}
 -- Shell starts at the cannon tip, but cannot skip cover inside barrel length.
 world.object = nil

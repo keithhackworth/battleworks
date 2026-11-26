@@ -4,6 +4,26 @@ local Contacts=require("VehicleContacts")
 local Sim=require("TankSimulation")
 local Components=require("VehicleComponents")
 local Codec=require("CatalogData")
+local Alignment=require("NativeCollisionAlignment")
+do
+ local profile={fit="faces",sourceSize={4,1,4},faces={},walls={},bases={},
+  snap={segments={{{.12,0,.3},{.22,0,.3}}}}}
+ for i=1,12 do
+  local x,z=.1+i*.01,.32
+  table.insert(profile.faces,{{x,0,z},{x,0,z+.01},{x+.01,0,z}})
+  table.insert(profile.bases,-.1)
+ end
+ local size=Vector3.new(4,1,4)
+ local axes=Alignment.choose(profile,size,function(p)return p[1]<-.3 and p[3]>0 and p[3]<.3 end)
+ check(axes and axes[1]==-3 and axes[3]==1,"native probe selects a clear oriented match")
+ local aligned=Alignment.apply(profile,axes)
+ check(aligned.faces[1][1][1]==-.32 and aligned.snap.segments[1][1][1]==-.3 and aligned.bases[1]==-.1,
+  "alignment transforms collision and snap geometry in the same frame while preserving base heights")
+ local ambiguous,reason=Alignment.choose(profile,size,function(p)return p[1]<0 and p[3]<0 end)
+ check(not ambiguous and reason:find("ambiguous",1,true),"weakly distinguished mappings are flagged rather than applied")
+ local noHit=Alignment.choose(profile,size,function()return false end)
+ check(not noHit,"a native mesh with no reliable ray hits does not receive a guessed correction")
+end
 -- Production codec exercises native-sized chunk bounds and missing replication.
 do
  local raw=string.rep("x",Codec.Limit-1).."界"..string.rep("x",Codec.Limit+17);local oldFactory=Instance.new
@@ -20,6 +40,7 @@ do
  check(Codec.decode(node,http).ok,"server/client codec reads chunked catalogs")
  local last=table.remove(node.children)
  check(not pcall(Codec.decode,node,http),"incomplete chunk replication cannot silently produce a partial catalog")
+ check(Codec.decode(node,http,"pending")==nil,"the editor can retry incomplete replication without yielding")
  function node:WaitForChild(name,timeout)check(timeout==5,"client chunk wait is bounded");return last end
  check(Codec.decode(node,http,true).ok,"client waits for a missing replicated catalog chunk")
  Instance.new=oldFactory

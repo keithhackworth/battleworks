@@ -1,6 +1,6 @@
 {
   "ClassName": "StringValue",
   "Properties": {
-    "Value": "[]"
+    "Value": "[{\"key\":\"sfx_0dff0c908b57c00ee467ddde\",\"name\":\"Vent\",\"category\":\"Air\",\"source\":\"Air/vent.mp3\",\"assetId\":\"117248249126726\",\"sha256\":\"72813982b8304644c13d6d3afbffb18c7c5cd773e81d739985a0134362b383e1\",\"moderation\":\"Approved\"}]"
   }
 }

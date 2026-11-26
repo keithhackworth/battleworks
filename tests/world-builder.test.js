@@ -216,4 +216,11 @@ test('Sound Blocks retain trigger filters, local attachment, dimensions and moti
  assert.throws(()=>validate(world,items),/unique placed IDs/);
  delete block.sound.targets;block.solid=true;
  assert.throws(()=>validate(world,items),/non-solid|no collider/);
+ block.solid=false;block.type='builtin.paint_audio';block.asset='Builtin/BW_paint_audio';
+ block.sound.trail=[[0,0,0],[.25,.5,1],[2,1,4]];
+ assert.deepEqual(migrate(compileDocument(world,items).manifest,items,'paint_audio').objects.find(o=>o.id==='horn').sound.trail,block.sound.trail);
+ block.sound.trail=Array.from({length:2048},(_,i)=>[i/4,0,0]);
+ assert.equal(migrate(compileDocument(world,items).manifest,items,'long_audio').objects.find(o=>o.id==='horn').sound.trail.length,2048);
+ block.sound.trail=[[8193,0,0]];
+ assert.throws(()=>validate(world,items),/trail/);
 });

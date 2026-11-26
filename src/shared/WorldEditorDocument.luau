@@ -39,9 +39,10 @@ function Document.checkEntry(doc,catalog,o)
  assert(o.regenerates==nil or type(o.regenerates)=="boolean","Invalid regeneration setting")
  assert(o.regenerationDelay==nil or finite(o.regenerationDelay,0,Document.MaxRegenerationDelay),"Regeneration delay must be 0–3600 seconds")
  assert(o.traction==nil or (finite(o.traction,0,100) and Document.canSetAssetTraction(item)),"Asset traction requires an eligible collider and 0–100%")
- if item.model==Audio.Asset then
+ if Audio.isAsset(item.model) then
   assert(not o.solid and not o.destructible and o.traction==nil,"Sound Blocks cannot collide or take damage")
   Audio.validate(o.sound)
+  assert((item.model==Audio.PaintAsset)==(o.sound.trail~=nil),"Paint Audio requires a painted trail")
  else assert(o.sound==nil and o.attachment==nil,"Only Sound Blocks support audio settings and attachment") end
  assert(finite(o.hp,1,100000),"HP must be in [1,100000]")
  assert(not (o.solid or o.destructible) or item.collider,"This asset has no registered collider")
@@ -88,7 +89,7 @@ function Document.resolveAttachments(doc)
    local link=entry.attachment
    assert(Attachment.valid(link),"Invalid asset attachment")
    local parent=entries[link.parent]
-   assert(entry.asset==Audio.Asset and parent and parent.asset~=Audio.Asset and parent~=entry and not parent.attachment,"Missing or invalid attachment parent")
+   assert(Audio.isAsset(entry.asset) and parent and not Audio.isAsset(parent.asset) and parent~=entry and not parent.attachment,"Missing or invalid attachment parent")
    Attachment.apply(parent,entry)
   end
  end

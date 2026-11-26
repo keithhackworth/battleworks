@@ -1,8 +1,107 @@
 local Snap=require("WorldEditorSnap")
 local State=require("WorldEditorState")
 local Math=require("WorldEditorMath")
+local Fill=require("AudioSurfaceFill")
 local count=0
 local function check(ok,message)assert(ok,message);count+=1 end
+local function quad(faces,a,b,c,d)
+ table.insert(faces,{a,b,c});table.insert(faces,{a,c,d})
+end
+local function rectangle(faces,x0,x1,y,z0,z1)
+ quad(faces,{x0,y,z0},{x0,y,z1},{x1,y,z1},{x1,y,z0})
+end
+local unit={position={0,-.5,0},rotation={0,0,0},bounds={1,1,1},scale=1}
+do
+ local function face(a,b,c)
+  return {vertices={Vector3.new(table.unpack(a)),Vector3.new(table.unpack(b)),Vector3.new(table.unpack(c))}}
+ end
+ local seed=face({0,0,0},{0,0,8},{8,0,8})
+ local adjacent=face({0,0,0},{8,0,8},{8,0,0})
+ local snapped=face({8.06,0,2},{8.06,0,6},{16,2,4})
+ local stacked=face({0,3,0},{0,3,8},{8,3,8})
+ local corner=face({0,0,0},{-8,0,-8},{-8,0,0})
+ local region=Fill.connected({seed,adjacent,snapped,stacked,corner},seed)
+ check(#region==3,"bucket crosses snapped partial edges and excludes stacked and corner-only surfaces")
+ local points=Fill.sample(region,Vector3.new(2,0,6),Vector3.new(4,4,4),64)
+ local ramp=false
+ for _,p in points do if p.X>8.06 and p.Y>0 then ramp=true end end
+ check(ramp,"bucket stamps follow the connected ramp elevation")
+ check(Fill.sample(region,Vector3.new(2,0,6),Vector3.new(4,4,4),1)==nil,"oversized bucket fills do not return a partial result")
+end
+do
+ local function flume(curved)
+  local slices=8
+  local faces={}
+  local width={-.15,-.07,.07,.15}
+  local height={.3,0,0,.3}
+  local function point(i,j)
+   if not curved then return {width[j],height[j],i/slices-.5} end
+   local theta=i/slices*math.pi/2
+   local radius=.3+width[j]
+   return {radius*math.cos(theta),height[j],radius*math.sin(theta)}
+  end
+  for i=0,slices-1 do
+   for j=1,3 do quad(faces,point(i,j),point(i+1,j),point(i+1,j+1),point(i,j+1)) end
+  end
+  local profile={fit="faces",faces=faces}
+  local edges=Snap.sourceOptions(unit,profile)
+  check(#edges==(if curved then slices*2+6 else 8),"flume snap geometry contains the outer rims and the two end profiles")
+  check(#Snap.collisionGeometry(unit,profile).edges==#edges,"source and target snapping share the flume boundary")
+  if curved then
+   for _,edge in edges do
+    local a,b=edge.a,edge.b
+    if math.abs(a.Y-.3)<1e-5 and math.abs(b.Y-.3)<1e-5 then
+     check((a-b).Magnitude<.1,"curved rims retain their individual chords and the concave opening")
+    end
+   end
+  end
+ end
+ flume(false);flume(true)
+end
+do
+ local faces={}
+ rectangle(faces,-.5,0,0,-.5,.5)
+ rectangle(faces,.000003,.5,0,-.5,0)
+ rectangle(faces,.000003,.5,0,0,.5)
+ rectangle(faces,-.25,.25,0,-.3,.3)
+ rectangle(faces,-.5,0,0,-.5,.5)
+ local edges=Snap.sourceOptions(unit,{fit="faces",faces=faces})
+ check(#edges==4,"T-junctions, partial overlap, duplicated triangles and near-coincident seams leave four merged exterior edges")
+ for _,edge in edges do
+  check(math.abs((edge.b-edge.a).Magnitude-1)<1e-5,"each side is contiguous across the original collision pieces")
+ end
+end
+do
+ local faces={}
+ rectangle(faces,-.5,.2,.4,-.5,.5)
+ rectangle(faces,-.2,.15,.1,-.2,.2)
+ rectangle(faces,.2,.5,-.25,-.5,.5)
+ local edges=Snap.sourceOptions(unit,{fit="faces",faces=faces,bases={-.4,-.4,0,0,-.4,-.4}})
+ check(#edges==8,"buried seams disappear while the adjacent lower step retains its own perimeter")
+ for _,edge in edges do check(math.abs(edge.a.Y-.1)>1e-5,"an edge inside the combined collision volume is hidden") end
+end
+do
+ local collision,snap={},{}
+ rectangle(collision,-.5,.5,.4,-.5,.5)
+ quad(snap,{-.2,-.2,-.1},{-.2,-.1,.1},{.2,-.1,.1},{.2,-.2,-.1})
+ local profile={fit="faces",faces=collision,snap={faces=snap}}
+ local placed={position={12,4,-8},rotation={25,48,12},bounds={4,7,9},stretch={2,.5,1.5},scale=2}
+ local options=Snap.sourceOptions(placed,profile)
+ local geometry=Snap.collisionGeometry(placed,profile)
+ local box=Snap.box(placed)
+ check(#options==4 and #geometry.edges==4 and #geometry.faces==2,"explicit snap mesh replaces automatically derived edges and leaves collision faces intact")
+ for i,edge in options do
+  local localPoint=edge.a-box.position
+  local z=(localPoint.X*box.back.X+localPoint.Y*box.back.Y+localPoint.Z*box.back.Z)/box.size.Z
+  local contact=Snap.contact(placed,edge.side,0,profile,i,.5)
+  check(math.abs(math.abs(z)-.1)<1e-5 and (edge.b+edge.a-contact*2).Magnitude<1e-5,"authored contacts follow rotation and nonuniform resize")
+  local direction=(edge.b-edge.a).Unit
+  check(math.abs(direction.X*edge.normal.X+direction.Y*edge.normal.Y+direction.Z*edge.normal.Z)<1e-5,"transformed normals remain perpendicular to authored edges")
+ end
+ check(not Snap.collisionTarget(placed,geometry,box.position,0,box.up),"explicit mode does not offer collision-face targets")
+ local line={fit="faces",faces=collision,snap={segments={{{-.3,0,0},{0,0,0}},{{0,0,0},{.3,0,0}}}}}
+ check(#Snap.sourceOptions(placed,line)==1,"authored line primitives merge into a single snap edge")
+end
 do
  local rock={id="stacked",position={0,0,0},rotation={0,0,0},bounds={12,12,20},scale=1}
  local profile={fit="faces",faces={}}
@@ -46,6 +145,9 @@ do
  local down=Vector3.new(0,-1,0)
  local hit=Snap.collisionHit(geometry,Vector3.new(4.5,30,5),down,100)
  check(hit and math.abs(hit.point.Y-2)<1e-5,"snap ray hits the low collision deck below the visual top")
+ local follow=Snap.collisionHit(geometry,Vector3.new(4.5,30,5),down,100,true)
+ check(follow and math.abs(follow.point.Y-2)<1e-5 and not Snap.collisionHit(geometry,Vector3.new(8,30,5),down,100,true),
+  "collision following finds support within the real deck and rejects the surrounding render bounds")
  local target=Snap.collisionTarget(deck,geometry,hit.point,Snap.Radius,hit.normal)
  check(target.kind=="edge" and target.point[1]==5,"snap picks the deck boundary inside the visible bounding box")
  check(Snap.collisionHit(geometry,Vector3.new(8,30,0),down,100)==nil,"ray misses decorative geometry outside the deck")

@@ -37,6 +37,41 @@
       ]
     },
     {
+      "Name": "BW_paint_audio",
+      "ClassName": "Model",
+      "Children": [
+        {
+          "Name": "Geometry",
+          "ClassName": "Part",
+          "Properties": {
+            "Size": [
+              8,
+              4,
+              8
+            ],
+            "Position": [
+              0,
+              2,
+              0
+            ],
+            "Shape": "Block",
+            "Material": "SmoothPlastic",
+            "Color": [
+              0.25098039215686274,
+              0.615686274509804,
+              0.7647058823529411
+            ],
+            "Anchored": true,
+            "CanCollide": false,
+            "CanQuery": false,
+            "CanTouch": false,
+            "Transparency": 0.6,
+            "CastShadow": false
+          }
+        }
+      ]
+    },
+    {
       "Name": "BW_block",
       "ClassName": "Model",
       "Children": [

@@ -27,6 +27,237 @@
       "explicitCollision": true
     },
     {
+      "asset": "Coaster/Flume/straight",
+      "packaged": false,
+      "delivery": "roblox",
+      "assetId": "96258417838652",
+      "source": "GLBs/imported/Coaster/Flume/straight.with-collision.glb",
+      "fit": "faces",
+      "faces": 120,
+      "walls": 60,
+      "explicitCollision": true
+    },
+    {
+      "asset": "Coaster/Flume/corner-large-ramp",
+      "packaged": false,
+      "delivery": "roblox",
+      "assetId": "98091734206553",
+      "source": "GLBs/imported/Coaster/Flume/corner-large-ramp.with-collision.glb",
+      "fit": "faces",
+      "faces": 240,
+      "walls": 14,
+      "explicitCollision": true
+    },
+    {
+      "asset": "Coaster/Flume/corner-large",
+      "packaged": false,
+      "delivery": "roblox",
+      "assetId": "74945373490529",
+      "source": "GLBs/imported/Coaster/Flume/corner-large.with-collision.glb",
+      "fit": "faces",
+      "faces": 242,
+      "walls": 14,
+      "explicitCollision": true
+    },
+    {
+      "asset": "Coaster/Flume/corner-small-ramp",
+      "packaged": false,
+      "delivery": "roblox",
+      "assetId": "105281738089077",
+      "source": "GLBs/imported/Coaster/Flume/corner-small-ramp.with-collision.glb",
+      "fit": "faces",
+      "faces": 131,
+      "walls": 12,
+      "explicitCollision": true
+    },
+    {
+      "asset": "Coaster/Flume/corner-small",
+      "packaged": false,
+      "delivery": "roblox",
+      "assetId": "135776981412331",
+      "source": "GLBs/imported/Coaster/Flume/corner-small.with-collision.glb",
+      "fit": "faces",
+      "faces": 131,
+      "walls": 14,
+      "explicitCollision": true
+    },
+    {
+      "asset": "Coaster/Flume/curve",
+      "packaged": false,
+      "delivery": "roblox",
+      "assetId": "109441781667500",
+      "source": "GLBs/imported/Coaster/Flume/curve.with-collision.glb",
+      "fit": "faces",
+      "faces": 176,
+      "walls": 25,
+      "explicitCollision": true
+    },
+    {
+      "asset": "Coaster/Flume/looping",
+      "packaged": false,
+      "delivery": "roblox",
+      "assetId": "71934971470388",
+      "source": "GLBs/imported/Coaster/Flume/looping.with-collision.glb",
+      "fit": "faces",
+      "faces": 485,
+      "walls": 40,
+      "explicitCollision": true
+    },
+    {
+      "asset": "Coaster/Flume/segment",
+      "packaged": false,
+      "delivery": "roblox",
+      "assetId": "87661345519739",
+      "source": "GLBs/imported/Coaster/Flume/segment.with-collision.glb",
+      "fit": "faces",
+      "faces": 4,
+      "walls": 20,
+      "explicitCollision": true
+    },
+    {
+      "asset": "Coaster/Flume/straight-bend-large",
+      "packaged": false,
+      "delivery": "roblox",
+      "assetId": "137785106107454",
+      "source": "GLBs/imported/Coaster/Flume/straight-bend-large.with-collision.glb",
+      "fit": "faces",
+      "faces": 248,
+      "walls": 10,
+      "explicitCollision": true
+    },
+    {
+      "asset": "Coaster/Flume/straight-bend",
+      "packaged": false,
+      "delivery": "roblox",
+      "assetId": "89022953159253",
+      "source": "GLBs/imported/Coaster/Flume/straight-bend.with-collision.glb",
+      "fit": "faces",
+      "faces": 136,
+      "walls": 10,
+      "explicitCollision": true
+    },
+    {
+      "asset": "Coaster/Flume/straight-bump-down",
+      "packaged": false,
+      "delivery": "roblox",
+      "assetId": "89210265086625",
+      "source": "GLBs/imported/Coaster/Flume/straight-bump-down.with-collision.glb",
+      "fit": "faces",
+      "faces": 154,
+      "walls": 20,
+      "explicitCollision": true
+    },
+    {
+      "asset": "Coaster/Flume/straight-bump-up",
+      "packaged": false,
+      "delivery": "roblox",
+      "assetId": "80668996419293",
+      "source": "GLBs/imported/Coaster/Flume/straight-bump-up.with-collision.glb",
+      "fit": "faces",
+      "faces": 154,
+      "walls": 20,
+      "explicitCollision": true
+    },
+    {
+      "asset": "Coaster/Flume/straight-hill-beginning",
+      "packaged": false,
+      "delivery": "roblox",
+      "assetId": "132505830546438",
+      "source": "GLBs/imported/Coaster/Flume/straight-hill-beginning.with-collision.glb",
+      "fit": "faces",
+      "faces": 164,
+      "walls": 10,
+      "explicitCollision": true
+    },
+    {
+      "asset": "Coaster/Flume/straight-hill-complete-half",
+      "packaged": false,
+      "delivery": "roblox",
+      "assetId": "96940399004520",
+      "source": "GLBs/imported/Coaster/Flume/straight-hill-complete-half.with-collision.glb",
+      "fit": "faces",
+      "faces": 154,
+      "walls": 20,
+      "explicitCollision": true
+    },
+    {
+      "asset": "Coaster/Flume/straight-hill-complete",
+      "packaged": false,
+      "delivery": "roblox",
+      "assetId": "135467446802373",
+      "source": "GLBs/imported/Coaster/Flume/straight-hill-complete.with-collision.glb",
+      "fit": "faces",
+      "faces": 154,
+      "walls": 20,
+      "explicitCollision": true
+    },
+    {
+      "asset": "Coaster/Flume/straight-hill-end",
+      "packaged": false,
+      "delivery": "roblox",
+      "assetId": "97245388699026",
+      "source": "GLBs/imported/Coaster/Flume/straight-hill-end.with-collision.glb",
+      "fit": "faces",
+      "faces": 154,
+      "walls": 10,
+      "explicitCollision": true
+    },
+    {
+      "asset": "Coaster/Flume/straight-skew-left-side",
+      "packaged": false,
+      "delivery": "roblox",
+      "assetId": "119356944860430",
+      "source": "GLBs/imported/Coaster/Flume/straight-skew-left-side.with-collision.glb",
+      "fit": "faces",
+      "faces": 123,
+      "walls": 60,
+      "explicitCollision": true
+    },
+    {
+      "asset": "Coaster/Flume/straight-skew-left",
+      "packaged": false,
+      "delivery": "roblox",
+      "assetId": "88689346632871",
+      "source": "GLBs/imported/Coaster/Flume/straight-skew-left.with-collision.glb",
+      "fit": "faces",
+      "faces": 122,
+      "walls": 60,
+      "explicitCollision": true
+    },
+    {
+      "asset": "Coaster/Flume/straight-skew-right-side",
+      "packaged": false,
+      "delivery": "roblox",
+      "assetId": "81147141497083",
+      "source": "GLBs/imported/Coaster/Flume/straight-skew-right-side.with-collision.glb",
+      "fit": "faces",
+      "faces": 123,
+      "walls": 60,
+      "explicitCollision": true
+    },
+    {
+      "asset": "Coaster/Flume/straight-skew-right",
+      "packaged": false,
+      "delivery": "roblox",
+      "assetId": "124751227279046",
+      "source": "GLBs/imported/Coaster/Flume/straight-skew-right.with-collision.glb",
+      "fit": "faces",
+      "faces": 122,
+      "walls": 60,
+      "explicitCollision": true
+    },
+    {
+      "asset": "Coaster/Flume/track",
+      "packaged": false,
+      "delivery": "roblox",
+      "assetId": "138447506854817",
+      "source": "GLBs/imported/Coaster/Flume/track.with-collision.glb",
+      "fit": "faces",
+      "faces": 28,
+      "walls": 0,
+      "explicitCollision": true
+    },
+    {
       "asset": "Forest/building-platform",
       "packaged": true,
       "source": "GLBs/forest/building-platform.glb",
@@ -57,7 +288,7 @@
       "fit": "mesh",
       "faces": 0,
       "walls": 0,
-      "reason": "GLB collision profile: only static uncompressed triangle primitives are supported"
+      "reason": "GLB collision profile: only static geometry is supported"
     },
     {
       "asset": "Forest/fence",
@@ -493,8 +724,8 @@
     }
   ],
   "summary": {
-    "processed": 61,
-    "faces": 60,
+    "processed": 82,
+    "faces": 81,
     "sampled": 1,
     "unavailable": 1
   }

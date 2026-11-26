@@ -21,5 +21,215 @@
     "source": "GLBs/forest/rope_bridge.glb",
     "model": "Forest/rope_bridge",
     "displayName": "Rope Bridge"
+  },
+  "92a5ad97a7f5e59a": {
+    "model": "Coaster/Flume/straight",
+    "source": "GLBs/imported/Coaster/Flume/straight.with-collision.glb",
+    "displayName": "straight",
+    "cloudModel": {
+      "assetId": "96258417838652",
+      "creatorId": "11941550154",
+      "creatorType": "User"
+    }
+  },
+  "953cb86b8c01ba3b": {
+    "model": "Coaster/Flume/corner-large-ramp",
+    "source": "GLBs/imported/Coaster/Flume/corner-large-ramp.with-collision.glb",
+    "displayName": "corner-large-ramp",
+    "cloudModel": {
+      "assetId": "98091734206553",
+      "creatorId": "11941550154",
+      "creatorType": "User"
+    }
+  },
+  "7d8bd9d803fe32f4": {
+    "model": "Coaster/Flume/corner-large",
+    "source": "GLBs/imported/Coaster/Flume/corner-large.with-collision.glb",
+    "displayName": "corner-large",
+    "cloudModel": {
+      "assetId": "74945373490529",
+      "creatorId": "11941550154",
+      "creatorType": "User"
+    }
+  },
+  "2e04869e3ccadc00": {
+    "model": "Coaster/Flume/corner-small-ramp",
+    "source": "GLBs/imported/Coaster/Flume/corner-small-ramp.with-collision.glb",
+    "displayName": "corner-small-ramp",
+    "cloudModel": {
+      "assetId": "105281738089077",
+      "creatorId": "11941550154",
+      "creatorType": "User"
+    }
+  },
+  "21a6ba3888865296": {
+    "model": "Coaster/Flume/corner-small",
+    "source": "GLBs/imported/Coaster/Flume/corner-small.with-collision.glb",
+    "displayName": "corner-small",
+    "cloudModel": {
+      "assetId": "135776981412331",
+      "creatorId": "11941550154",
+      "creatorType": "User"
+    }
+  },
+  "af085b6c6933ee1b": {
+    "model": "Coaster/Flume/curve",
+    "source": "GLBs/imported/Coaster/Flume/curve.with-collision.glb",
+    "displayName": "curve",
+    "cloudModel": {
+      "assetId": "109441781667500",
+      "creatorId": "11941550154",
+      "creatorType": "User"
+    }
+  },
+  "15dd80ef7e7c7f35": {
+    "model": "Coaster/Flume/looping",
+    "source": "GLBs/imported/Coaster/Flume/looping.with-collision.glb",
+    "displayName": "looping",
+    "cloudModel": {
+      "assetId": "71934971470388",
+      "creatorId": "11941550154",
+      "creatorType": "User"
+    }
+  },
+  "10da1c1d1ffb4f4f": {
+    "model": "Coaster/Flume/segment",
+    "source": "GLBs/imported/Coaster/Flume/segment.with-collision.glb",
+    "displayName": "segment",
+    "cloudModel": {
+      "assetId": "87661345519739",
+      "creatorId": "11941550154",
+      "creatorType": "User"
+    }
+  },
+  "4db506e00cc1c9f6": {
+    "model": "Coaster/Flume/straight-bend-large",
+    "source": "GLBs/imported/Coaster/Flume/straight-bend-large.with-collision.glb",
+    "displayName": "straight-bend-large",
+    "cloudModel": {
+      "assetId": "137785106107454",
+      "creatorId": "11941550154",
+      "creatorType": "User"
+    }
+  },
+  "e44581ea0698cc96": {
+    "model": "Coaster/Flume/straight-bend",
+    "source": "GLBs/imported/Coaster/Flume/straight-bend.with-collision.glb",
+    "displayName": "straight-bend",
+    "cloudModel": {
+      "assetId": "89022953159253",
+      "creatorId": "11941550154",
+      "creatorType": "User"
+    }
+  },
+  "26f1709816a2b995": {
+    "model": "Coaster/Flume/straight-bump-down",
+    "source": "GLBs/imported/Coaster/Flume/straight-bump-down.with-collision.glb",
+    "displayName": "straight-bump-down",
+    "cloudModel": {
+      "assetId": "89210265086625",
+      "creatorId": "11941550154",
+      "creatorType": "User"
+    }
+  },
+  "70916abe81831f0c": {
+    "model": "Coaster/Flume/straight-bump-up",
+    "source": "GLBs/imported/Coaster/Flume/straight-bump-up.with-collision.glb",
+    "displayName": "straight-bump-up",
+    "cloudModel": {
+      "assetId": "80668996419293",
+      "creatorId": "11941550154",
+      "creatorType": "User"
+    }
+  },
+  "d9f1ca2dcf77b355": {
+    "model": "Coaster/Flume/straight-hill-beginning",
+    "source": "GLBs/imported/Coaster/Flume/straight-hill-beginning.with-collision.glb",
+    "displayName": "straight-hill-beginning",
+    "cloudModel": {
+      "assetId": "132505830546438",
+      "creatorId": "11941550154",
+      "creatorType": "User"
+    }
+  },
+  "0f5a97daa1d9ea0a": {
+    "model": "Coaster/Flume/straight-hill-complete-half",
+    "source": "GLBs/imported/Coaster/Flume/straight-hill-complete-half.with-collision.glb",
+    "displayName": "straight-hill-complete-half",
+    "cloudModel": {
+      "assetId": "96940399004520",
+      "creatorId": "11941550154",
+      "creatorType": "User"
+    }
+  },
+  "dc5d4702aa1eca06": {
+    "model": "Coaster/Flume/straight-hill-complete",
+    "source": "GLBs/imported/Coaster/Flume/straight-hill-complete.with-collision.glb",
+    "displayName": "straight-hill-complete",
+    "cloudModel": {
+      "assetId": "135467446802373",
+      "creatorId": "11941550154",
+      "creatorType": "User"
+    }
+  },
+  "3480aef8a1c18da7": {
+    "model": "Coaster/Flume/straight-hill-end",
+    "source": "GLBs/imported/Coaster/Flume/straight-hill-end.with-collision.glb",
+    "displayName": "straight-hill-end",
+    "cloudModel": {
+      "assetId": "97245388699026",
+      "creatorId": "11941550154",
+      "creatorType": "User"
+    }
+  },
+  "e4c4d096bdb404c7": {
+    "model": "Coaster/Flume/straight-skew-left-side",
+    "source": "GLBs/imported/Coaster/Flume/straight-skew-left-side.with-collision.glb",
+    "displayName": "straight-skew-left-side",
+    "cloudModel": {
+      "assetId": "119356944860430",
+      "creatorId": "11941550154",
+      "creatorType": "User"
+    }
+  },
+  "cb4decd8578f96ee": {
+    "model": "Coaster/Flume/straight-skew-left",
+    "source": "GLBs/imported/Coaster/Flume/straight-skew-left.with-collision.glb",
+    "displayName": "straight-skew-left",
+    "cloudModel": {
+      "assetId": "88689346632871",
+      "creatorId": "11941550154",
+      "creatorType": "User"
+    }
+  },
+  "2b1421ebad45afab": {
+    "model": "Coaster/Flume/straight-skew-right-side",
+    "source": "GLBs/imported/Coaster/Flume/straight-skew-right-side.with-collision.glb",
+    "displayName": "straight-skew-right-side",
+    "cloudModel": {
+      "assetId": "81147141497083",
+      "creatorId": "11941550154",
+      "creatorType": "User"
+    }
+  },
+  "0de0c5e52988c294": {
+    "model": "Coaster/Flume/straight-skew-right",
+    "source": "GLBs/imported/Coaster/Flume/straight-skew-right.with-collision.glb",
+    "displayName": "straight-skew-right",
+    "cloudModel": {
+      "assetId": "124751227279046",
+      "creatorId": "11941550154",
+      "creatorType": "User"
+    }
+  },
+  "898e495b93e69bf2": {
+    "model": "Coaster/Flume/track",
+    "source": "GLBs/imported/Coaster/Flume/track.with-collision.glb",
+    "displayName": "track",
+    "cloudModel": {
+      "assetId": "138447506854817",
+      "creatorId": "11941550154",
+      "creatorType": "User"
+    }
   }
 }

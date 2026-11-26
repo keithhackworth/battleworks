@@ -4,8 +4,11 @@ local A={}
 function A.isCollisionNode(name)
  return type(name)=="string" and string.lower(string.sub(name,1,10))=="collision_"
 end
+function A.isSnapNode(name)
+ return type(name)=="string" and string.lower(string.sub(name,1,5))=="snap_"
+end
 function A.visible(part)
- return part:IsA("BasePart") and (part.Transparency or 0)<1 and part.Name~="WorldObstacleHitbox" and not (part.GetAttribute and part:GetAttribute("BattleWorksIgnoreBounds"))
+ return part:IsA("BasePart") and not A.isSnapNode(part.Name) and (part.Transparency or 0)<1 and part.Name~="WorldObstacleHitbox" and not (part.GetAttribute and part:GetAttribute("BattleWorksIgnoreBounds"))
 end
 function A.parts(model)
  local parts={};for _,p in model:GetDescendants() do if A.visible(p) then table.insert(parts,p) end end;return parts

@@ -60,14 +60,15 @@ end
 function State.defaultSolid(item)
  return item.solid==true or (item.collider~=nil and item.collider.explicitCollision==true)
 end
-function State:add(item,position,bounds,scale)
+function State:add(item,position,bounds,scale,deferHistory)
  assert(#self.document.objects<512,"Object limit: 512")
  local id=self:nextId()
- self:change(function()
+ local function insert()
   table.insert(self.document.objects,{id=id,type=item.id,asset=item.model,position={self:snapValue(position[1]),0,self:snapValue(position[3])},rotation={0,0,0},scale=scale or item.defaultScale or 1,solid=State.defaultSolid(item),destructible=item.destructible or false,hp=item.hp or 100,bounds=copy(bounds or item.size)})
-  if item.model==Audio.Asset then self.document.objects[#self.document.objects].sound=copy(Audio.Default) end
+  if Audio.isAsset(item.model) then self.document.objects[#self.document.objects].sound=copy(Audio.Default) end
   self.selection={[id]=true}
- end)
+ end
+ if deferHistory then insert() else self:change(insert) end
  return id
 end
 function State:addStart(position)
@@ -96,7 +97,7 @@ function State:delete()
   self.selection={}
  end)
 end
-function State:duplicate()
+function State:duplicate(inPlace)
  self:change(function()
   for id in self.selection do local p,spawn=self:find(id);assert(not spawn,"Use Place tank start to add the next numbered area") end
   local originals={}; for _,o in self.document.objects do if self.selection[o.id] then table.insert(originals,copy(o)) end end
@@ -105,7 +106,8 @@ function State:duplicate()
   local ids={}
   for _,o in originals do
    local original=o.id;o.id=self:nextId();ids[original]=o.id
-   o.position[1]+=self.grid;table.insert(self.document.objects,o);self.selection[o.id]=true
+   if not inPlace then o.position[1]+=self.grid end
+   table.insert(self.document.objects,o);self.selection[o.id]=true
   end
   for _,o in originals do
    if o.attachment then o.attachment.parent=ids[o.attachment.parent] or o.attachment.parent end

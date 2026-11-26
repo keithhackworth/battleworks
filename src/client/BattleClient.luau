@@ -32,6 +32,7 @@ local SpeedDebugHud = require(script.Parent.SpeedDebugHud)
 local TankSelector = require(script.Parent.TankSelector)
 local BattlefieldCamera = require(script.Parent.BattlefieldCamera)
 local CameraDebug = require(script.Parent.CameraDebug)
+local AudioListener = require(script.Parent.BattleAudioListener)
 local states, renderers = {}, {}
 local player = Players.LocalPlayer
 local selectedId=if royale then nil else tostring(player.UserId)
@@ -198,6 +199,8 @@ RunService:BindToRenderStep("BattleWorksFrame", Enum.RenderPriority.Camera.Value
 	profileEnd()
 	local own = states[selectedId]
  if royale and (not driving or not own or own.controlEpoch~=controlEpoch)then own=nil end
+ local listeningTank=own and own.health>0 and not own.waitingForSpawn and renderers[selectedId]
+ AudioListener.set(if listeningTank then listeningTank.chassis else nil,selectedId)
 	if speedDebug then speedDebug:update(own) end
 	ide:update(own)
 	if not royale or driving then
@@ -264,6 +267,7 @@ function self:setActive(enabled)
   local own=states[selectedId]
   updateInput(own)
  else
+  AudioListener.set(nil)
   updateConfiguration(nil)
   controller:setExternalControl(true); controller:release(); controller:takeOrbitDelta(false); ide:close()
   local focused=game:GetService("UserInputService"):GetFocusedTextBox()

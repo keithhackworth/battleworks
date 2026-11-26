@@ -5,13 +5,14 @@ local Catalog={}
 local Placement=require(game.ReplicatedStorage.Shared.ModelPlacement)
 local Visual=require(game.ReplicatedStorage.Shared.AssetGeometry)
 local Fit=require(script.Parent.MeshCollisionFit)
+local Alignment=require(script.Parent.NativeCollisionAlignment)
 local cloudClasses={
  Model=true,Folder=true,MeshPart=true,Part=true,WedgePart=true,CornerWedgePart=true,
  SurfaceAppearance=true,Decal=true,Texture=true,SpecialMesh=true,
 }
 local function sanitizeCloud(container)
  for _,child in container:GetChildren() do
-  if not cloudClasses[child.ClassName] then child:Destroy()
+  if not cloudClasses[child.ClassName] or (child:IsA("BasePart") and Visual.isSnapNode(child.Name)) then child:Destroy()
   else
    assert(not Visual.isCollisionNode(child.Name),"Cloud model contains collision-only render geometry")
    if child:IsA("BasePart") then child.Anchored=true;child.CanCollide=false;child.CanTouch=false;child.CanQuery=false end
@@ -48,7 +49,7 @@ function Catalog.loadCloudModel(source,item)
   assert(model:IsA("Model"),"Roblox asset must be a Model")
   sanitizeCloud(model)
   local _,size=Visual.measure(model)
-  if item.collider then Visual.checkFaceProfile(size,item.collider) end
+  if item.collider and not item.checkNativeProfile then Visual.checkFaceProfile(size,item.collider) end
   local segments=string.split(item.model,"/")
   local folder=subfolder(source,segments)
   assert(not folder:FindFirstChild(segments[#segments]),"Cloud model path already exists")
@@ -68,9 +69,11 @@ function Catalog.publish(storage,replicated,metadata,http)
  local root=Instance.new("Folder"); root.Name="BattleWorksEditorAssets"
  local templates=Instance.new("Folder"); templates.Name="Templates"; templates.Parent=root
  local source=storage:FindFirstChild("BattleWorksAssets")
+ local matches,corrections,review=0,0,0
  for _,item in entries do
   local model=Paths.resolve(source,item.model)
   item.available=false
+  item.loadError=nil
   if hidden[item.model] then item.hidden=true end
   if not model and item.cloudModel then
    local ok,result=pcall(Catalog.loadCloudModel,source,item)
@@ -81,20 +84,32 @@ function Catalog.publish(storage,replicated,metadata,http)
   end
   if model then
    local copy
-   local ok=pcall(function()
+   local ok,reason=pcall(function()
     copy=model:Clone(); assert(copy,"Unclonable asset")
     for _,node in copy:GetDescendants() do
      assert(not Visual.isCollisionNode(node.Name),"Import the visual-only GLB")
-     if node:IsA("LuaSourceContainer") or node:IsA("Sound") or node:IsA("ParticleEmitter") or node:IsA("Trail") or node:IsA("Beam") then node:Destroy()
+     if node:IsA("LuaSourceContainer") or node:IsA("Sound") or node:IsA("ParticleEmitter") or node:IsA("Trail") or node:IsA("Beam") or (node:IsA("BasePart") and Visual.isSnapNode(node.Name)) then node:Destroy()
      elseif node:IsA("BasePart") then node.Anchored=true;node.CanCollide=false;node.CanTouch=false;node.CanQuery=false end
     end
     local _,size=Visual.measure(model);assert(size.X>0 and size.Y>0 and size.Z>0,"Empty native bounds");item.size={size.X,size.Y,size.Z}
+    if item.checkNativeProfile and item.collider and item.collider.fit=="faces" then
+     local axes,details=Alignment.inspect(copy,item.collider)
+     if not axes then
+      review+=1
+      item.collisionWarning=details
+      warn("BattleWorks "..item.model..": "..details)
+     elseif axes[1]~=1 or axes[3]~=3 then
+      corrections+=1
+      item.collider=Alignment.apply(item.collider,axes)
+      print(string.format("BattleWorks aligned collision for %s with axes [%d, 2, %d] (%s)",
+       item.model,axes[1],axes[3],details))
+     else matches+=1 end
+    end
     if item.collider and item.collider.fit=="mesh" then item.collider.boxes=Fit.profile(model) end
     if item.collider then
      local aligned,reason=pcall(Visual.checkFaceProfile,size,item.collider)
      if not aligned then
-      if item.collider.explicitCollision then
-       warn("BattleWorks explicit collision profile rejected for "..item.model..": "..tostring(reason))
+      if item.collider.explicitCollision or item.collider.snap then
        error(reason,0)
       end
       warn("BattleWorks collision profile for "..item.model.." uses native sampling: "..tostring(reason))
@@ -104,11 +119,19 @@ function Catalog.publish(storage,replicated,metadata,http)
     end
     local segments=string.split(item.model,"/")
     local folder=subfolder(templates,segments)
-    copy.Name=segments[#segments];copy.Parent=folder;item.available=true;item.stretchable=Placement.stretchPart(model)~=nil and not item.zone
+    item.stretchable=Placement.stretchPart(model)~=nil and not item.zone
     item.resizeAxes=Placement.resizeAxes(model,item.resizeAxes)
+    copy.Name=segments[#segments];copy.Parent=folder;item.available=true
    end)
-   if not ok then if copy then copy:Destroy() end;item.available=false end
+   if not ok then
+    if copy then copy:Destroy() end
+    item.loadError=tostring(reason)
+    warn("BattleWorks could not prepare editor model "..item.model..": "..item.loadError)
+   end
   end
+ end
+ if matches+corrections+review>0 then
+  print(string.format("BattleWorks native collision checks: %d aligned, %d corrected, %d need review",matches,corrections,review))
  end
  local data=Instance.new("StringValue");data.Name="Catalog";require(game.ReplicatedStorage.Shared.CatalogData).write(data,entries,http);data.Parent=root
  root:SetAttribute("Ready",true);root.Parent=replicated
