@@ -70,9 +70,10 @@ check(not pcall(store.save,store,101,normalized,2) and store:load(101,"forest").
 failWrite=false;failRead=true
 check(not pcall(store.list,store,101),"failed storage reads do not become empty profiles")
 failRead=false
-for i=1,9 do local copy=State.copy(normalized);copy.id="world_"..i;store:save(101,copy,0) end
+for i=1,98 do local copy=State.copy(normalized);copy.id="world_"..i;store:save(101,copy,0) end
 local extra=State.copy(normalized);extra.id="too_many"
-check(not pcall(store.save,store,101,extra,0),"per-owner save limit enforced")
+check(#store:list(101)==99 and not pcall(store.save,store,101,extra,0),"99th save succeeds, 100th is rejected")
+check(store:save(101,store:load(101,"world_98").document,1).revision==2,"a known world can still be updated at the limit")
 local oversized=Store.new(ds,false,function()return string.rep("x",3000001)end)
 check(not pcall(oversized.save,oversized,102,normalized,0),"profile storage budget enforced")
 local temporary=Store.new(nil,true,function()return "json"end)
@@ -142,14 +143,14 @@ local durableStudio=Service.new(durableOptions)
 local listed=durableStudio:request(alice,"List")
 check(listed.ok and listed.temporary==false and listed.storage=="Http","Studio mode with HTTP backend reports durable saves")
 durableStudio:remove(alice)
-check(#store:list(101)==10,"disconnect from HTTP-backed Studio never deletes saved worlds")
+check(#store:list(101)==99,"disconnect from HTTP-backed Studio never deletes saved worlds")
 local teamOptions=options(true,false);teamOptions.store=store;teamOptions.testHost=101
 local team=Service.new(teamOptions)
 check(not team:canEnter(alice) and not team:canEnter(bob),"Team Test waits for host installation")
 check(not team:request(bob,"List").ok and not team:request(bob,"Load","forest").ok,"test collaborators cannot list or load host saves")
 check(not team:request(bob,"Play",{id="forest",revision=2}).ok,"test collaborators cannot replace the shared world")
 local hostList=team:request(alice,"List")
-check(hostList.ok and hostList.teamTest and hostList.storage=="Http" and #hostList.worlds==10,"host sees existing Studio saves without migration")
+check(hostList.ok and hostList.teamTest and hostList.storage=="Http" and #hostList.worlds==99,"host sees existing Studio saves without migration")
 local hostPlay=team:request(alice,"Play",{id="forest",revision=2})
 check(hostPlay.ok and hostPlay.launch and installed==3,"host installs saved world in shared test server without teleport")
 check(team:canEnter(alice) and team:canEnter(bob),"collaborators can join installed test world")

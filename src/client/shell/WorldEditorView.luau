@@ -1,8 +1,8 @@
 -- Editor UI only. Picking, transactions and world geometry live elsewhere.
 local Placement=require(game.ReplicatedStorage.Shared.ModelPlacement)
-local Paths=require(game.ReplicatedStorage.Shared.AssetPaths)
 local Document=require(game.ReplicatedStorage.Shared.WorldEditorDocument)
 local Presentation=require(script.Parent.WorldEditorPresentation)
+local Skin=require(script.Parent.WorldEditorSkin)
 local View={};View.__index=View
 local ink=Color3.fromRGB(241,222,174)
 local accent=Color3.fromRGB(233,181,80)
@@ -30,7 +30,7 @@ local function rectContains(p,point)
  return point.X>=at.X and point.X<=at.X+size.X and point.Y>=at.Y and point.Y<=at.Y+size.Y
 end
 function View.new(context)
- local self=setmetatable({connections={},paletteConnections={},thumbnails={},fields={},fieldLabels={},callbacks={},buttons={}},View)
+ local self=setmetatable({connections={},paletteConnections={},thumbnails={},fields={},fieldLabels={},displayedFields={},callbacks={},buttons={}},View)
  local frame=make("Frame",context.parent,{Name="World Editor",Size=UDim2.fromScale(1,1),BackgroundColor3=Color3.fromRGB(30,36,24),BorderSizePixel=0,Visible=false});self.frame=frame
  local viewport=make("ViewportFrame",frame,{Name="EditorViewport",Size=UDim2.fromScale(1,1),BackgroundColor3=Color3.fromRGB(52,66,44),BorderSizePixel=0,Ambient=Color3.fromRGB(170,180,190),LightColor=Color3.fromRGB(255,239,210),LightDirection=Vector3.new(-1,-1,-1),Active=false});self.viewport=viewport
  local scale=make("Frame",viewport,{Name="TankScale",AnchorPoint=Vector2.new(1,1),Position=UDim2.new(1,-10,1,-10),Size=UDim2.fromOffset(112,108),BackgroundColor3=panel,BackgroundTransparency=.12,BorderSizePixel=0});self.tankScaleCard=scale
@@ -50,15 +50,12 @@ function View.new(context)
  self.undo=button(toolbar,"Undo","Undo",UDim2.fromOffset(44,32),UDim2.fromOffset(736,12));self.undo.TextSize=11
  self.redo=button(toolbar,"Redo","Redo",UDim2.fromOffset(44,32),UDim2.fromOffset(788,12));self.redo.TextSize=11
  self.export=button(toolbar,"Export","Export JSON",UDim2.fromOffset(114,32),UDim2.new(1,-126,0,12));self.export.BackgroundColor3=Color3.fromRGB(121,89,37)
- local pane=make("Frame",frame,{Name="AssetPalette",AnchorPoint=Vector2.new(1,0),Position=UDim2.new(1,-12,0,66),Size=UDim2.new(0,310,.48,-32),BackgroundColor3=Color3.fromRGB(43,51,33),BorderSizePixel=0,Active=true});self.palette=pane
- local label=text(pane,"PaletteTitle","ASSET LIBRARY  •  drag into the world",28);label.Position=UDim2.fromOffset(12,6)
- self.up=button(pane,"ParentDirectory","↑",UDim2.fromOffset(32,28),UDim2.fromOffset(10,38))
- self.breadcrumb=text(pane,"AssetDirectory","Assets /",28);self.breadcrumb.Position=UDim2.fromOffset(50,38);self.breadcrumb.Size=UDim2.new(1,-60,0,28)
- self.search=make("TextBox",pane,{Name="SearchAssets",Position=UDim2.fromOffset(10,72),Size=UDim2.new(1,-20,0,30),Text="",PlaceholderText="Search asset names or full paths…",ClearTextOnFocus=false,TextColor3=ink,BackgroundColor3=Color3.fromRGB(62,73,46),Font=Enum.Font.Gotham,TextSize=13})
- self.assetScroll=scrolling(pane,"AssetTiles",UDim2.new(1,-20,1,-142),UDim2.fromOffset(10,108))
- local grid=make("UIGridLayout",self.assetScroll,{CellSize=UDim2.new(.5,-5,0,116),CellPadding=UDim2.fromOffset(6,6),SortOrder=Enum.SortOrder.LayoutOrder})
- self.page=text(pane,"Page","",24);self.page.Position=UDim2.new(0,10,1,-28);self.page.Size=UDim2.new(1,-90,0,24)
- self.nextPage=button(pane,"NextAssets","Next →",UDim2.fromOffset(72,24),UDim2.new(1,-82,1,-28))
+ local pane=make("Frame",frame,{Name="AssetCatalog",BackgroundColor3=panel,BorderSizePixel=0,Active=true});self.palette=pane
+ self.search=make("TextBox",pane,{Name="SearchAssets",Position=UDim2.fromOffset(3,3),Size=UDim2.new(1,-6,0,26),Text="",PlaceholderText="Search assets…",ClearTextOnFocus=false,TextColor3=ink,BackgroundColor3=View.buttonColor,Font=Enum.Font.Gotham,TextSize=12})
+ self.assetScroll=scrolling(pane,"AssetTree",UDim2.new(1,0,1,-32),UDim2.fromOffset(0,32))
+ self.assetScroll.ScrollingDirection=Enum.ScrollingDirection.Y
+ self.assetScroll.AutomaticCanvasSize=Enum.AutomaticSize.None
+ make("UIListLayout",self.assetScroll,{Padding=UDim.new(0,2),SortOrder=Enum.SortOrder.LayoutOrder})
  self.properties=scrolling(frame,"ObjectProperties",UDim2.new(0,310,.52,-106),UDim2.new(1,-322,.48,44))
  make("UIPadding",self.properties,{PaddingLeft=UDim.new(0,12),PaddingRight=UDim.new(0,12),PaddingTop=UDim.new(0,8),PaddingBottom=UDim.new(0,10)})
  make("UIListLayout",self.properties,{Padding=UDim.new(0,6),SortOrder=Enum.SortOrder.LayoutOrder})
@@ -78,7 +75,7 @@ function View.new(context)
   self.fields[spec[1]]=row(make("TextBox",self.properties,{Name=spec[1],Size=UDim2.new(1,-8,0,28),Text="",PlaceholderText="—",ClearTextOnFocus=false,TextColor3=ink,BackgroundColor3=Color3.fromRGB(62,73,46),TextSize=14,Font=Enum.Font.Code}))
  end
  self.solid=row(button(self.properties,"Collision","Collision: —"));self.destructible=row(button(self.properties,"Destructible","Destructible: —"))
- self.regenerates=row(button(self.properties,"Regenerates","☑ Regenerates"))
+ self.regenerates=row(button(self.properties,"Regenerates","Regenerates: On"))
  self.regenerationLabel=row(text(self.properties,"RegenerationLabel","Regeneration delay (seconds)",20))
  self.regenerationDelay=row(make("TextBox",self.properties,{Name="RegenerationDelay",Size=UDim2.new(1,-8,0,28),Text="5",ClearTextOnFocus=false,TextColor3=ink,BackgroundColor3=View.buttonColor,Font=Enum.Font.Code,TextSize=14}))
  self.assetTractionLabel=row(text(self.properties,"AssetTractionLabel","Traction (% of pavement)",20))
@@ -169,7 +166,7 @@ function View.new(context)
  self.closeExport=button(overlay,"CloseExport","Close",UDim2.fromOffset(72,30),UDim2.new(1,-88,1,-38));self.closeExport.ZIndex=11
  self.closeExport.Activated:Connect(function() overlay.Visible=false end)
  self.newWorld=button(toolbar,"NewWorld","New World")
- self.openWorld=button(toolbar,"OpenWorld","Open")
+ self.openWorld=button(toolbar,"OpenWorld","Open World")
  self.saveWorld=button(toolbar,"SaveWorld","Save")
  self.saveAs=button(toolbar,"SaveWorldAs","Save As")
  self.inspect=button(toolbar,"Inspector","Toggle Inspector")
@@ -183,31 +180,26 @@ function View.new(context)
  for _,name in {"Raise","Lower","Smooth","Flatten"} do
   self.terrainTools[name]=button(toolbar,"Terrain"..name,name)
  end
- pane.BackgroundColor3=panel;pane.AnchorPoint=Vector2.zero
- label.Text="ASSET LIBRARY";label.Position=UDim2.fromOffset(10,1);label.Size=UDim2.fromOffset(160,24)
- self.repeatPlacement=button(pane,"RepeatPlacement","Repeat: Off",UDim2.fromOffset(92,24),UDim2.new(1,-102,0,2))
- self.recentAssets=button(pane,"RecentAssets","Recent",UDim2.fromOffset(62,24),UDim2.new(1,-169,0,2))
- self.up.Position=UDim2.fromOffset(10,28)
- self.breadcrumb.Position=UDim2.fromOffset(50,28);self.breadcrumb.Size=UDim2.new(.48,-54,0,28)
- self.search.Position=UDim2.new(.48,0,0,26);self.search.Size=UDim2.new(.52,-10,0,28)
- self.assetScroll.Position=UDim2.fromOffset(10,58);self.assetScroll.Size=UDim2.new(1,-20,1,-85)
- grid.CellSize=UDim2.fromOffset(132,116)
+ self.repeatPlacement=button(pane,"RepeatPlacement","Repeat: Off")
+ self.recentAssets=button(pane,"RecentAssets","Recent Assets")
  self.frameWorld.Text="Frame world  •  Home"
  self.brushPanel=scrolling(frame,"BrushSettings",UDim2.fromOffset(0,0),UDim2.fromOffset(0,0))
  make("UIPadding",self.brushPanel,{PaddingLeft=UDim.new(0,10),PaddingTop=UDim.new(0,8)})
  make("UIListLayout",self.brushPanel,{Padding=UDim.new(0,6),SortOrder=Enum.SortOrder.LayoutOrder})
- self.brushFields={}
+ self.brushFields={};self.brushLabels={}
+ self.paintEntireWorld=button(self.brushPanel,"PaintEntireWorld","[ ] Paint entire world",UDim2.new(1,-14,0,28))
+ self.paintEntireWorld.LayoutOrder=1;self.paintEntireWorld.Visible=false
  self.brushTractionLabel=text(self.brushPanel,"BrushTractionLabel","Brush traction (% of pavement)",24)
  self.brushTractionLabel.LayoutOrder=2;self.brushTractionLabel.Visible=false
  self.brushTraction=make("TextBox",self.brushPanel,{Name="BrushTraction",LayoutOrder=3,Size=UDim2.new(1,-14,0,28),
   Text="",PlaceholderText="Use material fallback",ClearTextOnFocus=false,TextColor3=ink,BackgroundColor3=View.buttonColor,Font=Enum.Font.Code,TextSize=14,Visible=false})
- self.tractionLabel=text(self.brushPanel,"TractionLabel","Traction (% of pavement)",24)
+ self.tractionLabel=text(self.brushPanel,"TractionLabel","",24)
  self.tractionLabel.LayoutOrder=4;self.tractionLabel.Visible=false
- self.traction=make("TextBox",self.brushPanel,{Name="TractionPercent",LayoutOrder=5,Size=UDim2.new(1,-14,0,28),
-  Text="",ClearTextOnFocus=false,TextColor3=ink,BackgroundColor3=View.buttonColor,Font=Enum.Font.Code,TextSize=14,Visible=false})
- text(self.brushPanel,"BrushTitle","TERRAIN BRUSH",27).LayoutOrder=1
- for i,spec in {{"radius","Radius (studs)",26},{"strength","Strength",24},{"falloff","Falloff (0–1)",.65},{"elevation","Flatten elevation (studs)",0},{"depth","Water / ravine depth (studs)",4}} do
-  text(self.brushPanel,spec[1].."Label",spec[2],22).LayoutOrder=i*2+4
+ self.useWorldTraction=button(self.brushPanel,"UseWorldDefault","Use World Default",UDim2.new(1,-14,0,28))
+ self.useWorldTraction.LayoutOrder=5;self.useWorldTraction.Visible=false
+ for i,spec in {{"radius","Brush Size (studs)",26},{"strength","Heaviness",24},{"falloff","Steepness (0–1)",.65},{"elevation","Flatten elevation (studs)",0},{"depth","Water / ravine depth (studs)",4}} do
+  local label=text(self.brushPanel,spec[1].."Label",spec[2],22);label.LayoutOrder=i*2+4
+  self.brushLabels[spec[1]]=label
   self.brushFields[spec[1]]=make("TextBox",self.brushPanel,{Name=spec[1],LayoutOrder=i*2+5,Size=UDim2.new(1,-14,0,28),
    Text=tostring(spec[3]),ClearTextOnFocus=false,TextColor3=ink,BackgroundColor3=View.buttonColor,Font=Enum.Font.Code,TextSize=14})
  end
@@ -242,18 +234,27 @@ function View.new(context)
  self.magnets:Destroy()
  return self
 end
-function View:terrainMode(enabled,operation)
- self.terrainActive=enabled
- self.terrain.BackgroundColor3=if enabled then View.activeColor else View.buttonColor
- for name,control in self.terrainTools do control.BackgroundColor3=if operation==name then View.activeColor else View.buttonColor end
- for name,control in self.surfaceTools do control.BackgroundColor3=if operation==name then View.activeColor else View.buttonColor end
- self:applyContext()
+function View:showTerrainPreferences(brush)
+ for _,group in {self.terrainTools,self.surfaceTools} do
+  for name,control in group do
+   Skin.select(control,name==brush.operation)
+   Skin.remember(control,name==brush.material or name==brush.sculpt)
+  end
+ end
 end
 function View:on(event,callback) table.insert(self.connections,event:Connect(callback)) end
-function View:message(message) self.status.Text=tostring(message):gsub("^.-:%d+:%s*","") end
+function View:message(message, invalid)
+ local caption=tostring(message):gsub("^.-:%d+:%s*","")
+ if self.status.Text~=caption then
+  self.status.Text=caption
+  self.status.Parent.CanvasPosition=Vector2.zero
+ end
+ self.status.TextColor3=if invalid then Skin.error else Skin.ink
+end
 function View:isModal() return self.sfxPicker.Visible or self.overlay.Visible or (self.library and self.library.frame.Visible) end
 function View:isScene(point)
  return self.frame.Visible and not self:isModal() and rectContains(self.viewport,point) and not (self.left.Visible and rectContains(self.left,point))
+  and not (self.terrainMaterialBar.Visible and rectContains(self.terrainMaterialBar,point))
 end
 function View:thumbnail(parent,item,assets)
  local templates=assets and assets:FindFirstChild("Templates")
@@ -267,28 +268,36 @@ function View:thumbnail(parent,item,assets)
  end
  table.insert(self.thumbnails,viewport)
 end
-function View:paletteEntries(directories,items,prefix,page,assets,onFolder,onAsset)
- self:stageAsset(nil)
- for _,connection in self.paletteConnections do connection:Disconnect() end;self.paletteConnections={}
- for _,child in self.assetScroll:GetChildren() do if child:IsA("GuiObject") then child:Destroy() end end
- self.thumbnails={};self.breadcrumb.Text="Assets / "..prefix
- local entries={};for _,folder in directories do table.insert(entries,{folder=folder}) end;for _,item in items do table.insert(entries,{item=item}) end
- local pages=math.max(1,math.ceil(#entries/24));page=math.clamp(page,1,pages)
- for index=(page-1)*24+1,math.min(#entries,page*24) do
-  local entry=entries[index];local tile=button(self.assetScroll,entry.folder or entry.item.model,"");tile.LayoutOrder=index
-  if entry.folder then
-   local label=text(tile,"Folder","▸  "..entry.folder.." /",90);label.TextSize=17;label.TextColor3=accent
-   table.insert(self.paletteConnections,tile.Activated:Connect(function() onFolder(entry.folder) end))
+function View:paletteEntries(entries,selected,onFolder,onAsset,onDrag)
+ for _,connection in self.paletteConnections do connection:Disconnect() end
+ table.clear(self.paletteConnections)
+ for _,child in self.assetScroll:GetChildren() do
+  if child:IsA("GuiObject") then child:Destroy() end
+ end
+ self.assetRows={}
+ for index,entry in ipairs(entries) do
+  local item=entry.item
+  local caption=if item then (if item.available then "" else "[Missing] ")..item.name else entry.name
+  local tile=button(self.assetScroll,entry.path,caption,UDim2.new(1,-6,0,23))
+  Skin.catalogRow(tile,entry.depth,entry.open,item~=nil,item and item.available)
+  tile.LayoutOrder=index
+  if item then
+   self.assetRows[item.model]=tile
+   Skin.highlightRow(tile,item.model==selected)
+   table.insert(self.paletteConnections,tile.Activated:Connect(function() onAsset(item) end))
+   table.insert(self.paletteConnections,tile.InputBegan:Connect(function(input)
+    if input.UserInputType==Enum.UserInputType.MouseButton1 then onDrag(item) end
+   end))
   else
-   local item=entry.item;self:thumbnail(tile,item,assets)
-   local name=text(tile,"AssetName",(if item.available then item.name.."\n"..item.model else "[Missing] "..item.model),30);name.Position=UDim2.fromOffset(5,83);name.Size=UDim2.new(1,-10,0,30);name.TextSize=11
-   if not item.available then tile.BackgroundColor3=Color3.fromRGB(64,45,43)
-   elseif Document.canSetAssetTraction(item) then tile.BackgroundColor3=collisionTile end
-   table.insert(self.paletteConnections,tile.Activated:Connect(function() self:stageAsset(item,tile,onAsset) end))
+   table.insert(self.paletteConnections,tile.Activated:Connect(function() onFolder(entry.path) end))
   end
  end
- self.page.Text=string.format("%d assets / folders • %d/%d",#entries,page,pages)
- return page,pages
+ self.assetScroll.CanvasSize=UDim2.fromOffset(0,#entries*25)
+end
+function View:highlightCatalogAsset(path)
+ for model,row in self.assetRows or {} do
+  Skin.highlightRow(row,model==path)
+ end
 end
 function View:soundChoices(rows,choose,preview)
  for _,connection in self.sfxConnections do connection:Disconnect() end
@@ -305,23 +314,28 @@ function View:soundChoices(rows,choose,preview)
  end
 end
 function View:selection(entry,item)
+ local focused=game:GetService("UserInputService"):GetFocusedTextBox()
  local tractionVisible=entry~=nil and Document.canSetAssetTraction(item)
  self.assetTractionLabel.Visible=tractionVisible;self.assetTraction.Visible=tractionVisible
- if tractionVisible and game:GetService("UserInputService"):GetFocusedTextBox()~=self.assetTraction then
+ if tractionVisible and focused~=self.assetTraction then
   self.assetTraction.Text=if entry.traction~=nil then tostring(entry.traction) else ""
  end
  local destructible=entry~=nil and entry.destructible==true
  local enabled=destructible and entry.regenerates~=false
  self.regenerates.Visible=destructible
- self.regenerates.Text=if enabled then "☑ Regenerates" else "☐ Regenerates"
+ self.regenerates.Text=if enabled then "Regenerates: On" else "Regenerates: Off"
  self.regenerationDelay.Visible=destructible;self.regenerationLabel.Visible=destructible
  self.regenerationDelay.TextEditable=enabled
- if destructible then self.regenerationDelay.Text=tostring(entry.regenerationDelay or Document.DefaultRegenerationDelay) end
+ if destructible and focused~=self.regenerationDelay then self.regenerationDelay.Text=tostring(entry.regenerationDelay or Document.DefaultRegenerationDelay) end
  if entry and entry.slot then
   self.selected.Text="PLAYER "..entry.slot.." STARTING AREA\nRoom for three tanks"
   for key,field in self.fields do
    local n=({x=entry.position[1],z=entry.position[3],yaw=entry.heading})[key]
-   field.Text=if n then tostring(n) else "";field.TextEditable=n~=nil
+   if focused~=field then
+    self.displayedFields[key]=if n then tostring(n) else ""
+    field.Text=self.displayedFields[key]
+   end
+   field.TextEditable=n~=nil
   end
   self.solid.Text="Ground marking • no collision";self.destructible.Text="Starting areas cannot be destroyed"
   self.influences.Text="Move on the ground or set X/Z. Yaw sets starting direction. Delete to relocate this numbered area. All five are required to play."
@@ -335,12 +349,18 @@ function View:selection(entry,item)
   field.TextEditable=entry~=nil and Document.canResize(item,axis)
   if entry then values[key]=entry.bounds[axis]*entry.scale*(entry.stretch and entry.stretch[axis] or 1) end
  end
- for key,field in self.fields do field.Text=if values[key] then string.format("%.5g",values[key]) else "" end
+ for key,field in self.fields do
+  if focused~=field then
+   self.displayedFields[key]=if values[key] then string.format("%.5g",values[key]) else ""
+   field.Text=self.displayedFields[key]
+  end
+ end
  self.solid.Text=if entry and entry.sound then "Audio trigger • no collision" else "Collision: "..(if entry then (if entry.solid then "SOLID" else "NONE") else "—")
  self.destructible.Text="Destructible: "..(if entry then (if entry.destructible then "YES" else "NO") else "—")
  self.influences.Text=if entry then "Physical movability: Fixed (read-only)\n"..(if item.zone then item.zone.." zone: "..(if item.zone=="Water" then "90%" else "75%").." speed\n" else "")..(if item.collider then string.format("Collider W %.3g / D %.3g / H %.3g",item.collider.widthFraction,item.collider.depthFraction,item.collider.heightFraction) else "No registered collider; visual only") else "Fixed objects • height / tilt • uniform scale"
 end
 function View:destroy()
+ Skin.release(self)
  for _,connection in self.connections do connection:Disconnect() end
  for _,connection in self.paletteConnections do connection:Disconnect() end
  self.frame:Destroy()

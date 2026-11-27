@@ -10,7 +10,7 @@ function Settings.deepWater(v,p,chassis)
  return level~=nil and Traversal.waterBlocked(level-p.Y,chassis or defaultChassis)
 end
 local function finite(n) return type(n)=="number" and n==n and math.abs(n)<math.huge end
-local materials={Grass=true,Concrete=true,Sand=true,Slate=true,Ice=true,Mud=true,Asphalt=true,WoodPlanks=true}
+Settings.GroundMaterials=table.freeze({"Grass","Concrete","Sand","Slate","Ice","Mud","Asphalt","WoodPlanks"})
 local function vector(v,n,limit)
  assert(type(v)=="table" and #v==n,"Invalid world vector")
  for _,x in v do assert(finite(x) and math.abs(x)<=limit,"Invalid world vector value") end
@@ -28,7 +28,7 @@ function Settings.validate(v,draft)
  assert(v.boundary==true,"World boundaries must be enabled")
  if v.terrain~=nil then Heightfield.validate(v.terrain,v.width,v.depth) end
  Tunnel.validate(v)
- assert(type(v.ground)=="table" and materials[v.ground.material],"Invalid ground material")
+ assert(type(v.ground)=="table" and table.find(Settings.GroundMaterials,v.ground.material),"Invalid ground material")
  vector(v.ground.color,3,255); for _,c in v.ground.color do assert(c>=0,"Invalid ground color") end
  assert(type(v.spawns)=="table","Missing starting positions")
  local numbered=Settings.numbered(v)

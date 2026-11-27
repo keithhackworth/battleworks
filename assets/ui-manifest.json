@@ -611,6 +611,22 @@
       "sha256": "7532e1f58179c9132e36886c4fb3e70b105a0270280ea8cd1806293d2e3112b0"
     },
     {
+      "name": "icons",
+      "source": "editor/icons.png",
+      "assetId": "82667402487696",
+      "width": 512,
+      "height": 256,
+      "sha256": "7732311b5a46f525c73a33a260a81e349ff9baefe1ab60df260fe24d25ba96a1"
+    },
+    {
+      "name": "terrain-materials",
+      "source": "editor/terrain-materials.png",
+      "assetId": "125045889523898",
+      "width": 1536,
+      "height": 1024,
+      "sha256": "9155c5c06256b4207c8afc898e591afb9f6be46eeac2bb78d8b500dd4a1d2f6f"
+    },
+    {
       "name": "folder1",
       "source": "folders/folder1.png",
       "assetId": "96106321690310",
@@ -625,6 +641,14 @@
       "width": 1537,
       "height": 1023,
       "sha256": "10bde3803bbe2658adf5e5e14d0ed36439fece399366951946f1ce67efce81f8"
+    },
+    {
+      "name": "01",
+      "source": "footlockers/olive/panels/01.png",
+      "assetId": "100778362216493",
+      "width": 1254,
+      "height": 1254,
+      "sha256": "c90d3bcd66aec4fe8739347886435366df8b8c139ce50cea9c5beb6f1c97e6cb"
     }
   ]
 }

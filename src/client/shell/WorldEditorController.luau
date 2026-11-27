@@ -19,13 +19,27 @@ local Run=game:GetService("RunService")
 local Http=game:GetService("HttpService")
 local Actions=game:GetService("ContextActionService")
 local Controller={};Controller.__index=Controller
-local fitForMode={Move="Move",Resize="Stretch",Scale="Scale"}
+local tools={
+ Select={},
+ Move={fit="Move"},
+ Rotate={},
+ Resize={fit="Stretch"},
+ Scale={fit="Scale"},
+ Assets={},
+ Terrain={},
+ Audio={},
+ Motion={},
+ Physics={},
+ StartZones={},
+}
 function Controller.new(context)
  if not context.editorAssets and context.getEditorAssets then context.editorAssets=context.getEditorAssets() end
  local view=View.new(context)
- local self=setmetatable({context=context,view=view,frame=view.frame,buttons=view.buttons,state=State.new(Document.editorFresh()),catalog=Document.catalog({}),prefix="",page=1,mode="Select",runtime={},keys={},yaw=.55,pitch=1,distance=210,focus=Vector3.zero},Controller)
+ local self=setmetatable({context=context,view=view,frame=view.frame,buttons=view.buttons,state=State.new(Document.editorFresh()),catalog=Document.catalog({}),mode="Select",runtime={},keys={},yaw=.55,pitch=1,distance=210,focus=Vector3.zero},Controller)
  self.state.snap=false;self.assetScales={};self.cameraSensitivity=1;self.recentAssets={}
- self.brush={traction={},operation="Raise",radius=26,strength=24,falloff=.65,elevation=0,depth=4}
+ self.toolWorkspaces={}
+ self.catalogWorkspace={expanded={},browse={},search={},recent={}}
+ self.brush={traction={},operation="Raise",sculpt="Raise",radius=26,strength=24,falloff=.65,elevation=0,depth=4}
  self.library=require(script.Parent.WorldLibrary).new(view.frame,context.worldRequest,function(document)
   self:replaceDocument(document)
   return self.state.document
@@ -37,8 +51,8 @@ function Controller.new(context)
  self.library.onStatus=function(message) view:message(message) end
  local function action(event,fn) view:on(event,function(...) if self.active then fn(...) end end) end
  function view.requestHome() self:confirmLeave(context.home) end
- action(view.assets.Activated,function() self:browse() end)
- action(view.assetPrevious.Activated,function() self.page=(self.page-2)%self.pages+1;self:browse() end)
+
+ action(view.focusSelected.Activated,function() self:focusSelected() end)
  action(view.terrainVisibility.Activated,function()
   self.terrainHidden=not self.terrainHidden
   self:refresh()
@@ -47,14 +61,14 @@ function Controller.new(context)
   view.tankScaleCard.Visible=not view.tankScaleCard.Visible
   view.scaleVisibility.Text=if view.tankScaleCard.Visible then "Hide Tank Scale" else "Show Tank Scale"
  end)
- local groundMaterials={"Grass","Concrete","Sand","Slate","Ice","Mud","Asphalt","WoodPlanks"}
- action(view.groundMaterial.Activated,function()
-  self:perform(function()
-   local ground=self.state.document.settings.ground
-   local index=table.find(groundMaterials,ground.material) or 0
-   ground.material=groundMaterials[index%#groundMaterials+1]
-  end,"Ground material updated.")
- end)
+ for material, choice in view.groundMaterialChoices do
+  action(choice.Activated,function()
+   if self.state.document.settings.ground.material==material then return end
+   self:perform(function()
+    self.state.document.settings.ground.material=material
+   end,"Default terrain updated.")
+  end)
+ end
  action(view.groundColor.FocusLost,function()
   local red,green,blue=view.groundColor.Text:match("^%s*(%d+)%s*,%s*(%d+)%s*,%s*(%d+)%s*$")
   self:perform(function()
@@ -63,27 +77,32 @@ function Controller.new(context)
   end,"Ground color updated.")
  end)
  for _,control in view.fitButtons do action(control.Activated,function() self:setEdgeSnap(true) end) end
- for mode,button in view.tools do action(button.Activated,function() self:setMode(mode) end) end
- action(view.terrain.Activated,function() self:setMode(if self.mode=="Terrain" then "Move" else "Terrain") end)
+ for mode,button in view.tools do action(button.Activated,function()
+  self:setMode(mode)
+ end) end
  local tankWidth,tankLength=Scene.buildTankScale(view.tankScaleViewport)
  view.tankScaleSize.Text=string.format("%g × %g studs",tankWidth,tankLength)
  self.traversability=true
- view.traversability.BackgroundColor3=View.activeColor
+ view:setControlSelected(view.traversability,true)
  view.traversalLegend.Visible=true
  action(view.traversability.Activated,function()
   self.traversability=not self.traversability
-  view.traversability.BackgroundColor3=if self.traversability then View.activeColor else View.buttonColor
+  view:setControlSelected(view.traversability,self.traversability)
   view.traversalLegend.Visible=self.traversability
   self:refresh()
  end)
  for operation,control in view.terrainTools do
   action(control.Activated,function()
-   self:finishTerrain(false);self.brush.operation=operation;self:setMode("Terrain")
+   self:finishTerrain(false);self.brush.operation=operation;self.brush.sculpt=operation;self:setMode("Terrain")
   end)
  end
  for operation,control in view.surfaceTools do
   action(control.Activated,function()
-   self:finishTerrain(false);self.brush.operation=operation;self:setMode("Terrain")
+   self:finishTerrain(false);self.brush.operation=operation
+   if operation=="Carve Ravine" then self.brush.sculpt=operation
+   elseif operation~="Tunnel" and operation~="None" and operation~="Clear" then self.brush.material=operation end
+   self:setMode("Terrain")
+   if operation=="None" or operation=="Clear" then return end
    if operation=="Tunnel" then self:refreshTunnel();view:message("Click or tap two portals to build a straight tunnel.")
    elseif operation=="Water" then view:message("Click a channel or basin to route water downhill. Set fill depth in the inspector.")
    elseif operation=="Carve Ravine" then view:message("Drag to cut a channel. Radius sets width and depth sets the bed below your stroke's start.")
@@ -133,20 +152,29 @@ function Controller.new(context)
   local raw=view.brushTraction.Text
   local percent=tonumber(raw)
   if not raw:match("^%s*$") and (not percent or percent~=percent or percent<0 or percent>100) then
-   self:refreshTraction();view:message("Enter a brush traction from 0 to 100%, or clear it to paint using the material fallback.");return
+   self:refreshTraction();view:message("Enter a brush traction from 0 to 100%, or clear it to paint using the material fallback.",true);return
   end
   self.brush.traction[kind]=percent
   self:refreshTraction()
   view:message(if percent~=nil then string.format("Next %s stroke: %.4g%% traction.",kind,percent) else "Next stroke uses material fallback traction.")
  end)
- action(view.traction.FocusLost,function()
-  local kind=self.brush.operation
-  if not Materials.TunableTraction[kind] then return end
-  local raw=view.traction.Text
+ action(view.paintEntireWorld.Activated,function()
+  if self.mode~="Terrain" or not table.find(Heightfield.Paint,self.brush.operation) then return end
+  self.brush.paintEntireWorld=not self.brush.paintEntireWorld
+  self:refreshTraction()
+  view:message(if self.brush.paintEntireWorld then "Click the terrain to paint the entire world "..self.brush.operation..". Escape cancels."
+   else "Drag to paint "..self.brush.operation..".")
+ end)
+ action(view.useWorldTraction.Activated,function()
+  self.brush.traction[self.brush.operation]=nil
+  self:refreshTraction()
+ end)
+ for kind, control in view.worldTraction do action(control.FocusLost,function()
+  local raw=control.Text
   local default=Materials.defaultTraction(kind)
   local percent=if raw:match("^%s*$") then default else tonumber(raw)
   if not percent or percent~=percent or percent<0 or percent>100 then
-   self:refreshTraction();view:message("Enter traction from 0 to 100% of pavement, or clear it to restore the default.");return
+   self:refreshTraction();view:message("Enter traction from 0 to 100% of pavement, or clear it to restore the default.",true);return
   end
   self:perform(function()
    local settings=self.state.document.settings
@@ -157,13 +185,13 @@ function Controller.new(context)
    field.traction=if next(values) then values else nil
    settings.terrain=field
   end,string.format("%s traction set to %.4g%% of pavement.",kind,percent))
- end)
+ end) end
  local bounds={radius={2,160},strength={.5,96},falloff={0,1},elevation={Heightfield.MinHeight,Heightfield.MaxHeight},depth={.25,32}}
  for key,field in view.brushFields do
   action(field.FocusLost,function()
    local value=tonumber(field.Text);local range=bounds[key]
    if value and value>=range[1] and value<=range[2] then self.brush[key]=value
-   else view:message(string.format("Enter a value from %g to %g.",range[1],range[2])) end
+   else view:message(string.format("Enter a value from %g to %g.",range[1],range[2]),true) end
    field.Text=tostring(self.brush[key])
   end)
  end
@@ -200,7 +228,7 @@ function Controller.new(context)
  action(view.cameraSensitivity.FocusLost,function()
   local value=tonumber(view.cameraSensitivity.Text)
   if value and value>=.2 and value<=3 then self.cameraSensitivity=value
-  else view:message("Camera sensitivity must be between 0.2 and 3.") end
+  else view:message("Camera sensitivity must be between 0.2 and 3.",true) end
   view.cameraSensitivity.Text=tostring(self.cameraSensitivity)
  end)
  action(view.duplicate.Activated,function() self:duplicateSelection() end)
@@ -214,9 +242,10 @@ function Controller.new(context)
  action(view.repeatPlacement.Activated,function()
   self.repeatPlacement=not self.repeatPlacement
   view.repeatPlacement.Text=if self.repeatPlacement then "Repeat: On" else "Repeat: Off"
+  view:setControlSelected(view.repeatPlacement,self.repeatPlacement)
  end)
  action(view.recentAssets.Activated,function()
-  self.showRecent=not self.showRecent;self.page=1;self:browse()
+  self.catalogWorkspace.showRecent=not self.catalogWorkspace.showRecent;self:browse()
  end)
  action(view.copyScale.Activated,function()
   local entry=self:selected();if not entry or entry.slot then return end
@@ -226,28 +255,32 @@ function Controller.new(context)
   local entry=self:selected();if not entry or entry.slot or not self.copiedScale then return end
   if self:perform(function() entry.scale=self.copiedScale end,"Applied copied scale.") then self.assetScales[entry.asset]=entry.scale end
  end)
- action(view.delete.Activated,function()
+ local function deleteSelected()
   if not self:selected() then view:message("Select an object or starting zone, then click Delete.");return end
   self:perform(function() self.state:delete() end,"Deleted selection. Undo restores it.")
- end)
+ end
+ action(view.delete.Activated,deleteSelected)
+ action(view.deleteCommand.Activated,deleteSelected)
  local function placeStart()
-  view:setStartMode()
   if #self.state.document.spawns>=5 then view:message("All five starts are placed. Select a marked area to move or delete it.");return end
-  if self.mode=="Terrain" then self:setMode("Select");view:setStartMode() end
+  if self.mode~="StartZones" then self:setMode("StartZones") end
   self:cancel();self.placingStart=true;view:message("Click clear ground to place the next numbered starting area. Each area holds three tanks; keep centers 40 studs apart. Esc cancels.")
  end
- action(view.placeStart.Activated,placeStart)
  action(view.startPlacement.Activated,placeStart)
- action(view.up.Activated,function()
-  if self.showRecent then self.showRecent=false else self.prefix=self.prefix:gsub("[^/]+/$","") end
-  self.page=1;self:browse()
+ action(view.assetSelect.Activated,function()
+  local item=self:selectedCatalogAsset()
+  if item and item.available then self:choose(item);self.paletteDrag=nil end
  end)
- action(view.nextPage.Activated,function() self.page=self.page%self.pages+1;self:browse() end)
- view:on(view.search:GetPropertyChangedSignal("Text"),function() if self.active then self.page=1;self:browse() end end)
+ view:on(view.search:GetPropertyChangedSignal("Text"),function() if self.active and self.mode=="Assets" then self:browse() end end)
+ view:on(view.assetScroll:GetPropertyChangedSignal("CanvasPosition"),function()
+  if self.mode=="Assets" and not self.renderingCatalog and self.catalogView then
+   self.catalogView.scroll=view.assetScroll.CanvasPosition
+  end
+ end)
  action(view.snap.Activated,function() self.state.snap=not self.state.snap;self:updateGrid() end)
  action(view.grid.FocusLost,function()
   local value=tonumber(view.grid.Text)
-  if not value or value~=value or value<.1 or value>50 then view.grid.Text=tostring(self.state.grid);view:message("Grid size must be between 0.1 and 50 studs.");return end
+  if not value or value~=value or value<.1 or value>50 then view.grid.Text=tostring(self.state.grid);view:message("Grid size must be between 0.1 and 50 studs.",true);return end
   self.state.grid=value;self:updateGrid()
  end)
  action(view.frameWorld.Activated,function() self:frameWorld() end)
@@ -260,7 +293,8 @@ function Controller.new(context)
   self:perform(function()self:clearContacts(entry.id) end,"Released endpoint pins.")
  end)
  for key,field in view.fields do action(field.FocusLost,function()
-  local entry=self:selected();if not entry then return end
+  local entry=self:selected()
+  if not entry or field.Text==view.displayedFields[key] then return end
   local n=tonumber(field.Text)
   local changed=self:perform(function()
    assert(n and n==n and math.abs(n)<math.huge,"Enter a finite number")
@@ -295,6 +329,20 @@ function Controller.new(context)
   if not value then self:refresh();return end
   self:editSound(entry.id,function(sound) sound[key]=value end,"Sound Block updated.")
  end) end
+ for control,path in {[view.addSoundBlock]=Audio.Asset,[view.addPaintAudio]=Audio.PaintAsset} do
+  action(control.Activated,function()
+   local item=self.catalog.byPath[path]
+   if item then self:choose(item) end
+  end)
+ end
+ action(view.selectRelatedSound.Activated,function()
+  local id=view.relatedSoundId
+  if id and self.state:find(id) then self.state:select(id);self:refresh() end
+ end)
+ action(view.nextRelatedSound.Activated,function()
+  self.audioRelationshipIndex=(self.audioRelationshipIndex or 1)+1
+  self:refreshSound(self:selected())
+ end)
  action(view.soundButtons.effect.Activated,function() self:openSoundPicker("effect") end)
  action(view.soundButtons.targets.Activated,function() self:openSoundPicker("targets") end)
  action(view.sfxClose.Activated,function() self:closeSoundPicker() end)
@@ -315,7 +363,7 @@ function Controller.new(context)
   local entry=self:selected()
   if not entry or not entry.sound then return end
   local wasArmed=self.paintSoundId==entry.id
-  self:setMode("Move")
+  self:setMode("Audio")
   if not wasArmed then self.paintSoundId=entry.id end
   self:refresh()
   if self.paintSoundId then self.view:message("Drag over the track to paint. Lift to move the camera, then drag again. Finish Painting saves the trail.") end
@@ -328,7 +376,7 @@ function Controller.new(context)
   local entry=self:selected()
   if not self.paintSoundItem and (not entry or entry.asset~=Audio.PaintAsset) then return end
   local enabled=not self.paintBucketEnabled
-  if not self.paintSoundItem then self:setMode("Move");self.paintSoundId=entry.id end
+  if not self.paintSoundItem then self:setMode("Audio");self.paintSoundId=entry.id end
   self.paintBucketEnabled=enabled
   self:refresh()
   self.view:message(if enabled then "Click a drivable collision surface to fill its connected area." else "Drag over the collision surface to paint.")
@@ -408,7 +456,7 @@ function Controller.new(context)
   local raw=view.assetTraction.Text
   local value=tonumber(raw)
   if not raw:match("^%s*$") and not (value and value>=0 and value<=100) then
-   self:refresh();self.view:message("Enter asset traction from 0 to 100%, or clear it to use the material default.");return
+   self:refresh();self.view:message("Enter asset traction from 0 to 100%, or clear it to use the material default.",true);return
   end
   self:perform(function() entry.traction=value end,"Asset traction updated. It applies when the asset is solid.")
  end)
@@ -417,7 +465,7 @@ function Controller.new(context)
   if not entry or not entry.destructible or entry.regenerates==false then return end
   local delay=tonumber(view.regenerationDelay.Text)
   if not delay or not (delay>=0 and delay<=Document.MaxRegenerationDelay) then
-   self:refresh();self.view:message("Enter a regeneration delay from 0 to 3600 seconds.");return
+   self:refresh();self.view:message("Enter a regeneration delay from 0 to 3600 seconds.",true);return
   end
   self:perform(function() entry.regenerationDelay=delay end,"Regeneration delay updated.")
  end)
@@ -531,7 +579,7 @@ function Controller:showSoundPicker()
     local name=asset.id.."  /  "..asset.asset
     if matches(name) then
      local checked=table.find(entry.sound.targets or {},asset.id)
-     table.insert(rows,{id=asset.id,name=(if checked then "☑  " else "☐  ")..name})
+     table.insert(rows,{id=asset.id,name=(if checked then "[On] " else "[Off] ")..name})
     end
    end
   end
@@ -549,7 +597,34 @@ end
 function Controller:refreshSound(entry)
  if self.soundPreview and (not entry or entry.id~=self.soundPreviewId) then self:stopSoundPreview() end
  local sound=entry and entry.sound
- local buttons=self.view.soundButtons
+ local view=self.view
+ local block, trail=self.catalog.byPath[Audio.Asset],self.catalog.byPath[Audio.PaintAsset]
+ view.addSoundBlock.Interactable=block~=nil and block.available==true
+ view.addPaintAudio.Interactable=trail~=nil and trail.available==true
+ if self.mode=="Audio" and not sound then
+  local relationships={}
+  if entry and not entry.slot then
+   for _,asset in self.state.document.objects do
+    if asset.sound then
+     local attached=asset.attachment and asset.attachment.parent==entry.id
+     local triggered=table.find(asset.sound.targets or {},entry.id)~=nil
+     if attached or triggered then
+      table.insert(relationships,{id=asset.id,label=if attached and triggered then "Attached and triggered" elseif attached then "Attached" else "Trigger target"})
+     end
+    end
+   end
+  end
+  if self.audioRelationshipTarget~=(entry and entry.id) then self.audioRelationshipIndex=1 end
+  self.audioRelationshipTarget=entry and entry.id
+  local count=#relationships
+  local index=if count>0 then ((self.audioRelationshipIndex or 1)-1)%count+1 else 1
+  self.audioRelationshipIndex=index
+  local related=relationships[index]
+  view.nextRelatedSound.Visible=count>1
+  view:setAudioRelationships(if related then string.format("%s: %s (%d/%d)",related.label,related.id,index,count)
+   elseif entry then "No audio relationships." else "Select a world object or add audio.",related and related.id)
+ end
+ local buttons=view.soundButtons
  for _,button in buttons do button.Visible=sound~=nil end
  for key,row in self.view.soundFields do
   local visible=sound~=nil and (key~="interval" or sound.playback=="Repeat")
@@ -650,7 +725,7 @@ function Controller:import()
   self.view.overlay.Visible=false
  end)
  local message=tostring(reason):gsub("^.-:%d+:%s*","")
- self.view:message(if ok then "Imported backup. Use My Worlds / Save to make it durable; change World ID for a separate copy." else "Import blocked: "..message)
+ self.view:message(if ok then "Imported backup. Use My Worlds / Save to make it durable; change World ID for a separate copy." else "Import blocked: "..message,not ok)
 end
 function Controller:loadCatalog()
  local context=self.context
@@ -670,18 +745,25 @@ end
 function Controller:refreshTraction()
  local kind=self.brush.operation
  local visible=self.mode=="Terrain" and Materials.TunableTraction[kind]==true
- self.view.traction.Visible=visible;self.view.tractionLabel.Visible=visible
- self.view.brushTraction.Visible=visible;self.view.brushTractionLabel.Visible=visible
+ local view=self.view
+ local field=self.state.document.settings.terrain
+ local values=field and field.traction or {}
+ for material, control in view.worldTraction do
+  if UIS:GetFocusedTextBox()~=control then control.Text=tostring(values[material] or Materials.defaultTraction(material)) end
+ end
+ view.paintEntireWorld.Visible=self.mode=="Terrain" and table.find(Heightfield.Paint,kind)~=nil
+ view.paintEntireWorld.Text=if self.brush.paintEntireWorld then "[x] Paint entire world" else "[ ] Paint entire world"
+ view:setControlSelected(view.paintEntireWorld,self.brush.paintEntireWorld==true)
+ view.tractionLabel.Visible=visible
+ view.brushTraction.Visible=visible
+ view.brushTractionLabel.Visible=visible
+ view.useWorldTraction.Visible=visible
  if visible then
-  local default=Materials.defaultTraction(kind)
-  local field=self.state.document.settings.terrain
-  local percent=field and field.traction and field.traction[kind] or default
-  self.view.tractionLabel.Text=string.format("Material fallback · default %.4g%%",default)
-  if UIS:GetFocusedTextBox()~=self.view.brushTraction then
+  view.tractionLabel.Text=string.format("World default: %.4g%%",values[kind] or Materials.defaultTraction(kind))
+  if UIS:GetFocusedTextBox()~=view.brushTraction then
    local brush=self.brush.traction[kind]
-   self.view.brushTraction.Text=if brush==nil then "" else tostring(brush)
+   view.brushTraction.Text=if brush==nil then "" else tostring(brush)
   end
-  if UIS:GetFocusedTextBox()~=self.view.traction then self.view.traction.Text=tostring(percent) end
  end
 end
 function Controller:motionEntry()
@@ -854,7 +936,13 @@ function Controller:refreshTunnel()
  local tunnel=list and self.tunnelIndex and list[self.tunnelIndex]
  if not tunnel then self.tunnelIndex=nil end
  local view=self.view
+ local operation=self.brush.operation
+ local flatten=operation=="Flatten"
+ local depth=operation=="Water" or operation=="Carve Ravine"
+ view.brushFields.elevation.Visible=flatten;view.brushLabels.elevation.Visible=flatten
+ view.brushFields.depth.Visible=depth;view.brushLabels.depth.Visible=depth
  view.tunnelNew.Visible=enabled;view.tunnelNext.Visible=enabled and list~=nil;view.tunnelDelete.Visible=enabled and tunnel~=nil
+ view:setTunnelControlsVisible(enabled)
  for key,field in view.tunnelFields do
   local visible=enabled and (tunnel~=nil or key=="diameter" or key=="traction")
   field.Visible=visible;view.tunnelLabels[key].Visible=visible
@@ -902,14 +990,13 @@ function Controller:refresh()
  local audio=self:selected()
  self.view.paintBucket.Visible=not self.gesture and (self.paintSoundItem~=nil or (audio~=nil and audio.asset==Audio.PaintAsset))
  self.view.paintBucket.Text=if self.paintBucketEnabled then "Paint Bucket: On" else "Paint Bucket"
- self.view.status.Size=UDim2.new(1,if self.view.finishPaint.Visible or self.view.paintBucket.Visible then -154 else -16,0,24)
  self:refreshTraction()
  for axis,field in self.view.dimensions do
   if UIS:GetFocusedTextBox()~=field then field.Text=tostring(self.state.document.settings[axis]) end
  end
  self.view:setStartCount(#self.state.document.spawns)
  local ground=self.state.document.settings.ground
- self.view.groundMaterial.Text="Ground material: "..ground.material
+ self.view:setGroundMaterial(ground.material)
  if UIS:GetFocusedTextBox()~=self.view.groundColor then
   self.view.groundColor.Text=string.format("%d, %d, %d",table.unpack(ground.color))
  end
@@ -938,9 +1025,9 @@ function Controller:updateSnap()
  local entry=self:selected();local pin=entry and self.state.pins[entry.id]
  local side=if pin then pin.side else (self.snapPreview and self.snapPreview.side) or self.snapSide or 0
  self.view.edgeSnap.Text=if self.edgeSnap then "Edge Snap: On" else "Edge Snap: Off"
- self.view.edgeSnap.BackgroundColor3=if self.edgeSnap then View.activeColor else View.buttonColor
+ self.view:setControlSelected(self.view.edgeSnap,self.edgeSnap==true)
  for mode,button in self.view.fitButtons do
-  button.BackgroundColor3=if self.edgeSnap and self.fitMode==mode then View.activeColor else View.buttonColor
+  self.view:setControlSelected(button,self.edgeSnap==true and self.fitMode==mode)
  end
  local profile=entry and self:snapProfile(entry)
  local geometry=if profile and profile.snap then "Authored snap geometry" else "Derived snap edges"
@@ -995,7 +1082,7 @@ function Controller:perform(fn,message)
  local ok,err=pcall(function() fn();self:reconcilePins(before.document);self:reconcileAttachments(before.document);Document.export(self.state.document,self.catalog) end)
  if not ok then self.state:restore(before);self.state.past=past;self.state.future=future
  elseif self.state.past[#self.state.past]==past[#past] then self.state:record(before) end
- self:refresh();self.view:message(if ok then message else tostring(err))
+ self:refresh();self.view:message(if ok then message else tostring(err),not ok)
  return ok
 end
 function Controller:history(redo)
@@ -1003,22 +1090,60 @@ function Controller:history(redo)
  local changed=if redo then self.state:redo() else self.state:undo()
  self:refresh();self.view:message(if changed then (if redo then "Redone." else "Undone.") else "No more history.")
 end
+function Controller:selectedCatalogAsset()
+ local path=self.catalogView and self.catalogView.selected
+ return path and self.catalog.byPath[path]
+end
 function Controller:browse()
- local query=self.view.search.Text
- local dirs,items,prefix
- if self.showRecent and query=="" then
-  dirs,items,prefix={},{},"Recent"
+ local view=self.view
+ local workspace=self.catalogWorkspace
+ local query=view.search.Text
+ local current=if query~="" then workspace.search elseif workspace.showRecent then workspace.recent else workspace.browse
+ if current==workspace.search and current.query~=query then current.query=query;current.scroll=nil end
+ self.catalogView=current
+ local entries={}
+ local function addAsset(item,depth)
+  table.insert(entries,{item=item,path=item.model,depth=depth})
+ end
+ if query~="" then
+  local _,matches=Document.tree(self.catalog,"",query)
+  for _,item in matches do addAsset(item,0) end
+ elseif workspace.showRecent then
   for _,path in self.recentAssets do
    local item=self.catalog.byPath[path]
-   if Document.isPlaceable(item) then table.insert(items,item) end
+   if Document.isPlaceable(item) then addAsset(item,0) end
   end
  else
-  dirs,items=Document.tree(self.catalog,self.prefix,query);prefix=self.prefix
+  local function appendFolder(prefix,depth)
+   local dirs,items=Document.tree(self.catalog,prefix,"")
+   for _,name in dirs do
+    local path=prefix..name.."/"
+    local open=workspace.expanded[path]==true
+    table.insert(entries,{path=path,name=name,open=open,depth=depth})
+    if open then appendFolder(path,depth+1) end
+   end
+   for _,item in items do addAsset(item,depth) end
+  end
+  appendFolder("",0)
  end
- self.view.recentAssets.BackgroundColor3=if self.showRecent then View.activeColor else View.buttonColor
- self.page,self.pages=self.view:paletteEntries(dirs,items,prefix,self.page,self.context.editorAssets,function(folder)
-  self.prefix..=folder.."/";self.page=1;self:browse()
- end,function(item) self:choose(item) end)
+ view.recentAssets.Text=if workspace.showRecent then "Show Folders" else "Recent Assets"
+ view:setControlSelected(view.recentAssets,workspace.showRecent==true)
+ self.renderingCatalog=true
+ view:paletteEntries(entries,current.selected,function(path)
+  workspace.expanded[path]=not workspace.expanded[path]
+  self:browse()
+ end,function(item)
+  current.selected=item.model
+  view:highlightCatalogAsset(item.model)
+  view:showCatalogAsset(item,self.context.editorAssets)
+ end,function(item)
+  if item.available then
+   self.catalogDrag={item=item,position=self:mousePosition()}
+  end
+ end)
+ view.assetScroll.CanvasPosition=current.scroll or Vector2.zero
+ self.renderingCatalog=false
+ view:showCatalogAsset(self:selectedCatalogAsset(),self.context.editorAssets)
 end
 function Controller:choose(item)
  if not item.available then
@@ -1026,7 +1151,7 @@ function Controller:choose(item)
   return
  end
  if item.model==Audio.PaintAsset then
-  self:setMode("Move")
+  self:setMode("Audio")
   self.paintSoundItem=item;self.soundBlocksHidden=false;self.state.selection={}
   self:refresh()
   self.view:message("Drag to paint the track, or choose Paint Bucket to fill a connected surface.")
@@ -1049,6 +1174,7 @@ function Controller:duplicateSelection()
 end
 function Controller:updateGrid()
  self.view.snap.Text="Grid snap: "..(if self.state.snap then "ON" else "OFF")
+ self.view:setControlSelected(self.view.snap,self.state.snap==true)
  local settings=self.state.document.settings
  local selected=self:selected()
  self.view.hint.Text=string.format("%s  •  %d × %d  •  %s  •  Grid %s  •  RMB orbit / MMB pan / F focus",
@@ -1057,34 +1183,41 @@ function Controller:updateGrid()
  if self.scene then self.scene:grid(self.state.snap,self.state.grid) end
 end
 function Controller:setEdgeSnap(enabled)
- if not fitForMode[self.mode] then
+ if not tools[self.mode].fit then
   if not enabled then return end
   self:setMode("Move")
  end
  self:cancel()
- self.fitMode=fitForMode[self.mode]
+ self.fitMode=tools[self.mode].fit
  self.edgeSnap=enabled
  self:updateSnap()
  self.view:applyContext()
  self.view:message(if enabled then self.view.pinStatus.Text else "Edge snapping is off.")
 end
 function Controller:setMode(mode)
- self:cancel();self.mode=mode
- self.edgeSnap=false
- if fitForMode[mode] then self.fitMode=fitForMode[mode] end
- self.view:terrainMode(mode=="Terrain",self.brush.operation)
+ local nextTool=assert(tools[mode],"Unknown World Editor tool")
+ if tools[self.mode].fit then self.toolWorkspaces[self.mode]={edgeSnap=self.edgeSnap} end
+ local workspace=self.toolWorkspaces[mode]
+ self:cancel()
+ self.mode=mode
+ self.fitMode=nextTool.fit
+ self.edgeSnap=nextTool.fit~=nil and workspace~=nil and workspace.edgeSnap==true
+ self.view:showTerrainPreferences(self.brush)
  self.view:setEditorMode(mode)
+ if mode=="Assets" and self.active then self:browse() end
  self:refreshTraction()
  self:refreshTunnel()
  if self.scene then
   self.scene:setMode(mode,self.rotationAxis or "Yaw")
   local selected=self:selected();self.scene:selection(selected and selected.id,self.distance)
  end
- for axis,button in self.view.rotationAxes do button.BackgroundColor3=if axis==(self.rotationAxis or "Yaw") then View.activeColor else View.buttonColor end
- for name,button in self.view.tools do button.BackgroundColor3=if name==mode then View.activeColor else View.buttonColor end
+ for axis,button in self.view.rotationAxes do self.view:setControlSelected(button,axis==(self.rotationAxis or "Yaw")) end
  self:updateGrid()
  self:updateSnap()
- self.view:message(if mode=="Terrain" then self.brush.operation.." Terrain · hold and drag on the ground. Escape cancels the stroke." elseif mode=="Move" then "Move • red X / blue Z slides; green Y raises or lowers." elseif mode=="Rotate" then "Rotate • choose a local axis, then drag the ring." elseif mode=="Select" then "Select an object or navigate the scene." elseif mode=="Resize" then "Resize • drag an enabled local axis. Red is width, green is height, and blue is length." else "Scale • drag the green anchor to resize uniformly.")
+ self:refreshSound(self:selected())
+ self.view:message(if mode=="Terrain" and self.brush.operation=="None" then "Terrain editing is idle. Choose a material or terrain operation."
+  elseif mode=="Terrain" and self.brush.operation=="Clear" then "Drag to clear material, water, and local traction under the brush."
+  elseif mode=="Terrain" then self.brush.operation.." Terrain · hold and drag on the ground. Escape cancels the stroke." elseif mode=="Move" then "Move • red X / blue Z slides; green Y raises or lowers." elseif mode=="Rotate" then "Rotate • choose a local axis, then drag the ring." elseif mode=="Select" then "Select an object or navigate the scene." elseif mode=="Resize" then "Resize • drag an enabled local axis. Red is width, green is height, and blue is length." elseif mode=="Scale" then "Scale • drag the green anchor to resize uniformly." else mode)
 end
 function Controller:frameWorld() self.focus=Vector3.zero;self.distance=math.max(self.state.document.settings.width,self.state.document.settings.depth)*.95;self.pitch=1;self.yaw=.55 end
 function Controller:focusSelected()
@@ -1112,8 +1245,9 @@ function Controller:pointer(mouse,motion)
  if not self.scene then return nil,nil,nil,mouse end
  local origin,direction=Math.ray(self.scene.camera.CFrame,self.view.viewport.AbsoluteSize,mouse-self.view.viewport.AbsolutePosition,self.scene.camera.FieldOfView)
  local settings=self.state.document.settings
- local point=if (self.mode=="Terrain" or motion) and settings.terrain then Heightfield.pick(settings.terrain,settings.width,settings.depth,origin,direction) else Math.ground(origin,direction)
- if (self.mode=="Terrain" or motion) and point and (math.abs(point.X)>settings.width/2 or math.abs(point.Z)>settings.depth/2) then point=nil end
+ local followsTerrain=self.mode=="Terrain" or motion or self.placingStart
+ local point=if followsTerrain and settings.terrain then Heightfield.pick(settings.terrain,settings.width,settings.depth,origin,direction) else Math.ground(origin,direction)
+ if followsTerrain and point and (math.abs(point.X)>settings.width/2 or math.abs(point.Z)>settings.depth/2) then point=nil end
  return point,origin,direction,mouse
 end
 function Controller:paintTerrain(point,dt)
@@ -1127,13 +1261,13 @@ function Controller:paintTerrain(point,dt)
  local dirty={}
  for i=1,stamps do
   local center=previous+(point-previous)*(i/stamps)
-  local code=table.find(Heightfield.Paint,brush.operation)
+  local code=if brush.operation=="Clear" then 0 else table.find(Heightfield.Paint,brush.operation)
   local updates
   if code then updates=Heightfield.paint(field,settings.width,settings.depth,center,brush.radius,code,stroke.traction)
   else
    local carve=brush.operation=="Carve Ravine"
    updates=Heightfield.brush(field,settings.width,settings.depth,center,if carve then "Carve" else brush.operation,
-    brush.radius,brush.strength,brush.falloff,if carve then stroke.elevation else brush.elevation,dt/stamps,stroke.remainder)
+    brush.radius,brush.strength,1 - brush.falloff,if carve then stroke.elevation else brush.elevation,dt/stamps,stroke.remainder)
   end
   for id,chunk in updates do
    dirty[id]=chunk
@@ -1171,10 +1305,12 @@ function Controller:place(point)
   if previous then table.remove(self.recentAssets,previous) end
   table.insert(self.recentAssets,1,item.model)
   if #self.recentAssets>12 then table.remove(self.recentAssets) end
+  if self.mode=="Assets" and self.catalogWorkspace.showRecent then self:browse() end
   if self.repeatPlacement then self.placing=item end
  end
 end
 function Controller:cancel()
+ self.brush.paintEntireWorld=false
  self.paintSoundId=nil
  self.paintSoundItem=nil
  self.paintBucketEnabled=nil
@@ -1187,7 +1323,7 @@ function Controller:cancel()
   self.state:restore(self.gesture.before);self.gesture=nil
   if self.scene then self.scene.draggingSnap=false;self.scene:sync(self.state.document,self.catalog) end
  end
- self.placing=nil;self.placingStart=nil;self.paletteDrag=nil;self:stopCamera()
+ self.placing=nil;self.placingStart=nil;self.paletteDrag=nil;self.catalogDrag=nil;self.catalogDrop=nil;self:stopCamera()
  self.snapPreview=nil
  if self.scene then self.scene:snapFeedback(nil);self.scene:clearEdgeTargets();self.scene:setSnap(self.edgeSnap,self.state.pins,self.snapSide) end
  if self.scene then self.scene:clearGhost();self.scene:startPreview(nil) end
@@ -1362,6 +1498,22 @@ function Controller:begin(input,processed)
  if self.motionDraft then if not self.motionDrag then self:motionInput(input,point,mouse) end;return end
  self:stopMotionPreview()
  if self.mode=="Terrain" and self.brush.operation=="Tunnel" then self:tunnelClick(point);return end
+ if self.mode=="Terrain" and self.brush.paintEntireWorld then
+  local material=self.brush.operation
+  local code=table.find(Heightfield.Paint,material)
+  if point and code and not self.terrainStroke then
+   self:perform(function()
+    local settings=self.state.document.settings
+    local width,depth=settings.width,settings.depth
+    local field=settings.terrain or Heightfield.new(width,depth)
+    local radius=Vector2.new(width,depth).Magnitude/2
+    local dirty=Heightfield.paint(field,width,depth,Vector3.zero,radius,code,self.brush.traction[material])
+    settings.terrain=field
+    self.scene:syncTerrain(settings,dirty)
+   end,"Painted the entire world "..material..". Undo restores the previous surface.")
+  end
+  return
+ end
  if touch then
   if self.placing or self.placingStart then self:place(point)
   elseif self.mode~="Terrain" then
@@ -1372,8 +1524,9 @@ function Controller:begin(input,processed)
   return
  end
  if self.mode=="Terrain" then
-  if point and not self.terrainStroke then
+  if point and not self.terrainStroke and self.brush.operation~="None" then
    local settings=self.state.document.settings
+   if self.brush.operation=="Clear" and not settings.terrain then return end
    if self.brush.operation=="Water" then
     self:perform(function()
      settings.terrain=settings.terrain or Heightfield.new(settings.width,settings.depth)
@@ -1442,7 +1595,7 @@ function Controller:begin(input,processed)
  local entry=self:selected()
  if entry and entry.slot then
   local start=Math.ground(origin,direction)
-  if (id or handle) and start then self:setMode("Move");self.gesture={kind="StartMove",id=entry.id,before=self.state:snapshot(),base=State.copy(entry),start=start,axis=handle} end
+  if (id or handle) and start and (self.mode=="Move" or self.mode=="StartZones") then self.gesture={kind="StartMove",id=entry.id,before=self.state:snapshot(),base=State.copy(entry),start=start,axis=handle} end
   return
  end
  if entry and handle and handle:match("^Snap[ABCD]$") then self:beginSnap(handle:sub(-1),entry,choice,pixel);return end
@@ -1562,7 +1715,7 @@ function Controller:step(dt)
    if self.tunnelStart then scene:drawMotion(if brushPoint then {self.tunnelStart,brushPoint} else {self.tunnelStart},false,nil) end
    return
   end
-  scene:brushFootprint(brushPoint,self.brush.radius)
+  scene:brushFootprint(if self.brush.operation=="None" or self.brush.paintEntireWorld then nil else brushPoint,self.brush.radius)
   local stroke=self.terrainStroke
   if stroke and brushPoint then
    stroke.elapsed+=math.min(dt,.1)
@@ -1652,7 +1805,7 @@ function Controller:step(dt)
   local candidate=self:candidate(point)
   local ok,err=pcall(Document.checkEntry,self.state.document,self.catalog,candidate)
   scene:ghost(candidate,self.placing,ok)
-  self.view:message(if ok then self.placing.model.." • release / click to place" else tostring(err))
+  self.view:message(if ok then self.placing.model.." • release / click to place" else tostring(err),not ok)
  else scene:clearGhost() end
  local selected=self:selected();self:updateSnap()
  if self.gesture and selected then
@@ -1690,7 +1843,6 @@ function Controller:enter(playtest)
   end
   self.scene=Scene.new(self.view.viewport,self.context.editorAssets,self.state.document)
   self:frameWorld();self:refresh();self:updateGrid();self:setMode(self.mode)
-  if self.view.palette.Parent.Visible then self:browse() end
   if playtest and playtest.openPlayground and self.state.document.id~="playground" then
    self.library:open(self.state.document,"playground")
   end
@@ -1721,19 +1873,34 @@ function Controller:enter(playtest)
   self.keys[input.KeyCode]=nil
   if self.cameraDrag and self.cameraDrag.button==input.UserInputType then self:stopCamera() end
   if input.UserInputType==Enum.UserInputType.MouseButton1 then
+   self.catalogDrag=nil
    if self:liftPaintPointer() then return end
    if self.cameraDrag then self.paletteDrag=nil;return end
    if self.paused then self:cancel();return end
    if self.paletteDrag then
     local point,_,_,mouse=self:pointer()
-    local start=self.paletteDrag;self.paletteDrag=nil
-    if point and (mouse-start).Magnitude>6 and self.view:isScene(mouse) then self:place(point) end
+    local start,catalogDrop=self.paletteDrag,self.catalogDrop
+    self.paletteDrag=nil;self.catalogDrop=nil
+    if point and (mouse-start).Magnitude>6 and self.view:isScene(mouse) then
+     self:place(point)
+    elseif catalogDrop then
+     self:cancel()
+     self:refresh()
+    end
    elseif self.terrainStroke then self:finishTerrain(false)
    elseif self.gesture then self:finishGesture(false) end
   end
  end)
  connect(UIS.InputChanged,function(input)
   if demoOwnsCursor() then return end
+  if self.catalogDrag and input.UserInputType==Enum.UserInputType.MouseMovement then
+   local drag=self.catalogDrag
+   local mouse=self:mousePosition()
+   if (mouse-drag.position).Magnitude>6 and self.view:isScene(mouse) then
+    self:choose(drag.item)
+    if self.placing then self.paletteDrag=drag.position;self.catalogDrop=true end
+   end
+  end
   if self.motionDrag and (input==self.motionDrag.input or input.UserInputType==Enum.UserInputType.MouseMovement) then
    local pointer=if input.UserInputType==Enum.UserInputType.Touch then Math.guiPoint(Vector2.new(input.Position.X,input.Position.Y),game:GetService("GuiService"):GetInsetArea(Enum.ScreenInsets.None).Min) else self:mousePosition()
    self:moveMotionPoint(pointer)
@@ -1789,7 +1956,7 @@ function Controller:exit()
  if focused and focused:IsDescendantOf(self.frame) then focused:ReleaseFocus() end
  if self.scene then self.scene:destroy();self.scene=nil end
 end
-function Controller:moveFocus() game:GetService("GuiService").SelectedObject=self.view.back end
+function Controller:moveFocus() game:GetService("GuiService").SelectedObject=self.view.fileMenu end
 function Controller:activateSelected() self:confirmLeave(self.context.home) end
 function Controller:destroy() self:exit();self.library:destroy();self.view:destroy() end
 return Controller

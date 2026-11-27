@@ -110,7 +110,7 @@ function Scene.new(viewport,assets,document)
  for _,endpoint in {"A","B","C","D"} do
   local p=part(snapGizmos,"Snap"..endpoint,Vector3.new(2,2,2),CFrame.new(),if endpoint=="A" then Color3.fromRGB(80,215,255) else Color3.fromRGB(255,183,92),1)
   p.Shape=Enum.PartType.Ball;p.Material=Enum.Material.Neon;p:SetAttribute("EditorHandle","Snap"..endpoint);self.snapEnds[endpoint]=p
-  local label=Instance.new("TextLabel");label.Name="SnapLabel"..endpoint;label.Text="↔";label.Size=UDim2.fromOffset(snapLabelSize,snapLabelSize);label.BackgroundTransparency=1;label.TextColor3=p.Color;label.TextSize=18;label.Font=Enum.Font.GothamBold;label.TextStrokeTransparency=.2;label.Visible=false;label.ZIndex=4;label.Parent=viewport;self.snapLabels[endpoint]=label
+  local label=Instance.new("TextLabel");label.Name="SnapLabel"..endpoint;label.Text=endpoint;label.Size=UDim2.fromOffset(snapLabelSize,snapLabelSize);label.BackgroundTransparency=1;label.TextColor3=p.Color;label.TextSize=18;label.Font=Enum.Font.GothamBold;label.TextStrokeTransparency=.2;label.Visible=false;label.ZIndex=4;label.Parent=viewport;self.snapLabels[endpoint]=label
  end
  local s=document.settings
  self.floor=part(world,"EditorGround",Vector3.new(s.width,1,s.depth),CFrame.new(0,-.5,0),Color3.fromRGB(table.unpack(s.ground.color)));self.floor.Material=Enum.Material[s.ground.material];self.floor.CanQuery=true
@@ -421,13 +421,17 @@ function Scene:brushFootprint(point,radius)
 end
 function Scene:startPreview(spawn,valid)
  if not spawn then if self.startGhost then self.startGhost:Destroy();self.startGhost=nil end;return end
+ local settings=self.document.settings
+ local x,z=spawn.position[1],spawn.position[3]
+ local position=Vector3.new(x,Heightfield.sample(settings.terrain,settings.width,settings.depth,x,z),z)
  if self.startGhost and self.startGhostSlot==spawn.slot and self.startGhostValid==valid then
-  self.startGhost:PivotTo(CFrame.new(spawn.position[1]-self.startGhostX,0,spawn.position[3]-self.startGhostZ)*self.startGhost:GetPivot())
-  self.startGhostX=spawn.position[1];self.startGhostZ=spawn.position[3];return
+  self.startGhost:PivotTo(CFrame.new(position-self.startGhostPosition)*self.startGhost:GetPivot())
+  self.startGhostPosition=position
+  return
  end
  if self.startGhost then self.startGhost:Destroy() end
- self.startGhost=StartingAreas.make(self.world,spawn,false)
- self.startGhostSlot=spawn.slot;self.startGhostValid=valid;self.startGhostX=spawn.position[1];self.startGhostZ=spawn.position[3]
+ self.startGhost=StartingAreas.make(self.world,spawn,false,position.Y)
+ self.startGhostSlot=spawn.slot;self.startGhostValid=valid;self.startGhostPosition=position
  for _,p in self.startGhost:GetDescendants() do if p:IsA("BasePart") then p.Transparency=.4;if not valid then p.Color=Color3.fromRGB(245,90,75) end end end
 end
 function Scene:ghost(entry,item,valid)

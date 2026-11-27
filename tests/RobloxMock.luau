@@ -52,7 +52,7 @@ local instanceEvents={__index=function(object,key)
 end}
 function Instance.new(class)
 	local object = { ClassName = class, AbsoluteSize = Vector2.new(640, 320), AbsolutePosition = Vector2.zero,
-		InputBegan = signal(), Activated = signal(), ChildAdded = signal(), children = {}, properties = {}, Enabled = true }
+		InputBegan = signal(), InputEnded = signal(), Activated = signal(), ChildAdded = signal(), children = {}, properties = {}, Enabled = true }
  if class=="TextBox" then object.FocusLost=signal();object.Focused=signal() end
  if class=="TextButton" then
   object.MouseEnter=signal(); object.MouseLeave=signal(); object.SelectionGained=signal(); object.SelectionLost=signal()

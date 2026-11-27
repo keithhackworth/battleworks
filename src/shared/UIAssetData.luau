@@ -76,6 +76,9 @@ return {
 	{ source = "dogtags/steel/center/01.png", name = "01", assetId = "91236110015708", width = 614, height = 260 },
 	{ source = "dogtags/steel/left/01.png", name = "01", assetId = "110254549579793", width = 306, height = 260 },
 	{ source = "dogtags/steel/right/01.png", name = "01", assetId = "111885898070070", width = 309, height = 260 },
+	{ source = "editor/icons.png", name = "icons", assetId = "82667402487696", width = 512, height = 256 },
+	{ source = "editor/terrain-materials.png", name = "terrain-materials", assetId = "125045889523898", width = 1536, height = 1024 },
 	{ source = "folders/folder1.png", name = "folder1", assetId = "96106321690310", width = 1536, height = 1024 },
 	{ source = "folders/folder2.png", name = "folder2", assetId = "111480541717614", width = 1537, height = 1023 },
+	{ source = "footlockers/olive/panels/01.png", name = "01", assetId = "100778362216493", width = 1254, height = 1254 },
 }

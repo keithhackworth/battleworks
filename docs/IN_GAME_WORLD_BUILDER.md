@@ -315,7 +315,7 @@ Choose **Save & Play Test** on the editor toolbar.
 4. Return with the battle HUD's **Main Menu**, then open World Editor to continue
    your draft. In a private battle server, Play BattleWorks re-enters that world.
 
-The default provider stores up to **10 private worlds per player** in the
+The default provider stores up to **99 private worlds per player** in the
 BattleWorks HTTP service at `https://groupboard.app/api/battleworks/v1`, hosted
 by the existing GroupBoard API. Studio and live worlds have separate durable
 namespaces. See [HTTP setup and backup transfer](HTTP_WORLD_STORAGE.md). Each world is limited to 512 objects and

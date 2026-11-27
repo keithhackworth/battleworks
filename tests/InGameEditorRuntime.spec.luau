@@ -20,6 +20,7 @@ local runtimeInstances={}
 local function isGui(class) return class=="Frame" or class=="TextButton" or class=="TextLabel" or class=="TextBox" or class=="ScrollingFrame" or class=="ViewportFrame" end
 Instance.new=function(class)
  local p=baseFactory(class);p.children={};p.scale=1;p.pivot=CFrame.new();p.baseSize=Vector3.new(4,12,4)
+ if class=="Camera" then p.CFrame=CFrame.new() end
  function p:IsA(kind) return kind==class or (kind=="BasePart" and class=="Part") or (kind=="GuiObject" and isGui(class)) or (kind=="LuaSourceContainer" and class=="Script") end
  function p:GetChildren() local out={};for _,child in self.children do if not child.destroyed and child.Parent==self then table.insert(out,child)end end;return out end
  function p:FindFirstChild(name)for _,child in self:GetChildren()do if child.Name==name then return child end end end
@@ -127,20 +128,66 @@ check(not controller.state.snap,"grid is optional and off by default")
 do
  local view=controller.view
  local original=view.frame.AbsoluteSize
- local rail={view.tools.Select,view.assets,view.tools.Move,view.tools.Resize,view.tools.Scale,
-  view.duplicate,view.terrain,view.undo,view.redo,view.placeStart}
+ local tools=view.tools
+ local rail={tools.Select,tools.Assets,tools.Move,tools.Rotate,tools.Resize,tools.Scale,
+  tools.Terrain,tools.Audio,tools.Motion,tools.Physics,tools.StartZones}
  for _,size in ipairs({Vector2.new(1440,820),Vector2.new(900,480),Vector2.new(390,670)}) do
   view.frame.AbsoluteSize=size;view:layout()
   check(view.viewport.Size.X.Offset>0 and view.viewport.Size.Y.Offset>0,"usable viewport at desktop and compact sizes")
-  for index=1,#rail,2 do
-   check(rail[index].Parent==view.left and rail[index+1].Parent==view.left
-    and rail[index].Position.Y.Offset==rail[index+1].Position.Y.Offset
-    and rail[index].Position.X.Offset<rail[index+1].Position.X.Offset,"ordered two-column tool row")
+  for index,control in ipairs(rail) do
+   local rowStart=rail[index-(index-1)%3]
+   check(control.Parent==view.left and control.Position.Y.Offset==rowStart.Position.Y.Offset
+    and (control==rowStart or control.Position.X.Offset>rail[index-1].Position.X.Offset),"ordered three-column tool row")
   end
+  check(view.undo.Parent.Name=="CommonCommands" and view.deleteCommand.Parent==view.undo.Parent,"history and editing commands share the fixed strip")
+  local registry=require("UIAssets")
+  local icons=registry.get("editor/icons.png")
+  local metal=registry.get("footlockers/olive/panels/01.png")
+  local footer=view.frame:FindFirstChild("EditorFooter")
+  check(footer.Size.X.Offset==size.X and footer:FindFirstChild("Metal"):FindFirstChild("WeatheredOlive").Image==metal.image,
+   "registered metal artwork spans the footer across viewport sizes")
+  for _,control in ipairs(rail) do
+   local graphic
+   for _, child in control:GetChildren() do if child:IsA("ImageLabel") then graphic=child;break end end
+   check(graphic and graphic.Image==icons.image and control:FindFirstChild("Caption"),"primary buttons have graphical atlas icons and separate labels")
+  end
+  check(view.fileMenu.Position.X.Offset+view.fileMenu.Size.X.Offset < view.worlds.Position.X.Offset
+   and view.worlds.Position.X.Offset+view.worlds.Size.X.Offset==size.X-5,"compact File and right-aligned Test")
+  check(view.undo:FindFirstChild("Icon_undo") and view.redo:FindFirstChild("Icon_redo")
+   and view.duplicate:FindFirstChild("Icon_duplicate") and view.deleteCommand:FindFirstChild("Icon_delete"),"common commands have atlas icons")
   check(view.dimensions.width.Parent.Parent.Name=="WorldSettings","dimensions stay in the settings dialog")
+  controller:setMode("Rotate")
+  local rotateOptions=view.rotationAxes.Pitch.Parent
+  check(rotateOptions.Visible and not rotateOptions.ScrollingEnabled and rotateOptions.Size.Y.Offset>=93,
+   "Rotate fits all three axis choices without scrolling when space is available")
+  local viewportSize,viewportPosition=view.viewport.Size,view.viewport.Position
+  view.fileMenu.Activated:Fire()
+  check(view:isModal() and view.importMenu.Parent==view.export.Parent and view.export.Parent.Name=="FileDropdown",
+   "File dropdown overlays the viewport and owns both JSON commands")
+  view:dismissPresentation()
+  for _,mode in {"Move","Resize","Scale","Audio","Terrain","Select"} do
+   controller:setMode(mode)
+   check(view.viewport.Size.X.Offset==viewportSize.X.Offset and view.viewport.Size.Y.Offset==viewportSize.Y.Offset
+    and view.viewport.Position.X.Offset==viewportPosition.X.Offset and view.viewport.Position.Y.Offset==viewportPosition.Y.Offset,
+    "switching contexts leaves viewport bounds unchanged")
+  end
  end
  view.frame.AbsoluteSize=original;view:layout()
  check(controller.mode=="Select","editor starts in Select / Navigate")
+ local defaultMaterial=controller.state.document.settings.ground.material
+ local settings=view.groundMaterial.Parent
+ view.toolbar:FindFirstChild("World").Activated:Fire()
+ view.groundMaterial.Activated:Fire()
+ local choices=view.groundMaterialChoices
+ check(choices.Ice.Parent.Visible and controller.state.document.settings.ground.material==defaultMaterial,
+  "opening the terrain picker shows choices without changing the world")
+ choices.Ice.Activated:Fire()
+ check(not choices.Ice.Parent.Visible and controller.state.document.settings.ground.material=="Ice"
+  and view.groundMaterial.Text=="Default terrain: Ice","choosing a terrain updates the world directly")
+ check(settings:FindFirstChild("SnowTractionLabel").Text=="Snow traction default (% of pavement)","traction uses default wording")
+ controller:history(false)
+ check(controller.state.document.settings.ground.material==defaultMaterial,"changing default terrain is undoable")
+ view:dismissPresentation()
 end
 local item=controller.catalog.byPath["Trees/Oak"]
 do
@@ -582,6 +629,12 @@ controller:setMode("Move")
 check(not controller.scene.snapEnds.A.CanQuery and not controller.scene.snapEnds.C.CanQuery,"side handles cannot steal Move drags")
 controller:setMode("Resize");controller.view.fitButtons.Stretch.Activated:Fire()
 check(controller.fitMode=="Stretch" and controller.mode=="Resize","Resize enables its own snap fit")
+local grid, snap, clipboard = controller.state.grid, controller.state.snap, controller.copiedScale
+controller:setMode("Select")
+check(not controller.edgeSnap and controller:selected().id==selected.id,"Select keeps the object without presenting fit handles")
+controller:setMode("Resize")
+check(controller.edgeSnap and controller.fitMode=="Stretch","returning restores Resize edge snapping")
+check(controller.state.grid==grid and controller.state.snap==snap and controller.copiedScale==clipboard,"tool restoration leaves shared preferences and clipboard alone")
 controller:beginSnap("C",selected)
 check(not controller.gesture and controller.fitMode=="Stretch","unsupported axes do not silently scale the asset")
 
@@ -768,12 +821,28 @@ controller.scene.pick=savedPick;controller.pointer=oldPointer
 controller.state=State.new(require("WorldEditorDocument").editorFresh());controller:refresh()
 check(#controller.state.document.spawns==0,"new editor draft requires designer-placed starting areas")
 check(controller.view.placeStart.Parent==controller.view.left,"starting-zone placement is discoverable in the tool rail")
+do
+ local heightfield=require("WorldHeightfield")
+ local settings=controller.state.document.settings
+ local terrain=heightfield.new(settings.width,settings.depth)
+ settings.terrain=terrain
+ local spawn={id="start_1",slot=1,position={0,0,0},heading=0}
+ controller.scene:startPreview(spawn,true)
+ local preview=controller.scene.startGhost
+ local low=controller.scene.startGhostPosition.Y
+ for i in ipairs(terrain.heights) do terrain.heights[i]=20*heightfield.Unit end
+ controller.scene:startPreview(spawn,true)
+ check(controller.scene.startGhost==preview and controller.scene.startGhostPosition.Y-low==20,
+  "start previews move vertically with sampled terrain without recreating the marker")
+ controller.scene:startPreview(nil)
+ settings.terrain=nil
+end
 for i,p in {Vector3.new(-60,0,-60),Vector3.new(0,0,-60),Vector3.new(60,0,-60),Vector3.new(-60,0,60),Vector3.new(60,0,60)} do
- controller.view.placeStart.Activated:Fire();controller:place(p)
+ controller.view.placeStart.Activated:Fire();controller.view.startPlacement.Activated:Fire();controller:place(p)
  local spawn=controller.state.document.spawns[i]
  check(spawn and spawn.slot==i and controller.scene.spawnModels[spawn.id]~=nil,"placing starting areas creates numbered, selectable caution markings")
 end
-controller.view.placeStart.Activated:Fire();check(not controller.placingStart,"sixth starting area cannot be armed")
+controller.view.startPlacement.Activated:Fire();check(not controller.placingStart,"sixth starting area cannot be armed")
 local spawn=controller.state.document.spawns[3];controller.state:select(spawn.id);controller:refresh()
 check(controller.view.selected.Text:find("PLAYER 3",1,true)~=nil,"selection identifies exact player starting slot")
 controller.view.fields.x.Text="65";controller.view.fields.x.FocusLost:Fire()
@@ -795,15 +864,49 @@ do
  view.saveAs.Activated:Fire()
  check(controller.library.frame.Visible and controller.library.copyMode and controller.library.id.Text=="","Save As opens the existing library in copy mode")
  controller.library:hide()
- check(not view.palette.Parent.Visible,"the asset library starts closed")
+ check(not view.palette.Visible,"the catalog starts hidden outside Assets")
  view.assets.Activated:Fire()
- check(view.palette.Parent.Visible and view:isModal(),"Add Asset opens the blocking library")
- view.assetCancel.Activated:Fire()
- check(not view.palette.Parent.Visible and not view:isModal(),"Cancel closes the library")
+ check(view.palette.Visible and not view:isModal(),"Assets opens an integrated workspace")
+ view.assetScroll:FindFirstChild("Trees/").Activated:Fire()
+ local treeRow=view.assetRows["Trees/Oak"]
+ local selectedBefore=controller:selected()
+ treeRow.Activated:Fire()
+ check(view.previewedAsset.model=="Trees/Oak" and controller:selected()==selectedBefore and not controller.placing,
+  "catalog selection previews the asset without affecting world selection or placement")
+ local browseState=controller.catalogWorkspace.browse
+ browseState.scroll=Vector2.new(0,4)
+ view.search.Text="Oak";view.search:GetPropertyChangedSignal("Text"):Fire()
+ check(controller.catalogView==controller.catalogWorkspace.search,"search opens a separate catalog state")
+ view.assetRows["Trees/Oak"].Activated:Fire()
+ view.tools.Move.Activated:Fire()
+ check(not view.previewedAsset and not view.palette.Visible,"inactive Assets releases the 3D preview")
+ for _=1,3 do
+  view.assets.Activated:Fire()
+  check(#view.thumbnails==1,"Assets keeps one active preview")
+  view.tools.Move.Activated:Fire()
+  check(#view.thumbnails==0,"leaving Assets releases its preview")
+ end
  view.assets.Activated:Fire()
- view:stageAsset(controller.catalog.byPath["Trees/Oak"],nil,function(item) controller:choose(item) end)
+ view.search.Text="";view.search:GetPropertyChangedSignal("Text"):Fire()
+ check(controller.catalogView==browseState and controller.catalogWorkspace.expanded["Trees/"] and view.previewedAsset.model=="Trees/Oak"
+  and view.assetScroll.CanvasPosition.Y==4,"clearing search restores expanded folders, selection and scroll across tool switches")
  view.assetSelect.Activated:Fire()
- check(not view.palette.Parent.Visible and controller.placing.model=="Trees/Oak","Select Asset stages placement and closes the modal")
+ check(view.palette.Visible and controller.placing.model=="Trees/Oak","Place Asset explicitly arms placement with the catalog still accessible")
+ controller:key({KeyCode=Enum.KeyCode.Escape},false)
+ check(not controller.placing and view.previewedAsset.model=="Trees/Oak","Escape disarms placement and retains catalog selection")
+ local beforeDrag=controller.state:snapshot()
+ local previousPointer,previousMouse=controller.pointer,controller.mousePosition
+ local pointer=Vector2.zero
+ controller.mousePosition=function() return pointer end
+ controller.pointer=function() return Vector3.new(12,0,70),nil,nil,pointer end
+ local click={UserInputType=Enum.UserInputType.MouseButton1,KeyCode=Enum.KeyCode.Unknown}
+ view.assetRows["Trees/Oak"].InputBegan:Fire(click)
+ pointer=Vector2.new(40,30)
+ UIS.InputChanged:Fire({UserInputType=Enum.UserInputType.MouseMovement})
+ UIS.InputEnded:Fire(click)
+ check(#controller.state.document.objects==#beforeDrag.document.objects+1,"deliberate catalog drag places one asset")
+ controller:history(false)
+ controller.pointer,controller.mousePosition=previousPointer,previousMouse
  controller:choose(controller.catalog.byPath["Trees/Oak"]);controller:place(Vector3.new(0,0,70))
  view.fields.scale.Text="1.5";view.fields.scale.FocusLost:Fire()
  view.repeatPlacement.Activated:Fire()

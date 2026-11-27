@@ -1,5 +1,6 @@
 -- Private per-user slots. UpdateAsync protects existing revisions across servers.
 local Store={};Store.__index=Store
+local MAX_WORLDS=99
 function Store.new(dataStore,temporary,encode)
  return setmetatable({dataStore=dataStore,temporary=temporary,encode=encode,memory={}},Store)
 end
@@ -27,7 +28,7 @@ function Store:save(owner,document,expected)
   local old=worlds[document.id]
   assert((if old then old.revision else 0)==expected,"World changed elsewhere. Open it again, or save with a new World ID.")
   local count=0;for _ in worlds do count+=1 end
-  assert(old or count<10,"You can save up to 10 worlds. Reuse a World ID to update it.")
+  assert(old or count<MAX_WORLDS,string.format("You can save up to %d worlds. Reuse a World ID to update it.",MAX_WORLDS))
   entry={document=document,revision=expected+1};worlds[document.id]=entry
   local nextProfile={worlds=worlds}
   assert(#self.encode(nextProfile)<=3000000,"Saved worlds exceed the storage limit")

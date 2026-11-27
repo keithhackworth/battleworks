@@ -83,7 +83,7 @@ local function mark(field,dirty,x,z)
 end
 function H.paint(field,width,depth,point,radius,code,traction)
  local dirty={}
- field.paint=field.paint or table.create(field.columns*field.rows,0)
+ if code~=0 and not field.paint then field.paint=table.create(field.columns*field.rows,0) end
  if not Materials.TunableTraction[H.Paint[code]] then traction=nil end
  if traction~=nil and not field.tractionCells then field.tractionCells=table.create(field.columns*field.rows,-1) end
  local dx,dz=width/field.columns,depth/field.rows
@@ -93,8 +93,8 @@ function H.paint(field,width,depth,point,radius,code,traction)
  for z=z0,z1 do for x=x0,x1 do
   if (x==px and z==pz) or ((x+.5)*dx-width/2-point.X)^2+((z+.5)*dz-depth/2-point.Z)^2<=radius^2 then
    local index=z*field.columns+x+1
-   if field.paint[index]~=code or H.cellTraction(field,index)~=traction or (field.water and field.water[index]~=0) then
-    field.paint[index]=code
+   if (field.paint and field.paint[index] or 0)~=code or H.cellTraction(field,index)~=traction or (field.water and field.water[index]~=0) then
+    if field.paint then field.paint[index]=code end
     if field.tractionCells then field.tractionCells[index]=traction or -1 end
     if field.water then field.water[index]=0 end
     mark(field,dirty,x,z)
