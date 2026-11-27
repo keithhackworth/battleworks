@@ -110,8 +110,8 @@ function Environment.sample(data,x,z,maxHeight)
  local supportingSurface,painted
  if data.terrainSettings then
   local settings=data.terrainSettings
-  local paint,water=Heightfield.surface(settings.terrain,settings.width,settings.depth,x,z)
-  if paint then kind=paint;painted=Materials.withTraction(Materials.fromMaterial(paint),settings.terrain.traction) end
+  local paint,water,paintTraction=Heightfield.surface(settings.terrain,settings.width,settings.depth,x,z)
+  if paint then kind=paint;painted=Materials.withPaintTraction(Materials.fromMaterial(paint),settings.terrain,paintTraction) end
   if water and water>height+.01 and (not maxHeight or maxHeight>=height) then
    kind="Water";speed=.9;painted=Materials.withTraction(Materials.fromMaterial("Mud"),settings.terrain.traction)
   end

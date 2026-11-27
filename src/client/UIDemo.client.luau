@@ -79,6 +79,7 @@ local function start()
 			displayOrder = 101,
 			onClose = if startAtHome then nil else close,
 			onGameplayView = function(active) setCursorActive(not active) end,
+			onEditorMenu = setCursorActive,
 		})
 	end)
 	starting = false

@@ -124,6 +124,24 @@ local controller=require("WorldEditorController").new({parent=Instance.new("Fram
 controller:enter();controller.view.isScene=function()return true end
 check(controller.scene.world.Parent==controller.view.viewport and workspace.CurrentCamera==cameraBefore,"editor uses an isolated WorldModel and camera")
 check(not controller.state.snap,"grid is optional and off by default")
+do
+ local view=controller.view
+ local original=view.frame.AbsoluteSize
+ local rail={view.tools.Select,view.assets,view.tools.Move,view.tools.Resize,view.tools.Scale,
+  view.duplicate,view.terrain,view.undo,view.redo,view.placeStart}
+ for _,size in ipairs({Vector2.new(1440,820),Vector2.new(900,480),Vector2.new(390,670)}) do
+  view.frame.AbsoluteSize=size;view:layout()
+  check(view.viewport.Size.X.Offset>0 and view.viewport.Size.Y.Offset>0,"usable viewport at desktop and compact sizes")
+  for index=1,#rail,2 do
+   check(rail[index].Parent==view.left and rail[index+1].Parent==view.left
+    and rail[index].Position.Y.Offset==rail[index+1].Position.Y.Offset
+    and rail[index].Position.X.Offset<rail[index+1].Position.X.Offset,"ordered two-column tool row")
+  end
+  check(view.dimensions.width.Parent.Parent.Name=="WorldSettings","dimensions stay in the settings dialog")
+ end
+ view.frame.AbsoluteSize=original;view:layout()
+ check(controller.mode=="Select","editor starts in Select / Navigate")
+end
 local item=controller.catalog.byPath["Trees/Oak"]
 do
  local explicit=table.clone(item)
@@ -233,6 +251,7 @@ check(controller.scene:pick(rawOrigin,rawDirection)==nil,"regression fixture rep
 local _,pickOrigin,pickDirection,guiMouse=controller:pointer()
 check(guiMouse.Y==mouse.Y-58 and controller.scene:pick(pickOrigin,pickDirection)==first.id,"real pointer conversion selects the rendered object with a nonzero GUI inset")
 local nativeClick={UserInputType=Enum.UserInputType.MouseButton1,KeyCode=Enum.KeyCode.Unknown}
+controller:setMode("Move")
 controller:begin(nativeClick,false)
 check(controller:selected().id==first.id and controller.gesture.kind=="Move","clicking a placed object's rendered position reselects it and starts movement")
 controller:finishGesture(true)
@@ -386,7 +405,11 @@ check(controller.state.document.objects[1].asset=="Trees/Oak" and controller.sta
 local currentState=controller.state
 controller.view.json.Text="malformed_json";controller.view.import.Activated:Fire()
 check(controller.state==currentState and controller.view.status.Text:find("Import blocked",1,true),"malformed backup leaves current world intact")
-controller.view.back.Activated:Fire();check(menu==1,"editor exposes explicit main-menu return")
+controller.view.back.Activated:Fire()
+local leaveDialog=controller.view.frame:FindFirstChild("LeaveEditorModal")
+check(menu==0 and leaveDialog.Visible,"unsaved changes prompt before leaving")
+leaveDialog:FindFirstChild("LeaveEditor"):FindFirstChild("Leave").Activated:Fire()
+check(menu==1,"confirmed navigation returns to the main menu")
 local countBefore=#controller.state.document.objects;local private=controller.scene.world
 controller:exit();UIS.InputBegan:Fire({UserInputType=Enum.UserInputType.Keyboard,KeyCode=Enum.KeyCode.Delete},false);stepping:Fire(1/60)
 check(private.destroyed and controller.scene==nil and #controller.runtime==0 and #controller.state.document.objects==countBefore,"exit removes geometry, disconnects all runtime input and preserves the local draft")
@@ -407,7 +430,7 @@ controller.library.request=function(action,payload)
  if action=="Play" then return {ok=true,launch=true} end
  error("Unexpected world action")
 end
-controller.view.worlds.Activated:Fire()
+controller.view.openWorld.Activated:Fire()
 check(controller.library.frame.Visible and controller.library.status.Text:find("STUDIO",1,true),"world library opens with explicit temporary-save labeling")
 controller.library.id.Text="my_oaks";controller.library.name.Text="My oaks"
 controller.library.save.Activated:Fire()
@@ -420,10 +443,10 @@ check(#controller.state.document.objects==countBefore and controller.library.doc
 local beforeBlocked=#calls
 controller.library.play.Activated:Fire()
 check(joinCount==0 and #calls==beforeBlocked and controller.library.frame.Visible,"incomplete world is blocked before saving or requesting Play")
-check(controller.library.status.Text:find("not playable",1,true) and controller.library.status.Text:find("0/5",1,true) and controller.library.status.Text:find("top toolbar",1,true),"Play explains the five-zone requirement, current count and tool location")
+check(controller.library.status.Text:find("not playable",1,true) and controller.library.status.Text:find("0/5",1,true) and controller.library.status.Text:find("Start Zones",1,true),"Play explains the five-zone requirement, current count and tool location")
 controller.state.document.spawns={}
 for i,p in {{-60,0,-60},{0,0,-60},{60,0,-60},{-60,0,60},{60,0,60}} do table.insert(controller.state.document.spawns,{id="start_"..i,slot=i,position=p,heading=0})end
-controller.library.play.Activated:Fire()
+controller.view.worlds.Activated:Fire()
 check(joinCount==1 and not controller.library.frame.Visible and calls[#calls].action=="Play","Save & Play requests admission only after server launch acknowledgment")
 controller.library:open(controller.state.document)
 local playCalls=#calls
@@ -551,19 +574,17 @@ controller:enter();check(cameraBindings.BattleWorksEditorCamera~=nil,"re-entry c
 local Snap=require("WorldEditorSnap")
 controller.state.document.spawns={} -- Snap scenarios use their own unobstructed draft.
 controller.scene.camera.CFrame=CFrame.lookAt(Vector3.new(0,60,100),Vector3.zero)
-controller.state:select(first.id);controller.snapSide=0;controller:setMode("Snap");controller:refresh()
+controller.state:select(first.id);controller.snapSide=0;controller:setMode("Scale");controller.view.fitButtons.Scale.Activated:Fire();controller:refresh()
 local selected=controller:selected()
 check(controller.scene.snapEnds.A.CanQuery and controller.scene.snapEnds.B.CanQuery,"snap endpoints are pickable only in private editor scene")
-check(controller.view.tools.Snap~=nil and controller.scene.snapEnds.C.CanQuery and controller.scene.snapEnds.D.CanQuery,"Snap tool exposes four side handles")
+check(controller.mode=="Scale" and controller.scene.snapEnds.C.CanQuery and controller.scene.snapEnds.D.CanQuery,"Scale exposes four snap handles without leaving the tool")
 controller:setMode("Move")
 check(not controller.scene.snapEnds.A.CanQuery and not controller.scene.snapEnds.C.CanQuery,"side handles cannot steal Move drags")
-controller:setMode("Snap")
-controller.view.snapContact.Activated:Fire()
-check(controller.fitMode=="Stretch" and controller.view.snapContact.Text=="Scale / [Stretch] / Move","Snap mode cycles from Scale to Stretch")
+controller:setMode("Resize");controller.view.fitButtons.Stretch.Activated:Fire()
+check(controller.fitMode=="Stretch" and controller.mode=="Resize","Resize enables its own snap fit")
 controller:beginSnap("C",selected)
-check(controller.gesture and controller.fitMode=="Scale","imported meshes can snap by falling back from unsupported stretch to proportional scale")
-controller:finishGesture(true);selected=controller:selected()
-check(controller.fitMode=="Scale","mesh snap fallback keeps Scale selected")
+check(not controller.gesture and controller.fitMode=="Stretch","unsupported axes do not silently scale the asset")
+
 do
  local policy=controller.catalog.byPath[selected.asset]
  local oldCollider,oldAxes=policy.collider,policy.resizeAxes
@@ -575,7 +596,7 @@ do
  policy.resizeAxes=nil
  controller:beginSnap("C",selected)
  check(not controller.gesture and controller.fitMode=="Stretch","an incompatible collision asset does not silently switch to uniform scaling")
- policy.collider=oldCollider;policy.resizeAxes=oldAxes;controller.fitMode="Scale"
+ policy.collider=oldCollider;policy.resizeAxes=oldAxes;controller:setMode("Scale");controller.view.fitButtons.Scale.Activated:Fire()
 end
 local endpointPixel=Math.project(controller.scene.camera.CFrame,controller.view.viewport.AbsoluteSize,controller.scene.snapEnds.A.CFrame.Position,controller.scene.camera.FieldOfView)
 local _,snapHandle=controller.scene:pick(Vector3.new(0,60,100),Vector3.new(0,-1,0),endpointPixel,controller.view.viewport.AbsoluteSize)
@@ -607,7 +628,7 @@ do
  local pixel=Math.project(scene.camera.CFrame,controller.view.viewport.AbsoluteSize,scene.snapEnds.A.CFrame.Position,scene.camera.FieldOfView)+Vector2.new(0,-23)
  id=scene:pick(Vector3.new(0,60,100),Vector3.new(0,-1,0),pixel,controller.view.viewport.AbsoluteSize)
  check(id==second.id,"hidden snap labels cannot steal clicks outside Snap mode")
- scene.camera.CFrame=savedCamera;scene.world.Raycast=savedRaycast;controller.pointer=savedPointer;controller:setMode("Snap");selected=controller:selected()
+ scene.camera.CFrame=savedCamera;scene.world.Raycast=savedRaycast;controller.pointer=savedPointer;controller:setMode("Scale");controller.view.fitButtons.Scale.Activated:Fire();selected=controller:selected()
 end
 controller:pinHere("A")
 local pinned=State.copy(controller.state.pins[first.id])
@@ -655,9 +676,8 @@ do
  local before=State.copy(controller:selected())
  local contacts=State.copy(controller.state.pins[first.id])
  local profile=controller:snapProfile(before)
- controller.view.snapContact.Activated:Fire()
- controller.view.snapContact.Activated:Fire()
- check(controller.fitMode=="Move" and controller.view.snapContact.Text=="Scale / Stretch / [Move]","Snap mode cycles from Stretch to Move")
+ controller:setMode("Move");controller.view.fitButtons.Move.Activated:Fire()
+ check(controller.fitMode=="Move" and controller.mode=="Move","Move enables translation-only snapping")
  local start=Snap.contact(before,"B",contacts.side,profile)
  local destination=start+Vector3.new(1,0,0)
  controller.scene.snapTarget=function()return {point={destination.X,destination.Y,destination.Z},kind="edge"} end
@@ -672,8 +692,8 @@ do
  check(moved.scale==before.scale and State.equal(moved.stretch,before.stretch) and State.equal(moved.rotation,before.rotation),"snap movement preserves scale, stretch and rotation")
  controller:history(false)
  check(State.equal(controller:selected(),before) and State.equal(controller.state.pins[first.id],contacts),"undo restores the pose and previous pins")
- controller.view.snapContact.Activated:Fire()
- check(controller.fitMode=="Scale","Snap mode cycles from Move back to Scale")
+ controller:setMode("Scale");controller.view.fitButtons.Scale.Activated:Fire()
+ check(controller.fitMode=="Scale" and controller.mode=="Scale","Scale enables proportional snapping")
 end
 controller.pointer=oldPointer;controller.scene.snapTarget=oldTarget
 local fixedBefore=State.copy(controller.state.pins[first.id])
@@ -740,14 +760,14 @@ do
  controller.view.isScene=oldScene;UIS.IsMouseButtonPressed=oldButton
  controller.pointer=oldPointer
 end
-controller:setMode("Snap");controller:beginSnap("C",controller:selected())
+controller:setMode("Scale");controller.view.fitButtons.Scale.Activated:Fire();controller:beginSnap("C",controller:selected())
 check(controller.gesture.pin.endpoint=="D","side handle chooses its own opposite side as pivot")
 controller:finishGesture(true)
 controller.scene.pick=savedPick;controller.pointer=oldPointer
 -- Ground-only, numbered areas use the actual editor placement and history path.
 controller.state=State.new(require("WorldEditorDocument").editorFresh());controller:refresh()
 check(#controller.state.document.spawns==0,"new editor draft requires designer-placed starting areas")
-check(controller.view.placeStart.Parent.Parent==controller.view.toolbar,"starting-zone placement is discoverable in the top toolbar")
+check(controller.view.placeStart.Parent==controller.view.left,"starting-zone placement is discoverable in the tool rail")
 for i,p in {Vector3.new(-60,0,-60),Vector3.new(0,0,-60),Vector3.new(60,0,-60),Vector3.new(-60,0,60),Vector3.new(60,0,60)} do
  controller.view.placeStart.Activated:Fire();controller:place(p)
  local spawn=controller.state.document.spawns[i]
@@ -775,9 +795,15 @@ do
  view.saveAs.Activated:Fire()
  check(controller.library.frame.Visible and controller.library.copyMode and controller.library.id.Text=="","Save As opens the existing library in copy mode")
  controller.library:hide()
+ check(not view.palette.Parent.Visible,"the asset library starts closed")
  view.assets.Activated:Fire()
- check(not view.palette.Visible,"the toolbar collapses the asset dock")
+ check(view.palette.Parent.Visible and view:isModal(),"Add Asset opens the blocking library")
+ view.assetCancel.Activated:Fire()
+ check(not view.palette.Parent.Visible and not view:isModal(),"Cancel closes the library")
  view.assets.Activated:Fire()
+ view:stageAsset(controller.catalog.byPath["Trees/Oak"],nil,function(item) controller:choose(item) end)
+ view.assetSelect.Activated:Fire()
+ check(not view.palette.Parent.Visible and controller.placing.model=="Trees/Oak","Select Asset stages placement and closes the modal")
  controller:choose(controller.catalog.byPath["Trees/Oak"]);controller:place(Vector3.new(0,0,70))
  view.fields.scale.Text="1.5";view.fields.scale.FocusLost:Fire()
  view.repeatPlacement.Activated:Fire()

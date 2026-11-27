@@ -19,7 +19,7 @@ function Settings.numbered(v)return #v.spawns==0 or v.spawns[1].slot~=nil end
 function Settings.ready(v)
  local count=0;local seen={}
  for _,p in v.spawns do if type(p.slot)=="number" and p.slot%1==0 and p.slot>=1 and p.slot<=5 and not seen[p.slot] then seen[p.slot]=true;count+=1 end end
- assert(count==5 and #v.spawns==5,"World is not playable: five starting zones must be defined first ("..count.."/5 placed). Use Place start zone in the top toolbar. You can still Save this draft.")
+ assert(count==5 and #v.spawns==5,"World is not playable: five starting zones must be defined first ("..count.."/5 placed). Use Start Zones in the left toolbar. You can still Save this draft.")
  local slots={};for _,p in v.spawns do assert(type(p.slot)=="number" and p.slot%1==0 and p.slot>=1 and p.slot<=5 and not slots[p.slot],"Starting positions must be numbered 1–5 exactly once");slots[p.slot]=true end
 end
 function Settings.validate(v,draft)

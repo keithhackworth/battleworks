@@ -7,7 +7,7 @@ do
  view.terrain.Activated:Fire()
  local settings=controller.state.document.settings
  settings.terrain=H.new(48,48)
- check(view.dimensions.width.Parent==view.brushPanel,"world size controls are available while sculpting")
+ check(view.dimensions.width.Parent.Parent.Name=="WorldSettings","world size controls stay in World Settings while sculpting")
  local oldTerrain=controller.state.document.settings.terrain
  oldTerrain.heights[H.index(oldTerrain,4,4)]=32
  oldTerrain.paint=table.create(64,0);oldTerrain.paint[37]=2

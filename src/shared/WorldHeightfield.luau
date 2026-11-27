@@ -14,7 +14,7 @@ end
 function H.validate(field,width,depth)
  local columns,rows=dimensions(width,depth)
  assert(type(field)=="table" and field.version==1 and field.columns==columns and field.rows==rows,"Terrain grid does not match the map dimensions")
- for k in field do assert(k=="version" or k=="columns" or k=="rows" or k=="heights" or k=="paint" or k=="water" or k=="traction","Unknown terrain property") end
+ for k in field do assert(k=="version" or k=="columns" or k=="rows" or k=="heights" or k=="paint" or k=="water" or k=="traction" or k=="tractionCells","Unknown terrain property") end
  if field.traction~=nil then
   assert(type(field.traction)=="table","Invalid terrain traction settings")
   for kind,value in field.traction do
@@ -45,6 +45,19 @@ function H.validate(field,width,depth)
    assert(total==cells,"Missing terrain layer value")
   end
  end
+ if field.tractionCells~=nil then
+  local values,cells=field.tractionCells,columns*rows
+  assert(type(values)=="table" and #values==cells,"Incorrect terrain traction cell count")
+  local total=0
+  for index,percent in values do
+   assert(type(index)=="number" and index%1==0 and index>=1 and index<=cells,"Invalid terrain traction cell index")
+   local kind=field.paint and H.Paint[field.paint[index]]
+   assert(type(percent)=="number" and (percent==-1 or (percent>=0 and percent<=100 and Materials.TunableTraction[kind])),
+    "Invalid painted terrain traction percentage")
+   total+=1
+  end
+  assert(total==cells,"Missing terrain traction cell")
+ end
 end
 function H.cell(field,width,depth,x,z)
  return math.clamp(math.floor((x/width+.5)*field.columns),0,field.columns-1),
@@ -56,16 +69,23 @@ function H.surface(field,width,depth,x,z)
  local index=j*field.columns+i+1
  local water=field.water and field.water[index]
  local level=if water and water~=0 then (water-H.WaterOffset)/H.Unit else nil
- return field.paint and H.Paint[field.paint[index]],level
+ return field.paint and H.Paint[field.paint[index]],level,H.cellTraction(field,index)
+end
+-- A dense layer uses -1 for inherited traction, so zero remains a valid override.
+function H.cellTraction(field,index)
+ local value=field.tractionCells and field.tractionCells[index]
+ return if value and value>=0 then value else nil
 end
 local function mark(field,dirty,x,z)
  local cx,cz=math.floor(x/H.Chunk),math.floor(z/H.Chunk)
  local key=cz*field.columns+cx
  if not dirty[key] then dirty[key]={cx,cz} end
 end
-function H.paint(field,width,depth,point,radius,code)
+function H.paint(field,width,depth,point,radius,code,traction)
  local dirty={}
  field.paint=field.paint or table.create(field.columns*field.rows,0)
+ if not Materials.TunableTraction[H.Paint[code]] then traction=nil end
+ if traction~=nil and not field.tractionCells then field.tractionCells=table.create(field.columns*field.rows,-1) end
  local dx,dz=width/field.columns,depth/field.rows
  local x0,z0=H.cell(field,width,depth,point.X-radius,point.Z-radius)
  local x1,z1=H.cell(field,width,depth,point.X+radius,point.Z+radius)
@@ -73,8 +93,9 @@ function H.paint(field,width,depth,point,radius,code)
  for z=z0,z1 do for x=x0,x1 do
   if (x==px and z==pz) or ((x+.5)*dx-width/2-point.X)^2+((z+.5)*dz-depth/2-point.Z)^2<=radius^2 then
    local index=z*field.columns+x+1
-   if field.paint[index]~=code or (field.water and field.water[index]~=0) then
+   if field.paint[index]~=code or H.cellTraction(field,index)~=traction or (field.water and field.water[index]~=0) then
     field.paint[index]=code
+    if field.tractionCells then field.tractionCells[index]=traction or -1 end
     if field.water then field.water[index]=0 end
     mark(field,dirty,x,z)
    end
@@ -152,6 +173,7 @@ function H.resize(field,width,depth,newWidth,newDepth)
   resized.heights=table.clone(field.heights)
   resized.paint=field.paint and table.clone(field.paint)
   resized.water=field.water and table.clone(field.water)
+  resized.tractionCells=field.tractionCells and table.clone(field.tractionCells)
   return resized
  end
  for z=0,resized.rows do
@@ -160,7 +182,7 @@ function H.resize(field,width,depth,newWidth,newDepth)
    resized.heights[H.index(resized,x,z)]=math.round(height*H.Unit)
   end
  end
- for _,layer in {"paint","water"} do
+ for _,layer in {"paint","water","tractionCells"} do
   local values=field[layer]
   if values then
    local result=table.create(resized.columns*resized.rows)

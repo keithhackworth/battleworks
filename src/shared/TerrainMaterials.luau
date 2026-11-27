@@ -59,6 +59,17 @@ function M.defaultTraction(kind)
 end
 local overridesCache=setmetatable({},{__mode="k"})
 local defaultTractionCache={}
+local function tune(profile,percent,default)
+ local tuned=table.clone(profile)
+ tuned.authoredTraction=percent/100
+ local tracked=math.min(100,percent+M.TreadTractionPoints)
+ tuned.trackedTraction=tracked/100
+ tuned.staticFriction=profile.staticFriction*percent/default
+ tuned.kineticFriction=profile.kineticFriction*percent/default
+ tuned.trackedStaticFriction=profile.staticFriction*tracked/default
+ tuned.trackedKineticFriction=profile.kineticFriction*tracked/default
+ return table.freeze(tuned)
+end
 function M.withTraction(profile,overrides)
  if profile.assetTraction then return profile end
  if not M.TunableTraction[profile.surfaceType] then return profile end
@@ -69,17 +80,25 @@ function M.withTraction(profile,overrides)
  if not cache then cache={};overridesCache[overrides]=cache end
  local cached=cache[profile]
  if cached and cached.percent==percent then return cached.profile end
- local tuned=table.clone(profile)
- tuned.authoredTraction=percent/100
- local tracked=math.min(100,percent+M.TreadTractionPoints)
- tuned.trackedTraction=tracked/100
- tuned.staticFriction=profile.staticFriction*percent/default
- tuned.kineticFriction=profile.kineticFriction*percent/default
- tuned.trackedStaticFriction=profile.staticFriction*tracked/default
- tuned.trackedKineticFriction=profile.kineticFriction*tracked/default
- table.freeze(tuned)
+ local tuned=tune(profile,percent,default)
  cache[profile]={percent=percent,profile=tuned}
  return tuned
+end
+local paintedCache=setmetatable({},{__mode="k"})
+function M.withPaintTraction(profile,field,percent)
+ if percent==nil or not M.TunableTraction[profile.surfaceType] then return M.withTraction(profile,field.traction) end
+ local byMaterial=paintedCache[field]
+ if not byMaterial then
+  byMaterial={}
+  paintedCache[field]=byMaterial
+ end
+ local byPercent=byMaterial[profile]
+ if not byPercent then
+  byPercent={}
+  byMaterial[profile]=byPercent
+ end
+ if not byPercent[percent] then byPercent[percent]=tune(profile,percent,M.defaultTraction(profile.surfaceType)) end
+ return byPercent[percent]
 end
 function M.withAssetTraction(profile,percent)
  if percent==nil then return profile end

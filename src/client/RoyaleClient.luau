@@ -9,6 +9,7 @@ function Client.start(inLab)
  local remote=network:WaitForChild("RoyaleControl")
  local startsAtHome=not inLab and network:GetAttribute("StartInMenu")==true
  local grounds=if not inLab then require(script.Parent.UI.TrainingGrounds) else nil
+ local editorAccess=if startsAtHome then require(script.Parent.UI.WorldEditorAccess) else nil
  local sprintRemote=network:WaitForChild("RoyaleSprint")
  local labRemote=network:FindFirstChild("InnovationLabTravel")
  local arena=workspace:WaitForChild("Arena")
@@ -56,6 +57,8 @@ local function worldRequest(action,payload)
   if not shell then
    shell=require(script.Parent.shell.ApplicationShell).new(playerGui,arena,session,gameplay,nil,function()return game.ReplicatedStorage:FindFirstChild("BattleWorksEditorAssets")end,worldRequest,{
     royale=true,garageRequest=garageRequest,
+    onHome=if startsAtHome then grounds.openHome else nil,
+    integratedEditor=startsAtHome,
     labTravel=if labRemote then function(action)labRemote:FireServer(action)end else nil,
     selectExperiment=if inLab then function(id)experiment=id;session:join()end else nil,
    })
@@ -124,6 +127,7 @@ local function worldRequest(action,payload)
   notice.Text="The saved Playground could not be loaded. The default arena is open.";notice.Visible=true
  end
  local function home()
+  if startsAtHome and shell and shell.playtest then shell.exitBattle();return end
   if startsAtHome and grounds.openHome() then return end
   local ok,result=pcall(function() ensureShell().home() end)
   if not ok then
@@ -255,6 +259,20 @@ local function worldRequest(action,payload)
     gameplay:setActive(false)
    end
   end else nil)
+ end
+ if editorAccess then
+  editorAccess.register(function(parent)
+   if session.mode~="Menu" then session:leave() end
+   gameplay:setActive(false)
+   local ok,reason=pcall(function() ensureShell():openEditor(parent) end)
+   if not ok and shell then shell:hide() end
+   return ok,reason
+  end,function()
+   if shell then shell:hide() end
+  end,function(proceed)
+   local editor=shell and shell.manager.screens.WorldEditor
+   if editor and editor.active then editor:confirmLeave(proceed) else proceed() end
+  end)
  end
  return {battle=battle,request=request,gui=gui,navigation=navigation,chat=chat,session=session,home=home,getShell=function()return shell end,modeSwitch=modeSwitch}
 end

@@ -31,11 +31,14 @@ function Standard.new(parent, options, spacing)
 	toggle.BorderSizePixel = 0
 	toggle.ZIndex = 5
 	toggle.Parent = root
+	header.root.ZIndex = 4
+	menu.root.ZIndex = 3
 	local boxAsset = options.assets.get("branding/menu_box2.png")
+	local artwork
 	if boxAsset then
 		toggle.BackgroundTransparency = 1
 		toggle.AutoButtonColor = false
-		local artwork = Instance.new("ImageLabel")
+		artwork = Instance.new("ImageLabel")
 		artwork.Name = "MenuBox"
 		artwork.Image = boxAsset.image
 		artwork.BackgroundTransparency = 1
@@ -44,25 +47,32 @@ function Standard.new(parent, options, spacing)
 		artwork.Parent = toggle
 	end
 
-	local playground, expanded = false, true
+	local playground, editor, expanded = false, false, true
 	local lastState
 	local function update()
 		header.root.Visible = not playground or expanded
-		toggle.Text = if boxAsset then "" elseif expanded then "Hide Menu" else "Menu"
-		setSurfaceVisible(not playground)
+		local showBox = boxAsset ~= nil and (not editor or expanded)
+		if artwork then artwork.Visible = showBox end
+		toggle.BackgroundTransparency = if showBox then 1 else 0
+		toggle.Text = if showBox then "" elseif expanded then "Hide Menu" else "Menu"
+		setSurfaceVisible(not playground and not editor)
 		menu:setRetracted(not expanded)
 		if lastState then layout:resize(lastState) end
-		if options.onGameplayView then options.onGameplayView(playground and not expanded) end
+		if editor then
+			if options.onEditorMenu then options.onEditorMenu(expanded) end
+		elseif options.onGameplayView then options.onGameplayView(playground and not expanded) end
 	end
 	local toggled = toggle.Activated:Connect(function()
 		expanded = not expanded
 		update()
 	end)
 	update()
-	function layout:setPlayground(value)
-		if playground == value then return end
-		playground = value
-		expanded = not value
+	function layout:setPlayground(value, editing)
+		if playground == value and editor == editing then return end
+		local enteringEditor = editing and not editor
+		playground, editor = value, editing
+		expanded = not (value or editing)
+		if enteringEditor then menu:setRetracted(true, true) end
 		update()
 	end
 
@@ -70,11 +80,12 @@ function Standard.new(parent, options, spacing)
 		lastState = state
 		local width = math.max(0, state.viewport.X - 2 * margin)
 		local navWidth = math.min(state.navWidth, width)
-		local toggleWidth = navWidth
-		local toggleHeight = if boxAsset then toggleWidth * boxAsset.height / boxAsset.width else 29
+		local showBox = boxAsset ~= nil and (not editor or expanded)
+		local toggleWidth = if editor and not expanded then math.min(navWidth,72) else navWidth
+		local toggleHeight = if showBox then toggleWidth * boxAsset.height / boxAsset.width else 29
 		local visibleToggleTop = state.topbarBottom + 1
 		-- The visible lid starts below the transparent band in menu_box2.png.
-		local topPadding = if boxAsset then toggleHeight * (91 / 896) else 0
+		local topPadding = if showBox then toggleHeight * (91 / 896) else 0
 		local toggleTop = visibleToggleTop - topPadding
 		toggle.Position = UDim2.fromOffset(margin, toggleTop)
 		toggle.Size = UDim2.fromOffset(toggleWidth, toggleHeight)
@@ -88,15 +99,17 @@ function Standard.new(parent, options, spacing)
 		header.root.Size = UDim2.fromOffset(headerWidth, state.headerHeight)
 
 		local top = state.headerTop + state.headerHeight + headerGap
-		local menuTop = math.max(top, toggleTop + toggleHeight)
+		local expandedHeight = if boxAsset then navWidth * boxAsset.height / boxAsset.width else 29
+		local menuTop = if editor then math.max(top, visibleToggleTop + expandedHeight * 0.90) else math.max(top, toggleTop + toggleHeight)
 		local parking = Vector2.new(margin + toggleWidth / 2, toggleTop + toggleHeight * 0.49)
-		local boxHook = if boxAsset then Vector2.new(margin + toggleWidth * 0.105, toggleTop + toggleHeight * 0.88) else nil
+		local boxHook = if showBox then Vector2.new(margin + toggleWidth * 0.105, toggleTop + toggleHeight * 0.88) else nil
 		menu.onTagHeightChanged = function(tagHeight)
 			local headerHeight = header:resize(headerWidth, state.headerHeight, state.scale, tagHeight)
 			local panelTop = state.headerTop + headerHeight + headerGap
-			local panelLeft = margin + navWidth + columnGap
+			if editor then panelTop = math.max(panelTop, visibleToggleTop + 30) end
+			local panelLeft = if editor then margin else margin + navWidth + columnGap
 			panel.Position = UDim2.fromOffset(panelLeft, panelTop)
-			panel.Size = UDim2.fromOffset(math.max(0, width - navWidth - columnGap),
+			panel.Size = UDim2.fromOffset(if editor then width else math.max(0, width - navWidth - columnGap),
 				math.max(0, state.viewport.Y - panelTop - margin))
 		end
 		local menuHeight = math.max(0, state.viewport.Y - menuTop - margin)

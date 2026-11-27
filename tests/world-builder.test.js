@@ -11,11 +11,18 @@ test('sculpted terrain survives offline serialization, compilation, and migratio
  d.settings.terrain.paint=Array(36*36).fill(5);
  d.settings.terrain.water=Array(36*36).fill(0);d.settings.terrain.water[5]=5024;
  d.settings.terrain.traction={Ice:5.25,Mud:0,Grass:55,Snow:100};
+ d.settings.terrain.paint[0]=3;
+ d.settings.terrain.paint[1]=3;
+ d.settings.terrain.tractionCells=Array(36*36).fill(-1);
+ d.settings.terrain.tractionCells[0]=0;
+ d.settings.terrain.tractionCells[1]=42.5;
  const built=compileDocument(JSON.parse(serialize(d)),items);
  assert.deepEqual(built.manifest.builderSettings.terrain,d.settings.terrain);
  assert.deepEqual(migrate(built.manifest,items,'terrain_copy').settings.terrain,d.settings.terrain);
  const invalid=structuredClone(d);invalid.settings.terrain.traction.Ice=101;
  assert.throws(()=>compileDocument(invalid,items),/traction/);
+ const invalidPaint=structuredClone(d);invalidPaint.settings.terrain.tractionCells[2]=12;
+ assert.throws(()=>compileDocument(invalidPaint,items),/tractionCells/);
  d.settings.terrain.heights[102]=4001;
  assert.throws(()=>compileDocument(d,items),/invalid height sample/);
 });

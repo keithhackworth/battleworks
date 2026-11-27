@@ -295,7 +295,8 @@ function Scene:markStructure(record,traction)
  record.traversalMarker=marker
 end
 function Scene:syncTerrain(settings,dirty)
- if self.terrainData~=settings.terrain or self.tunnelData~=settings.tunnels or (settings.terrain and self.terrain.settings~=settings) then
+ local rebuild=self.terrainData~=settings.terrain or self.tunnelData~=settings.tunnels or (settings.terrain and (not self.terrain or self.terrain.settings~=settings))
+ if rebuild then
   if self.terrain then self.terrain:destroy();self.terrain=nil end
   self.terrainData=settings.terrain;self.tunnelData=settings.tunnels
   if settings.terrain then self.terrain=TerrainSurface.new(self.world,settings,false);self.terrain:all() end
@@ -304,7 +305,15 @@ function Scene:syncTerrain(settings,dirty)
  end
  self.floor.Transparency=if self.terrain then 1 else 0
  self.floor.CanQuery=self.terrain==nil
- if self.traversability then
+ local hidden=self.terrainHidden==true
+ self.floor.LocalTransparencyModifier=if hidden then 1 else 0
+ if self.terrain and (rebuild or dirty or self.lastTerrainHidden~=hidden) then
+  for _,part in self.terrain.folder:GetChildren() do
+   if part:IsA("BasePart") then part.LocalTransparencyModifier=if hidden then 1 else 0 end
+  end
+ end
+ self.lastTerrainHidden=hidden
+ if self.traversability and not hidden then
   if not self.terrainOverlay or self.overlaySource~=settings.terrain or self.overlayWidth~=settings.width or self.overlayDepth~=settings.depth
    or self.overlayMaterial~=settings.ground.material or self.overlayTunnels~=settings.tunnels then
    if self.terrainOverlay then self.terrainOverlay:destroy() end
@@ -472,7 +481,7 @@ function Scene:selection(id,distance)
  for endpoint,p in self.snapEnds do p.Transparency=1;p.CanQuery=false;self.snapLabels[endpoint].Visible=false end
  local pin=self.snapPins and self.snapPins[id]
  self.sourceChoices=nil
- if self.mode=="Snap" and record and not record.spawn and record.item and self.sourcePixel and not self.draggingSnap then
+ if self.snapEnabled and record and not record.spawn and record.item and self.sourcePixel and not self.draggingSnap then
   self.sourceChoices=sourceEdges(record,record.item.collider)
   if self.sourceChoices then
    local choice,candidates=self:projectEdges(self.sourceChoices,self.sourcePixel)
@@ -480,7 +489,7 @@ function Scene:selection(id,distance)
   else self:edgeMarkers("Source") end
  else self:edgeMarkers("Source") end
  if not record then for _,p in self.wire do p.Transparency=1 end;return end
- if self.mode=="Snap" and not record.spawn then
+ if self.snapEnabled and not record.spawn then
   local ends=Snap.ends(record.entry,if pin then pin.side else self.snapSide,record.item and record.item.collider)
   for endpoint,p in self.snapEnds do
    if not ends[endpoint] then continue end
@@ -657,11 +666,13 @@ function Scene:snapFeedback(target,valid)
  end
 end
 function Scene:grid(enabled,step)
+ local w,d=self.document.settings.width,self.document.settings.depth
+ if enabled and self.gridFolder and self.gridStep==step and self.gridWidth==w and self.gridDepth==d then return end
  self.gridStep=if enabled then step else nil
+ self.gridWidth,self.gridDepth=w,d
  if self.gridFolder then self.gridFolder:Destroy();self.gridFolder=nil end
  if not enabled then return end
  local folder=Instance.new("Folder");folder.Name="Grid";folder.Parent=self.world;self.gridFolder=folder
- local w,d=self.document.settings.width,self.document.settings.depth
  step*=math.max(1,math.ceil(math.max(w,d)/(step*40)))
  for x=-math.floor(w/2/step)*step,w/2,step do part(folder,"GridLine",Vector3.new(.035,.02,d),CFrame.new(x,.02,0),Color3.fromRGB(190,215,195),.65) end
  for z=-math.floor(d/2/step)*step,d/2,step do part(folder,"GridLine",Vector3.new(w,.02,.035),CFrame.new(0,.02,z),Color3.fromRGB(190,215,195),.65) end

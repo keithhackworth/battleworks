@@ -36,7 +36,7 @@ function validate(input,items){
  for(const [k,n] of [['width',width],['depth',depth]]){number(n,25,2000,`settings.${k}`);if(n%1)fail(`settings.${k}`,'expected integer studs');}
  if (input.settings.terrain !== undefined) {
   const terrain=input.settings.terrain;
-  keys(terrain,['version','columns','rows','heights','paint','water','traction'],'settings.terrain');
+  keys(terrain,['version','columns','rows','heights','paint','water','traction','tractionCells'],'settings.terrain');
   if(terrain.traction!==undefined){
    keys(terrain.traction,['Grass','Mud','Snow','Ice'],'settings.terrain.traction');
    for(const percent of Object.values(terrain.traction))if(!Number.isFinite(percent)||percent<0||percent>100)fail('settings.terrain.traction','traction must be between 0 and 100 percent');
@@ -51,6 +51,15 @@ function validate(input,items){
    if (!Array.isArray(values) || values.length!==terrain.columns*terrain.rows) fail(`settings.terrain.${layer}`,'incorrect cell count');
    for (const value of values) if (!Number.isInteger(value) || (value!==0 &&
     (layer==='paint' ? value<1 || value>5 : value<WaterOffset+MinTerrainHeight*TerrainUnit || value>WaterOffset+MaxTerrainHeight*TerrainUnit))) fail(`settings.terrain.${layer}`,'invalid cell');
+  }
+  if (Object.hasOwn(terrain,'tractionCells')) {
+   const values=terrain.tractionCells;
+   if (!Array.isArray(values)||values.length!==terrain.columns*terrain.rows) fail('settings.terrain.tractionCells','incorrect cell count');
+   for (const [index,percent] of values.entries()) {
+    if (percent!==-1&&(!Number.isFinite(percent)||percent<0||percent>100||![1,2,3,4].includes(terrain.paint?.[index]))) {
+     fail('settings.terrain.tractionCells','expected an inherited cell or traction from 0 to 100 on a tunable painted material');
+    }
+   }
   }
  }
  bool(input.settings.boundary,'settings.boundary');

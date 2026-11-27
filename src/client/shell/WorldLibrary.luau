@@ -5,20 +5,26 @@ local function make(class,parent,props)
  local node=Instance.new(class);for k,v in props do node[k]=v end;node.Parent=parent;return node
 end
 local function button(parent,text,x,y,width)
- return make("TextButton",parent,{Text=text,Position=UDim2.fromOffset(x,y),Size=UDim2.fromOffset(width,32),BackgroundColor3=Color3.fromRGB(43,61,66),TextColor3=Color3.fromRGB(235,241,230),TextSize=14,Font=Enum.Font.GothamMedium,Selectable=false,BorderSizePixel=0})
+ return make("TextButton",parent,{Text=text,Position=UDim2.fromOffset(x,y),Size=UDim2.fromOffset(width,32),BackgroundColor3=Color3.fromRGB(61,71,45),TextColor3=Color3.fromRGB(241,222,174),TextSize=14,Font=Enum.Font.GothamMedium,Selectable=false,BorderSizePixel=0})
 end
 function Library.new(parent,request,onLoad,onPlay)
  local self=setmetatable({request=request,onLoad=onLoad,onPlay=onPlay,revisions={},saved={},epoch=0},Library)
- self.frame=make("Frame",parent,{Name="MyWorlds",Position=UDim2.fromScale(.1,.12),Size=UDim2.fromScale(.8,.76),BackgroundColor3=Color3.fromRGB(17,28,33),Visible=false,Active=true,ZIndex=20})
+ self.frame=make("Frame",parent,{Name="MyWorlds",Position=UDim2.fromScale(.1,.12),Size=UDim2.fromScale(.8,.76),BackgroundColor3=Color3.fromRGB(33,39,25),Visible=false,Active=true,ZIndex=20})
  local title=make("TextLabel",self.frame,{Text="MY WORLDS  /  private saves",Position=UDim2.fromOffset(20,12),Size=UDim2.new(1,-40,0,32),BackgroundTransparency=1,TextColor3=Color3.fromRGB(244,178,78),TextSize=20,Font=Enum.Font.GothamBold,TextXAlignment=Enum.TextXAlignment.Left})
  local function field(name,y)
-  return make("TextBox",self.frame,{Name=name,PlaceholderText=name,Text="",ClearTextOnFocus=false,Position=UDim2.fromOffset(20,y),Size=UDim2.new(1,-40,0,32),TextColor3=Color3.fromRGB(235,241,230),BackgroundColor3=Color3.fromRGB(43,61,66),Font=Enum.Font.Gotham,TextSize=14})
+  return make("TextBox",self.frame,{Name=name,PlaceholderText=name,Text="",ClearTextOnFocus=false,Position=UDim2.fromOffset(20,y),Size=UDim2.new(1,-40,0,32),TextColor3=Color3.fromRGB(241,222,174),BackgroundColor3=Color3.fromRGB(61,71,45),Font=Enum.Font.Gotham,TextSize=14})
  end
  self.name=field("World name",56);self.id=field("World ID (change for a new save)",96)
  self.save=button(self.frame,"Save",20,140,90)
  self.play=button(self.frame,"Save & Play",120,140,150);self.play.BackgroundColor3=Color3.fromRGB(121,89,37)
  self.refresh=button(self.frame,"Refresh saves",280,140,140)
- self.status=make("TextLabel",self.frame,{Text="",Position=UDim2.fromOffset(20,180),Size=UDim2.new(1,-40,0,60),BackgroundTransparency=1,TextColor3=Color3.fromRGB(235,241,230),TextSize=14,TextWrapped=true,TextXAlignment=Enum.TextXAlignment.Left,Font=Enum.Font.Gotham})
+ for index, control in ipairs({self.save,self.play,self.refresh}) do
+  control.Position=UDim2.new((index-1)/3,20,0,140)
+  control.Size=UDim2.new(1/3,-17,0,32)
+  control.TextScaled=true
+  make("UITextSizeConstraint",control,{MaxTextSize=14})
+ end
+ self.status=make("TextLabel",self.frame,{Text="",Position=UDim2.fromOffset(20,180),Size=UDim2.new(1,-40,0,60),BackgroundTransparency=1,TextColor3=Color3.fromRGB(241,222,174),TextSize=14,TextWrapped=true,TextXAlignment=Enum.TextXAlignment.Left,Font=Enum.Font.Gotham})
  self.list=make("ScrollingFrame",self.frame,{Position=UDim2.fromOffset(20,248),Size=UDim2.new(1,-40,1,-300),BackgroundTransparency=1,CanvasSize=UDim2.fromOffset(0,0),AutomaticCanvasSize=Enum.AutomaticSize.Y,ScrollBarThickness=5,BorderSizePixel=0})
  make("UIListLayout",self.list,{Padding=UDim.new(0,8),SortOrder=Enum.SortOrder.LayoutOrder})
  self.close=button(self.frame,"Back to editing",20,0,160);self.close.Position=UDim2.new(0,20,1,-42)
@@ -47,6 +53,7 @@ function Library:run(fn)
   if not ok then
    local message=tostring(err)
    self.status.Text=if message:match("^%[[a-z_]+%]") then message else message:gsub("^.-:%d+:%s*","")
+   if self.onStatus then self.onStatus(self.status.Text) end
   end
  end)
 end
@@ -69,7 +76,7 @@ function Library:fetch(epoch)
     if not self:current(token) then return end
     self.revisions[world.id]=saved.revision
     self.document=self.onLoad(saved.document)
-    self.saved[world.id]=State.copy(saved.document)
+    self.saved[world.id]=State.copy(self.document)
     self.copyMode=false
     self.name.Text=saved.document.name;self.id.Text=saved.document.id
     self.status.Text="Opened revision "..saved.revision..". Return to editing, or Save & Play."
@@ -113,11 +120,12 @@ function Library:open(document,mode)
    if not self:current(epoch) then return end
    self.document=self.onLoad(saved.document)
    self.revisions[saved.document.id]=saved.revision
-   self.saved[saved.document.id]=State.copy(saved.document)
+   self.saved[saved.document.id]=State.copy(self.document)
    self.name.Text=saved.document.name;self.id.Text=saved.document.id
    self:hide()
   end)
  elseif mode=="save" then self:saveWorld(false)
+ elseif mode=="test" then self:saveWorld(true)
  elseif self.copyMode then self.status.Text="Enter a new World ID and select Save."
  else self:run(function(epoch) self:fetch(epoch) end) end
 end
@@ -140,6 +148,7 @@ function Library:saveWorld(play)
    self.saved[copy.id]=copy
    self.status.Text=(if saved.temporary then "STUDIO SESSION ONLY • " elseif saved.storage=="Http" then "Saved to world service • " else "Saved to your account • ").."revision "..revision
   end
+  if self.onStatus then self.onStatus(self.status.Text) end
   self.copyMode=false
   self.document.id=copy.id;self.document.name=copy.name
   if play then

@@ -8,10 +8,48 @@ The editor starts with a 230 × 230 world and a flat base floor. It uses the
 existing catalog, authoring-v2 JSON document, native model placement math, and
 compiler/export pipeline. It never edits the running arena.
 
+## Workstation layout
+
+The two-column tool rail reads left to right. It contains **Select / Navigate**,
+**Add Asset**, **Move**, **Resize**, **Scale**, **Duplicate**, **Terrain**,
+**Undo**, **Redo**, and **Start Zones**. Use the BattleWorks **Menu** button
+in the header to open the existing dog-tag navigation in Battle Royale.
+The chest and tags start collapsed. Leaving an unsaved draft prompts for
+confirmation and keeps the draft in memory for this session.
+
+- **File** contains New World, Open, Open Playground in Battle Royale, Save,
+  and Save As. **World Settings** contains width, depth, and ground appearance.
+  World terrain resizes with its dimensions. Object resize and scale are
+  separate tools, and the existing world schema has no separate world-scale field.
+- **View** toggles terrain and audio visibility, controls camera sensitivity,
+  frames the world, and toggles the tank reference and inspector. **Advanced**
+  opens JSON import and export. **Test** saves and launches a validated draft.
+- **Add Asset** opens the searchable, paged library with native previews,
+  folder navigation, recent objects, audio entries, and repeat placement.
+  Highlight an entry and select **Select Asset**, then click or tap the
+  workspace to place it. Cancel preserves the previous editing state.
+- **Placement** contains grid and edge snap, contact pins, and the active
+  transform's snap fit. Move translates, Resize fits a supported local axis,
+  and Scale fits uniformly. Press **4** to toggle edge snapping within the
+  active transform tool. Resize and Scale share the uniform-scale clipboard.
+  The inspector reports precise values and identifies authored snap geometry.
+- **Rotation** contains local Tilt X, Yaw Y, and Tilt Z controls.
+  **Physics** contains collision, durability, regeneration, and traction.
+  Physical movability is read-only. **Motion** contains automatic rotation
+  and path and waypoint controls. **Sound** contains assignment, preview,
+  triggers, attachment, trail painting, and fill. Use **Object actions** or
+  Delete to remove the selected object.
+- **Terrain** exposes brushes, surface materials, water, ravines, tunnels,
+  and traversal overlays. The right inspector shows brush settings and the
+  selected tunnel’s properties, including tunnel-specific traction.
+  **Start Zones** shows the placed count and zone controls in the same dock.
+- The bottom status bar reports mode, selection, world dimensions, grid state,
+  and the current tool’s instructions or validation feedback.
+
 ## Edit and play a saved Playground
 
-In Playground mode, open **Main Menu → Edit Playground**. You can also use
-**Open Playground** from the World Editor toolbar.
+In Battle Royale mode, choose **World Editor** on the BattleWorks Home menu,
+then **File → Open Playground**. Open the BattleWorks menu and choose **Home** to return.
 The initial arena and the first editor draft use the same starter document, derived
 from the original Playground layout. It uses the editable
 heightfield for the banks and river, and regular asset placements for the bridge,
@@ -182,7 +220,7 @@ those bounds. Boundary shapes and editable river paths are separate milestones.
 
 ## Sculpt and play-test terrain
 
-1. Open **Main Menu → World Editor** and choose **New World**. Set **Width** and **Depth** under **World Size** in the inspector. These controls also appear in Terrain mode. Enter a whole number from 25 to 2,000 studs and press Enter or leave the field to apply it. Terrain scales around the world center, including paint and water. Resizing to a smaller grid can reduce detail. Objects and starting positions stay in place, and a resize that would put them outside their allowed bounds is rejected. Undo restores the previous size and exact terrain.
+1. Open **Main Menu → World Editor** and choose **New World**. Set **Width** and **Depth** in the **World Settings** dialog. Enter a whole number from 25 to 2,000 studs and press Enter or leave the field to apply it. Terrain scales around the world center, including paint and water. Resizing to a smaller grid can reduce detail. Objects and starting positions stay in place, and a resize that would put them outside their allowed bounds is rejected. Undo restores the previous size and exact terrain.
 2. Choose **Terrain → Raise Terrain**. Move the orange footprint over the ground and drag to form a hill.
 3. Choose **Lower Terrain** and drag beside the hill. **Smooth Terrain** blends nearby heights. **Flatten Terrain** brings the brush area toward the inspector’s chosen elevation.
 4. Set **Radius**, **Strength**, and **Falloff** in the brush inspector. A falloff of zero gives an even brush. Higher values soften the edge. Each drag is one Undo or Redo action. Escape cancels a stroke.
@@ -201,7 +239,9 @@ Terrain is an optional height grid in the existing world document. Each axis use
 
 **Terrain Traversability** is on by default in the editor and can be toggled in the Terrain inspector. The slope tint is editor-only. During play, water shades from light blue in the shallows to dark blue as depth increases. Untinted ground is suitable for both drivetrains, yellow indicates tracks, and red means the terrain is too steep for reliable climbing or the water is too deep. The overlay reads the ground material and covers sculpted terrain and solid single-block ramps. Multipart and irregular assets may have no overlay. Underwater ground looks and behaves like mud. Water deeper than half a tank's hull height starts a three-second countdown above the tank. Tanks can keep driving through deep water. They are destroyed if they stay submerged until the countdown runs out. Shallow water clears the timer. The standard hull's cutoff is 2.5 studs.
 
-Select a Grass, Mud, Snow, or Ice paint brush and set **Traction (% of pavement)** in the Terrain inspector. The defaults are **75% grass**, **20% mud**, **31.25% snow**, and **0.25% ice**. Lower values reduce grip. Enter a value from 0 to 100, or clear the field to restore the default. The setting applies to that material across the world, including areas already painted. It saves with the terrain and updates both tank movement and the slope overlay.
+Select a **Grass**, **Mud**, **Snow**, or **Ice** brush and enter **Brush traction (% of pavement)** from 0 to 100. The value applies to the cells painted by that stroke. Change it before the next stroke to paint different grip levels with the same material. Clear the brush field and repaint to remove overrides from the touched cells.
+
+**Material fallback** still applies across the world to cells using that material without a painted override. The default fallback is 75% for grass, 20% for mud, 31.25% for snow, and 0.25% for ice. Existing saves retain their settings. Painted traction is saved with the world, follows terrain cell resizing, and affects both tank movement and the traversal overlay.
 
 Custom percentages limit acceleration, braking, and sideways grip against a pavement reference of 0.8g for static contact and 0.6g during slip. Steering also responds to the available grip, including when a tracked tank pivots in place. For example, at 5% snow traction expect wider turns, more slide, and longer stopping distances.
 

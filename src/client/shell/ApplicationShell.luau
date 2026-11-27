@@ -29,7 +29,7 @@ function Shell.new(playerGui,arena,session,gameplay,presenter,editorAssets,world
  local content=Instance.new("Frame"); content.Name="Screens"; content.BackgroundTransparency=1
  content.Size=UDim2.fromScale(1,1); content.Parent=gui
  local self=setmetatable({gui=gui,background=background,session=session,gameplay=gameplay},Shell)
- local context={royale=options.royale==true,parent=content,session=session,gameplay=gameplay,trace=startup,worldRequest=worldRequest,garageRequest=options.garageRequest,
+ local context={royale=options.royale==true,integratedEditor=options.integratedEditor==true,parent=content,session=session,gameplay=gameplay,trace=startup,worldRequest=worldRequest,garageRequest=options.garageRequest,
   labTravel=options.labTravel,selectExperiment=options.selectExperiment,
   editorAssets=if type(editorAssets)=="function" then nil else editorAssets,
   getEditorAssets=if type(editorAssets)=="function" then editorAssets else function() return editorAssets end}
@@ -47,6 +47,7 @@ function Shell.new(playerGui,arena,session,gameplay,presenter,editorAssets,world
  end
  context.playWorld=self.playWorld
  context.home=function()
+  if options.onHome and options.onHome() then return end
   self.playtest=nil
   self.manager:show(homeScreen)
   gui.Enabled=true
@@ -73,6 +74,7 @@ function Shell.new(playerGui,arena,session,gameplay,presenter,editorAssets,world
  self.manager:show(homeScreen)
  gui.Parent=playerGui
  session.onState=function(mode,message)
+  if self.hidden then return end
   if mode=="Menu" and self.returningToEditor then
    local draft=self.returningToEditor
    self.returningToEditor=nil
@@ -94,9 +96,11 @@ function Shell.new(playerGui,arena,session,gameplay,presenter,editorAssets,world
   self.manager:get("Lobby"):setStatus(mode=="Joining",message)
  end
  local function navigation(_,state,input)
-  if UIS:GetFocusedTextBox() then return Enum.ContextActionResult.Pass end
+  if self.hidden or UIS:GetFocusedTextBox() then return Enum.ContextActionResult.Pass end
   if self.manager.current=="WorldEditor" then
-   if input.KeyCode==Enum.KeyCode.ButtonB and state==Enum.UserInputState.Begin then context.home();return Enum.ContextActionResult.Sink end
+   if input.KeyCode==Enum.KeyCode.ButtonB and state==Enum.UserInputState.Begin then
+    self.manager:get("WorldEditor"):confirmLeave(context.home);return Enum.ContextActionResult.Sink
+   end
    return Enum.ContextActionResult.Pass
   end
   if self.manager.current=="Battle" then
@@ -122,6 +126,25 @@ function Shell.new(playerGui,arena,session,gameplay,presenter,editorAssets,world
  Actions:BindActionAtPriority("BattleWorksShellNavigation",navigation,false,2000,
   Enum.KeyCode.Up,Enum.KeyCode.Down,Enum.KeyCode.DPadUp,Enum.KeyCode.DPadDown,Enum.KeyCode.Return,Enum.KeyCode.ButtonA,Enum.KeyCode.Backspace,Enum.KeyCode.ButtonB)
  return self
+end
+function Shell:openEditor(parent)
+ self.hidden=false
+ local editor=self.manager:get("WorldEditor")
+ if parent then
+  self.editorParent=editor.frame.Parent
+  editor.frame.Parent=parent
+ end
+ self.manager:show("WorldEditor")
+end
+function Shell:hide()
+ self.hidden=true
+ self.manager:hide()
+ if self.editorParent then
+  self.manager:get("WorldEditor").frame.Parent=self.editorParent
+  self.editorParent=nil
+ end
+ self.background:exit()
+ self.gui.Enabled=false
 end
 function Shell:destroy()
  self.session:leave(); self.session.onState=function() end

@@ -37,6 +37,7 @@ function App.new(parent, options)
 	local instances = {}
 	local visibleLayout
 	local router
+	local editorView = false
 
 	local function getLayout(name)
 		if instances[name] then return instances[name] end
@@ -47,10 +48,20 @@ function App.new(parent, options)
 			items = routes.items,
 			onClose = options.onClose,
 			onGameplayView = options.onGameplayView,
+			onEditorMenu = options.onEditorMenu,
 			onSelect = function(item)
-				local ok, err = router:navigate(item.route)
-				if not ok then warn("[BattleWorks UI]", err) end
-				return ok
+				local function navigate()
+					local ok, err = router:navigate(item.route)
+					if not ok then warn("[BattleWorks UI]", err) end
+					return ok
+				end
+				if editorView and item.route ~= router:current() then
+					require(script.Parent.WorldEditorAccess).confirmExit(function()
+						if navigate() and item.onSelect then item.onSelect(item) end
+					end)
+					return false
+				end
+				return navigate()
 			end,
 		})
 		layout:resize(responsive.current)
@@ -60,12 +71,13 @@ function App.new(parent, options)
 
 	local function showLayout(layout, page)
 		if visibleLayout and visibleLayout ~= layout then
-			if visibleLayout.setPlayground then visibleLayout:setPlayground(false) end
+			if visibleLayout.setPlayground then visibleLayout:setPlayground(false, false) end
 			visibleLayout.root.Visible = false
 		end
 		visibleLayout = layout
-		root.BackgroundTransparency = if page.playground then 1 else 0
-		if layout.setPlayground then layout:setPlayground(page.playground == true) end
+		editorView = page.editor == true
+		root.BackgroundTransparency = if page.playground or editorView then 1 else 0
+		if layout.setPlayground then layout:setPlayground(page.playground == true, editorView) end
 		layout.root.Visible = true
 	end
 

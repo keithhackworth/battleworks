@@ -39,11 +39,40 @@ do
  view.traction.Text="";view.traction.FocusLost:Fire()
  check(not controller.state.document.settings.terrain.traction,"clearing the last override restores material defaults")
  view.brushFields.radius.Text="16";view.brushFields.radius.FocusLost:Fire()
- check(view.terrainTools.Raise.Visible and view.brushPanel.Visible and not view.tools.Move.Visible,"Terrain mode replaces object tools with the brush controls")
+ check(view.terrainTools.Raise.Parent.Visible and view.brushPanel.Visible and view.tools.Move.Visible~=false,"Terrain provides contextual brush controls and keeps the primary tools available")
  local savedPointer=controller.pointer
  local point=Vector3.zero
  controller.pointer=function()return point,Vector3.new(0,100,0),Vector3.new(0,-1,0),Vector2.zero end
  local mouse1={UserInputType=Enum.UserInputType.MouseButton1,KeyCode=Enum.KeyCode.Unknown}
+ local function paintIce(x, percent)
+  view.surfaceTools.Ice.Activated:Fire()
+  view.brushTraction.Text=percent
+  view.brushTraction.FocusLost:Fire()
+  point=Vector3.new(x,0,0)
+  controller:begin(mouse1,false)
+  UIS.InputEnded:Fire(mouse1)
+ end
+ view.traction.Text="15";view.traction.FocusLost:Fire()
+ paintIce(-25,"0")
+ paintIce(25,"75")
+ local function grip(x)
+  local settings=controller.state.document.settings
+  local env={terrainSettings=settings,zones={},rocks={},logs={},trees={}}
+  local _,kind,_,_,profile=require("Environment").sample(env,x,0)
+  check(kind=="Ice","traction test samples painted ice")
+  return profile.authoredTraction
+ end
+ check(grip(-25)==0 and grip(25)==.75,"two ice strokes in one world have distinct simulated traction")
+ controller:history(false)
+ check(select(3,H.surface(controller.state.document.settings.terrain,96,96,25,0))==nil,"undo removes the second traction stroke")
+ controller:history(true)
+ check(grip(25)==.75,"redo restores the painted override")
+ paintIce(25,"")
+ check(grip(25)==.15 and grip(-25)==0,"repainting with a blank brush clears only the touched overrides")
+ local original=controller.state.document.settings.terrain
+ local resized=H.resize(original,96,96,192,96)
+ H.validate(resized,192,96)
+ check(select(3,H.surface(resized,192,96,-50,0))==0,"resizing carries the traction with its material cells")
  local function stroke(operation,x,z,travel)
   view.terrainTools[operation].Activated:Fire()
   point=Vector3.new(x,0,z)

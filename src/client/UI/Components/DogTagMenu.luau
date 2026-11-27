@@ -169,11 +169,15 @@ function DogTagMenu.new(parent, items, theme, assets, onSelect)
 	end
 
 	local animated = progress:GetPropertyChangedSignal("Value"):Connect(updatePosition)
-	function menu:setRetracted(value)
-		if value == retracted then return end
+	function menu:setRetracted(value, instant)
+		if value == retracted and not instant then return end
 		retracted = value
 		if value then scroll.CanvasPosition = Vector2.zero end
-		if tween then tween:Destroy() end
+		if tween then tween:Destroy(); tween = nil end
+		if instant then
+			progress.Value = if value then 1 else 0
+			return
+		end
 		tween = TweenService:Create(progress, TweenInfo.new(0.36, Enum.EasingStyle.Quad, Enum.EasingDirection.InOut), {
 			Value = if value then 1 else 0,
 		})

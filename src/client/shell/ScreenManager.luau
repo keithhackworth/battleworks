@@ -20,8 +20,11 @@ function Manager:show(name,params)
  self.onChanged(name)
  return true
 end
+function Manager:hide()
+ if self.current then self.screens[self.current]:exit();self.current=nil end
+end
 function Manager:destroy()
- if self.current then self.screens[self.current]:exit() end
+ self:hide()
  for _,screen in self.screens do screen:destroy() end
  self.screens={}; self.current=nil
 end

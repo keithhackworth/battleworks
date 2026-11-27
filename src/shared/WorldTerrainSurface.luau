@@ -141,7 +141,8 @@ function Surface:chunk(cx,cz)
    if wet then paint="Mud" end
    cellMaterial=paint and Enum.Material[Materials.Materials[paint]]
    cellColor=paint and Color3.fromRGB(table.unpack(Materials.Colors[paint]))
-   profile=if self.overlay then Materials.withTraction(Materials.fromMaterial(paint or settings.ground.material),field.traction) else nil
+   profile=if self.overlay then Materials.withPaintTraction(Materials.fromMaterial(paint or settings.ground.material),
+    field,if wet then nil else H.cellTraction(field,index)) else nil
    if #cuts==0 and a.Y==b.Y and a.Y==c.Y and a.Y==d.Y then flat(a,d)
    else ground(a,b,c);ground(d,c,b) end
    if self.overlay and waterLevel and Traversal.waterBlocked(waterLevel-math.min(a.Y,b.Y,c.Y,d.Y)+.13,chassis) then
